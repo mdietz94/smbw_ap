@@ -74,10 +74,12 @@ Working hook set (locked in after a 4-step bisect):
 
 PERMANENTLY off-limits (per bisect): hooking any of `PlayReport::Save()`, `Save(Uid&)`, the 8 `PlayReport::Add(...)` overloads, or the 2 `Struct::Add` overloads. Each triggers a delayed audit-thread abort 5-6 seconds later on whichever SDK validator thread next touches the prepo subsystem (observed: `ModuleSystemWorker1`, `gmd::SaveDataMgr`).
 
-Captured live 2026-05-20 (W1-1 Welcome to the Flower Kingdom playthrough):
-- `world_activity` (239 bytes, 10 fields) — fires when stepping onto a course tile.
-- `world_result` (1059 bytes, 26 fields) — fires on overworld→course transition; carries `next_stage_info.stage_key` (destination identifier).
-- **`course_result`** (1577 bytes, 57 fields) — **fires ~8 ms after the M1 `COURSE_CLEARED` nerve**. Carries `stage_info.stage_key` (cleared course), `touch_goal_top_{enter,result}` (the M2.5 Top-of-Flag distinguisher!), `goal_id`, `badge_id_array`, `total_get_finish_seed_count`, all coin counts.
+Captured live 2026-05-20:
+- `world_activity` (239 bytes, 10 fields) — fires when stepping onto a course tile.  W1-1.
+- `world_result` (1059 bytes, 26 fields) — fires on overworld→course transition; carries `next_stage_info.stage_key` (destination identifier).  W1-1 + Palace versions.
+- **`course_result`** (1577 / 1575 bytes, 57 fields) — **fires ~8 ms after the M1 `COURSE_CLEARED` nerve**. Carries `stage_info.stage_key` (cleared course), `touch_goal_top_{enter,result}` (the M2.5 Top-of-Flag distinguisher!), `goal_id` (0=normal pole, 1=secret exit, 2=fake exit guessed), `badge_id_array`, `total_get_finish_seed_count`, all coin counts.  Both W1-1 Top-of-Flag (`goal_id=0`) and W1-2 Secret Exit (`goal_id=1`) captured.
+- `course_in` (351 bytes, 15 fields) — fires when a course is actually loading.  W1-2.
+- **`koopajr_result`** (499 bytes, 16 fields) — palace boss fight result.  `battle_result=True` is the AP Royal Seed trigger; `False` is a death.  `koopajr_step_info` is the first observed array-of-structs (each step has per-phase damage + time).  Loss case captured 2026-05-20 (Pipe-Rock Plateau Palace).
 
 Format (CBOR-ish with Nintendo extensions): 3-byte header (`0xDE` + big-endian u16 entry count), then flat key-value pairs. Strings use 0xA0-0xBF (short) / 0xD9 (medium). Top-level uints use 0x00-0x7F inline / 0xCC + u8 / 0xCE + u32 (unsigned). Nested Struct ints use signed 0xD0-0xD3 (s8/s16/s32/s64, smallest-fit). Structs are 0x80-0x8F, arrays are 0x90-0x9F. Booleans are 0xC2/0xC3 (NOT CBOR-standard 0xF4/0xF5). Any64BitId tagged values use `0xD7 + u8 TypeCode + u64`. Negative -1 has its own short form `0xFF`.
 
@@ -129,7 +131,7 @@ The combination — Nerve hooks for in-level events, PlayReport hook for level i
 | Normal Exit (96) | `goal_id == 0` AND `touch_goal_top_result == False` | partial — no non-top-touch normal-exit capture yet, but logic follows from the W1-1 evidence |
 | Secret Exit (9) | `goal_id == 1` (regardless of `touch_goal_top_*`) | ✅ W1-2 capture |
 | Fake Exit (5) | `goal_id == 2` (guessed) | TBD — capture a Fake Exit (5 courses have one) |
-| Palace Clear (7) | `room_name == "koopajr_result"` | known from pre-M2.4 RE; not yet captured live |
+| Palace Clear (7) | `room_name == "koopajr_result"` AND `battle_result == True` | ✅ palace LOSS captured 2026-05-20 (`battle_result=False` — bridge ignores). A palace WIN capture would confirm `True` in the same shape but isn't blocking. |
 
 W1-2 capture: `goal_id=1, touch_goal_top_result=True`. Confirms `goal_id` is the primary discriminator and `touch_goal_top_*` is orthogonal (a secret-exit pole can also be top-touched). The mapping logic is locked into [bridge/test_play_report.py](bridge/test_play_report.py) `TestM25ExitTypeMapping`.
 

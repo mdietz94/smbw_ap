@@ -732,6 +732,93 @@ class TestW1_2SecretExitCourseResult(unittest.TestCase):
             r.fields["big_flower_coin_course_out"], [False, True, True])
 
 
+# koopajr_result for Pipe-Rock Plateau Palace LOSS — died to Bowser Jr in
+# phase 2.  499 bytes, 16 fields.  Key structural novelty: koopajr_step_info
+# is the first observed *array of structs* — already supported by the
+# decoder via mutual recursion in _decode_value, but worth a fixture.
+#
+# Identification note: stage_key=2308078743 / course_no=30 is
+# Pipe-Rock Plateau Palace.  This is the same key labelled "Bulrush
+# Coming Through" in the first crash run's notes — that earlier label
+# was wrong; the room name `koopajr_result` (palace boss) and the
+# koopajr_* field set settle it.
+KOOPAJR_RESULT_LOSS = _hex(
+    "de 00 10 ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 62 38 31 33 65"
+    "36 37 35 2d 65 62 32 35 34 63 38 61 2d 61 33 65 30 64 30 35 32 2d"
+    "64 66 31 61 66 61 64 30 a9 70 6c 61 79 5f 6d 6f 64 65 01 af 74 6f"
+    "74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 d7 00 00 00 00 00 00 00 00"
+    "3f aa 73 74 61 67 65 5f 69 6e 66 6f 84 a9 73 74 61 67 65 5f 6b 65"
+    "79 d3 00 00 00 00 89 92 7c 97 aa 77 6f 72 6c 64 5f 6b",
+    "69 6e 64 00 a8 77 6f 72 6c 64 5f 6e 6f 01 a9 63 6f 75 72 73 65 5f"
+    "6e 6f 1e ad 63 6f 75 72 73 65 5f 69 6e 5f 75 74 63 d7 00 00 00 00"
+    "00 6a 0e 64 ae ad 62 61 74 74 6c 65 5f 72 65 73 75 6c 74 c2 b3 6b"
+    "6f 6f 70 61 6a 72 5f 66 69 6e 61 6c 5f 73 74 61 67 65 02 b1 6b 6f"
+    "6f 70 61 6a 72 5f 73 74 65 70 5f 69 6e 66 6f 93 83 a4 73 74 65 70"
+    "00 b4 70 6c 61 79 65 72 5f 64 61 6d 61 67 65 64 5f 63",
+    "6f 75 6e 74 01 a4 74 69 6d 65 14 83 a4 73 74 65 70 01 b4 70 6c 61"
+    "79 65 72 5f 64 61 6d 61 67 65 64 5f 63 6f 75 6e 74 00 a4 74 69 6d"
+    "65 1c 83 a4 73 74 65 70 02 b4 70 6c 61 79 65 72 5f 64 61 6d 61 67"
+    "65 64 5f 63 6f 75 6e 74 01 a4 74 69 6d 65 12 b2 6b 6f 6f 70 61 6a"
+    "72 5f 74 6f 74 61 6c 5f 74 69 6d 65 43 b7 6b 6f 6f 70 61 6a 72 5f"
+    "63 68 61 6c 6c 65 6e 67 65 5f 63 6f 75 6e 74 01 b3 6b",
+    "6f 6f 70 61 6a 72 5f 70 6c 61 79 65 72 5f 72 65 73 74 05 b0 6c 6f"
+    "63 61 6c 5f 70 6c 61 79 65 72 5f 6e 75 6d 01 b9 6b 6f 6f 70 61 6a"
+    "72 5f 73 74 61 72 74 5f 70 6c 61 79 65 72 5f 6d 6f 64 65 91 01 ae"
+    "62 61 64 67 65 5f 69 64 5f 61 72 72 61 79 91 22 a8 6e 65 74 5f 6d"
+    "6f 64 65 c2 b1 73 79 73 74 65 6d 5f 72 65 70 6f 72 74 5f 74 61 67"
+    "ce 81 a7 03 b8",
+)
+
+
+class TestKoopajrResultLossPayload(unittest.TestCase):
+    """Palace boss-fight LOSS — died to Bowser Jr in the Pipe-Rock Plateau
+    Palace.  battle_result == False indicates a fail attempt; an AP Royal
+    Seed check would only fire on battle_result == True.  Capturing a WIN
+    is still TBD but won't change the field shape."""
+
+    def test_decodes_clean(self):
+        self.assertEqual(len(KOOPAJR_RESULT_LOSS), 499)
+        r = decode_play_report(KOOPAJR_RESULT_LOSS)
+        self.assertEqual(r.entry_count, 16)
+        self.assertEqual(r.decoded_count, 16)
+        self.assertIsNone(r.error)
+
+    def test_battle_result_false_for_loss(self):
+        # The headline palace-clear field — drives the AP Royal Seed check.
+        r = decode_play_report(KOOPAJR_RESULT_LOSS)
+        self.assertEqual(r.fields["battle_result"], False)
+
+    def test_stage_info_identifies_palace(self):
+        r = decode_play_report(KOOPAJR_RESULT_LOSS)
+        self.assertEqual(r.fields["stage_info"], {
+            "stage_key": 2308078743,
+            "world_kind": 0,
+            "world_no": 1,
+            "course_no": 30,
+        })
+
+    def test_koopajr_step_info_is_array_of_structs(self):
+        # First fixture exercising array-of-structs in real data.
+        # Each step = {step: phase index, player_damaged_count: int, time: sec}.
+        # In this run the player died after phases 0+1 cleared and phase 2
+        # partially through (koopajr_final_stage == 2, battle_result False).
+        r = decode_play_report(KOOPAJR_RESULT_LOSS)
+        self.assertEqual(r.fields["koopajr_step_info"], [
+            {"step": 0, "player_damaged_count": 1, "time": 20},
+            {"step": 1, "player_damaged_count": 0, "time": 28},
+            {"step": 2, "player_damaged_count": 1, "time": 18},
+        ])
+
+    def test_koopajr_metadata_fields(self):
+        r = decode_play_report(KOOPAJR_RESULT_LOSS)
+        self.assertEqual(r.fields["koopajr_final_stage"], 2)
+        self.assertEqual(r.fields["koopajr_total_time"], 67)
+        self.assertEqual(r.fields["koopajr_challenge_count"], 1)
+        self.assertEqual(r.fields["koopajr_player_rest"], 5)
+        self.assertEqual(r.fields["koopajr_start_player_mode"], [1])
+        self.assertEqual(r.fields["badge_id_array"], [34])
+
+
 class TestM25ExitTypeMapping(unittest.TestCase):
     """The M2.5 distinguisher table, empirically derived 2026-05-20.
 
@@ -761,6 +848,21 @@ class TestM25ExitTypeMapping(unittest.TestCase):
         self.assertEqual(r.fields["goal_id"], 1)
         # touch_goal_top is True here too but irrelevant: goal_id
         # takes precedence over the Top-of-Flag distinguisher.
+
+    def test_palace_loss_should_not_fire_royal_seed_check(self):
+        # The room name is the first discriminator (course_result vs
+        # koopajr_result), then for palaces battle_result gates whether
+        # the AP Royal Seed check actually fires.  This loss capture has
+        # battle_result == False, so the bridge should ignore it.
+        r = decode_play_report(KOOPAJR_RESULT_LOSS)
+        # Field-level confirmation that this is a palace-style report:
+        # no goal_id, no touch_goal_top_*, but has battle_result and
+        # koopajr_* metadata.
+        self.assertNotIn("goal_id", r.fields)
+        self.assertNotIn("touch_goal_top_result", r.fields)
+        self.assertIn("battle_result", r.fields)
+        self.assertEqual(r.fields["battle_result"], False)
+        # → AP bridge should NOT fire a Royal Seed check for this event.
 
 
 # ---------------------------------------------------------------------------
