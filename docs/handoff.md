@@ -252,8 +252,17 @@ Opcodes (LIVE = observed in captured bytes; otherwise GUESSED):
     0xCD + u16 BE             uint 256..65535                [GUESSED]
     0xCE + u32 BE             uint                           [LIVE]
     0xCF + u64 BE             uint                           [GUESSED]
-    0xD3 + u64 BE             uint always-64-bit
-                              (what Struct::Add(long) emits) [LIVE]
+    0xD0 + s8                 signed int -128..127           [GUESSED]
+    0xD1 + s16 BE             signed int -32768..32767       [GUESSED]
+    0xD2 + s32 BE             signed int                     [LIVE — W1-2
+                              stage_key = 232160011]
+    0xD3 + s64 BE             signed int                     [LIVE — W1-1
+                              stage_key = 2937190396 = 0xAF11F7FC, doesn't
+                              fit positive s32 so encoder picks s64]
+                              Used by Struct::Add(long) — encoder picks
+                              smallest signed width that fits.
+                              (Top-level PlayReport::Add uses the unsigned
+                              0xCC..0xCF path instead.)
     0xD7 + u8 + u64 BE        Any64BitId: 1-byte TypeCode + 8-byte u64 Value;
                               decoded as
                               {"TypeCode": int, "Value": int} [LIVE]
@@ -269,7 +278,7 @@ Unmapped (no live capture — decoder raises DecodeError):
 
 Important nuances:
 - 0x80-0x8F (structs) vs 0x90-0x9F (arrays) are explicitly different opener ranges — the decoder picks dict vs list by the opener nibble, not by peeking at children.
-- The encoder uses different opcodes for the same magnitude depending on which `Add` overload was called: top-level `PlayReport::Add(long)` minimizes width (`cc`/`ce`); `Struct::Add(long)` always emits `d3` + 8 bytes regardless of magnitude. Both decode to plain ints.
+- The encoder uses different opcodes for the same magnitude depending on which `Add` overload was called: top-level `PlayReport::Add(long)` minimizes *unsigned* width (`cc`/`ce`); `Struct::Add(long)` minimizes *signed* width (`d0`/`d1`/`d2`/`d3`). Compare W1-1 stage_key=2937190396 (high bit set as s32 → bumps to s64 → `d3`) vs W1-2 stage_key=232160011 (fits positive s32 → `d2`). Both decode to plain Python ints.
 - `arena_score_enter = 4294967295` and `last_put_panel_id = -1` are both "all-ones" semantically but encode differently — the former is `ce ff ff ff ff` (genuine u32 max), the latter is `ff` (the -1 short form). The C++ caller's signedness flows through.
 
 Test fixtures and assertion sets live in [bridge/test_play_report.py](bridge/test_play_report.py). Iterate by playing through new scenarios (secret exit, palace clear, item pickup), pasting the new `prepo.ipc.bytes(...)` lines into a fixture, and adding assertions.

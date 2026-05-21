@@ -35,7 +35,17 @@ fields) — all from playing through W1-1):
       0xCE + u32 BE   uint, larger                       [LIVE — system
                        _report_tag = 2175206328]
       0xCF + u64 BE   uint, larger                       [GUESSED]
-      0xD3 + u64 BE   uint (always-64-bit; what Struct::Add(long) emits) [LIVE]
+      0xD0 + s8       signed int -128..127                [GUESSED — d0/d1
+      0xD1 + s16 BE   signed int -32768..32767             not yet observed
+      0xD2 + s32 BE   signed int                          [LIVE — W1-2
+                       stage_key = 232160011]
+      0xD3 + s64 BE   signed int                          [LIVE — W1-1
+                       stage_key = 2937190396 (= 0xAF11F7FC, doesn't fit
+                       in positive s32 so encoder picks s64)]
+                       — Reading: d0..d3 are what Struct::Add(long) emits;
+                       the encoder picks the smallest signed width that
+                       fits. Top-level PlayReport::Add uses the unsigned
+                       0xCC/0xCE etc. path instead.
       0xD7 + u8 + u64 BE
                       Any64BitId: first byte is TypeCode, then 8-byte u64.
                        Decoded as {"TypeCode": <int>, "Value": <int>}.
@@ -138,6 +148,13 @@ class _Reader:
         self.pos += nbytes
         return v
 
+    def s_be(self, nbytes: int) -> int:
+        self._need(nbytes)
+        v = int.from_bytes(
+            self.buf[self.pos:self.pos + nbytes], "big", signed=True)
+        self.pos += nbytes
+        return v
+
     def take(self, n: int) -> bytes:
         self._need(n)
         chunk = self.buf[self.pos:self.pos + n]
@@ -210,10 +227,19 @@ def _decode_value(rdr: _Reader) -> Any:
     if op == 0xCF:
         return rdr.u_be(8)
 
-    # u64 used by Struct::Add(long) — always emitted as 8 bytes regardless
-    # of magnitude. Decoded as a plain int.
+    # Signed int extensions — used by Struct::Add(long), which is signed
+    # in C++.  The encoder picks the smallest signed width that fits.
+    # 0xD0/0xD1 guessed by analogy; 0xD2/0xD3 are live-confirmed.  Decoded
+    # via signed=True so values with the high bit set come back negative
+    # (we haven't observed one yet, but Struct longs *can* be negative).
+    if op == 0xD0:
+        return rdr.s_be(1)
+    if op == 0xD1:
+        return rdr.s_be(2)
+    if op == 0xD2:
+        return rdr.s_be(4)
     if op == 0xD3:
-        return rdr.u_be(8)
+        return rdr.s_be(8)
 
     # Any64BitId — tagged 64-bit. Encoding is `0xD7 + u8 TypeCode + u64`,
     # 9 bytes total after the opcode. Surface as the same shape Ryujinx

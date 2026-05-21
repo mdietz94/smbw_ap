@@ -86,11 +86,35 @@ class TestPrimitiveValues(unittest.TestCase):
         r = self._one("a1 78  ce 81 a7 03 b8")
         self.assertEqual(r.fields, {"x": 0x81A703B8})
 
-    def test_uint_u64_via_d3(self):
-        # 0xD3 + u64_be — what Struct::Add(long) emits regardless of value
-        # magnitude. Real example: stage_key 3567658589 = 0xD4A6265D.
-        r = self._one("a1 78  d3 00 00 00 00 d4 a6 26 5d")
-        self.assertEqual(r.fields, {"x": 0xD4A6265D})
+    def test_signed_s32_via_d2(self):
+        # 0xD2 + s32_be — signed 32-bit extension. Used by Struct::Add(long)
+        # when the value fits in positive s32. Real example: W1-2 Piranha
+        # Plants on Parade stage_key 232160011 = 0x0DD67B0B.
+        r = self._one("a1 78  d2 0d d6 7b 0b")
+        self.assertEqual(r.fields, {"x": 232160011})
+
+    def test_signed_s32_negative_via_d2(self):
+        # Negative s32: 0xFFFFFFFF in s32 BE = -1.
+        r = self._one("a1 78  d2 ff ff ff ff")
+        self.assertEqual(r.fields, {"x": -1})
+
+    def test_signed_s64_via_d3(self):
+        # 0xD3 + s64_be — signed 64-bit extension. Encoder bumps to s64
+        # when the value won't fit in positive s32. Real example: W1-1
+        # stage_key 2937190396 = 0xAF11F7FC (high bit set as s32 →
+        # negative; high bytes 0 in s64 keeps it positive).
+        r = self._one("a1 78  d3 00 00 00 00 af 11 f7 fc")
+        self.assertEqual(r.fields, {"x": 2937190396})
+
+    def test_signed_s8_via_d0(self):
+        # GUESSED encoding (not yet observed live). 0xD0 + s8 = -5.
+        r = self._one("a1 78  d0 fb")
+        self.assertEqual(r.fields, {"x": -5})
+
+    def test_signed_s16_via_d1(self):
+        # GUESSED encoding (not yet observed live). 0xD1 + s16 BE = -300.
+        r = self._one("a1 78  d1 fe d4")
+        self.assertEqual(r.fields, {"x": -300})
 
     def test_any64bitid_via_d7(self):
         # total_play_time = 50 = 0x32, encoded as Any64BitId.
@@ -336,6 +360,14 @@ class TestWorldResultPayload(unittest.TestCase):
 # ~8 ms after the M1 COURSE_CLEARED nerve. Contains stage_info.stage_key
 # (uniquely identifies WHICH course was just cleared) and a wealth of
 # clear-state metadata.
+#
+# IMPORTANT: this capture is a "Wonder-Seed-collected" clear — the player
+# touched the Wonder Flower and finished the Wonder Phase before reaching
+# the goal flag. That's why total_get_finish_seed_count == 1 (and why the
+# corresponding M1 WONDER_SEED_AWARDED nerve also fired during this run,
+# though that fires elsewhere in the log).  A future "no-Wonder-Seed
+# clear" capture would assert total_get_finish_seed_count == 0 and likely
+# diff in big_flower_coin_* counts; useful contrast fixture to add.
 COURSE_RESULT = _hex(
     "de 00 39 ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 62 38 31 33 65"
     "36 37 35 2d 65 62 32 35 34 63 38 61 2d 61 33 65 30 64 30 35 32 2d"
@@ -483,9 +515,77 @@ class TestCourseResultPayload(unittest.TestCase):
         self.assertTrue(all(v == 0 for v in rescue.values()))
 
     def test_total_get_finish_seed_count(self):
-        # Confirms we got the Wonder Seed in this clear.
+        # The course's Wonder Seed was collected during this playthrough
+        # (Wonder Flower touched, Wonder Phase completed, seed grabbed).
+        # M1's WONDER_SEED_AWARDED nerve fires mid-course for the same event;
+        # this field is the end-of-course confirmation.  A clear without
+        # touching the Wonder Flower would have this == 0.
         r = decode_play_report(COURSE_RESULT)
         self.assertEqual(r.fields["total_get_finish_seed_count"], 1)
+
+
+# course_in for W1-2 Piranha Plants on Parade (351 bytes, 15 fields).
+# Captured on entering the course.  Importantly exercises the 0xD2 (signed
+# s32) opcode for stage_info.stage_key — different from the W1-1 fixtures
+# which all use 0xD3 (s64).  Confirms encoder picks smallest signed width.
+W1_2_COURSE_IN = _hex(
+    "de 00 0f ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 62 38 31 33 65"
+    "36 37 35 2d 65 62 32 35 34 63 38 61 2d 61 33 65 30 64 30 35 32 2d"
+    "64 66 31 61 66 61 64 30 a9 70 6c 61 79 5f 6d 6f 64 65 01 af 74 6f"
+    "74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 d7 00 00 00 00 00 00 00 00"
+    "35 aa 73 74 61 67 65 5f 69 6e 66 6f 84 a9 73 74 61 67 65 5f 6b 65"
+    "79 d2 0d d6 7b 0b aa 77 6f 72 6c 64 5f 6b 69 6e 64 00",
+    "a8 77 6f 72 6c 64 5f 6e 6f 01 a9 63 6f 75 72 73 65 5f 6e 6f 03 ad"
+    "63 6f 75 72 73 65 5f 69 6e 5f 75 74 63 d7 00 00 00 00 00 6a 0e 61"
+    "69 b1 6c 6f 63 61 6c 5f 70 6c 61 79 65 72 5f 72 65 73 74 05 aa 6c"
+    "75 63 6b 79 5f 63 6f 69 6e cc 87 b3 77 6f 72 6c 64 5f 77 6f 6e 64"
+    "65 72 5f 66 6c 6f 77 65 72 0e a8 6e 65 74 5f 6d 6f 64 65 c2 ae 72"
+    "65 63 6f 6d 5f 62 61 64 67 65 5f 69 64 ff b2 72 65 63",
+    "6f 6d 5f 62 61 64 67 65 5f 72 65 73 75 6c 74 00 b2 70 72 65 5f 72"
+    "65 63 6f 6d 5f 62 61 64 67 65 5f 69 64 91 ff ae 65 71 75 69 70 5f"
+    "62 61 64 67 65 5f 69 64 91 22 b0 6c 6f 63 61 6c 5f 70 6c 61 79 65"
+    "72 5f 6e 75 6d 00 b1 73 79 73 74 65 6d 5f 72 65 70 6f 72 74 5f 74"
+    "61 67 ce 81 a7 03 b8",
+)
+
+
+class TestW1_2CourseInPayload(unittest.TestCase):
+    """course_in for W1-2 Piranha Plants on Parade.  Different stage_key
+    encoding than W1-1 — uses 0xD2 (s32) instead of 0xD3 (s64), because
+    232160011 fits in positive s32 while W1-1's 2937190396 does not."""
+
+    def test_decodes_clean(self):
+        self.assertEqual(len(W1_2_COURSE_IN), 351)
+        r = decode_play_report(W1_2_COURSE_IN)
+        self.assertEqual(r.entry_count, 15)
+        self.assertEqual(r.decoded_count, 15)
+        self.assertIsNone(r.error)
+
+    def test_stage_info_identifies_w1_2(self):
+        r = decode_play_report(W1_2_COURSE_IN)
+        self.assertEqual(r.fields["stage_info"], {
+            "stage_key": 232160011,
+            "world_kind": 0,
+            "world_no": 1,
+            "course_no": 3,
+        })
+
+    def test_state_fields_match_ryujinx_reference(self):
+        r = decode_play_report(W1_2_COURSE_IN)
+        self.assertEqual(r.fields["play_mode"], 1)
+        self.assertEqual(r.fields["local_player_rest"], 5)
+        self.assertEqual(r.fields["lucky_coin"], 135)
+        self.assertEqual(r.fields["world_wonder_flower"], 14)
+        self.assertEqual(r.fields["net_mode"], False)
+        self.assertEqual(r.fields["recom_badge_id"], -1)
+        self.assertEqual(r.fields["pre_recom_badge_id"], [-1])
+        self.assertEqual(r.fields["equip_badge_id"], [34])
+        self.assertEqual(r.fields["system_report_tag"], 2175206328)
+
+    def test_any64bitid_course_in_utc(self):
+        r = decode_play_report(W1_2_COURSE_IN)
+        self.assertEqual(r.fields["course_in_utc"],
+                         {"TypeCode": 0, "Value": 0x6A0E6169})
 
 
 # ---------------------------------------------------------------------------
