@@ -227,26 +227,52 @@ Hooking *any* of the PlayReport class member functions besides ctor and SetEvent
 
 The crash relocates to whichever validator subsystem notices the inconsistency first. The IPC client layer below the PlayReport class is below those validators — that's why hooking *there* is safe even though hooking the public API isn't.
 
-### PlayReport payload format (CBOR-ish, Nintendo extension)
+### PlayReport payload format
 
-Observed from a real `course_in` report (size = 355 bytes total):
+Reverse-engineered 2026-05-20 from three full payloads (world_activity / world_result / course_result, all from W1-1). Decoder is in [bridge/play_report.py](bridge/play_report.py); 44 tests pass including end-to-end decoding of all three live captures.
 
 ```
-de 00 0f                                  3-byte header: magic 0xDE + big-endian u16 entry count (15 here)
-ab 73 61...69 64                          standard CBOR text string len=11: "savedata_id"
-d9 23 62 38...64 30                       Nintendo "long string": 0xD9 + 1-byte length (0x23=35) + 35 chars (UUID)
-a9 70 6c...6f 64 65                       standard CBOR text string len=9: "play_mode"
-01                                        standard CBOR uint = 1
-af ...                                    standard CBOR text string len=15: (next field, "total_play_time")
+Header (3 bytes):
+    0xDE                      magic
+    u16 BE                    entry count
+
+Body: `entry_count` flat (key, value) pairs.
+
+Opcodes (LIVE = observed in captured bytes; otherwise GUESSED):
+    0x00..0x7F                inline uint 0..127             [LIVE]
+                              (Nintendo extends CBOR's 0..23 range —
+                              0x18..0x1B are NOT reserved here)
+    0x80..0x8F                open struct: N=op&0xF entries
+                              follow as (key, value) pairs   [LIVE]
+    0x90..0x9F                open array: N=op&0xF values    [LIVE]
+    0xA0..0xBF                short text string, len = op & 0x1F  [LIVE]
+    0xC2                      false                          [LIVE]
+    0xC3                      true                           [LIVE]
+    0xCC + u8                 uint 128..255                  [LIVE]
+    0xCD + u16 BE             uint 256..65535                [GUESSED]
+    0xCE + u32 BE             uint                           [LIVE]
+    0xCF + u64 BE             uint                           [GUESSED]
+    0xD3 + u64 BE             uint always-64-bit
+                              (what Struct::Add(long) emits) [LIVE]
+    0xD7 + u8 + u64 BE        Any64BitId: 1-byte TypeCode + 8-byte u64 Value;
+                              decoded as
+                              {"TypeCode": int, "Value": int} [LIVE]
+    0xD9 + u8 + N chars       medium text string, 0..255 ch  [LIVE]
+    0xFF                      literal -1                     [LIVE]
+
+Unmapped (no live capture — decoder raises DecodeError):
+    - floats (single / double / half)
+    - negatives other than -1 (maybe inline range in 0xE0..0xFE?)
+    - structs / arrays with >15 entries (extension opcode TBD)
+    - strings >255 chars (likely 0xD8 + u16 + chars)
 ```
 
-So the encoding is *almost* standard CBOR, with one tweak:
-- Short strings (≤31 chars): standard `0xA0+len` prefix + chars.
-- Medium strings (32-255 chars): **Nintendo extension** — `0xD9 + 1-byte length + chars`. (Standard CBOR would use `0x78` here.)
-- Small uints (≤23): standard `0x00-0x17`.
-- Larger uints, floats, bools, nested struct/array: TBD as observed during corpus expansion; the prepo "TypeCode/Value" wrapper for `total_play_time` suggests u64s use a tagged-pair encoding.
+Important nuances:
+- 0x80-0x8F (structs) vs 0x90-0x9F (arrays) are explicitly different opener ranges — the decoder picks dict vs list by the opener nibble, not by peeking at children.
+- The encoder uses different opcodes for the same magnitude depending on which `Add` overload was called: top-level `PlayReport::Add(long)` minimizes width (`cc`/`ce`); `Struct::Add(long)` always emits `d3` + 8 bytes regardless of magnitude. Both decode to plain ints.
+- `arena_score_enter = 4294967295` and `last_put_panel_id = -1` are both "all-ones" semantically but encode differently — the former is `ce ff ff ff ff` (genuine u32 max), the latter is `ff` (the -1 short form). The C++ caller's signedness flows through.
 
-Decoder lives in the PC-side Python bridge (M4). Test corpus is the captured byte sequences logged by `prepo.ipc.bytes`.
+Test fixtures and assertion sets live in [bridge/test_play_report.py](bridge/test_play_report.py). Iterate by playing through new scenarios (secret exit, palace clear, item pickup), pasting the new `prepo.ipc.bytes(...)` lines into a fixture, and adding assertions.
 
 ### Known room names so far (corpus grows organically)
 
@@ -257,11 +283,12 @@ Decoder lives in the PC-side Python bridge (M4). Test corpus is the captured byt
 | `erepo_time`, `erepo_playstyle`, `erepo_network_status`, `erepo_active_beacon` | boot | SDK telemetry, skip |
 | `game_option` | settings change / boot finalize | `savedata_id`, `play_mode`, `scene_type`, control-type arrays |
 | `world_activity` | world-map activity update | `stage_info.{stage_key, world_no}`, `wonder_seed`, `wonder_coin` |
-| `world_result` | world-map → course transition | `stage_info` (source), **`next_stage_info.{stage_key, course_id, stage_type}`** (destination) |
+| `world_result` | world-map → course transition | `stage_info` (source), **`next_stage_info.{stage_key, course_id, stage_type, world_no, world_kind}`** (destination) |
 | `course_in` | course actually loading | **`stage_info.{stage_key, world_no, course_no}`**, `local_player_rest`, `lucky_coin`, `world_wonder_flower`, `equip_badge_id[]` |
+| **`course_result`** | **course CLEARED — fires ~8 ms after M1 `COURSE_CLEARED` nerve** | **`stage_info.{stage_key, world_no, course_no}` identifies the cleared course; `course_result` (1=clear), `touch_goal_top_{enter,result}` (bool, Top-of-Flag distinguisher), `goal_id`, `badge_id_array`, `total_get_finish_seed_count`, all flower-coin / yellow-coin counts** |
 | `koopajr_result` | palace boss clear (from pre-M2.4 RE; not yet captured live) | `stage_info`, `battle_result`, `badge_id_array`, `koopajr_total_time` |
 
-The course-clear room name (e.g. `course_result`?) is still unknown — needs a captured level clear to identify.
+The `course_result` discovery (2026-05-20) closes the M2.5 distinguisher question: every clear-state field we need (Top of Flag, goal identity, coin counts, badges held) is in the payload. See [bridge/test_play_report.py](bridge/test_play_report.py) `COURSE_RESULT` fixture — 1577 bytes, 57 fields, decoded end-to-end and asserted against Ryujinx's reference output.
 
 ## What didn't work (don't repeat these)
 

@@ -18,6 +18,9 @@ smwonder_archipelago/             ← outer git repo (this one)
 ├── docs/
 │   ├── handoff.md                  current state + recent decisions (READ FIRST)
 │   └── milestones.md               M1-M7 roadmap
+├── bridge/                         PC-side Python: PlayReport decoder + tests
+│   ├── play_report.py              CBOR-ish format decoder (see header docstring)
+│   └── test_play_report.py         44 tests; 3 live W1-1 fixtures
 ├── manual_smbwonder_zim/           existing Archipelago Manual apworld (Python)
 │                                   gets replaced when M4+M5 land
 └── switch-mod/                     fork of mdietz94/wondar (its own git repo)
@@ -154,11 +157,12 @@ Recipe for finding a new Nerve hook target:
 - `COURSE_CLEARED` — every successful flagpole touch + every palace boss clear (206 AP checks lumped; exit-type splitting is M2.5).
 - Total: 330 / 663 AP checks covered (49.8%).
 
-**M2.4 (✅ Switch-side done, decoder pending)**: PlayReport payload capture via the IPC-layer pattern (see above). Room name corpus + per-event field map grows organically as the user plays through more content.
+**M2.4 (✅ done — Switch capture + Python decoder + W1-1 corpus)**: PlayReport payload capture via the IPC-layer pattern; Python decoder in [bridge/play_report.py](bridge/play_report.py) handles the Nintendo CBOR-ish format end-to-end (44 tests pass, including full decode of three live W1-1 payloads). Critically:
+- `course_result` room fires ~8ms after the M1 `COURSE_CLEARED` nerve. Its payload carries `stage_info.stage_key` (unique per-course identifier), `touch_goal_top_{enter,result}` (Top-of-Flag distinguisher), `goal_id`, `badge_id_array`, `total_get_finish_seed_count`, and all coin counts.
+- This closes the M2.5 exit-type distinguisher problem at zero additional cost.
 
-**Next** (per [docs/milestones.md](docs/milestones.md) section M2/M3/M4):
-- Expand M2.4 room-name corpus (one level clear + one palace clear + one secret exit).
-- Write the Python decoder for the CBOR-ish PlayReport format.
+**Next** (per [docs/milestones.md](docs/milestones.md)):
+- Expand the room-name corpus organically: capture a secret exit (W1-2 Piranha Plants on Parade) and a palace clear (Pipe-Rock Plateau Palace) to confirm `goal_id` semantics and capture `koopajr_result` bytes.
 - M2.2: 10-coin Nerve hunt (305 AP checks, biggest remaining bucket).
 - M4: LAN socket + Python bridge — the moment the captured IPC bytes ship over the wire to a real consumer.
 

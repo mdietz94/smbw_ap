@@ -65,18 +65,23 @@ Each badge unlock event sends one of the 24 `<Badge> Obtained` AP checks. The ba
 
 ### M2.4 — PlayReport hook for course-identification (huge unlock)
 
-**Status (2026-05-20 evening)**: ✅ **Switch-side capture working via the IPC-layer pattern**. Decoder pending in M4 Python bridge.
+**Status (2026-05-20 evening)**: ✅ **DONE — Switch-side capture + Python decoder + W1-1 corpus**.
 
-After a 4-step bisect, the working hook set is:
+Working hook set (locked in after a 4-step bisect):
 
 1. `nn::prepo::PlayReport::SetEventId` (sdk +0x3a81a0) — captures the room name.
-2. `CmifProxyImpl<IPrepoService>::_nn_sf_sync_SaveReport` (sdk +0x3a9f8c) and `..._SaveReportWithUser` (sdk +0x3a9fac) — capture the already-serialized payload bytes.
+2. `CmifProxyImpl<IPrepoService>::_nn_sf_sync_SaveReport` (sdk +0x3a9f8c) and `..._SaveReportWithUser` (sdk +0x3a9fac) — capture the already-serialized payload bytes (now chunked across multiple `prepo.ipc.bytes(start..end/total)` log lines, 128 bytes/line).
 
-What did NOT work (and is now permanently off-limits per the bisect): hooking any of `PlayReport::Save()`, `Save(Uid&)`, or the 8 `Add(...)` overloads (or the 2 `Struct::Add` overloads). Each triggers a delayed audit-thread abort 5-6 seconds later on whichever SDK validator thread next touches the prepo subsystem (observed: `ModuleSystemWorker1`, `gmd::SaveDataMgr`).
+PERMANENTLY off-limits (per bisect): hooking any of `PlayReport::Save()`, `Save(Uid&)`, the 8 `PlayReport::Add(...)` overloads, or the 2 `Struct::Add` overloads. Each triggers a delayed audit-thread abort 5-6 seconds later on whichever SDK validator thread next touches the prepo subsystem (observed: `ModuleSystemWorker1`, `gmd::SaveDataMgr`).
 
-Captured live on 2026-05-20: `course_in` report from entering Bulrush Coming Through (`stage_key=2308078743, course_no=30`, 355 bytes), confirming the IPC payload contents match what Ryujinx's `ServicePrepo ProcessPlayReport` decoder prints. Other captured room names so far: `bootup_time`, `erepo_{region,time,playstyle,network_status,active_beacon}`, `game_option`, `world_activity`, `world_result`, `course_in`. The course-clear room name remains uncaptured (next session task).
+Captured live 2026-05-20 (W1-1 Welcome to the Flower Kingdom playthrough):
+- `world_activity` (239 bytes, 10 fields) — fires when stepping onto a course tile.
+- `world_result` (1059 bytes, 26 fields) — fires on overworld→course transition; carries `next_stage_info.stage_key` (destination identifier).
+- **`course_result`** (1577 bytes, 57 fields) — **fires ~8 ms after the M1 `COURSE_CLEARED` nerve**. Carries `stage_info.stage_key` (cleared course), `touch_goal_top_{enter,result}` (the M2.5 Top-of-Flag distinguisher!), `goal_id`, `badge_id_array`, `total_get_finish_seed_count`, all coin counts.
 
-Format is CBOR-ish with one Nintendo extension (medium-length strings use `0xD9 + 1-byte length` instead of standard CBOR `0x78`). 3-byte header (`0xDE` + big-endian u16 entry count) wraps the otherwise flat key-value sequence. Decoder lives in M4 Python bridge.
+Format (CBOR-ish with Nintendo extensions): 3-byte header (`0xDE` + big-endian u16 entry count), then flat key-value pairs. Strings use 0xA0-0xBF (short) / 0xD9 (medium). Uints have multiple opcodes (0x00-0x7F inline, then 0xCC/0xCE for narrow forms, 0xD3 for "always 64-bit" used by `Struct::Add`). Structs are 0x80-0x8F, arrays are 0x90-0x9F. Booleans are 0xC2/0xC3 (NOT CBOR-standard 0xF4/0xF5). Any64BitId tagged values use `0xD7 + u8 TypeCode + u64`. Negative -1 has its own short form `0xFF`.
+
+Decoder + 44 tests in [bridge/play_report.py](bridge/play_report.py) and [bridge/test_play_report.py](bridge/test_play_report.py). The three live W1-1 payloads decode end-to-end and assert against Ryujinx's reference output. See [docs/handoff.md](docs/handoff.md) for the full opcode table and remaining unmapped types (floats, multi-byte negatives, larger containers).
 
 Discovered post-M1: the game emits structured telemetry via `nn::prepo::PlayReport`. Each event carries rich state. The `koopajr_result` report we observed contained:
 
@@ -115,6 +120,13 @@ The combination — Nerve hooks for in-level events, PlayReport hook for level i
 ### M2.5 — Goal exit-type distinguisher
 
 `COURSE_CLEARED` fires on all valid clears but doesn't yet distinguish Normal Exit (96) / Secret Exit (9) / Fake Exit (5) / Top of Flag (89) / Royal Seed palace clear (7). For AP completeness we need that split.
+
+**Status (2026-05-20)**: ✅ **largely solved at zero additional cost by M2.4**. The `course_result` payload carries:
+- `touch_goal_top_enter` / `touch_goal_top_result` (bool) — **Top of Flag distinguisher** (89 checks).
+- `goal_id` (uint) — likely the Normal/Secret/Fake distinguisher (110 checks total).
+- `course_result` (uint) — overall clear-type code.
+
+Captured live in the W1-1 clear corpus: `touch_goal_top_*=True` (because we touched the top of the pole), `goal_id=0` (Normal Exit). To map `goal_id` values 1..N → exit kinds, capture one secret-exit clear and one fake-exit clear and diff. Palace clears (`koopajr_result`) similarly carry their own identifier — needs one palace capture.
 
 **First check**: if M2.4's PlayReport hook lands and the post-clear PlayReport carries an `exit_type` / `clear_type` / `goal_kind` field, the entire problem is solved at zero cost. The koopajr_result report's `battle_result` field is precedent for engine-side enum tagging of result types.
 
