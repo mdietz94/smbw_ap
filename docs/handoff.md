@@ -294,10 +294,10 @@ Test fixtures and assertion sets live in [bridge/test_play_report.py](bridge/tes
 | `world_activity` | world-map activity update | `stage_info.{stage_key, world_no}`, `wonder_seed`, `wonder_coin` |
 | `world_result` | world-map → course transition | `stage_info` (source), **`next_stage_info.{stage_key, course_id, stage_type, world_no, world_kind}`** (destination) |
 | `course_in` | course actually loading | **`stage_info.{stage_key, world_no, course_no}`**, `local_player_rest`, `lucky_coin`, `world_wonder_flower`, `equip_badge_id[]` |
-| **`course_result`** | **course CLEARED — fires ~8 ms after M1 `COURSE_CLEARED` nerve** | **`stage_info.{stage_key, world_no, course_no}` identifies the cleared course; `course_result` (1=clear), `touch_goal_top_{enter,result}` (bool, Top-of-Flag distinguisher), `goal_id`, `badge_id_array`, `total_get_finish_seed_count`, all flower-coin / yellow-coin counts** |
+| **`course_result`** | **course CLEARED — fires ~8 ms after M1 `COURSE_CLEARED` nerve** | **`stage_info.{stage_key, world_no, course_no}` identifies the cleared course; `goal_id` (0=normal pole, 1=secret exit, 2=fake exit guessed); `touch_goal_top_{enter,result}` (bool, distinguishes Top of Flag from Normal Exit when `goal_id=0`); `course_result` (1=clear); `badge_id_array`; `total_get_finish_seed_count`; all flower-coin / yellow-coin counts** |
 | `koopajr_result` | palace boss clear (from pre-M2.4 RE; not yet captured live) | `stage_info`, `battle_result`, `badge_id_array`, `koopajr_total_time` |
 
-The `course_result` discovery (2026-05-20) closes the M2.5 distinguisher question: every clear-state field we need (Top of Flag, goal identity, coin counts, badges held) is in the payload. See [bridge/test_play_report.py](bridge/test_play_report.py) `COURSE_RESULT` fixture — 1577 bytes, 57 fields, decoded end-to-end and asserted against Ryujinx's reference output.
+The `course_result` discovery (2026-05-20) closes the M2.5 distinguisher question: every clear-state field we need (Top of Flag, goal identity, coin counts, badges held) is in the payload. Two live fixtures now lock in the exit-type mapping table — see [bridge/test_play_report.py](bridge/test_play_report.py) `COURSE_RESULT` (W1-1 Top of Flag, `goal_id=0`) and `W1_2_COURSE_RESULT_SECRET` (W1-2 Secret Exit, `goal_id=1`), plus `TestM25ExitTypeMapping` for the discrimination logic. 194 of 199 goal-clear AP checks are now classifiable; only Fake Exit (5 checks) and palace clears (7 checks) await live captures to fully complete.
 
 ## What didn't work (don't repeat these)
 

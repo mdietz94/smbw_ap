@@ -121,12 +121,17 @@ The combination — Nerve hooks for in-level events, PlayReport hook for level i
 
 `COURSE_CLEARED` fires on all valid clears but doesn't yet distinguish Normal Exit (96) / Secret Exit (9) / Fake Exit (5) / Top of Flag (89) / Royal Seed palace clear (7). For AP completeness we need that split.
 
-**Status (2026-05-20)**: ✅ **largely solved at zero additional cost by M2.4**. The `course_result` payload carries:
-- `touch_goal_top_enter` / `touch_goal_top_result` (bool) — **Top of Flag distinguisher** (89 checks).
-- `goal_id` (uint) — likely the Normal/Secret/Fake distinguisher (110 checks total).
-- `course_result` (uint) — overall clear-type code.
+**Status (2026-05-20)**: ✅ **DONE for 194 of 199 checks; awaiting Fake Exit + palace capture for the remaining 12.** Empirically derived mapping table from W1-1 (Normal Top-of-Flag) + W1-2 (Secret Exit) captures:
 
-Captured live in the W1-1 clear corpus: `touch_goal_top_*=True` (because we touched the top of the pole), `goal_id=0` (Normal Exit). To map `goal_id` values 1..N → exit kinds, capture one secret-exit clear and one fake-exit clear and diff. Palace clears (`koopajr_result`) similarly carry their own identifier — needs one palace capture.
+| AP sub-type | Discriminator | Empirical evidence |
+|---|---|---|
+| Top of Flag (89) | `goal_id == 0` AND `touch_goal_top_result == True` | ✅ W1-1 capture |
+| Normal Exit (96) | `goal_id == 0` AND `touch_goal_top_result == False` | partial — no non-top-touch normal-exit capture yet, but logic follows from the W1-1 evidence |
+| Secret Exit (9) | `goal_id == 1` (regardless of `touch_goal_top_*`) | ✅ W1-2 capture |
+| Fake Exit (5) | `goal_id == 2` (guessed) | TBD — capture a Fake Exit (5 courses have one) |
+| Palace Clear (7) | `room_name == "koopajr_result"` | known from pre-M2.4 RE; not yet captured live |
+
+W1-2 capture: `goal_id=1, touch_goal_top_result=True`. Confirms `goal_id` is the primary discriminator and `touch_goal_top_*` is orthogonal (a secret-exit pole can also be top-touched). The mapping logic is locked into [bridge/test_play_report.py](bridge/test_play_report.py) `TestM25ExitTypeMapping`.
 
 **First check**: if M2.4's PlayReport hook lands and the post-clear PlayReport carries an `exit_type` / `clear_type` / `goal_kind` field, the entire problem is solved at zero cost. The koopajr_result report's `battle_result` field is precedent for engine-side enum tagging of result types.
 
