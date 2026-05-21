@@ -204,23 +204,27 @@ The HamletDuFromage cheat DB gave us:
 
 The event Nerve `vt_off=0x33fd870` fires on damage *and* power-up pickup (we observed this in M1 testing). Worth peeking that Nerve's vtable to see if it's a `RequestEventApplyPowerUp` family member.
 
-### M3.2 — badge unlock (24 items, inverse of M2.3) — MVP
+### M3.2 — badge unlock (24 items, inverse of M2.3) — DEFERRED (save-diff path)
 
-The Ghidra string dump from the M1 `Cleared` search turned up two candidate function-name strings:
+**Status (2026-05-21)**: 7 Ghidra scripts ([scripts/ghidra/find_badge_*.py](../scripts/ghidra/) and [scripts/ghidra/inspect_badge_*.py](../scripts/ghidra/)) failed to surface a usable grant function via string-based RE. Findings:
 
-- `GiveBadgeIdOnCourseClear` (NSO string at `0x7102903f19`)
-- `UnlockBadgeIdOnCourseClear` (NSO string at `0x710291dc73`)
+- `GiveBadgeIdOnCourseClear` and `UnlockBadgeIdOnCourseClear` resolve to **course-config property getters** (FUN_7101a592fc / FUN_7101b204a8), not action functions — they read the badge_id associated with a course but don't grant it.
+- `FUN_7101b1fb6c` (the function that references both strings) is a **test harness** that exercises the getters and reports results via vtable callbacks.
+- The four acquisition-context strings (`BadgeShop`, `BadgeChallenge`, `BadgeHouse`, `BadgeMedley`) appear only in **struct initializers, string-compare loops, and debug log formatters** — no shared grant helper is called.
+- The `BadgeFlower` actor class-name string has exactly one xref in the binary, in a 6.7 KB-stack dispatcher that uses the string as one struct field among many — not a class-name getter.
+- No `Add*` / `Grant*` / `Acquire*` / `*::Add` named functions exist in the badge family.
 
-These look like function symbol names emitted into the binary (Nintendo's internal debug-name path). Plan:
+**Conclusion**: the badge-add operation is either (a) compiled as a direct bit-write inside a larger function with no exposed string name, or (b) routed through vtable indirection that's invisible to Ghidra's static xref pass. Either way, string-RE has bottomed out.
 
-1. **Find xrefs** in Ghidra for each string. Trace to the function address.
-2. **Confirm signature** by inspecting prologue / register usage. Probably `void(int badge_id)` or `Result(uint badge_id)`.
-3. **One-time read hook** to confirm: when the game itself unlocks a badge via course clear, our hook fires with the badge_id; cross-check against `course_result.badge_id_array` from the same clear's PlayReport.
-4. **Call from our code** on AP item grant: `GiveBadgeIdOnCourseClear(ap_badge_id)`.
+**Path forward — save-diff**:
 
-Same function serves outgoing M2.3 (detection) and incoming M3.2 (granting). Two-way wiring from a single Ghidra effort.
+1. Boot the game, save state. Capture file `before.bin` from `%APPDATA%\Ryujinx\bis\user\save\<save-id>\`.
+2. Acquire a badge in-game (clear a Badge Challenge, buy from Badge Shop, etc.).
+3. Save state again. Capture as `after.bin`.
+4. Diff the two with a Python script (TBD).  Differing bytes locate the badge bitfield.
+5. From the bitfield address: our subsdk writes the bit when AP grants a badge.  Bypasses the function-search problem entirely.
 
-**Risk**: the function may require a valid course-clear context (look for `OnCourseClear` in the name — implies it's called from inside the clear handler with state set up). If so, find a higher-level "AddBadgeToCollection" function instead by reading what `GiveBadgeIdOnCourseClear` calls.
+Defer until after M3.3 + M4 land; the bridge can ship without badge grants and we revisit when there's a quiet hour for save-data capture.
 
 ### M3.3 — Wonder Seed grant (124 items, MVP)
 

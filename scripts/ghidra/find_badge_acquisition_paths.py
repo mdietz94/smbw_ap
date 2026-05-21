@@ -60,14 +60,21 @@ def addr(n):
 
 
 def get_label_for_target(target_int):
+    # Cheap reject for values that can't be a valid NSO address.
     if target_int <= 0 or target_int < 0x7100000000:
+        return ""
+    if target_int > 0x7200000000:
+        # Beyond our binary's address space — treat as random data.
         return ""
     fn_mgr = currentProgram.getFunctionManager()
     try:
         a = addr(target_int)
     except Exception:
         return ""
-    fn = fn_mgr.getFunctionContaining(a)
+    try:
+        fn = fn_mgr.getFunctionContaining(a)
+    except Exception:
+        fn = None
     if fn is not None:
         if fn.getEntryPoint().getOffset() == target_int:
             return "fn:%s" % fn.getName()
@@ -75,20 +82,21 @@ def get_label_for_target(target_int):
             return "in-fn:%s+0x%x" % (
                 fn.getName(),
                 target_int - fn.getEntryPoint().getOffset())
-    # String?
+    # String? — wrap getByte in a defensive try since random qwords
+    # may resolve to unmapped memory.
     memory = currentProgram.getMemory()
     bs = bytearray()
     for i in range(64):
         try:
             b = memory.getByte(a.add(i)) & 0xff
         except Exception:
-            break
+            return ""
         if b == 0:
             if len(bs) >= 3:
                 return "str:%r" % bs.decode("ascii", "replace")
-            break
+            return ""
         if b < 0x20 or b > 0x7e:
-            break
+            return ""
         bs.append(b)
     return ""
 
