@@ -29,12 +29,17 @@ This is the "next session, hi me again" doc. Read it first.
 | M2.4 — PlayReport capture (real-hardware path) | ✅ done | SetEventId + IPC SaveReport hooks; Python decoder lives in [bridge/play_report.py](bridge/play_report.py); 87 tests pass against 9 live fixtures |
 | M2.5 — Exit-type discrimination | ✅ 199/199 structurally classifiable | mapping table in `TestM25ExitTypeMapping`; only Fake Exit `goal_id` value (guessed 2) lacks live capture; palace WIN+LOSS both captured |
 
-**Next session priorities** (from M2.6 → M3 MVP → M4 demo per milestones.md "Recommended pacing"):
+**Status update (2026-05-21)**:
 
-1. **M2.6** — Wonder Seed per-level identification via course correlation in the bridge. No new Switch-side code; preferred approach unlocked by M2.4. Fallback (placement-hash read) only needed for courses with multiple Wonder Phase seeds.
-2. **M3.2 + M3.3 + M3.3b** — Ghidra session to find: badge grant function (`GiveBadgeIdOnCourseClear`), Wonder Seed counter increment, Royal Seed grant. Same Ghidra effort serves outgoing detection + incoming grant.
-3. **M3.8** — DeathLink (detect via Mario-death nerve; trigger via death-application function — bidirectional).
-4. **M4.1 + M4.2** — LAN socket + Python bridge skeleton. End-to-end demo: AP client receives Wonder Seed pickup from in-game; AP-granted badge appears in Mario's collection.
+- ✅ **M2.6** done — bridge skeleton + course correlation; 106 Python tests passing (`bridge/`).
+- ❌ **M3.2 + M3.3 + M3.3b grant-function RE failed.** 11 Ghidra scripts plus a runtime probe characterized the badge system as "no exposed grant API" (label strings only — UI / state-machines / log) and the wonder-seed system as a generic counter getter keyed by 32-bit hashes of internal stat names where SMBW uses a custom hash function none of CRC32 / FNV / DJB2 / SDBM / Murmur3 reproduce. **All three are now deferred to a save-diff sprint** ([save-diff-grants.md](save-diff-grants.md)).
+
+**Next session priorities** (revised 2026-05-21, see [milestones.md](milestones.md) "Forward plan"):
+
+1. **M3.8 DeathLink detection** — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` and find a discriminator for actual deaths vs the noise sources. Switch-mod only, no RE dead-ends.
+2. **M4.1 + M4.2 LAN socket** — Switch mod ↔ Python bridge wiring. Once it lands the outgoing surface (M1 + M2 + DeathLink detection) is end-to-end demonstrable against an AP server.
+3. **Save-diff sprint** ([save-diff-grants.md](save-diff-grants.md)) — capture badge / wonder seed / royal seed before+after pairs, diff, identify offsets, build the runtime address anchor in the subsdk, wire up the three grant functions in one batch.
+4. **DeathLink trigger** (incoming half of M3.8) — Ghidra for the death-application function or a HP=0 fallback.
 
 10-coin nerve hunt (M2.2 — 305 checks) deferred until after the MVP ships, per 2026-05-20 scope decision.
 

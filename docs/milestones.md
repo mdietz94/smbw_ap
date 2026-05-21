@@ -216,38 +216,25 @@ The event Nerve `vt_off=0x33fd870` fires on damage *and* power-up pickup (we obs
 
 **Conclusion**: the badge-add operation is either (a) compiled as a direct bit-write inside a larger function with no exposed string name, or (b) routed through vtable indirection that's invisible to Ghidra's static xref pass. Either way, string-RE has bottomed out.
 
-**Path forward — save-diff**:
+**Path forward — save-diff**: full handoff is in [docs/save-diff-grants.md](save-diff-grants.md). Same diff procedure as M3.3 / M3.3b — they're now all one batched workstream.
 
-1. Boot the game, save state. Capture file `before.bin` from `%APPDATA%\Ryujinx\bis\user\save\<save-id>\`.
-2. Acquire a badge in-game (clear a Badge Challenge, buy from Badge Shop, etc.).
-3. Save state again. Capture as `after.bin`.
-4. Diff the two with a Python script (TBD).  Differing bytes locate the badge bitfield.
-5. From the bitfield address: our subsdk writes the bit when AP grants a badge.  Bypasses the function-search problem entirely.
+Defer until after the M4 LAN bridge ships; the bridge can run with outgoing-checks-only for now, and we revisit grants together when there's a focused session for save-data capture.
 
-Defer until after M3.3 + M4 land; the bridge can ship without badge grants and we revisit when there's a quiet hour for save-data capture.
+### M3.3 — Wonder Seed grant (124 items) — DEFERRED (save-diff path)
 
-### M3.3 — Wonder Seed grant (124 items, MVP)
+**Status (2026-05-21)**: 4 Ghidra scripts + a runtime probe + a hash-reversing attempt failed to produce a usable grant entry point. Findings:
 
-Per-world Wonder Seed counter is at NSO `+0x12AF6C` per the HamletDuFromage cheat DB (which fixes the read-side to a forced 100). We want the **write** side — the increment function the engine calls when Mario grabs a Wonder Seed.
+- NSO `+0x12AF6C` (HamletDuFromage's "[seed]" cheat anchor) is *not* a data field — it's an `ldr w8, [x8]` instruction inside `FUN_710012ae94`, a **generic counter getter keyed by 32-bit hashes of internal stat names**.
+- The function reads from a hash table at `container[+0xe0]` (bucket array, size at `+0xec` = 140 buckets), with per-entry data at `container[+0xd8]` (40-byte stride, value at `+0x1c`).
+- The runtime probe captured the container address as `0x20d3da07a8` (constant per session). Confirmed identifications by cross-referencing PlayReport values: `key=0xf4ee6827 → value=148` matches `flower_coin_course_out`; `key=0x17f0bb21 → value=26` matches `total_play_time_sec`.
+- **The wonder-seed-specific key wasn't surfaced** in any captured session — and even if it were, granting requires identifying the *writer* in the same hash table, which has no obvious string anchor.
+- Hash-reversing ([scripts/identify_seed_keys.py](../scripts/identify_seed_keys.py)) tried CRC32 / FNV-1 / FNV-1a / DJB2 / SDBM against ~100 candidate stat names — no matches. SMBW uses a custom hash (likely a Nintendo-specific Murmur variant or an internal one).
 
-Plan:
+**Path forward — save-diff** ([docs/save-diff-grants.md](save-diff-grants.md)): capture save buffer before/after one wonder-seed acquisition, diff the bytes, identify the per-course flag + per-world counter, write the same change in our subsdk when AP sends a grant.
 
-1. **Find xrefs** for the field at `+0x12AF6C` in Ghidra. Filter for writers (str/strb instructions or compute-then-store patterns).
-2. **Identify the increment function**. Likely fires once per WONDER_SEED_AWARDED — could confirm by hooking it briefly and counting fires against our existing nerve hook.
-3. **Call from our code** with the AP-granted Wonder Seed item. Match its signature (probably `(world_index, +1)` or `(world_index, new_total)`).
+### M3.3b — Royal Seed grant (7 items) — DEFERRED (same path)
 
-**Caveat**: the field at `+0x12AF6C` is per-WORLD totals (not per-seed). Granting a Wonder Seed bumps the world's count by 1. That's the natural Switch-side behavior; the AP world maps "specific AP Wonder Seed item" to "+1 in world N".
-
-### M3.3b — Royal Seed grant (7 items, MVP — NEW)
-
-7 Royal Seeds (one per palace). Earned in-game by `koopajr_result.battle_result == True`.
-
-Two parts to investigate in Ghidra:
-
-1. **Where the win path writes the Royal Seed flag.** Search for code reachable from the palace-clear save-data write that touches a different bit/field than the regular course-clear flag (since palaces give *both* a course-clear AND a Royal Seed). Likely a function like `GiveRoyalSeedForPalace(palace_id)` or similar.
-2. **Per-palace state**: the 7 Royal Seeds need individual flags. They might live in a bitfield indexed by palace_id (`world_no` or `course_no` from the koopajr_result payload).
-
-**Risk**: the engine may not have a public "grant Royal Seed" API — it could be intertwined with the boss-clear flow. If so, write the save bit directly. Slower-burn investigation than M3.3.
+Same family as M3.3 — the per-palace flag + counter should appear as 1 bit change + a u8 increment in the same save-diff procedure. Likely surfaced in the same diff pass since palace clears already produce a `world_mother_seed=True` indicator. See [docs/save-diff-grants.md](save-diff-grants.md).
 
 ### M3.4 — character roster unlock (12 items) — DEFERRED
 
@@ -383,12 +370,17 @@ History (closed):
 - ✅ Session 2: M2.4 + M2.5 — PlayReport IPC capture, Python decoder, full corpus of 9 live fixtures across W1-1/W1-2/Palace clears + W1→W2 transition.
 
 Plan (next):
-- **Session 3 (next)**: M2.6 — wire course correlation in the bridge skeleton (Python). This is mostly Python work: maintain `current_course`, attribute WONDER_SEED_AWARDED fires to it. No new Switch-side code.
-- **Session 4**: M3.2 + M3.3 + M3.3b Ghidra session. Find badge grant function, Wonder Seed counter increment, Royal Seed grant. Hook one of each for read-confirm; expose grant functions for call.
-- **Session 5**: M3.8 DeathLink Ghidra. Find the clean death-only nerve (vs the noisy 0x33fd9a8) and the death-triggering function.
-- **Session 6**: M4.1 + M4.2. LAN socket from Switch mod ↔ Python bridge. End-to-end demo: AP client logs a Wonder Seed pickup from in-game; AP grants a badge that appears in Mario's badge collection.
+History (closed since 2026-05-20):
+- ✅ Session 3: M2.6 bridge skeleton — state + protocol + processor, 106 tests passing.
+- ❌ Sessions 4 + 5: M3.2 + M3.3 + M3.3b Ghidra attempts. 11 scripts deep, no usable grant API. **Pivoted** to save-diff per [save-diff-grants.md](save-diff-grants.md) for all three items.
 
-Deferred until after the MVP demo:
+Forward plan (revised 2026-05-21):
+- **Session 6 (next)**: M3.8 DeathLink detection — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8`, find a discriminator for actual deaths vs the noise sources (post-seed cleanup / world-map travel). Pure Switch-mod work, no RE dead-ends.
+- **Session 7**: M4.1 + M4.2 — LAN socket from Switch mod ↔ Python bridge. End-to-end demo of the outgoing surface: AP client logs Wonder Seed pickups, course clears, palace clears, deaths — all flowing from game → Switch mod → TCP → bridge → AP. **Outgoing-only MVP ships here**; grants are still TBD.
+- **Session 8**: save-diff sprint per [save-diff-grants.md](save-diff-grants.md). Capture badge before/after, wonder seed before/after, royal seed before/after. Diff, identify offsets, build the runtime address anchor in the subsdk, wire up the three grant functions.
+- **Session 9**: DeathLink triggering (the "kill Mario from AP" half) — Ghidra to find the death-application function, or a fallback like HP=0 write.
+
+Deferred indefinitely until after the MVP demo:
 - M2.2 (10-coin nerve hunt) — 305 outgoing checks, biggest unrouted bucket.
 - M3.1 (power-up grant), M3.4 (characters), M3.5 (Wonder Flower / Effect suppression), M3.6 (button suppression), M3.7 (goal hook).
 - M5 (replace manual_smbwonder_zim with integrated apworld).

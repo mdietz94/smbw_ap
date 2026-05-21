@@ -17,7 +17,8 @@ smwonder_archipelago/             ← outer git repo (this one)
 ├── CLAUDE.md                       you are here
 ├── docs/
 │   ├── handoff.md                  current state + recent decisions (READ FIRST)
-│   └── milestones.md               M1-M7 roadmap
+│   ├── milestones.md               M1-M7 roadmap
+│   └── save-diff-grants.md         M3 grants handoff (Ghidra dead-end; pivot to save-diff)
 ├── bridge/                         PC-side Python: PlayReport decoder + tests
 │   ├── play_report.py              CBOR-ish format decoder (see header docstring)
 │   └── test_play_report.py         44 tests; 3 live W1-1 fixtures
@@ -161,11 +162,15 @@ Recipe for finding a new Nerve hook target:
 
 The M2.5 exit-type discriminator table is locked in (199/199 goal+palace AP checks structurally classifiable). Importantly: a palace WIN emits BOTH `course_result` AND `koopajr_result` ~1 ms apart for the same event — the bridge prefers `koopajr_result` when both fire; `course_result.world_mother_seed == True` is a defensive cross-check.
 
-**Next** (per [docs/milestones.md](docs/milestones.md) "Recommended pacing"):
-- **M2.6**: Wonder Seed per-level identification via course correlation in the bridge (no Switch-side code).
-- **M3.2 / M3.3 / M3.3b**: Ghidra session for incoming item grants (badges, Wonder Seeds, Royal Seeds).
-- **M3.8**: DeathLink (bidirectional — detect Mario death + trigger Mario death from AP).
-- **M4**: LAN socket + Python bridge skeleton — end-to-end demo.
+**M2.6 (✅ done — bridge skeleton + course correlation)**: state + protocol + processor in `bridge/`, 106 Python tests passing across PlayReport decode + event-routing.
+
+**M3 grant RE (❌ dead-end, 2026-05-21)**: 11 Ghidra scripts + a runtime probe failed to find usable grant entry points for badges / Wonder Seeds / Royal Seeds. The badge system has only label strings (UI / state-machine / log); the Wonder Seed counter is a generic hash-keyed getter where SMBW uses a custom hash function none of CRC32 / FNV / DJB2 / SDBM / Murmur3 reproduce. **All three grant types are now deferred to a save-diff sprint** — see [docs/save-diff-grants.md](docs/save-diff-grants.md) for the full handoff.
+
+**Next** (per [docs/milestones.md](docs/milestones.md) "Forward plan"):
+- **M3.8 DeathLink detection** (next): extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` with a noise discriminator. Switch-mod only, no RE dead-ends.
+- **M4.1 + M4.2 LAN socket**: ships the outgoing-only MVP end-to-end (AP server sees Wonder Seed pickups, course clears, palace clears, deaths from the game over real TCP).
+- **Save-diff sprint** ([docs/save-diff-grants.md](docs/save-diff-grants.md)): capture before+after pairs, diff, identify offsets, build the runtime address anchor + grant code. Closes M3.2 / M3.3 / M3.3b in one batch.
+- **DeathLink trigger** (incoming half of M3.8): Ghidra for death-application function or HP=0 fallback.
 - Deferred: M2.2 (10-coin), M3.1 (power-ups), M3.4 (chars), M3.5 (wonder-flower suppression), M3.6 (button suppression), M3.7 (goal hook), M5/M6/M7.
 
 ## Reference: sister project
