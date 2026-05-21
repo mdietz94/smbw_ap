@@ -24,3 +24,4 @@ The scripts are Python 2 / Jython AND Python 3 / PyGhidra compatible.
 |---|---|---|
 | `find_badge_functions.py` | Find xrefs to `GiveBadgeIdOnCourseClear` and `UnlockBadgeIdOnCourseClear` strings; dump containing functions + prologues so we can pick the right hook target | M3.2 |
 | `inspect_badge_dispatch.py` | Follow-up: dump disasm around each in-function xref site + bytes/pointer-interpretation around each data-table-entry xref, to figure out the badge-dispatch shape | M3.2 |
+| `inspect_badge_candidates.py` | Step 3: now that `FUN_7101b1fb6c` is identified as a test harness, dump prologues + xref counts of the three candidate grant functions it calls. Distinguishes "real game API" (heavily called) from "test probe" (only called from harnesses) | M3.2 |
