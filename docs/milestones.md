@@ -149,27 +149,50 @@ The discriminator table above adds `world_mother_seed == False` to every non-pal
 
 W1-2 capture: `goal_id=1, touch_goal_top_result=True`. Confirms `goal_id` is the primary discriminator and `touch_goal_top_*` is orthogonal (a secret-exit pole can also be top-touched). The mapping logic is locked into [bridge/test_play_report.py](bridge/test_play_report.py) `TestM25ExitTypeMapping`.
 
-**First check**: if M2.4's PlayReport hook lands and the post-clear PlayReport carries an `exit_type` / `clear_type` / `goal_kind` field, the entire problem is solved at zero cost. The koopajr_result report's `battle_result` field is precedent for engine-side enum tagging of result types.
+The pre-M2.4 fallback plan (dumping `SetCourseClearFlagExecute`'s nerve struct fields) is now obsolete — PlayReport delivers everything we needed. Kept for history in git only.
 
-**Fallback if not**: at the `SetCourseClearFlagExecute` callback, dump additional fields from the `nerve` struct. Candidates by analogy to wondar's `ActorPlacementInfo`:
+### M2.6 — Wonder Seed per-level identification (124 checks)
 
-- `nerve + 0x10`: actor-archive-name pointer for the goal we touched (would be `"ObjectGoalPole"`, `"ObjectGoalPoleFort"`, etc. — distinguishes Normal vs Fort/Secret)
-- `nerve + 0x40` or `+0x68`: state index from `FUN_7101bf28cc` body (we saw `x0 = sub x29, #0x8`; that local is used in `FUN_710059f894` and `FUN_71003d3fb0` — probably contains the exit-id)
-- Mario's Y position at clear time (for Top-of-Flag): the player actor is reachable from a global GameFramework singleton
+The M1 `WONDER_SEED_AWARDED` nerve fires reliably on every Wonder Seed grab but doesn't carry an in-band identifier of *which* seed. AP checks are per-course (and some courses have 2+ Wonder Phase seeds), so the bridge needs a way to attribute each fire to a specific AP location.
 
-Test approach: enter a level with both a Normal Exit and a Secret Exit (Piranha Plants on Parade, W1-2). Take each exit in separate runs. Dump `nerve+0x00..0xC0` at each fire. The differing bytes tell us where the exit-id lives.
+**Preferred approach — course correlation in the bridge (unlocked by M2.4 PlayReports)**:
 
-### M2.6 — Wonder Seed placement-hash identity (124 checks)
+1. Bridge subscribes to `course_in` PlayReport events. When one fires it sets `current_course = stage_info.stage_key`.
+2. Bridge subscribes to `WONDER_SEED_AWARDED` (Switch nerve hook).
+3. On each WONDER_SEED_AWARDED fire, attribute it to `current_course`.
+4. AP location table maps `stage_key → location_id`. Bridge fires the AP check.
 
-Same identity-extraction problem as 10-coins. Wonder Seed AP checks are per-level (`W1: Welcome to the Flower Kingdom - Wonder Seed`, etc.), and the actor placement hashes from level-load tell us which seed is which (we logged them in M1.2 — e.g. W1-1's seed is hash `48c0584d409801d6`).
+This covers the **~70 courses that have exactly one Wonder Phase seed** with no Switch-side code changes. The bridge already needs to track `current_course` for other reasons (e.g. routing per-course events).
 
-At `WONDER_SEED_AWARDED` fire time, read the nerve's `+0x??` offset to extract the placement hash, match against a `hash → AP-location-id` table. Defer to M2 for now; the M1 hook fires correctly without identity, which is enough for "feasibility proven."
+**Fallback for courses with multiple Wonder Phase seeds**:
+
+If a single course has N>1 Wonder Phase seeds and we need to distinguish *which* one was grabbed, fall through to the placement-hash approach the original M2.6 plan envisioned:
+
+1. At `WONDER_SEED_AWARDED` callback entry, read the nerve struct to find the actor pointer (likely at some offset N — same pattern as M1's `GoalDispatcher` exploration which found `param_2+0xd8` → actor info → `+0x5c` for the name).
+2. The actor has a placement hash stored in its `ActorPlacementInfo` — wondar's existing `include/game/actor/ActorPlacementInfo.h` describes the layout; `mHash` is at a known offset.
+3. Read it, log alongside the nerve fire.
+4. Map `(stage_key, placement_hash) → AP location` in the bridge.
+
+This requires Ghidra work to find the actor-pointer offset on the Wonder Seed nerve struct. Defer to a follow-up — handle simple courses first, see how many multi-seed courses actually exist in the manual location table.
+
+**Definition of done**: 124 of 124 Wonder Seed AP checks correctly routed to their per-course (or per-instance) AP location. First milestone: get all single-seed courses working via course correlation.
 
 ## M3 — incoming AP-item application (game ← AP)
 
-Outgoing checks (M2) are only half the integration. AP also sends *items* to the player: power-ups, badges, characters, Wonder Effects, etc. The mod must apply them in-game.
+Outgoing checks (M2) are only half the integration. AP also sends *items* to the player: Wonder Seeds, Royal Seeds, badges, power-ups, characters, Wonder Effects, etc. The mod must apply them in-game.
 
-### M3.1 — power-up grant (4 items: Elephant, Fire, Bubble, Drill)
+**MVP item set for first usable bridge** (per 2026-05-20 scope decision — 10-coins deferred):
+
+| Section | Item count | Status |
+|---|--:|---|
+| M3.2 Badge unlock | 24 | function names known; need Ghidra + symbol lookup |
+| M3.3 Wonder Seed grant | 124 | counter address known; need the increment-function RE |
+| M3.3b Royal Seed grant | 7 (new section) | TBD — likely same family as Wonder Seed but per-palace |
+| M3.8 DeathLink trigger | 1 (bidirectional event) | TBD — companion to M3.8 detection |
+
+M3.1 (power-ups), M3.4 (characters), M3.5 (Wonder Flower suppression), M3.6 (button suppression), M3.7 (goal hook) are deferred until the MVP set ships.
+
+### M3.1 — power-up grant (4 items: Elephant, Fire, Bubble, Drill) — DEFERRED
 
 The HamletDuFromage cheat DB gave us:
 
@@ -181,15 +204,48 @@ The HamletDuFromage cheat DB gave us:
 
 The event Nerve `vt_off=0x33fd870` fires on damage *and* power-up pickup (we observed this in M1 testing). Worth peeking that Nerve's vtable to see if it's a `RequestEventApplyPowerUp` family member.
 
-### M3.2 — badge unlock (24 items, inverse of M2.3)
+### M3.2 — badge unlock (24 items, inverse of M2.3) — MVP
 
-Whatever writes the badge-unlocked bitfield in save data is our entry point. Same function found in M2.3 (`GiveBadgeIdOnCourseClear`) might also be callable for arbitrary IDs from our subsdk.
+The Ghidra string dump from the M1 `Cleared` search turned up two candidate function-name strings:
 
-### M3.3 — Wonder Seed counter increment (per-world)
+- `GiveBadgeIdOnCourseClear` (NSO string at `0x7102903f19`)
+- `UnlockBadgeIdOnCourseClear` (NSO string at `0x710291dc73`)
 
-The cheat DB's `[seed]` cheat at `+0x12AF6C` is a *read* of the per-world Wonder Seed counter (fed back as a forced value of 100 by the cheat). The corresponding *write* (the increment function) is what we'd want to call to credit the player with a seed from AP. Find it by searching xrefs of the field address.
+These look like function symbol names emitted into the binary (Nintendo's internal debug-name path). Plan:
 
-### M3.4 — character roster unlock (12 items)
+1. **Find xrefs** in Ghidra for each string. Trace to the function address.
+2. **Confirm signature** by inspecting prologue / register usage. Probably `void(int badge_id)` or `Result(uint badge_id)`.
+3. **One-time read hook** to confirm: when the game itself unlocks a badge via course clear, our hook fires with the badge_id; cross-check against `course_result.badge_id_array` from the same clear's PlayReport.
+4. **Call from our code** on AP item grant: `GiveBadgeIdOnCourseClear(ap_badge_id)`.
+
+Same function serves outgoing M2.3 (detection) and incoming M3.2 (granting). Two-way wiring from a single Ghidra effort.
+
+**Risk**: the function may require a valid course-clear context (look for `OnCourseClear` in the name — implies it's called from inside the clear handler with state set up). If so, find a higher-level "AddBadgeToCollection" function instead by reading what `GiveBadgeIdOnCourseClear` calls.
+
+### M3.3 — Wonder Seed grant (124 items, MVP)
+
+Per-world Wonder Seed counter is at NSO `+0x12AF6C` per the HamletDuFromage cheat DB (which fixes the read-side to a forced 100). We want the **write** side — the increment function the engine calls when Mario grabs a Wonder Seed.
+
+Plan:
+
+1. **Find xrefs** for the field at `+0x12AF6C` in Ghidra. Filter for writers (str/strb instructions or compute-then-store patterns).
+2. **Identify the increment function**. Likely fires once per WONDER_SEED_AWARDED — could confirm by hooking it briefly and counting fires against our existing nerve hook.
+3. **Call from our code** with the AP-granted Wonder Seed item. Match its signature (probably `(world_index, +1)` or `(world_index, new_total)`).
+
+**Caveat**: the field at `+0x12AF6C` is per-WORLD totals (not per-seed). Granting a Wonder Seed bumps the world's count by 1. That's the natural Switch-side behavior; the AP world maps "specific AP Wonder Seed item" to "+1 in world N".
+
+### M3.3b — Royal Seed grant (7 items, MVP — NEW)
+
+7 Royal Seeds (one per palace). Earned in-game by `koopajr_result.battle_result == True`.
+
+Two parts to investigate in Ghidra:
+
+1. **Where the win path writes the Royal Seed flag.** Search for code reachable from the palace-clear save-data write that touches a different bit/field than the regular course-clear flag (since palaces give *both* a course-clear AND a Royal Seed). Likely a function like `GiveRoyalSeedForPalace(palace_id)` or similar.
+2. **Per-palace state**: the 7 Royal Seeds need individual flags. They might live in a bitfield indexed by palace_id (`world_no` or `course_no` from the koopajr_result payload).
+
+**Risk**: the engine may not have a public "grant Royal Seed" API — it could be intertwined with the boss-clear flow. If so, write the save bit directly. Slower-burn investigation than M3.3.
+
+### M3.4 — character roster unlock (12 items) — DEFERRED
 
 Save data bitfield for which characters are available in file-select. Find via memory diff (unlock a new character via gameplay, diff save state before/after).
 
@@ -207,6 +263,34 @@ For `button_shuffle` yaml flag — locks Y, ZL/Down, R, Up button capability unt
 ### M3.7 — game-completion goal hook
 
 Detect "all-clear" / final Bowser defeat → fire AP `goal complete`. The strings dump turned up `GameClear` (`0x710348e884`) and `SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss` (`0x710295d801`). The latter is the most specific signal we'll ever get — that flag is set exactly once per save, on first time defeating final Bowser. Find its setter and hook.
+
+### M3.8 — DeathLink (bidirectional — MVP)
+
+DeathLink is an Archipelago feature: when one player dies, every other player connected with DeathLink enabled also dies. Two halves, both required:
+
+**Detection (outgoing) — straightforward**:
+
+The M1 nerve survey already identified `vt_off=0x33fd9a8` as "Mario death; ~50ms after Wonder Seed grab; world map travel" — i.e. a generic "scene transition" nerve that includes death as one of its triggers. To turn this into a clean death signal:
+
+1. Extend `NerveActivateOnce` to also log on `vt_off=0x33fd9a8`.
+2. Cross-check the in-context fires: not every 0x33fd9a8 fire is a death (post-seed cleanup and world map travel also fire it). Need a secondary discriminator — likely the previous Wonder Seed grab clears nicely, but world-map travel must be filtered. Compare against a known death (e.g. fall into pit) vs a known scene transition (clear flag) and diff the nerve state.
+3. Fallback: find a more specific death-only nerve via Ghidra string search for `Dead`, `PlayerDead`, `RequestEventDead`, etc.
+4. Emit `DEATH_DETECTED` log line. Bridge sends `DeathLink` AP event with the player's slot data.
+
+**Triggering (incoming) — needs more research**:
+
+When AP sends a DeathLink event to this slot, the Switch mod must kill Mario. Three candidate approaches:
+
+1. **Call the death-handling function directly**. Find via xrefs from the death-only nerve (whatever the slot-8 execute calls when triggered).
+2. **Damage Mario with overflow**. The player-damage function (callable from the AP grant path) with a damage amount exceeding current HP forces a death. Likely callable from outside a combat context too.
+3. **Write the player's HP field to 0** and force a state-check tick. Fragile — might leave the player frozen rather than dying cleanly.
+
+(1) is cleanest; (2) is a fallback if (1) requires hard-to-reach state.
+
+**Edge cases the bridge must handle**:
+- Don't fire DeathLink when the player is dying *because* a DeathLink event arrived (would create a loop).
+- Suppress DeathLink during cutscenes / file-select / paused / overworld (player isn't in a deathable state). The bridge's "current course" tracker (M2.6 prereq) already gives us this signal.
+- DeathLink during a palace fight should still register but ideally not kill mid-fight — defer / queue to after the fight ends, or send anyway and let the player retry.
 
 ## M4 — LAN protocol + host client
 
@@ -278,14 +362,30 @@ wondar's existing ImGui overlay is currently disabled (it crashed on this NSO bu
 
 Things that could re-block the project, in rough probability order:
 
-1. **`SetCourseClearFlagToGameData` fires on palace clears as well as level clears** — actually a feature, not a risk; we just tag the fire with course-id. (Tested in M2.1.)
-2. **10-coin Nerve doesn't exist** — fallback to coin-counter-write hook with value filter. Already known-good per cheat DB.
-3. **Goal exit-type distinguisher data isn't in the Nerve struct** — fall back to reading Mario's player actor + the active goal-pole actor at clear time. Slower hook but works.
-4. **TCP on Switch hits firewall / NAT issues** — SMO already solved this with LAN-direct connection; should port without trouble.
-5. **v1.0.0-only support becomes a sticking point for users on v1.0.1** — port hooks via BinDiff/Diaphora when there's user demand; ~1 day per version-bump per hook.
+1. **`SetCourseClearFlagToGameData` fires on palace clears as well as level clears** — actually a feature, not a risk; we tag the fire with course-id and the per-palace `koopajr_result` PlayReport disambiguates. (Tested + done in M2.1 / M2.4 / M2.5.)
+2. **PlayReport class-member hooks crash on SDK validation** — discovered + worked around in the M2.4 bisect by hooking the IPC client layer instead. Documented + permanently in the "don't try" list.
+3. **10-coin Nerve doesn't exist** — fallback to coin-counter-write hook with value filter. Already known-good per cheat DB. Deferred per 2026-05-20 scope decision.
+4. **Multiple Wonder Phase seeds per course** — M2.6 fallback is the placement-hash read approach; not blocking the MVP.
+5. **`GiveBadgeIdOnCourseClear` requires course-clear context to call** — would need a deeper "AddBadgeToCollection" function. Probably solvable by reading what the original function calls internally.
+6. **No public Royal Seed grant function** — fall back to writing the save bit directly. Less clean but works.
+7. **DeathLink incoming trigger has no clean public entry** — may need to write HP=0 and force a tick. Fragile-looking but the SMO project's DeathLink ships on a similar pattern (we have its source for reference).
+8. **TCP on Switch hits firewall / NAT issues** — SMO already solved this with LAN-direct connection; should port without trouble.
+9. **v1.0.0-only support becomes a sticking point for users on v1.0.1** — port hooks via BinDiff/Diaphora when there's user demand; ~1 day per version-bump per hook.
 
-## Recommended pacing for next 2-3 sessions
+## Recommended pacing (revised 2026-05-20)
 
-- **Session 2** (next): M2.1 + M2.2 + M2.3 + M2.4. ~80% of remaining AP-outgoing surface in one sitting if Ghidra goes smoothly.
-- **Session 3**: M3.1 + M3.2 + M3.7. Incoming hooks for power-up, badge, goal. Validate game-modification doesn't break boot.
-- **Session 4**: M4.1 + M4.2. LAN socket + Python host. End-to-end demo: AP client logs Wonder Seed pickup from in-game.
+History (closed):
+- ✅ Session 1: M1 — Wonder Seed + Course Clear nerves.
+- ✅ Session 2: M2.4 + M2.5 — PlayReport IPC capture, Python decoder, full corpus of 9 live fixtures across W1-1/W1-2/Palace clears + W1→W2 transition.
+
+Plan (next):
+- **Session 3 (next)**: M2.6 — wire course correlation in the bridge skeleton (Python). This is mostly Python work: maintain `current_course`, attribute WONDER_SEED_AWARDED fires to it. No new Switch-side code.
+- **Session 4**: M3.2 + M3.3 + M3.3b Ghidra session. Find badge grant function, Wonder Seed counter increment, Royal Seed grant. Hook one of each for read-confirm; expose grant functions for call.
+- **Session 5**: M3.8 DeathLink Ghidra. Find the clean death-only nerve (vs the noisy 0x33fd9a8) and the death-triggering function.
+- **Session 6**: M4.1 + M4.2. LAN socket from Switch mod ↔ Python bridge. End-to-end demo: AP client logs a Wonder Seed pickup from in-game; AP grants a badge that appears in Mario's badge collection.
+
+Deferred until after the MVP demo:
+- M2.2 (10-coin nerve hunt) — 305 outgoing checks, biggest unrouted bucket.
+- M3.1 (power-up grant), M3.4 (characters), M3.5 (Wonder Flower / Effect suppression), M3.6 (button suppression), M3.7 (goal hook).
+- M5 (replace manual_smbwonder_zim with integrated apworld).
+- M6 (hardware Switch), M7 (UX polish).

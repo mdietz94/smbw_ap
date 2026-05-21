@@ -157,14 +157,16 @@ Recipe for finding a new Nerve hook target:
 - `COURSE_CLEARED` — every successful flagpole touch + every palace boss clear (206 AP checks lumped; exit-type splitting is M2.5).
 - Total: 330 / 663 AP checks covered (49.8%).
 
-**M2.4 (✅ done — Switch capture + Python decoder + W1-1 corpus)**: PlayReport payload capture via the IPC-layer pattern; Python decoder in [bridge/play_report.py](bridge/play_report.py) handles the Nintendo CBOR-ish format end-to-end (44 tests pass, including full decode of three live W1-1 payloads). Critically:
-- `course_result` room fires ~8ms after the M1 `COURSE_CLEARED` nerve. Its payload carries `stage_info.stage_key` (unique per-course identifier), `touch_goal_top_{enter,result}` (Top-of-Flag distinguisher), `goal_id`, `badge_id_array`, `total_get_finish_seed_count`, and all coin counts.
-- This closes the M2.5 exit-type distinguisher problem at zero additional cost.
+**M2.4 + M2.5 (✅ done — Switch capture, Python decoder, full corpus)**: PlayReport payload capture via the IPC-layer pattern; Python decoder in [bridge/play_report.py](bridge/play_report.py) handles the Nintendo CBOR-ish format end-to-end. **87 tests pass against 9 live fixtures** covering all 5 observed room types (`world_activity`, `world_result`, `course_in`, `course_result`, `koopajr_result`) and edge cases (Top of Flag, Secret Exit, palace LOSS, palace WIN, inter-world transition).
 
-**Next** (per [docs/milestones.md](docs/milestones.md)):
-- Expand the room-name corpus organically: capture a secret exit (W1-2 Piranha Plants on Parade) and a palace clear (Pipe-Rock Plateau Palace) to confirm `goal_id` semantics and capture `koopajr_result` bytes.
-- M2.2: 10-coin Nerve hunt (305 AP checks, biggest remaining bucket).
-- M4: LAN socket + Python bridge — the moment the captured IPC bytes ship over the wire to a real consumer.
+The M2.5 exit-type discriminator table is locked in (199/199 goal+palace AP checks structurally classifiable). Importantly: a palace WIN emits BOTH `course_result` AND `koopajr_result` ~1 ms apart for the same event — the bridge prefers `koopajr_result` when both fire; `course_result.world_mother_seed == True` is a defensive cross-check.
+
+**Next** (per [docs/milestones.md](docs/milestones.md) "Recommended pacing"):
+- **M2.6**: Wonder Seed per-level identification via course correlation in the bridge (no Switch-side code).
+- **M3.2 / M3.3 / M3.3b**: Ghidra session for incoming item grants (badges, Wonder Seeds, Royal Seeds).
+- **M3.8**: DeathLink (bidirectional — detect Mario death + trigger Mario death from AP).
+- **M4**: LAN socket + Python bridge skeleton — end-to-end demo.
+- Deferred: M2.2 (10-coin), M3.1 (power-ups), M3.4 (chars), M3.5 (wonder-flower suppression), M3.6 (button suppression), M3.7 (goal hook), M5/M6/M7.
 
 ## Reference: sister project
 

@@ -21,12 +21,22 @@ This is the "next session, hi me again" doc. Read it first.
   - First 64 bytes of the payload, e.g. `de 00 0f ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 62 38 31 33 65 36 37 35...`
   - Ryujinx's prepo decoder confirmed the same buffer represents: `stage_info.stage_key=2308078743, world_no=1, course_no=30, lucky_coin=135, world_wonder_flower=14, equip_badge_id=[34]`, etc.
 
-**Open questions / next session**:
-- Build the PC-side payload decoder (Python; ~50 LoC, format is CBOR with one Nintendo extension — see "PlayReport payload format" below).
-- Expand the room-name corpus by playing through clears, secret exits, and palace boss fights — each adds one room name to the M2.4 spec.
-- Cover **10-coins** (305 checks) via Nerve hook (M2.2).
-- Cover **badge unlocks** (24 checks) via either Nerve hook or function-name xref (M2.3).
-- Start the **LAN protocol / Python bridge** (M4) — the IPC hook captures bytes that need to ship to the bridge.
+**Status snapshot (2026-05-20 end)**:
+
+| Surface | Coverage | Notes |
+|---|---|---|
+| M1 — Wonder Seed nerve + Course Clear nerve | ✅ 330 AP checks | nerve hooks fire reliably across all tested scenarios |
+| M2.4 — PlayReport capture (real-hardware path) | ✅ done | SetEventId + IPC SaveReport hooks; Python decoder lives in [bridge/play_report.py](bridge/play_report.py); 87 tests pass against 9 live fixtures |
+| M2.5 — Exit-type discrimination | ✅ 199/199 structurally classifiable | mapping table in `TestM25ExitTypeMapping`; only Fake Exit `goal_id` value (guessed 2) lacks live capture; palace WIN+LOSS both captured |
+
+**Next session priorities** (from M2.6 → M3 MVP → M4 demo per milestones.md "Recommended pacing"):
+
+1. **M2.6** — Wonder Seed per-level identification via course correlation in the bridge. No new Switch-side code; preferred approach unlocked by M2.4. Fallback (placement-hash read) only needed for courses with multiple Wonder Phase seeds.
+2. **M3.2 + M3.3 + M3.3b** — Ghidra session to find: badge grant function (`GiveBadgeIdOnCourseClear`), Wonder Seed counter increment, Royal Seed grant. Same Ghidra effort serves outgoing detection + incoming grant.
+3. **M3.8** — DeathLink (detect via Mario-death nerve; trigger via death-application function — bidirectional).
+4. **M4.1 + M4.2** — LAN socket + Python bridge skeleton. End-to-end demo: AP client receives Wonder Seed pickup from in-game; AP-granted badge appears in Mario's collection.
+
+10-coin nerve hunt (M2.2 — 305 checks) deferred until after the MVP ships, per 2026-05-20 scope decision.
 
 ## Project layout
 
