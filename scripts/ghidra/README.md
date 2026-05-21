@@ -23,3 +23,4 @@ The scripts are Python 2 / Jython AND Python 3 / PyGhidra compatible.
 | Script | Purpose | Milestone |
 |---|---|---|
 | `find_badge_functions.py` | Find xrefs to `GiveBadgeIdOnCourseClear` and `UnlockBadgeIdOnCourseClear` strings; dump containing functions + prologues so we can pick the right hook target | M3.2 |
+| `inspect_badge_dispatch.py` | Follow-up: dump disasm around each in-function xref site + bytes/pointer-interpretation around each data-table-entry xref, to figure out the badge-dispatch shape | M3.2 |
