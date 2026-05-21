@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # Ghidra script for the SMBW Archipelago project — M3.2 badge RE.
 #
 # Finds xrefs to two SMBW debug-name strings that we believe correspond
