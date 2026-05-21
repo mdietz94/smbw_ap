@@ -770,6 +770,228 @@ KOOPAJR_RESULT_LOSS = _hex(
 )
 
 
+# course_result emitted ALONGSIDE koopajr_result for a palace WIN.  1579 bytes,
+# 57 fields.  Pipe-Rock Plateau Palace, this time beaten on the 2nd try (the
+# loss + retry from KOOPAJR_RESULT_LOSS).  Key new properties for the M2.5
+# bridge logic:
+#   - world_mother_seed = True (False for normal level clears)
+#   - goal_id = 0 + touch_goal_top_result = False (would misclassify as
+#     "Normal Exit" without the koopajr_result override)
+#   - first live 0xCD + u16 encoding: total_play_time_sec = 266
+PALACE_COURSE_RESULT = _hex(
+    "de 00 39 ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 62 38 31 33 65"
+    "36 37 35 2d 65 62 32 35 34 63 38 61 2d 61 33 65 30 64 30 35 32 2d"
+    "64 66 31 61 66 61 64 30 a9 70 6c 61 79 5f 6d 6f 64 65 01 af 74 6f"
+    "74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 d7 00 00 00 00 00 00 00 00"
+    "41 aa 73 74 61 67 65 5f 69 6e 66 6f 84 a9 73 74 61 67 65 5f 6b 65"
+    "79 d3 00 00 00 00 89 92 7c 97 aa 77 6f 72 6c 64 5f 6b",
+    "69 6e 64 00 a8 77 6f 72 6c 64 5f 6e 6f 01 a9 63 6f 75 72 73 65 5f"
+    "6e 6f 1e ad 63 6f 75 72 73 65 5f 69 6e 5f 75 74 63 d7 00 00 00 00"
+    "00 6a 0e 64 ae b3 74 6f 74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 5f"
+    "73 65 63 cd 01 0a b5 63 75 72 72 65 6e 74 5f 70 6c 61 79 5f 74 69"
+    "6d 65 5f 73 65 63 5e ad 63 6f 75 72 73 65 5f 72 65 73 75 6c 74 01"
+    "b0 68 61 6e 61 5f 72 61 63 65 5f 72 65 73 75 6c 74 00",
+    "a7 67 6f 61 6c 5f 69 64 00 b6 72 65 6d 6f 74 65 5f 65 6e 63 6f 75"
+    "6e 74 65 72 5f 63 6f 75 6e 74 00 b5 67 68 6f 73 74 5f 65 6e 63 6f"
+    "75 6e 74 65 72 5f 63 6f 75 6e 74 00 af 67 65 74 5f 79 65 6c 6c 6f"
+    "77 5f 63 6f 69 6e 1f ae 67 65 74 5f 6c 75 63 6b 79 5f 63 6f 69 6e"
+    "02 b5 79 65 6c 6c 6f 77 5f 63 6f 69 6e 5f 63 6f 75 72 73 65 5f 69"
+    "6e 5f b6 79 65 6c 6c 6f 77 5f 63 6f 69 6e 5f 63 6f 75",
+    "72 73 65 5f 6f 75 74 1a b5 66 6c 6f 77 65 72 5f 63 6f 69 6e 5f 63"
+    "6f 75 72 73 65 5f 69 6e cc 92 b6 66 6c 6f 77 65 72 5f 63 6f 69 6e"
+    "5f 63 6f 75 72 73 65 5f 6f 75 74 cc 94 b9 62 69 67 5f 66 6c 6f 77"
+    "65 72 5f 63 6f 69 6e 5f 63 6f 75 72 73 65 5f 69 6e 93 c2 c2 c2 ba"
+    "62 69 67 5f 66 6c 6f 77 65 72 5f 63 6f 69 6e 5f 63 6f 75 72 73 65"
+    "5f 6f 75 74 93 c2 c2 c2 b1 61 72 65 6e 61 5f 73 63 6f",
+    "72 65 5f 65 6e 74 65 72 ce ff ff ff ff b2 61 72 65 6e 61 5f 73 63"
+    "6f 72 65 5f 72 65 73 75 6c 74 ce ff ff ff ff b4 74 6f 75 63 68 5f"
+    "67 6f 61 6c 5f 74 6f 70 5f 65 6e 74 65 72 c2 b5 74 6f 75 63 68 5f"
+    "67 6f 61 6c 5f 74 6f 70 5f 72 65 73 75 6c 74 c2 b0 6e 65 77 5f 66"
+    "6c 6f 77 65 72 5f 63 6f 75 6e 74 01 b0 67 65 74 5f 66 6c 6f 77 65"
+    "72 5f 63 6f 75 6e 74 01 b3 77 6f 72 6c 64 5f 77 6f 6e",
+    "64 65 72 5f 66 6c 6f 77 65 72 10 b1 77 6f 72 6c 64 5f 6d 6f 74 68"
+    "65 72 5f 73 65 65 64 c3 b1 6c 61 73 74 5f 70 75 74 5f 70 61 6e 65"
+    "6c 5f 69 64 ff a9 73 74 61 72 74 5f 6d 6d 70 00 aa 72 65 73 75 6c"
+    "74 5f 6d 6d 70 00 b2 66 72 69 65 6e 64 5f 72 61 63 65 5f 6d 65 6d"
+    "62 65 72 00 b2 66 72 69 65 6e 64 5f 72 61 63 65 5f 72 65 73 75 6c"
+    "74 00 b1 72 6f 6f 6d 5f 6d 65 6d 62 65 72 5f 65 6e 74",
+    "65 72 00 af 72 6f 6f 6d 5f 6d 65 6d 62 65 72 5f 6d 61 78 00 b2 6c"
+    "61 73 74 5f 63 74 72 6c 5f 62 79 5f 73 74 63 69 6b c3 a6 72 65 73"
+    "63 75 65 8a b4 72 65 73 63 75 65 5f 72 65 6d 6f 74 65 5f 64 69 72"
+    "65 63 74 00 b1 72 65 73 63 75 65 5f 72 65 6d 6f 74 65 5f 6b 6b 73"
+    "00 b5 72 65 73 63 75 65 64 5f 72 65 6d 6f 74 65 5f 64 69 72 65 63"
+    "74 00 b2 72 65 73 63 75 65 64 5f 72 65 6d 6f 74 65 5f",
+    "6b 6b 73 00 b5 72 65 73 63 75 65 64 5f 72 65 6d 6f 74 65 5f 75 6b"
+    "5f 6b 6b 73 00 b4 72 65 73 63 75 65 64 5f 67 68 6f 73 74 5f 64 69"
+    "72 65 63 74 00 b4 72 65 73 63 75 65 64 5f 6c 6f 63 61 6c 5f 64 69"
+    "72 65 63 74 00 b1 72 65 73 63 75 65 64 5f 6c 6f 63 61 6c 5f 6b 6b"
+    "73 00 b0 72 65 73 63 75 65 64 5f 73 65 6c 66 5f 6b 6b 73 00 ad 73"
+    "65 74 5f 6c 6f 63 61 6c 5f 6b 6b 73 00 a8 69 74 65 6d",
+    "5f 62 6c 6e 85 a8 73 65 74 5f 6c 62 6c 6e 00 ad 67 65 74 5f 73 65"
+    "6c 66 5f 6c 62 6c 6e 00 ae 67 65 74 5f 6f 74 68 65 72 5f 6c 62 6c"
+    "6e 00 a8 67 65 74 5f 72 62 6c 6e 00 af 67 65 74 5f 6c 62 6c 6e 5f"
+    "62 79 5f 72 6d 74 00 a5 65 6d 6f 74 65 84 a6 70 69 63 74 5f 30 00"
+    "a6 70 69 63 74 5f 31 00 a6 70 69 63 74 5f 32 00 a6 70 69 63 74 5f"
+    "33 00 aa 63 74 72 6c 5f 67 75 69 64 65 85 aa 6f 70 65",
+    "6e 5f 63 6f 75 6e 74 00 a9 6c 61 73 74 5f 70 61 67 65 ff ac 70 61"
+    "67 65 5f 66 72 61 6d 65 5f 30 00 ac 70 61 67 65 5f 66 72 61 6d 65"
+    "5f 31 00 ac 70 61 67 65 5f 66 72 61 6d 65 5f 32 00 af 63 68 61 6c"
+    "6c 65 6e 67 65 5f 63 6f 75 6e 74 02 b2 74 6f 74 61 6c 5f 77 6f 6e"
+    "64 65 72 5f 63 6f 75 6e 74 05 b0 6d 61 78 5f 77 6f 6e 64 65 72 5f"
+    "63 6f 75 6e 74 03 bb 74 6f 74 61 6c 5f 67 65 74 5f 66",
+    "69 6e 69 73 68 5f 73 65 65 64 5f 63 6f 75 6e 74 01 a8 6e 65 74 5f"
+    "6d 6f 64 65 c2 ae 62 61 64 67 65 5f 69 64 5f 61 72 72 61 79 91 22"
+    "b5 70 6c 61 79 65 72 5f 72 65 73 74 5f 63 6f 75 72 73 65 5f 69 6e"
+    "05 b6 70 6c 61 79 65 72 5f 72 65 73 74 5f 63 6f 75 72 73 65 5f 6f"
+    "75 74 05 af 74 6f 74 61 6c 5f 31 75 70 5f 63 6f 75 6e 74 01 b0 6c"
+    "6f 63 61 6c 5f 70 6c 61 79 65 72 5f 6e 75 6d 01 b0 63",
+    "74 72 6c 5f 73 74 79 6c 65 5f 61 72 72 61 79 94 00 05 05 05 b0 63"
+    "68 61 72 61 5f 74 79 70 65 5f 61 72 72 61 79 91 06 b7 73 65 6c 66"
+    "5f 73 68 61 62 6f 6e 5f 63 6f 75 6e 74 5f 61 72 72 61 79 94 00 00"
+    "00 00 b7 6d 69 73 73 5f 73 68 61 62 6f 6e 5f 63 6f 75 6e 74 5f 61"
+    "72 72 61 79 94 00 00 00 00 b0 64 65 61 64 5f 63 6f 75 6e 74 5f 61"
+    "72 72 61 79 94 01 00 00 00 b7 64 69 72 65 63 74 5f 64",
+    "65 61 64 5f 63 6f 75 6e 74 5f 61 72 72 61 79 94 01 00 00 00 b1 73"
+    "79 73 74 65 6d 5f 72 65 70 6f 72 74 5f 74 61 67 ce 81 a7 03 b8",
+)
+
+
+# koopajr_result for Pipe-Rock Plateau Palace WIN (battle_result=True).
+# Same shape as KOOPAJR_RESULT_LOSS, just different field values:
+#   - battle_result True (0xC3) vs False (0xC2)
+#   - all 3 step phases finished with 0 damage (the winning attempt)
+#   - koopajr_total_time 84 (longer than the 67-sec loss attempt because
+#     they actually had to defeat each phase rather than dying out)
+#   - koopajr_challenge_count = 2 (2nd attempt — they lost once first)
+KOOPAJR_RESULT_WIN = _hex(
+    "de 00 10 ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 62 38 31 33 65"
+    "36 37 35 2d 65 62 32 35 34 63 38 61 2d 61 33 65 30 64 30 35 32 2d"
+    "64 66 31 61 66 61 64 30 a9 70 6c 61 79 5f 6d 6f 64 65 01 af 74 6f"
+    "74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 d7 00 00 00 00 00 00 00 00"
+    "41 aa 73 74 61 67 65 5f 69 6e 66 6f 84 a9 73 74 61 67 65 5f 6b 65"
+    "79 d3 00 00 00 00 89 92 7c 97 aa 77 6f 72 6c 64 5f 6b",
+    "69 6e 64 00 a8 77 6f 72 6c 64 5f 6e 6f 01 a9 63 6f 75 72 73 65 5f"
+    "6e 6f 1e ad 63 6f 75 72 73 65 5f 69 6e 5f 75 74 63 d7 00 00 00 00"
+    "00 6a 0e 64 ae ad 62 61 74 74 6c 65 5f 72 65 73 75 6c 74 c3 b3 6b"
+    "6f 6f 70 61 6a 72 5f 66 69 6e 61 6c 5f 73 74 61 67 65 02 b1 6b 6f"
+    "6f 70 61 6a 72 5f 73 74 65 70 5f 69 6e 66 6f 93 83 a4 73 74 65 70"
+    "00 b4 70 6c 61 79 65 72 5f 64 61 6d 61 67 65 64 5f 63",
+    "6f 75 6e 74 00 a4 74 69 6d 65 0f 83 a4 73 74 65 70 01 b4 70 6c 61"
+    "79 65 72 5f 64 61 6d 61 67 65 64 5f 63 6f 75 6e 74 00 a4 74 69 6d"
+    "65 1c 83 a4 73 74 65 70 02 b4 70 6c 61 79 65 72 5f 64 61 6d 61 67"
+    "65 64 5f 63 6f 75 6e 74 00 a4 74 69 6d 65 29 b2 6b 6f 6f 70 61 6a"
+    "72 5f 74 6f 74 61 6c 5f 74 69 6d 65 54 b7 6b 6f 6f 70 61 6a 72 5f"
+    "63 68 61 6c 6c 65 6e 67 65 5f 63 6f 75 6e 74 02 b3 6b",
+    "6f 6f 70 61 6a 72 5f 70 6c 61 79 65 72 5f 72 65 73 74 05 b0 6c 6f"
+    "63 61 6c 5f 70 6c 61 79 65 72 5f 6e 75 6d 01 b9 6b 6f 6f 70 61 6a"
+    "72 5f 73 74 61 72 74 5f 70 6c 61 79 65 72 5f 6d 6f 64 65 91 01 ae"
+    "62 61 64 67 65 5f 69 64 5f 61 72 72 61 79 91 22 a8 6e 65 74 5f 6d"
+    "6f 64 65 c2 b1 73 79 73 74 65 6d 5f 72 65 70 6f 72 74 5f 74 61 67"
+    "ce 81 a7 03 b8",
+)
+
+
+class TestPalaceCourseResultPayload(unittest.TestCase):
+    """The course_result that fires *alongside* the koopajr_result for a
+    palace WIN.  The bridge needs to know this duplication exists so it
+    doesn't double-fire AP checks (palace WIN must be classified by the
+    koopajr_result, not by this course_result's goal_id/touch_goal_top)."""
+
+    def test_decodes_clean(self):
+        self.assertEqual(len(PALACE_COURSE_RESULT), 1579)
+        r = decode_play_report(PALACE_COURSE_RESULT)
+        self.assertEqual(r.entry_count, 57)
+        self.assertEqual(r.decoded_count, 57)
+        self.assertIsNone(r.error)
+
+    def test_world_mother_seed_true_for_palace(self):
+        # THE distinguishing flag if no koopajr_result correlation is
+        # available.  False in all normal level clears we've captured.
+        r = decode_play_report(PALACE_COURSE_RESULT)
+        self.assertEqual(r.fields["world_mother_seed"], True)
+
+    def test_palace_course_result_has_misleading_goal_id_and_touch_top(self):
+        # IMPORTANT: by goal_id + touch_goal_top alone, the bridge would
+        # misclassify this as "Normal Exit" — but it's a palace clear.
+        # The koopajr_result event (or world_mother_seed flag) must
+        # override.
+        r = decode_play_report(PALACE_COURSE_RESULT)
+        self.assertEqual(r.fields["goal_id"], 0)
+        self.assertEqual(r.fields["touch_goal_top_enter"], False)
+        self.assertEqual(r.fields["touch_goal_top_result"], False)
+
+    def test_total_play_time_sec_uses_cd_u16(self):
+        # 266 = 0x010A — first live exercise of the 0xCD + u16 opcode.
+        # Confirms the GUESSED encoding was right.
+        r = decode_play_report(PALACE_COURSE_RESULT)
+        self.assertEqual(r.fields["total_play_time_sec"], 266)
+        self.assertEqual(r.fields["current_play_time_sec"], 94)
+
+    def test_stage_info_palace(self):
+        r = decode_play_report(PALACE_COURSE_RESULT)
+        self.assertEqual(r.fields["stage_info"], {
+            "stage_key": 2308078743,
+            "world_kind": 0,
+            "world_no": 1,
+            "course_no": 30,
+        })
+
+    def test_no_big_flower_coins_in_palace(self):
+        # Palaces have no Big Flower Coins — different game-design space
+        # from regular courses.
+        r = decode_play_report(PALACE_COURSE_RESULT)
+        self.assertEqual(
+            r.fields["big_flower_coin_course_in"], [False, False, False])
+        self.assertEqual(
+            r.fields["big_flower_coin_course_out"], [False, False, False])
+
+    def test_chara_type_array(self):
+        # Different character chosen this run: chara_type 6 (vs 3 in W1-1).
+        r = decode_play_report(PALACE_COURSE_RESULT)
+        self.assertEqual(r.fields["chara_type_array"], [6])
+
+    def test_dead_count_array_shows_death(self):
+        # Player 1 died once during this run (the player lost a life to
+        # one of the boss phases before winning); other slots are 0.
+        r = decode_play_report(PALACE_COURSE_RESULT)
+        self.assertEqual(r.fields["dead_count_array"], [1, 0, 0, 0])
+        self.assertEqual(r.fields["direct_dead_count_array"], [1, 0, 0, 0])
+
+
+class TestKoopajrResultWinPayload(unittest.TestCase):
+    """Palace boss-fight WIN.  battle_result == True is THE Royal Seed
+    trigger for the AP bridge."""
+
+    def test_decodes_clean(self):
+        self.assertEqual(len(KOOPAJR_RESULT_WIN), 499)
+        r = decode_play_report(KOOPAJR_RESULT_WIN)
+        self.assertEqual(r.entry_count, 16)
+        self.assertEqual(r.decoded_count, 16)
+        self.assertIsNone(r.error)
+
+    def test_battle_result_true_for_win(self):
+        r = decode_play_report(KOOPAJR_RESULT_WIN)
+        self.assertEqual(r.fields["battle_result"], True)
+
+    def test_zero_damage_run(self):
+        # No-hit clear: all three phases ended with player_damaged_count=0.
+        r = decode_play_report(KOOPAJR_RESULT_WIN)
+        steps = r.fields["koopajr_step_info"]
+        self.assertEqual([s["player_damaged_count"] for s in steps], [0, 0, 0])
+        self.assertEqual([s["time"] for s in steps], [15, 28, 41])
+
+    def test_challenge_count_two(self):
+        # 2nd attempt at the palace (the prior LOSS was attempt #1).
+        r = decode_play_report(KOOPAJR_RESULT_WIN)
+        self.assertEqual(r.fields["koopajr_challenge_count"], 2)
+
+    def test_same_stage_info_as_loss_capture(self):
+        # Confirms stage_key is stable across attempts at the same palace.
+        win = decode_play_report(KOOPAJR_RESULT_WIN)
+        loss = decode_play_report(KOOPAJR_RESULT_LOSS)
+        self.assertEqual(win.fields["stage_info"], loss.fields["stage_info"])
+
+
 class TestKoopajrResultLossPayload(unittest.TestCase):
     """Palace boss-fight LOSS — died to Bowser Jr in the Pipe-Rock Plateau
     Palace.  battle_result == False indicates a fail attempt; an AP Royal
@@ -863,6 +1085,167 @@ class TestM25ExitTypeMapping(unittest.TestCase):
         self.assertIn("battle_result", r.fields)
         self.assertEqual(r.fields["battle_result"], False)
         # → AP bridge should NOT fire a Royal Seed check for this event.
+
+    def test_palace_win_fires_BOTH_course_result_AND_koopajr_result(self):
+        """The most important M2.5 finding: a palace WIN emits *both*
+        a course_result AND a koopajr_result, milliseconds apart.
+
+        Naive M2.5 classification on the course_result alone would
+        misclassify the palace win as 'Normal Exit' (goal_id=0,
+        touch_goal_top_result=False).  The bridge has two ways to handle
+        this correctly:
+
+          a) Priority rule: if koopajr_result fires within ~50ms, use it.
+          b) Defensive flag: course_result.world_mother_seed == True
+             means it's a palace clear, regardless of goal_id.
+
+        This test pins down both signals so the bridge logic stays right
+        even if the timing window assumption breaks."""
+        palace_cr = decode_play_report(PALACE_COURSE_RESULT)
+        palace_kj = decode_play_report(KOOPAJR_RESULT_WIN)
+
+        # Misleading course_result fields — would route to "Normal Exit"
+        # without the override.
+        self.assertEqual(palace_cr.fields["goal_id"], 0)
+        self.assertEqual(palace_cr.fields["touch_goal_top_result"], False)
+        # Defensive flag (option b):
+        self.assertEqual(palace_cr.fields["world_mother_seed"], True)
+        # Priority signal (option a) — koopajr_result with battle_result True
+        # fires alongside the course_result for the same clear:
+        self.assertEqual(palace_kj.fields["battle_result"], True)
+        # Both events reference the same palace:
+        self.assertEqual(
+            palace_cr.fields["stage_info"]["stage_key"],
+            palace_kj.fields["stage_info"]["stage_key"])
+
+    def test_normal_clear_has_world_mother_seed_false(self):
+        """Cross-check the defensive flag: normal level clears never set
+        world_mother_seed.  Confirmed across W1-1 (Top of Flag) and W1-2
+        (Secret Exit) — gives us a Boolean discriminator independent of
+        the koopajr_result correlation."""
+        self.assertEqual(
+            decode_play_report(COURSE_RESULT).fields["world_mother_seed"],
+            False)
+        self.assertEqual(
+            decode_play_report(W1_2_COURSE_RESULT_SECRET).fields["world_mother_seed"],
+            False)
+
+
+# world_result for the W1 -> W2 inter-world transition.  1059 bytes,
+# 26 fields.  Same shape as the intra-world WORLD_RESULT fixture but
+# with several first-time field values that pin down semantics:
+#   - next_stage_info.world_no = 2 (first non-1 world_no anywhere)
+#   - next_stage_info.stage_type = 2 (vs 1 for normal courses — likely
+#     "world overworld" vs "course")
+#   - next_stage_info.course_id = 0 (no specific course; entering W2)
+#   - transition_info.transition_type = 0 (vs -1 for intra-world)
+#   - transition_info.worldmap_id = 1 (vs 0 for intra-world)
+#   - world_mother_seed = True at top level (Royal Seed earned earlier)
+#   - last_ctrl_by_stcik = False (first observed False — controller state)
+WORLD_RESULT_W1_TO_W2 = _hex(
+    "de 00 1a ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 62 38 31 33 65"
+    "36 37 35 2d 65 62 32 35 34 63 38 61 2d 61 33 65 30 64 30 35 32 2d"
+    "64 66 31 61 66 61 64 30 a9 70 6c 61 79 5f 6d 6f 64 65 01 af 74 6f"
+    "74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 d7 00 00 00 00 00 00 00 00"
+    "42 aa 73 74 61 67 65 5f 69 6e 66 6f 83 a9 73 74 61 67 65 5f 6b 65"
+    "79 d3 00 00 00 00 d4 a6 26 5d aa 77 6f 72 6c 64 5f 6b",
+    "69 6e 64 00 a8 77 6f 72 6c 64 5f 6e 6f 01 af 6e 65 78 74 5f 73 74"
+    "61 67 65 5f 69 6e 66 6f 85 a9 73 74 61 67 65 5f 6b 65 79 d3 00 00"
+    "00 00 b9 4e 40 df aa 73 74 61 67 65 5f 74 79 70 65 02 aa 77 6f 72"
+    "6c 64 5f 6b 69 6e 64 00 a8 77 6f 72 6c 64 5f 6e 6f 02 a9 63 6f 75"
+    "72 73 65 5f 69 64 00 af 74 72 61 6e 73 69 74 69 6f 6e 5f 69 6e 66"
+    "6f 84 af 74 72 61 6e 73 69 74 69 6f 6e 5f 74 79 70 65",
+    "00 ab 77 6f 72 6c 64 6d 61 70 5f 69 64 01 a9 63 6f 75 72 73 65 5f"
+    "69 64 00 a6 6e 70 63 5f 69 64 00 b3 74 6f 74 61 6c 5f 70 6c 61 79"
+    "5f 74 69 6d 65 5f 73 65 63 0e b2 6c 61 73 74 5f 63 74 72 6c 5f 62"
+    "79 5f 73 74 63 69 6b c2 b0 6c 6f 63 61 6c 5f 70 6c 61 79 65 72 5f"
+    "6e 75 6d 01 b2 76 69 73 69 74 6f 72 5f 70 6c 61 79 65 72 5f 6e 75"
+    "6d 00 b5 77 6f 72 6c 64 5f 72 6f 6f 6d 5f 6d 65 6d 62",
+    "65 72 5f 6e 75 6d 00 b6 66 72 69 65 6e 64 5f 72 6f 6f 6d 5f 6d 65"
+    "6d 62 65 72 5f 6e 75 6d 00 b3 66 72 69 65 6e 64 5f 72 6f 6f 6d 5f"
+    "68 61 73 68 5f 69 64 00 b4 63 6f 75 72 73 65 5f 6c 69 73 74 5f 77"
+    "61 72 70 5f 6e 75 6d 00 b5 67 65 74 5f 79 65 6c 6c 6f 77 5f 63 6f"
+    "69 6e 5f 63 6f 75 6e 74 00 b5 67 65 74 5f 77 6f 6e 64 65 72 5f 63"
+    "6f 69 6e 5f 63 6f 75 6e 74 00 ae 61 64 64 5f 72 65 73",
+    "74 5f 63 6f 75 6e 74 00 b1 77 6f 72 6c 64 5f 6d 6f 74 68 65 72 5f"
+    "73 65 65 64 c3 b8 6f 70 65 6e 5f 63 6f 75 72 73 65 5f 73 65 6c 65"
+    "63 74 5f 61 72 72 61 79 92 00 00 b7 6f 70 65 6e 5f 62 61 64 67 65"
+    "5f 73 65 6c 65 63 74 5f 61 72 72 61 79 92 00 00 a5 65 6d 6f 74 65"
+    "84 a6 70 69 63 74 5f 30 00 a6 70 69 63 74 5f 31 00 a6 70 69 63 74"
+    "5f 32 00 a6 70 69 63 74 5f 33 00 aa 63 74 72 6c 5f 67",
+    "75 69 64 65 85 aa 6f 70 65 6e 5f 63 6f 75 6e 74 00 a9 6c 61 73 74"
+    "5f 70 61 67 65 ff ac 70 61 67 65 5f 66 72 61 6d 65 5f 30 00 ac 70"
+    "61 67 65 5f 66 72 61 6d 65 5f 31 00 ac 70 61 67 65 5f 66 72 61 6d"
+    "65 5f 32 00 ac 6f 6e 6c 69 6e 65 5f 67 75 69 64 65 8e aa 6f 70 65"
+    "6e 5f 63 6f 75 6e 74 00 ae 63 75 72 5f 66 69 72 73 74 5f 70 61 67"
+    "65 ff ac 70 61 67 65 5f 66 72 61 6d 65 5f 30 00 ac 70",
+    "61 67 65 5f 66 72 61 6d 65 5f 31 00 ac 70 61 67 65 5f 66 72 61 6d"
+    "65 5f 32 00 ac 70 61 67 65 5f 66 72 61 6d 65 5f 33 00 ac 70 61 67"
+    "65 5f 66 72 61 6d 65 5f 34 00 ac 70 61 67 65 5f 66 72 61 6d 65 5f"
+    "35 00 ac 70 61 67 65 5f 66 72 61 6d 65 5f 36 00 ac 70 61 67 65 5f"
+    "66 72 61 6d 65 5f 37 00 ac 70 61 67 65 5f 66 72 61 6d 65 5f 38 00"
+    "ac 70 61 67 65 5f 66 72 61 6d 65 5f 39 00 ad 70 61 67",
+    "65 5f 66 72 61 6d 65 5f 31 30 00 ad 70 61 67 65 5f 66 72 61 6d 65"
+    "5f 31 31 00 a8 6e 65 74 5f 63 6f 6e 6e 86 ac 63 68 61 6e 67 65 5f"
+    "62 79 5f 6d 6d c2 ac 63 68 61 6e 67 65 5f 62 79 5f 63 74 c2 ac 63"
+    "6f 6e 6e 5f 73 65 74 74 69 6e 67 c2 ac 6d 61 74 63 68 5f 6d 61 6b"
+    "69 6e 67 c2 aa 63 6f 6e 6e 65 63 74 69 6e 67 c2 ab 63 6f 6e 6e 5f"
+    "72 65 73 75 6c 74 ff af 67 65 74 5f 6d 65 64 61 6c 5f",
+    "61 72 72 61 79 96 c2 c2 c2 c2 c2 c2 b1 73 79 73 74 65 6d 5f 72 65"
+    "70 6f 72 74 5f 74 61 67 ce 81 a7 03 b8",
+)
+
+
+class TestW1ToW2WorldTransition(unittest.TestCase):
+    """world_result for the moment the player leaves W1 and enters W2.
+    Confirms first-time observed values for several fields that we'd
+    previously only seen the default (e.g. world_no=1 everywhere)."""
+
+    def test_decodes_clean(self):
+        self.assertEqual(len(WORLD_RESULT_W1_TO_W2), 1059)
+        r = decode_play_report(WORLD_RESULT_W1_TO_W2)
+        self.assertEqual(r.entry_count, 26)
+        self.assertEqual(r.decoded_count, 26)
+        self.assertIsNone(r.error)
+
+    def test_destination_is_world_2(self):
+        # First payload where next_stage_info.world_no != 1.  Confirms
+        # the field IS 1-indexed by player-facing world numbering — we
+        # just hadn't crossed worlds before.
+        r = decode_play_report(WORLD_RESULT_W1_TO_W2)
+        self.assertEqual(r.fields["next_stage_info"], {
+            "stage_key": 3108913375,
+            "stage_type": 2,
+            "world_kind": 0,
+            "world_no": 2,
+            "course_id": 0,
+        })
+
+    def test_inter_world_transition_info(self):
+        # Inter-world transition has different fingerprint than
+        # overworld→course transition (which has transition_type=-1,
+        # worldmap_id=0).
+        r = decode_play_report(WORLD_RESULT_W1_TO_W2)
+        self.assertEqual(r.fields["transition_info"], {
+            "transition_type": 0,
+            "worldmap_id": 1,
+            "course_id": 0,
+            "npc_id": 0,
+        })
+
+    def test_world_mother_seed_persists_after_royal_seed(self):
+        # Top-level world_mother_seed is True because the player just
+        # won the Pipe-Rock Palace and earned a Royal Seed.  Persists
+        # across this world transition, not just on the clear itself.
+        r = decode_play_report(WORLD_RESULT_W1_TO_W2)
+        self.assertEqual(r.fields["world_mother_seed"], True)
+
+    def test_last_ctrl_by_stcik_false(self):
+        # First observed False.  Just controller-state telemetry; the
+        # bridge can ignore but worth confirming the bool decode works
+        # both ways at top level too.
+        r = decode_play_report(WORLD_RESULT_W1_TO_W2)
+        self.assertEqual(r.fields["last_ctrl_by_stcik"], False)
 
 
 # ---------------------------------------------------------------------------
