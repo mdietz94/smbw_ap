@@ -44,14 +44,32 @@ def addr(n):
 
 
 def find_string_addr(needle):
-    """Search memory for a null-terminated occurrence of `needle`."""
+    """Search memory for a STANDALONE null-terminated occurrence of
+    `needle` — i.e. the byte before the match must also be a null
+    terminator (so we don't match `BadgeFlower\0` as a suffix of e.g.
+    `IsCreateBadgeFlower\0`, which we hit on the first run).
+    """
     pattern = bytearray()
     for c in needle:
         pattern.append(ord(c))
     pattern.append(0)
     memory = currentProgram.getMemory()
-    return memory.findBytes(memory.getMinAddress(), bytes(pattern),
-                            None, True, monitor)
+    start = memory.getMinAddress()
+    while start is not None:
+        found = memory.findBytes(start, bytes(pattern), None, True, monitor)
+        if found is None:
+            return None
+        # Verify standalone: byte at -1 should be 0 (separator).
+        prev_addr = found.subtract(1)
+        try:
+            prev = memory.getByte(prev_addr) & 0xff
+        except Exception:
+            # Out-of-bounds before; accept the match.
+            return found
+        if prev == 0:
+            return found
+        # Substring match — advance past this one and keep looking.
+        start = found.add(1)
 
 
 def is_short_function(fn):
