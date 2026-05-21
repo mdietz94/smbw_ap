@@ -1,0 +1,21 @@
+# switch-mod is a separate git repo (fork of mdietz94/wondar).
+# Tracked there; ignored here. May be promoted to a submodule later.
+switch-mod/
+
+# Claude Code state (per-developer).
+.claude/
+
+# Editor/IDE noise
+.vscode/
+.idea/
+*.swp
+
+# Python noise for manual_smbwonder_zim/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# OS noise
+Thumbs.db
+.DS_Store

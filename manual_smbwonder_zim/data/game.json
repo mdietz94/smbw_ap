@@ -1,0 +1,14 @@
+{
+  "$schema": "https://github.com/ManualForArchipelago/Manual/raw/main/schemas/Manual.game.schema.json",
+  "game": "SMBWonder",
+  "creator": "Zim",
+  "filler_item_name": "Standee",
+  "starting_items": [
+    {
+      "item_categories": [
+        "Character"
+      ],
+      "random":  1
+    }
+  ]
+}
