@@ -1,0 +1,4 @@
+[submodule "switch-mod"]
+	path = switch-mod
+	url = git@github.com:mdietz94/wondar.git
+	branch = main

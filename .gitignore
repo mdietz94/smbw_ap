@@ -1,6 +1,4 @@
-# switch-mod is a separate git repo (fork of mdietz94/wondar).
-# Tracked there; ignored here. May be promoted to a submodule later.
-switch-mod/
+# switch-mod is a git submodule (fork at mdietz94/wondar). See .gitmodules.
 
 # Claude Code state (per-developer).
 .claude/
