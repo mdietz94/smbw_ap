@@ -1,8 +1,11 @@
 # Save-diff handoff: M3 incoming item grants
 
-**Status: planning, no implementation yet.** When you sit down to crack
-M3 grants (badges, Wonder Seeds, Royal Seeds) by save-diff instead of
-RE, start here.
+**Status (2026-05-21 end): diff tool built; save format characterized;
+ready for first capture cycle.** SMBW saves are plaintext, the
+first-table region maps directly to the M3.3 runtime hash-keyed counter
+container, and our diff yields ready-to-use 32-bit hash keys with zero
+hash-function work needed. See [Format we mapped on 2026-05-21](#format-we-mapped-on-2026-05-21)
+below.
 
 ## Why this doc exists
 
@@ -50,25 +53,20 @@ on the PC. Step 5 is a 5-line addition to `main.cpp`.
 
 ### Ryujinx (development target)
 
-SMBW's title ID is `010015100B514000`. Ryujinx stores user saves under:
+**Located 2026-05-21**: SMBW save lives at
 
 ```
-%APPDATA%\Ryujinx\bis\user\save\<save_uid>\<user_uid>\<title_id_hex_segments>
+%APPDATA%\Ryujinx\bis\user\save\0000000000000002\<user>\game_data.sav
 ```
 
-The exact `<save_uid>` is allocated by Ryujinx on first save creation
-and varies. To find it:
+where `<user>` is `0` or `1` (per profile). The 21,876-byte
+`game_data.sav` is the main save buffer. Confirmed plaintext (87.6%
+zero bytes; magic `04 03 02 01`).
 
-1. Open Ryujinx → right-click the SMBW game in the library → **Open
-   Save Directory**. That opens an Explorer window pointing directly at
-   the SMBW save root.
-2. Inside, you'll see files like `userdata.bin` (name varies — SMBW's
-   own choice). That's the save buffer.
-3. Note the absolute path; the capture script will read it directly.
-
-Alternative path (when Ryujinx isn't running): grep `%APPDATA%\Ryujinx\bis\user\save\`
-for directories whose `Common/SaveDataMeta` shows title id
-`010015100B514000`.
+The folder `0000000000000002` is Ryujinx's save-id allocation for SMBW
+specifically — `ExtraData0` contains the title ID `010015100B514000`
+in the first 8 bytes (little-endian) — so this path is stable across
+sessions, no need to rediscover.
 
 ### Real hardware (later)
 
@@ -123,57 +121,46 @@ For each grant type, do the following dance:
 
 ## Step 3 — analyzing the diff
 
-We don't have the script written yet, but here's what it should do:
+The tool is built: [scripts/savediff.py](../scripts/savediff.py) with
+13 unit tests in [scripts/test_savediff.py](../scripts/test_savediff.py).
 
-```python
-# bridge/scripts/savediff.py  (TODO — write this)
+Usage:
 
-def diff_saves(before: bytes, after: bytes) -> list[Change]:
-    """Return per-offset changes.
+```pwsh
+# Diff two captured saves:
+python scripts/savediff.py before_badge.sav after_badge.sav
 
-    For each contiguous run of changed bytes, return a Change with:
-      - offset (int)
-      - length (int)
-      - before_bytes (bytes)
-      - after_bytes  (bytes)
-      - heuristic_kind (bit | byte_inc | u16_inc | u32_inc | other)
-    """
-    ...
+# Inspect a single save's non-zero entries (sanity check + corpus build):
+python scripts/savediff.py --summary "$env:APPDATA\Ryujinx\bis\user\save\0000000000000002\0\game_data.sav"
 ```
 
-Expected output for a clean badge capture:
+Expected diff output:
 
 ```
-=== changed regions ===
-  offset 0x12340  length 1   before=0x00  after=0x02  (bit set: position 1)
-  offset 0x12348  length 4   before=00 ... after=01 ... (u32 inc by 1: badges_total)
-  offset 0x1c000  length 8   before=<old timestamp> after=<new timestamp> — ignore
+== first-table (hash, value) changes ==
+  [pair  42 @ 0x130]  key=0xa1b2c3d4         0 → 1            (first-acquire / bit 0 set)
+  [pair 101 @ 0x328]  key=0xabcdef12         3 → 4            (increment by 1)
+
+== keys-summary (paste candidates for identify_seed_keys.py) ==
+    0xa1b2c3d4: 1,   # was 0, first-acquire / bit 0 set
+    0xabcdef12: 4,   # was 3, increment by 1
 ```
 
-The badge bitfield is the first change (one bit set). The total
-counter increment is the second. The timestamp is noise.
+The tool classifies each change automatically (`first-acquire`,
+`increment by 1`, `bit N flip`, `change (+N)`) and outputs a
+paste-ready hash-key block for `scripts/identify_seed_keys.py`.
 
-**Heuristic helpers the diff script should include:**
+It deliberately scopes the diff to the first table (pairs 0..127,
+file offsets 0x28..0x428) where keys map to counter/flag VALUES; the
+later region holds string-blob offsets that shift when strings are
+added, so we explicitly exclude those to avoid false-positive noise.
 
-- **Single-bit changes**: highlight when only one bit differs in a
-  byte — likely a per-flag bit in a collection bitfield. Print the bit
-  index (0-7) for easy mapping.
-- **Counter increments**: detect when after = before + 1 (u8, u16,
-  u32, u64 widths). Likely a "total acquired" counter.
-- **Timestamp filter**: changes in fields that look like Unix
-  timestamps (large numbers near `time.time()`) are usually irrelevant
-  game-state noise. Filter or de-emphasize.
-- **Multiple captures comparison**: if you do 2-3 captures of the
-  same action (clear 2 different courses for Wonder Seeds), diff the
-  diffs — the *common* changes across both are the real grant
-  semantics; the *differing* changes are per-course identifiers.
-
-Save files are likely either plain or trivially obfuscated. If they
-look like random noise (high entropy throughout, no obvious zero
-regions or repeated patterns), they're encrypted and we'll need to
-find the key. SMBW likely uses Nintendo's SaveDataMeta format which
-is documented in libnx — probably plaintext for the application save
-buffer.
+**Multiple-capture cross-check**: to disambiguate the badge-specific
+key vs other state that happens to change in the same window, capture
+two different badges and intersect the changed key sets. The
+intersection is keys that change for *any* badge acquisition (badge
+total counter, "any badge ever acquired" flag); the symmetric
+difference is the per-badge bit / flag we want.
 
 ## Step 4 — locating the live address
 
@@ -266,11 +253,39 @@ extend `CheckKind` with item-grant message variants and dispatch in
   unrelated state. Inspect the change region's size against the known
   badge count (24) to estimate.
 
+## Format we mapped on 2026-05-21
+
+`game_data.sav` is 21,876 bytes, plaintext, version 1. Inspection of
+profile 0 (16 in-game flag bits set, mid-game):
+
+| Range | Contents |
+|---|---|
+| `0x00..0x28` | Header. Magic `0x01020304` LE, u32 version, u32 length_field=0xbf0, then zeros. |
+| `0x28..0x428` | **First counter table — 128 entries of (u32 hash_key, u32 value).** Same hash-keyed container that runtime `FUN_710012ae94` reads (M3.3 probe). Empirically all observed values were 0 or 1 — i.e. discrete acquisition / clear flags. This is the diff's primary surface. |
+| `0x428..0xbf0` | Second table — pairs of (u32 hash_key, u32 offset-into-string-blob). "Values" here are monotonically increasing offsets, NOT counter values — diff tool deliberately ignores this region. |
+| `0xbf0..EOF` | String blob (variable-length strings referenced by the second table). |
+
+The two M3.3-probe keys `0xf4ee6827` (flower_coin=148) and
+`0x17f0bb21` (total_play_time_sec=26) are **not present** in the first
+table — they're cumulative counters in the runtime-only state
+container, not persisted in the first table. This means the diff
+won't have noisy "play time ticked up" entries cluttering badge /
+seed captures.
+
+The current profile's 16 set keys are useful future-corpus material:
+once we identify a few via diff, we can cross-reference here.
+
 ## What's already in the repo to help
 
+- [scripts/savediff.py](../scripts/savediff.py) + [scripts/test_savediff.py](../scripts/test_savediff.py):
+  the diff tool, with 13 unit tests passing.
 - [scripts/identify_seed_keys.py](../scripts/identify_seed_keys.py):
-  the hash-reversing attempt for the wonder seed counter. Useful
-  template for any future hash-identification work.
+  the hash-reversing attempt for the wonder seed counter. We no
+  longer need to crack Nintendo's hash function — the save IS the
+  hash table, so identified keys come straight from `savediff.py`'s
+  output. The file's KEY_TO_VALUE dict is still useful as a growing
+  corpus of `key → meaning` mappings; the diff tool emits new entries
+  in the right paste format.
 - [scripts/ghidra/](../scripts/ghidra/): the 11 Ghidra scripts that
   characterized the badge / wonder seed / hash table structures.
   Don't repeat these — they're the dead-end evidence.

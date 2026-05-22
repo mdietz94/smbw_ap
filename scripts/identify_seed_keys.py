@@ -18,11 +18,21 @@ from __future__ import annotations
 import zlib
 
 
-# Observed (key, value) pairs from the in-game probe.  Values cross-
-# referenced against the M2.4 PlayReport corpus where possible.
+# Observed (key, value) pairs.  Values cross-referenced against the
+# M2.4 PlayReport corpus and the 2026-05-22 save-diff capture.
+#
+# CONFIRMED via save-diff (2026-05-22 badge capture):
+#   - 0xf4ee6827 == flower_coin counter. Confirmed by a -30 delta
+#     after the user spent 30 flower coins on a badge purchase.
+#   - 0x17f0bb21 == regular_coin counter (NOT play_time_sec).
+#     M3.3 probe's annotation was wrong; the value 26 matched 26s
+#     play time in W1-1 but ALSO matches the user's 26 regular coins
+#     in a much later session — and the value persists between
+#     sessions, which play_time wouldn't.  See
+#     [docs/save-diff-findings.md](../docs/save-diff-findings.md).
 KEY_TO_VALUE: dict[int, int] = {
-    0xf4ee6827: 148,        # likely flower_coin (matches PlayReport)
-    0x17f0bb21: 26,         # likely total_play_time_sec (W1-1 had 26s)
+    0xf4ee6827: 148,        # flower_coin (confirmed)
+    0x17f0bb21: 26,         # regular_coin (confirmed; not play_time_sec)
     0x74f3a647: 1,
     0xf4d9942a: 2,
     0xe37debfe: 0,

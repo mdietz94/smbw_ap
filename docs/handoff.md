@@ -1,6 +1,6 @@
 # SMBW Archipelago — handoff doc
 
-Last updated: 2026-05-20 evening — M2.4 IPC payload-capture path proven.
+Last updated: 2026-05-22 — first badge capture cycle landed; M3 grant mechanism identified for ownership + flower coins.
 
 This is the "next session, hi me again" doc. Read it first.
 
@@ -34,12 +34,32 @@ This is the "next session, hi me again" doc. Read it first.
 - ✅ **M2.6** done — bridge skeleton + course correlation; 106 Python tests passing (`bridge/`).
 - ❌ **M3.2 + M3.3 + M3.3b grant-function RE failed.** 11 Ghidra scripts plus a runtime probe characterized the badge system as "no exposed grant API" (label strings only — UI / state-machines / log) and the wonder-seed system as a generic counter getter keyed by 32-bit hashes of internal stat names where SMBW uses a custom hash function none of CRC32 / FNV / DJB2 / SDBM / Murmur3 reproduce. **All three are now deferred to a save-diff sprint** ([save-diff-grants.md](save-diff-grants.md)).
 
-**Next session priorities** (revised 2026-05-21, see [milestones.md](milestones.md) "Forward plan"):
+**Status update (2026-05-22)** — first badge capture round complete:
 
-1. **M3.8 DeathLink detection** — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` and find a discriminator for actual deaths vs the noise sources. Switch-mod only, no RE dead-ends.
-2. **M4.1 + M4.2 LAN socket** — Switch mod ↔ Python bridge wiring. Once it lands the outgoing surface (M1 + M2 + DeathLink detection) is end-to-end demonstrable against an AP server.
-3. **Save-diff sprint** ([save-diff-grants.md](save-diff-grants.md)) — capture badge / wonder seed / royal seed before+after pairs, diff, identify offsets, build the runtime address anchor in the subsdk, wire up the three grant functions in one batch.
-4. **DeathLink trigger** (incoming half of M3.8) — Ghidra for the death-application function or a HP=0 fallback.
+- Captured pre/post for "buy Coin Reward Badge from Poplin Shop" (-30 flower coins) and pre/post for "swap equipped badge Wall-Climb → Auto Super Mushroom". Both diffs in [docs/save-diff-findings.md](save-diff-findings.md).
+- **Grant mechanism for badges identified**: set bit `internal_id` in the u64 at file offset `0x0ea0` of `game_data.sav` (in-memory equivalent once we wire a heap scanner anchored on the `savedata_id` UUID at file offset `0x50b8`).
+- **Grant mechanism for flower coins identified**: hash-table key `0xf4ee6827` in the runtime container at `0x20d3da07a8` (from the old M3.3 probe). The save persists this in the second-region pair at file offset `0x0890..0x0897`.
+- 4 of 24 badge mappings confirmed: Coin Reward → internal 9, Auto Super Mushroom → internal 46, Parachute & Wall-Climb at {34, 35} (within-pair order TBD).
+- M3.3 corpus correction: key `0x17f0bb21` was annotated as `play_time_sec` by the prior M3.3 probe, but cross-reference with this session's user state (26 regular coins) reveals it's actually `regular_coin_count`.
+- New tools: [scripts/badge_map_builder.py](../scripts/badge_map_builder.py) (incremental apworld → SMBW internal_id table builder), [scripts/find_equip_hashes.py](../scripts/find_equip_hashes.py) (one-off hash lookup), [scripts/analyze_badge_capture.py](../scripts/analyze_badge_capture.py) (one-off region cross-reference).
+
+**Status update (2026-05-21 PM)** — kicked off the save-diff sprint:
+
+- Reverted the M3.3 runtime probe in `switch-mod/src/program/main.cpp` (no longer producing useful data; freed 80 LoC + 1 hook install).
+- Located the SMBW save: `%APPDATA%\Ryujinx\bis\user\save\0000000000000002\<user>\game_data.sav` (21,876 bytes; plaintext; 87.6% zero bytes; magic `04 03 02 01`).
+- Characterized the save: first 0x400 bytes after the header are **128 entries of (u32 hash_key, u32 value)** — the SAME hash-keyed counter table the M3.3 probe was reading in memory. The diff yields ready-to-use 32-bit hash keys with zero hash-function work needed. Full layout in [save-diff-grants.md "Format we mapped on 2026-05-21"](save-diff-grants.md#format-we-mapped-on-2026-05-21).
+- Built [scripts/savediff.py](../scripts/savediff.py) + [scripts/test_savediff.py](../scripts/test_savediff.py) — diff tool with classification (`first-acquire`, `increment by 1`, `bit N flip`, generic `change`) and a `--summary` mode for single-save inspection. 13 unit tests pass.
+- Whole test suite now 119 OK (106 bridge + 13 savediff).
+
+**Next session priorities** (revised 2026-05-22):
+
+1. **Continue badge map building** (~3 captures expected from current owned set + N captures as new badges acquired in gameplay). Protocol in [docs/save-diff-findings.md "M3.2 — incremental badge mapping"](save-diff-findings.md#m32--incremental-badge-mapping-continue-from-this-session). Run `python scripts/badge_map_builder.py` after each capture.
+2. **Wonder seed capture cycle** — see [docs/save-diff-findings.md "M3.3 — Wonder Seed capture"](save-diff-findings.md#m33--wonder-seed-capture-next-session). One acquisition, one diff.
+3. **Royal seed capture cycle** — beat a palace boss for royal seed #2. See [docs/save-diff-findings.md "M3.3b — Royal Seed capture"](save-diff-findings.md#m33b--royal-seed-capture-next-session).
+4. **Runtime anchor + grant code** — once mappings are complete, write the heap scanner that locates the save buffer in-memory (anchor: `savedata_id` UUID `b813e675-eb254c8a-a3e0d052-df1afad0` at file offset 0x50b8 = stable across sessions) and the `GrantBadge / GrantWonderSeed / GrantRoyalSeed / GrantFlowerCoins` writers in `main.cpp`.
+5. **M3.8 DeathLink detection** — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` and find a discriminator for actual deaths vs the noise sources. Switch-mod only, no RE dead-ends.
+6. **M4.1 + M4.2 LAN socket** — Switch mod ↔ Python bridge wiring. Once it lands the outgoing surface (M1 + M2 + DeathLink detection) is end-to-end demonstrable against an AP server.
+7. **DeathLink trigger** (incoming half of M3.8) — Ghidra for the death-application function or a HP=0 fallback.
 
 10-coin nerve hunt (M2.2 — 305 checks) deferred until after the MVP ships, per 2026-05-20 scope decision.
 
