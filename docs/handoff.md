@@ -1,6 +1,6 @@
 # SMBW Archipelago — handoff doc
 
-Last updated: 2026-05-22 — first badge capture cycle landed; M3 grant mechanism identified for ownership + flower coins.
+Last updated: 2026-05-24 — static-analysis sprint 2 succeeded; **M3 grant API decompiled and ready to wire**.
 
 This is the "next session, hi me again" doc. Read it first.
 
@@ -34,13 +34,13 @@ This is the "next session, hi me again" doc. Read it first.
 - ✅ **M2.6** done — bridge skeleton + course correlation; 106 Python tests passing (`bridge/`).
 - ❌ **M3.2 + M3.3 + M3.3b grant-function RE failed.** 11 Ghidra scripts plus a runtime probe characterized the badge system as "no exposed grant API" (label strings only — UI / state-machines / log) and the wonder-seed system as a generic counter getter keyed by 32-bit hashes of internal stat names where SMBW uses a custom hash function none of CRC32 / FNV / DJB2 / SDBM / Murmur3 reproduce. **All three are now deferred to a save-diff sprint** ([save-diff-grants.md](save-diff-grants.md)).
 
-**Status update (2026-05-22)** — first badge capture round complete:
+**Status update (2026-05-22)** — first badge capture round complete (⚠️ findings later proved to be save-file-editor capability only, NOT a live-grant path — see 2026-05-24 status above):
 
 - Captured pre/post for "buy Coin Reward Badge from Poplin Shop" (-30 flower coins) and pre/post for "swap equipped badge Wall-Climb → Auto Super Mushroom". Both diffs in [docs/save-diff-findings.md](save-diff-findings.md).
-- **Grant mechanism for badges identified**: set bit `internal_id` in the u64 at file offset `0x0ea0` of `game_data.sav` (in-memory equivalent once we wire a heap scanner anchored on the `savedata_id` UUID at file offset `0x50b8`).
-- **Grant mechanism for flower coins identified**: hash-table key `0xf4ee6827` in the runtime container at `0x20d3da07a8` (from the old M3.3 probe). The save persists this in the second-region pair at file offset `0x0890..0x0897`.
-- 4 of 24 badge mappings confirmed: Coin Reward → internal 9, Auto Super Mushroom → internal 46, Parachute & Wall-Climb at {34, 35} (within-pair order TBD).
-- M3.3 corpus correction: key `0x17f0bb21` was annotated as `play_time_sec` by the prior M3.3 probe, but cross-reference with this session's user state (26 regular coins) reveals it's actually `regular_coin_count`.
+- **File-offset for badge ownership identified**: bit `internal_id` in the u64 at file offset `0x0ea0` of `game_data.sav`. ⚠️ The corresponding in-memory address (found later via UUID scan) turned out to be the save-OUT staging buffer; writes there don't affect live gameplay. Still useful as the byte-level verification target after a successful live grant.
+- **Hash key for flower coins identified**: `0xf4ee6827`. Static analysis on 2026-05-24 confirmed this writes via `FUN_710049F648` (container-A writer) and produces a real live change.
+- 4 of 24 badge mappings confirmed: Coin Reward → internal 9, Auto Super Mushroom → internal 46, Parachute & Wall-Climb at {34, 35}. **No grant function for badges has been found** — the trailing-region bitfield write only modifies the save-out buffer. M3.2 needs separate static RE (or a different approach) for live grants.
+- M3.3 corpus correction: key `0x17f0bb21` is `regular_coin_count`, not `play_time_sec`.
 - New tools: [scripts/badge_map_builder.py](../scripts/badge_map_builder.py) (incremental apworld → SMBW internal_id table builder), [scripts/find_equip_hashes.py](../scripts/find_equip_hashes.py) (one-off hash lookup), [scripts/analyze_badge_capture.py](../scripts/analyze_badge_capture.py) (one-off region cross-reference).
 
 **Status update (2026-05-21 PM)** — kicked off the save-diff sprint:
@@ -51,17 +51,79 @@ This is the "next session, hi me again" doc. Read it first.
 - Built [scripts/savediff.py](../scripts/savediff.py) + [scripts/test_savediff.py](../scripts/test_savediff.py) — diff tool with classification (`first-acquire`, `increment by 1`, `bit N flip`, generic `change`) and a `--summary` mode for single-save inspection. 13 unit tests pass.
 - Whole test suite now 119 OK (106 bridge + 13 savediff).
 
-**Next session priorities** (revised 2026-05-22):
+**Status update (2026-05-24)** — **save-diff was a dead-end for live grants; static-analysis sprint 2 succeeded** (full details in [docs/static-analysis-findings.md](static-analysis-findings.md)):
 
-1. **Continue badge map building** (~3 captures expected from current owned set + N captures as new badges acquired in gameplay). Protocol in [docs/save-diff-findings.md "M3.2 — incremental badge mapping"](save-diff-findings.md#m32--incremental-badge-mapping-continue-from-this-session). Run `python scripts/badge_map_builder.py` after each capture.
-2. **Wonder seed capture cycle** — see [docs/save-diff-findings.md "M3.3 — Wonder Seed capture"](save-diff-findings.md#m33--wonder-seed-capture-next-session). One acquisition, one diff.
-3. **Royal seed capture cycle** — beat a palace boss for royal seed #2. See [docs/save-diff-findings.md "M3.3b — Royal Seed capture"](save-diff-findings.md#m33b--royal-seed-capture-next-session).
-4. **Runtime anchor + grant code** — once mappings are complete, write the heap scanner that locates the save buffer in-memory (anchor: `savedata_id` UUID `b813e675-eb254c8a-a3e0d052-df1afad0` at file offset 0x50b8 = stable across sessions) and the `GrantBadge / GrantWonderSeed / GrantRoyalSeed / GrantFlowerCoins` writers in `main.cpp`.
-5. **M3.8 DeathLink detection** — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` and find a discriminator for actual deaths vs the noise sources. Switch-mod only, no RE dead-ends.
-6. **M4.1 + M4.2 LAN socket** — Switch mod ↔ Python bridge wiring. Once it lands the outgoing surface (M1 + M2 + DeathLink detection) is end-to-end demonstrable against an AP server.
-7. **DeathLink trigger** (incoming half of M3.8) — Ghidra for the death-application function or a HP=0 fallback.
+★ **CRITICAL — what the save-diff work actually produced.** The buffer we located via the `savedata_id` UUID scan (2026-05-23) turned out to be the **save-OUT staging buffer**: it only exists during/after save serialization, the game populates it FROM the live state, and writes into it are discarded the moment the game refreshes from live state. **Writing to those offsets does NOT change live gameplay** (badge ownership doesn't appear, course-clear flags don't register, etc.). What we have from the save-diff sprint is a **save-file editor capability** — useful as a verification tool (we can predict and confirm the bytes the game writes on save) but NOT a grant mechanism. See [docs/runtime-address-backtrace-plan.md](runtime-address-backtrace-plan.md) which documents this discovery and outlines the Cheat-Engine-based path that the sprint-2 static analysis ultimately obviated.
 
-10-coin nerve hunt (M2.2 — 305 checks) deferred until after the MVP ships, per 2026-05-20 scope decision.
+- ★ **The previous M3 dead-end was wrong.** A second static-analysis pass (with imported sym files, dataflow-anchored xref harvesting, and cross-reference against MemetendoYT + HamletDuFromage cheat DB) identified the entire GameDataMgr API surface — **the ONLY live-grant path we've found**. Plan + scripts in [scripts/ghidra/](../scripts/ghidra/) (sprint-2 inventory in [scripts/ghidra/README.md](../scripts/ghidra/README.md)).
+- ★ **The grant function is `FUN_710049F648`** — Container A counter writer. Signature `(GameDataMgr*, uint32_t value, uint32_t hash)`. Lock-free + thread-safe (ARM exclusive-monitor atomics on the dirty queue). Deferred-write (queues to `[gmd + 0xf8]` ring buffer; drains at next save). Confirmed via decompile + 3 confirmed flower_coin call sites.
+- ★ **`gmd::GameDataMgr::sInstance` @ NSO `+0x0363F0F0`** — singleton root pointer. Was sitting in [switch-mod/syms/100/gmd/GameDataMgr.sym](../switch-mod/syms/100/gmd/GameDataMgr.sym) the whole time; the previous sprint never grep'd the sym files. One dereference replaces the entire Cheat Engine pointer-scan workflow from [docs/runtime-address-backtrace-plan.md](runtime-address-backtrace-plan.md).
+- ★ **MemetendoYT 8 keys cross-verified live in code** — flower_coin (`0xf4ee6827`), regular_coin (`0x17f0bb21`), course-clear (`0xdf82e9ab`), INTRO (`0x89f1cc52`), COMPLETE_GAME (`0x5d3ec9b4`) all appear at GameDataMgr xrefs with the expected accessor mapping.
+- **`FUN_71003D4110` is Murmur3-32** (seed 0) over the 81 hardcoded course-name strings. Identified via textbook constant signature (`0xcc9e2d51` / `0x1b873593` / `0xe6546b64` / `0x85ebca6b` / `0xc2b2ae35`).
+- **M3.3 + M3.3b are now ONE smoke test away from being wireable.** Flower coins, regular coins, all 6 Royal Seeds, COMPLETE_GAME, INTRO are all grantable via `FUN_710049F648` if the Royal Seed theory holds (same writer truncates u32 → u8 internally for typed slots).
+- ★ Three corrections to prior assumptions: `FUN_71003D3FB0` is NOT a writer (it's a stage-info → course-index translator); `FUN_71003838AC` is the bool READER, not setter; the previous CLAUDE.md comment "FUN_71003D3FB0 = write field by hash" was a wrong guess.
+
+**Status snapshot (2026-05-24 end)**:
+
+| Surface | Coverage | Status |
+|---|---|---|
+| M1 — Wonder Seed nerve + Course Clear nerve | ✅ 330 AP checks | shipped |
+| M2.4 — PlayReport capture | ✅ done | shipped |
+| M2.5 — Exit-type discrimination | ✅ 199/199 classifiable | shipped |
+| M2.6 — bridge skeleton + course correlation | ✅ 106 tests | shipped |
+| Save-diff sprint — badge mapping + per-course array offsets | ✅ done | shipped (4/24 badges; MemetendoYT W1 offsets validated) |
+| **Static-analysis sprint 2 — GameDataMgr API** | ✅ **decompiled** | **ready to wire** |
+| M3.3 / M3.3b — grant code in subsdk | 🔄 **next session** | one decompiled function call away |
+| M3.8 — DeathLink detection | ⏳ deferred | post-MVP |
+| M4 — LAN socket | ⏳ deferred | post-MVP |
+
+**Next session priorities** (revised 2026-05-24):
+
+### Priority 1 — Wire and validate `GrantFlowerCoin(99)` (MVP grant proof)
+
+End-to-end smoke test of the static-analysis sprint's deliverable.
+Estimated 30 min to wire, 30 min to test.
+
+1. Add a `gmd::` namespace block to [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp) using the draft code in [docs/static-analysis-findings.md](static-analysis-findings.md) ("Practical recommendation: ship the M3.3 counter grants now"). Three NSO offsets need wiring: sInstance `+0x0363F0F0`, container-A writer `+0x0049F648`, and the hash `0xf4ee6827`.
+2. Add a one-shot call to `gmd::GrantFlowerCoin(99)` at boot (e.g., in `nninitStartup` hook, or trigger on first WONDER_SEED_AWARDED).
+3. Build + deploy, run in Ryujinx. Play any course briefly to trigger a save (the writer queues to a dirty buffer that drains at save-time, so a save is REQUIRED to validate).
+4. Quit. Diff `game_data.sav` against the pre-grant baseline.
+   - **Expected**: file offset `0x0894` reads `63 00` (u16 LE = 99).
+   - **Expected**: in-game purple coin counter shows 99 next overworld load (UI may lag one frame if the live struct isn't dual-written — see "dual-write strategy" in findings doc).
+
+### Priority 2 — Generalize to all hash-keyed grants
+
+If P1 succeeds:
+
+5. Replicate for `GrantRegularCoin(255)` → file offset `0x08AC` (u8 = 255).
+6. **Royal Seed experimental grant**: `GrantContainerA(1, 0x55815859)` → check pair-region offset `0x0350` (per the [save-diff-findings.md](save-diff-findings.md) "Pair-key sanity check") flips from 0 → 1. If success, **M3.3b is solved** without needing container-B work at all (the writer is shared).
+7. Add the remaining 4 keys: GRAND_SEED_WORLD2..6, COMPLETE_GAME, INTRO_CUTSCENE_COMPLETED. Wire each as a typed `Grant*(value)` wrapper in `gmd::`.
+
+### Priority 3 — Bridge integration
+
+8. Wire grant callbacks in [bridge/processor.py](../bridge/processor.py) — on AP item receipt, dispatch a grant message to the Switch mod.
+9. Extend [bridge/protocol.py](../bridge/protocol.py) with grant message variants (`GrantHashKeyed { hash, value }`).
+10. Define the protocol byte format. Recommend: opcode + 4-byte hash + 4-byte value = 9 bytes per grant.
+
+### Priority 4 — Complete the container-B writer hunt (lower priority)
+
+If the Royal Seed theory in step 6 fails (i.e., container A doesn't hold the seed bools), we need the container-B writer:
+
+11. Decompile `FUN_71005E93FC` — the third function in the M1 hook chain at NSO `+0x1bf28cc`. The hypothesis is it's the actual "set flag for current course" writer.
+12. Decompile `FUN_710059F894` — the "GameData accessor opener" — to understand whether grant writes need bracketing with open/close calls.
+13. ⚠️ **Do NOT fall back to writing the save-OUT buffer at the save-diff file offsets** — those bytes are overwritten from live state on every save serialization. The save-diff offsets are useful only as a **verification target** (predict the bytes that a successful live grant will produce, then confirm by diffing the resulting save). Real grants must go through a live-state writer.
+
+### Priority 5 — Per-course flag writers (separate path, only if container A doesn't cover them)
+
+14. Run [scripts/ghidra/find_offset_constant_xrefs.py](../scripts/ghidra/find_offset_constant_xrefs.py) (Phase 2.1 of [docs/static-analysis-findings.md](static-analysis-findings.md) — written but never executed). Goal: find functions that write `1` to per-course u32 array slots at offsets like `0x4408`, `0x3360`, etc. **These offsets are SAVE-FILE offsets**, not live-state offsets — the script searches for code that loads these as immediate displacements, which would find either (a) the save serializer (writing FROM live state TO the buffer) or (b) the deserializer (reading FROM disk INTO live state). The deserializer is the more useful target: its base register at the relevant ldr/str gives us the live-state buffer's address. From there, **either** find the per-course gameplay-time writer that the deserializer's caller invokes, OR write directly into the live buffer via a runtime pointer chain rooted at `gmd::GameDataMgr::sInstance`.
+
+### Priority 6 — Resume the outgoing-half push
+
+15. **M3.8 DeathLink detection** — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` and find a discriminator for actual deaths vs the noise sources. Switch-mod only, no RE dead-ends.
+16. **M4.1 + M4.2 LAN socket** — Switch mod ↔ Python bridge wiring. Once it lands the outgoing surface (M1 + M2 + DeathLink detection + M3 grants) is end-to-end demonstrable against an AP server.
+17. **DeathLink trigger** (incoming half of M3.8) — Ghidra for the death-application function or a HP=0 fallback.
+
+10-coin nerve hunt (M2.2 — 305 checks) and **M3.2 badge grants** still deferred until after the MVP ships. ⚠️ M3.2 needs its own static RE pass: badges live in the bitfield at trailing-region file offset `0x0EA0`, which is in the save-OUT buffer only — writing to its in-memory equivalent does not grant a badge to the live game. The badge grant function (if it exists as a named API) must be found via Ghidra, or alternately we find the GameDataMgr-relative offset where the LIVE badge bitfield lives and write directly through `*(gmd::GameDataMgr::sInstance + offset)`.
 
 ## Project layout
 

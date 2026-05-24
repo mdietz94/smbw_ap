@@ -121,6 +121,99 @@ The full Nintendo SDK symbol table is in [switch-mod/syms/100/sdk.sym](switch-mo
 
 6. **PlayReport ABI surprise**: the with-event-id ctor is rarely used. The game almost always uses the no-arg ctor + `SetEventId("room_name")`. If you hook only the with-event-id ctor, you'll see zero firings even when reports are being sent. Hook `SetEventId` instead.
 
+7. **Always import `switch-mod/syms/100/*.sym` into Ghidra at project setup** — not just `sdk.sym`. The previous M3 static-RE sprint missed the `gmd::GameDataMgr::sInstance` anchor that's been sitting in [switch-mod/syms/100/gmd/GameDataMgr.sym](switch-mod/syms/100/gmd/GameDataMgr.sym) the whole time. Use [scripts/ghidra/import_sdk_symbols.py](scripts/ghidra/import_sdk_symbols.py) — it walks the entire `syms/100/` tree.
+
+## GameDataMgr (gmd::) save-data API
+
+Discovered 2026-05-24 via static-analysis sprint 2. Full decompile details in [docs/static-analysis-findings.md](docs/static-analysis-findings.md).
+
+**The singleton anchor**: `gmd::GameDataMgr::sInstance` lives at NSO `+0x0363F0F0`. Dereferencing this qword at runtime gives the live `GameDataMgr*`. This replaces any pointer-scan workflow for finding the live save-data state.
+
+**The grant primitive (M3.3 / M3.3b)**:
+
+```cpp
+// Container A counter writer.  Lock-free, thread-safe (uses ARM
+// exclusive-monitor atomics on the dirty queue at gmd->[+0xf8]).
+// Deferred-write: the value is queued and applied to the persistent
+// container at next save.
+void FUN_710049F648(GameDataMgr* gmd, uint32_t value, uint32_t hash);
+// at NSO +0x0049F648
+```
+
+Confirmed hash keys (cross-verified via MemetendoYT save editor):
+
+| Hash | Field | Width | Save offset |
+|---|---|---|---|
+| `0xf4ee6827` | flower_coin (purple coins) | u16 | 0x0894 |
+| `0x17f0bb21` | regular_coin | u8 | 0x08AC |
+| `0x55815859` | GRAND_SEED_WORLD1 (Royal Seed W1) | u8 bool | (pair region) |
+| `0x49abba86` | GRAND_SEED_WORLD2 | u8 bool | (pair region) |
+| `0xb550d8d6` | GRAND_SEED_WORLD3 | u8 bool | (pair region) |
+| `0x1dcf7f6e` | GRAND_SEED_WORLD4 | u8 bool | (pair region) |
+| `0x0d5a3e00` | GRAND_SEED_WORLD5 | u8 bool | (pair region) |
+| `0xd4660d2b` | GRAND_SEED_WORLD6 | u8 bool | (pair region) |
+| `0x5d3ec9b4` | COMPLETE_GAME | u8 bool | (pair region) |
+| `0x89f1cc52` | INTRO_CUTSCENE_COMPLETED | u8 bool | (pair region) |
+| `0xdf82e9ab` | "current course" hash (lookup key, not a writable field directly) | — | — |
+
+**The API surface** (confirmed roles):
+
+| NSO offset | Role | Signature |
+|---|---|---|
+| `+0x710012AE94` | Container A **reader** (counter GET) | `(gmd, uint32_t* out, uint32_t hash)` ← corrected 2026-05-24 from FUN_7101a5d9a0 call site |
+| **`+0x710049F648`** | Container A **WRITER** (counter SET) | `(gmd, value, hash)` ★ grant primitive |
+| `+0x71003838AC` | Sub-bool **reader** (handles INTRO, COMPLETE_GAME reads) | `(sub_obj, uint8_t* out, uint32_t hash)` |
+| `+0x71003D3FB0` | Stage-info hash → course-index **translator** | `(top_hash, &out_index)` |
+| `+0x71003D4110` | **Murmur3-32(course_name) → course_index** lookup over 81 hardcoded course strings | `(target_hash, &out_index)` |
+
+Additional hash keys discovered 2026-05-24 in `FUN_7101a5d9a0` call sites:
+- `0xed817774` — container-B bool flag (read into session+0x546 `touch_goal_top_result`; semantics likely per-course "ever-touched-top-of-flag" progress bit)
+- `0xf79bcbb0` — container-A counter (read into session+0x478 `goal_id`; semantics likely last goal_id reached on current course)
+
+⚠️ **Past wrong guesses now corrected**: the previous CLAUDE.md comment "`FUN_71003D3FB0` writes field by hash" was wrong — it's a hash-to-course-index translator, not a writer. `FUN_71003838AC` is a reader (not "unified get/set" as initially guessed).
+
+**The hash function for FIELD NAMES is unknown** (Murmur3 of obvious names like `"flower_coin"` doesn't match). Not blocking — we already have the 8 verified hashes. May be a different algorithm, may use internal/Japanese strings, may be precomputed offline.
+
+**Deferred-write implication**: a write via `FUN_710049F648` is applied to the live container at the next save. For UI to refresh immediately (in-game purple coin counter, etc.), the grant code should ALSO write the live-state struct field directly (HamletDuFromage cheat anchors give the offsets: flower_coin at `live_base + 0xC8`, lives at `live_base + 0x60`, etc.). Dual-write strategy described in [docs/static-analysis-findings.md](docs/static-analysis-findings.md).
+
+⚠️ **Critical — the save-diff sprint did NOT produce a live-grant mechanism.** The file-offset writers anchored on the `savedata_id` UUID at file offset `0x50b8` modify only the **save-OUT staging buffer**, which exists transiently during/after save serialization. The game populates this buffer FROM live state on every save; writes into it are overwritten on the next save event and never change live gameplay. What that work produced is a **save-file editor capability** (offline modification of `game_data.sav`) and a **verification target** (predict the bytes a successful live grant will write). For ALL live in-game grants, the only path we have is the GameDataMgr API above (`FUN_710049F648` for container-A counters; other accessors TBD for container-B fields like badges and per-course flags). See [docs/runtime-address-backtrace-plan.md](docs/runtime-address-backtrace-plan.md) for the discovery of this distinction.
+
+### M3.2 badge-grant: ✅ SOLVED 2026-05-24
+
+Badges live in **Container C** at `gmd+0x70..0x8c` — a previously
+unmapped sub-container holding hash-keyed bitfields. The badge owned
+bitfield is at:
+
+- **Hash**: `0x105df820`
+- **File offset**: `0x0EA0` (u64 LE)
+- **Bit position == internal_id == badge ID** (e.g., bit 4 = Spring Feet)
+
+**The grant primitive** (in [switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp)
+under `namespace probe`):
+
+```cpp
+probe::grantBadgeBit(internal_id);  // sets bit, mirrors at u32[2]/[3], returns bool
+```
+
+Walks the container-C bucket at `gmd+0x80` for the badge hash, follows
+to the typed-sub-obj at `gmd+0x78 + idx*0x40 + 0x28`, ORs the bit
+directly into the live `uint32_t[]` data. Validated end-to-end with
+Spring Feet (bit 4) — appears immediately in the live game UI without
+save+reload.
+
+⚠️ **Gotchas during discovery (don't relearn)**:
+- Hash `0x6d1b5c25` is an auxiliary "UI-slot" bitmap (file offset
+  `0x1204`), NOT the owned bitfield. Both are queried by the badge
+  inventory UI; only `0x105df820` controls actual ownership.
+- The save serializer filters out bit positions that don't correspond
+  to real badges in the registry (we saw bits 30-31 stripped during
+  the "all bits" experiment). Stick to valid internal_ids.
+- Murmur3-32 brute force ruled out naming the hash — field name is
+  Japanese / encoded / pre-computed. Discovered via in-game probing.
+- 14 Ghidra rounds + 6 hook iterations. Full forensics in
+  [docs/static-analysis-findings.md](docs/static-analysis-findings.md)
+  under "2026-05-24 — M3.2 SOLVED".
+
 ## Nerve system primer
 
 Nintendo's Nerve system has two flavors with different hook strategies:
@@ -149,7 +242,8 @@ Recipe for finding a new Nerve hook target:
 
 - **Ghidra 11.3 or 11.4** + **Adubbz Switch Loader 1.7.0** (`File → Install Extensions`).
 - **JDK 21** required by Ghidra 11.x.
-- Apply [switch-mod/syms/100/sdk.sym](switch-mod/syms/100/sdk.sym) as Ghidra labels via a ~20-line Jython script that parses each `name = __main_start + 0xOFFSET;` line. Massive nav speedup once `nn::`, `sead::`, etc. names appear in the listing.
+- **One-time Ghidra setup**: run [scripts/ghidra/import_sdk_symbols.py](scripts/ghidra/import_sdk_symbols.py) — walks the entire `switch-mod/syms/100/` tree (gmd, sead, main, sdk) and applies ~97 named labels. Massive nav speedup once `gmd::GameDataMgr::sInstance`, `nn::`, `sead::`, etc. names appear in the listing.
+- **Sprint-2 RE scripts** (2026-05-24, used to crack the M3 grant API): [scripts/ghidra/find_gamedatamgr_xrefs.py](scripts/ghidra/find_gamedatamgr_xrefs.py), [scripts/ghidra/walk_hash_writer_xrefs.py](scripts/ghidra/walk_hash_writer_xrefs.py), [scripts/ghidra/find_offset_constant_xrefs.py](scripts/ghidra/find_offset_constant_xrefs.py), [scripts/ghidra/playreport_field_backtrace.py](scripts/ghidra/playreport_field_backtrace.py). Run order + roles in [scripts/ghidra/README.md](scripts/ghidra/README.md).
 
 ## What's done, what's next
 
@@ -164,14 +258,18 @@ The M2.5 exit-type discriminator table is locked in (199/199 goal+palace AP chec
 
 **M2.6 (✅ done — bridge skeleton + course correlation)**: state + protocol + processor in `bridge/`, 106 Python tests passing across PlayReport decode + event-routing.
 
-**M3 grant RE (❌ dead-end, 2026-05-21)**: 11 Ghidra scripts + a runtime probe failed to find usable grant entry points for badges / Wonder Seeds / Royal Seeds. The badge system has only label strings (UI / state-machine / log); the Wonder Seed counter is a generic hash-keyed getter where SMBW uses a custom hash function none of CRC32 / FNV / DJB2 / SDBM / Murmur3 reproduce. **All three grant types are now deferred to a save-diff sprint** — see [docs/save-diff-grants.md](docs/save-diff-grants.md) for the full handoff.
+**Save-diff sprint (✅ done, 2026-05-22..23)**: byte-exact write targets identified for badges (file offset `0x0EA0` u64 bitfield), per-course flag arrays (16+ trailing-region u32 arrays, stride 4), and pair-region keys. Full layout + runtime anchor in [docs/save-diff-findings.md](docs/save-diff-findings.md). Externally cross-verified against MemetendoYT/SMBW-SaveGame-Editor.
 
-**Next** (per [docs/milestones.md](docs/milestones.md) "Forward plan"):
-- **M3.8 DeathLink detection** (next): extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` with a noise discriminator. Switch-mod only, no RE dead-ends.
-- **M4.1 + M4.2 LAN socket**: ships the outgoing-only MVP end-to-end (AP server sees Wonder Seed pickups, course clears, palace clears, deaths from the game over real TCP).
-- **Save-diff sprint** ([docs/save-diff-grants.md](docs/save-diff-grants.md)): capture before+after pairs, diff, identify offsets, build the runtime address anchor + grant code. Closes M3.2 / M3.3 / M3.3b in one batch.
-- **DeathLink trigger** (incoming half of M3.8): Ghidra for death-application function or HP=0 fallback.
-- Deferred: M2.2 (10-coin), M3.1 (power-ups), M3.4 (chars), M3.5 (wonder-flower suppression), M3.6 (button suppression), M3.7 (goal hook), M5/M6/M7.
+**Static-analysis sprint 2 (✅ done, 2026-05-24)**: **the M3 grant API is decompiled**. Full details in [docs/static-analysis-findings.md](docs/static-analysis-findings.md). The previous (2026-05-21) "dead-end" verdict was wrong; this sprint succeeded with: imported sym files (finding the singleton anchor), dataflow-anchored xref harvesting (finding the writer at `+0x0049F648`), cross-reference against the HamletDuFromage cheat DB + MemetendoYT (validating the 8 known hash keys), and direct decompile of the GameDataMgr accessors. Key result: `FUN_710049F648(gmd, value, hash)` is the universal counter writer for container A — enabling flower_coin, regular_coin, all 6 Royal Seeds, COMPLETE_GAME, and INTRO_CUTSCENE_COMPLETED grants in one function call.
+
+**Next** (per [docs/handoff.md](docs/handoff.md) "Next session priorities" 2026-05-24):
+- **Priority 1**: wire `gmd::GrantFlowerCoin(99)` smoke test in [switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp); validate via save-diff. ★ One-call test of the entire static-analysis sprint deliverable.
+- **Priority 2**: generalize to all 8 hash-keyed grants (regular_coin, 6 Royal Seeds, COMPLETE_GAME, INTRO). The Royal Seed test is the experimental case — if container A also holds the seed bools, M3.3b is solved with no further RE.
+- **Priority 3**: bridge integration — extend [bridge/protocol.py](bridge/protocol.py) with `GrantHashKeyed` message variant.
+- **Priority 4** (only if Royal Seeds DON'T work via container A): decompile `FUN_71005E93FC` + `FUN_710059F894` for container-B writes.
+- **M3.8 DeathLink detection** + **M4.1/M4.2 LAN socket** + **DeathLink trigger** + **per-course flag writers via [scripts/ghidra/find_offset_constant_xrefs.py](scripts/ghidra/find_offset_constant_xrefs.py)** — all queued but lower priority than proving the grant primitive end-to-end.
+- Deferred: M2.2 (10-coin), M3.1 (power-ups), M3.4 (chars), M3.5/M3.6/M3.7, M5/M6/M7.
+- ✅ M3.2 done — see badge-grant section above.
 
 ## Reference: sister project
 

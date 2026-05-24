@@ -3,6 +3,40 @@
 Append-only log of what each capture told us. Capture protocol per item
 is in [save-diff-grants.md](save-diff-grants.md).
 
+---
+
+⚠️ **What this work produced (read first, 2026-05-24 retrospective):**
+
+This sprint mapped the on-disk `game_data.sav` format byte-by-byte
+and located its in-memory mirror via the `savedata_id` UUID scan.
+**The in-memory buffer turned out to be the save-OUT staging buffer**
+— it exists transiently during/after save serialization, the game
+populates it FROM live state on every save, and writes into it are
+overwritten on the next save event. **It is NOT a viable target for
+live grants** — see [docs/runtime-address-backtrace-plan.md](runtime-address-backtrace-plan.md)
+for the discovery.
+
+What this work IS useful for:
+
+1. **Save-file editor capability** — offline modification of
+   `game_data.sav` files works (the editor lives in
+   [scripts/savediff.py](../scripts/savediff.py)).
+2. **Byte-level verification target** — after a successful live
+   grant via the GameDataMgr API ([docs/static-analysis-findings.md](static-analysis-findings.md)),
+   we can predict and confirm the bytes that will appear in the
+   saved file.
+3. **Hash-key + offset corpus** — the 8 MemetendoYT pair-region keys
+   (flower_coin, regular_coin, 6 Royal Seeds, COMPLETE_GAME, INTRO),
+   the trailing-region per-course array offsets, and the badge
+   bitfield at `0x0EA0` are all real semantic-byte mappings that
+   inform what hash to call the GameDataMgr writer with, or what
+   live offset to find for non-hash-keyed fields like badges.
+
+The capture logs below remain valid as a save-format reference;
+they just don't directly drive grant code anymore.
+
+---
+
 ## 2026-05-22 — Badge capture #1: Coin Reward Badge (Poplin Shop, 30 flower coins)
 
 User reported state at capture time: 5 lives, 26 regular coins, 16

@@ -1,6 +1,29 @@
 # Save-diff handoff: M3 incoming item grants
 
-**Status (2026-05-21 end): diff tool built; save format characterized;
+⚠️ **Status (2026-05-24 retrospective): the strategy this doc proposes
+does NOT work for live grants.** The runtime memory anchor envisioned
+in "Step 4 — locating the live address" turned out to be the
+**save-OUT staging buffer**, not the live game state. Writes to that
+buffer are overwritten on every save event because the game
+repopulates it FROM the live state on each serialization. What
+shipped from this work is a save-file-editor capability, NOT a
+grant mechanism.
+
+The live-grant path was discovered in the 2026-05-24 static-analysis
+sprint 2 — see [docs/static-analysis-findings.md](static-analysis-findings.md)
+for the `gmd::GameDataMgr` API (`FUN_710049F648` at NSO `+0x0049F648`
+is the container-A counter writer; hash keys from this doc are still
+valid as the input). For things this writer doesn't cover (badges,
+per-course flags), the remaining static-RE work is in
+[docs/handoff.md](handoff.md) "Next session priorities".
+
+This doc remains as historical context — the save format mapping is
+correct, and the diff tool / capture protocols are still useful for
+verifying that live grants write the expected bytes on subsequent saves.
+
+---
+
+**Original status (2026-05-21 end): diff tool built; save format characterized;
 ready for first capture cycle.** SMBW saves are plaintext, the
 first-table region maps directly to the M3.3 runtime hash-keyed counter
 container, and our diff yields ready-to-use 32-bit hash keys with zero
