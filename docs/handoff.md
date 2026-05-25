@@ -1,8 +1,45 @@
 # SMBW Archipelago — handoff doc
 
-Last updated: 2026-05-24 — static-analysis sprint 2 succeeded; **M3 grant API decompiled and ready to wire**.
+Last updated: 2026-05-24 — **M4 LAN bridge + AP client landed end-to-end**;
+Spring Feet Badge granted live via `/send` from a real AP server.  Two
+follow-up gaps logged in "M4 follow-ups" section below.
 
 This is the "next session, hi me again" doc. Read it first.
+
+## M4 follow-ups (must fix before M5 demo)
+
+End-to-end smoke test on 2026-05-24 validated the full pipeline (AP server
+`/send Spring Feet Badge` → bridge → Switch worker → `probe::grantBadgeBit`
+→ badge appears live in equip menu).  Two production gaps surfaced during
+play:
+
+1. **Grants don't survive save/reload.**  `probe::grantBadgeBit` writes
+   the live container-C bitfield at `gmd+0x70..0x8c` (M3.2 anchor); on
+   save load the game rebuilds container-C from `game_data.sav` and our
+   bit is lost.  **Fix path**: the bridge needs to replay every
+   previously-received item every time the Switch reconnects OR every
+   time the player loads a save.  Two implementation options:
+   - **Bridge-side (preferred for M4.5)**: every `HelloMsg` from the
+     Switch triggers `SMBWContext` to re-emit `GrantBadgeMsg` for each
+     entry in `ctx.items_received` of badge kind.  Idempotent because
+     `grantBadgeBit` ORs into the bitfield.
+   - **Switch-side (longer term)**: hook a save-load Nerve and have it
+     mirror save-bytes for our previously-granted bits into the live
+     container, OR additionally write to the save-out staging buffer
+     at file offset `0x0EA0` so the next save round-trip persists.
+2. **In-game badge acquisition is not blocked.**  Buying a badge from
+   a Poplin shop, clearing a Badge House, or finishing the badge
+   tutorial still grants the badge directly to the player.  AP should
+   be the single source of truth.  **Fix path**: identify the in-game
+   path that calls into container-C / shop-purchase logic and suppress
+   it, then route the grant through AP (Switch reports "would have
+   acquired badge X" → AP sends LocationCheck for the shop location →
+   AP sends back GrantBadgeMsg in the natural item-routing flow).
+   The shop purchase deducts coins regardless, which is its own
+   sub-question.
+
+Both are out of scope for the M4 MVP that just landed and should land in
+M4.5 (replay) and M5 (in-game suppression).
 
 ## TL;DR — where you are right now
 

@@ -338,9 +338,27 @@ Mirror smo_archipelago's `apworld/` and `scripts/` layout. Re-uses Archipelago's
 
 SMO has a `/setup` slash command in their AP client that handles first-time prereq checks + bridge-IP configuration + Switch-mod build. We can defer this until the rest works manually.
 
-## M5 — Convert manual_smbwonder_zim to integrated apworld
+### M4.5 — Grant persistence across save/reload (new, 2026-05-24)
+
+First M4 smoke test showed that `probe::grantBadgeBit` writes the LIVE
+container-C bitfield only -- save/reload reverts.  Bridge must replay
+all `items_received` of badge kind on every Switch `HelloMsg` to
+restore state across Ryujinx restarts and in-game save loads.  Also
+write the save-out staging buffer at file offset `0x0EA0` (see
+`docs/save-diff-findings.md`) so the next save round-trip persists the
+bit and a cold-start without bridge still shows the badge.
+
+## M5 — Convert manual_smbwonder_zim to integrated apworld + suppress in-game item acquisition
 
 The existing `manual_smbwonder_zim` is an Archipelago Manual world (player ticks checkboxes by hand in the AP client). With M2 + M3 + M4 working, we replace the manual ticking with auto-detected events from the Switch mod.
+
+**Blocker uncovered in M4 first-run (2026-05-24)**: in-game badge acquisition
+(shop purchases, badge houses, badge tutorial) currently grants badges
+directly bypassing AP.  AP must be the sole authority -- identify the
+shop / badge-house grant call site, suppress it, then route through AP
+(Switch reports "would have acquired badge X" as a LocationCheck; AP
+sends GrantBadgeMsg via natural item routing).  Same pattern will be
+needed for Wonder Seeds, power-ups, characters once those grants land.
 
 Concrete work:
 
