@@ -50,7 +50,7 @@ from typing import Any
 
 from . import wire
 from .processor import process_event
-from .protocol import CheckEmitted, NerveFireMsg, PlayReportMsg
+from .protocol import CheckEmitted, DeathReported, NerveFireMsg, PlayReportMsg
 from .state import BridgeState
 
 
@@ -78,6 +78,9 @@ itself is ~60 bytes JSON, trivially cheap."""
 # coroutines without forcing the caller to schedule extra tasks.
 CheckEmittedHandler = Callable[[CheckEmitted], Awaitable[None]]
 
+# M3.8 DeathLink -- analog of CheckEmittedHandler for DeathReported.
+# Wired to ``SMBWContext.handle_death_reported`` in :mod:`bridge.__main__`.
+DeathReportedHandler = Callable[[DeathReported], Awaitable[None]]
 
 # Synchronous callable that returns the current AP-known badge bitmask.
 # Set at construction time; the LAN server calls it on every Switch
@@ -95,11 +98,11 @@ BadgeMaskProvider = Callable[[], int]
 RoyalSeedGrantsProvider = Callable[[], list[tuple[int, int]]]
 
 
-# Union of grant-message types the writer loop can drain.  Adding a new
-# inbound grant variant (e.g. ``GrantPowerUpMsg`` in M5) means: define it
-# in ``wire.py``, add a typed ``send_*`` method below, append to this
-# alias, and add a log-line branch in ``_writer_loop``.
-GrantMsg = wire.SetBadgesAbsoluteMsg | wire.GrantHashKeyedMsg
+# Union of bridge-to-Switch message types the writer loop can drain.
+# Adding a new inbound variant (e.g. ``GrantPowerUpMsg`` in M5) means:
+# define it in ``wire.py``, add a typed ``send_*`` method below, append
+# to this alias, and add a log-line branch in ``_writer_loop``.
+GrantMsg = wire.SetBadgesAbsoluteMsg | wire.GrantHashKeyedMsg | wire.KillMsg
 
 
 class LanServer:
@@ -121,11 +124,13 @@ class LanServer:
         self,
         state: BridgeState,
         on_check_emitted: CheckEmittedHandler | None = None,
+        on_death_reported: DeathReportedHandler | None = None,
         badge_mask_provider: BadgeMaskProvider | None = None,
         royal_seed_grants_provider: RoyalSeedGrantsProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
+        self._on_death_reported = on_death_reported
         self._badge_mask_provider = badge_mask_provider
         self._royal_seed_grants_provider = royal_seed_grants_provider
 
@@ -187,6 +192,35 @@ class LanServer:
             log.error(
                 "send_set_badges_absolute(bits=0x%x): outbound queue "
                 "full; dropping", bits)
+
+    def send_kill(self, source: str, cause: str) -> None:
+        """Enqueue a Kill (M3.8 DeathLink inbound) to the active Switch.
+
+        Same drop-on-no-client semantics as
+        :meth:`send_set_badges_absolute`.  The Switch dispatcher calls
+        ``probe::synthKill()`` which writes 0 to the live HP int16 at
+        ``live_base + 0x38``; the next tick of the player update
+        function reads HP <= 0 and takes the death branch.
+
+        ``source`` and ``cause`` are truncated to KillMsg's caps (48 /
+        128) on the wire encoder side, so over-long inputs are silently
+        clipped rather than rejected."""
+        msg = wire.KillMsg(source=source, cause=cause)
+        if self._send_queue is None:
+            log.warning(
+                "send_kill(source=%r, cause=%r): no Switch client "
+                "connected; dropping",
+                source, cause)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug(
+                "send_kill: enqueued source=%r cause=%r", source, cause)
+        except asyncio.QueueFull:
+            log.error(
+                "send_kill(source=%r, cause=%r): outbound queue full; "
+                "dropping",
+                source, cause)
 
     def send_grant_hash_keyed(self, hash_: int, value: int) -> None:
         """Enqueue a GrantHashKeyed (container-A counter or container-B
@@ -338,19 +372,33 @@ class LanServer:
 
     async def _run_processor(self, event: Any) -> None:
         """Hand an event to the synchronous processor and forward each
-        emitted CheckEmitted to the AP callback."""
+        emit to its matching async callback.  CheckEmitted routes to
+        ``on_check_emitted`` (AP LocationChecks); DeathReported routes
+        to ``on_death_reported`` (AP DeathLink Bounce)."""
         try:
             emitted = process_event(self._state, event)
         except Exception:
             log.exception("processor crashed on event %r", event)
             return
-        if not self._on_check_emitted or not emitted:
-            return
-        for check in emitted:
-            try:
-                await self._on_check_emitted(check)
-            except Exception:
-                log.exception("on_check_emitted handler crashed for %r", check)
+        for emit in emitted:
+            if isinstance(emit, CheckEmitted):
+                if self._on_check_emitted is None:
+                    continue
+                try:
+                    await self._on_check_emitted(emit)
+                except Exception:
+                    log.exception(
+                        "on_check_emitted handler crashed for %r", emit)
+            elif isinstance(emit, DeathReported):
+                if self._on_death_reported is None:
+                    continue
+                try:
+                    await self._on_death_reported(emit)
+                except Exception:
+                    log.exception(
+                        "on_death_reported handler crashed for %r", emit)
+            else:
+                log.warning("processor emitted unknown type %r", type(emit).__name__)
 
     # ---- Active-client management -------------------------------------
 
@@ -495,6 +543,10 @@ class LanServer:
                         log.info(
                             "-> grant_hash_keyed hash=0x%08x value=%d",
                             msg.hash, msg.value)
+                    elif isinstance(msg, wire.KillMsg):
+                        log.info(
+                            "-> kill source=%r cause=%r",
+                            msg.source, msg.cause)
                     else:
                         log.info("-> %s", type(msg).__name__)
                 except (ConnectionResetError, BrokenPipeError) as e:
