@@ -24,7 +24,8 @@
 
 from __future__ import print_function
 
-# PlayReport field names harvested from M2.4 corpus (bridge/test_play_report.py).
+# PlayReport field names harvested from M2.4 corpus
+# (apworld/smbw_archipelago/client/tests/test_play_report.py).
 # Each is a key-string the game passes to PlayReport::Add.  Each appears
 # in .rodata as a null-terminated ASCII string and has 1+ xref from
 # the .text where the Add() call is made.

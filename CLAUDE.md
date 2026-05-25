@@ -8,22 +8,35 @@ An Archipelago multiworld integration for **Super Mario Bros. Wonder** (SMBW v1.
 
 - **Dev target**: Ryujinx 1.3.3 (fast iteration loop).
 - **Production target**: real modded Switch under Atmosphere CFW (M6).
-- **Replaces**: the user's existing Archipelago Manual world at `manual_smbwonder_zim/` (manual checkbox-ticking) with automatic event-driven check-detection.
+- **Launches via**: Archipelago Launcher → "SMBW Client" button (Kivy GUI). The client subclasses `kvui.GameManager`; the prior `python -m bridge` headless CLI was removed in the M4→Kivy rewrite.
 
 ## Repo layout
 
 ```
 smwonder_archipelago/             ← outer git repo (this one)
 ├── CLAUDE.md                       you are here
+├── conftest.py                     adds vendor/Archipelago to sys.path for pytest
 ├── docs/
 │   ├── handoff.md                  current state + recent decisions (READ FIRST)
 │   ├── milestones.md               M1-M7 roadmap
 │   └── save-diff-grants.md         M3 grants handoff (Ghidra dead-end; pivot to save-diff)
-├── bridge/                         PC-side Python: PlayReport decoder + tests
-│   ├── play_report.py              CBOR-ish format decoder (see header docstring)
-│   └── test_play_report.py         44 tests; 3 live W1-1 fixtures
-├── manual_smbwonder_zim/           existing Archipelago Manual apworld (Python)
-│                                   gets replaced when M4+M5 land
+├── apworld/
+│   └── smbw_archipelago/           the SMBWonder AP world + Kivy client
+│       ├── __init__.py             SMBWonderWorld + add_client_to_launcher()
+│       ├── {Game,Items,Locations,Regions,Rules,Options,...}.py
+│       ├── data/                   items.json / locations.json / regions.json
+│       ├── hooks/                  Manual-template hook stubs (rename pending)
+│       └── client/                 ★ Kivy client + LAN bridge
+│           ├── main.py             launch() entry point (Launcher button hits this)
+│           ├── context.py          SMBWContext: CommonContext subclass
+│           ├── gui.py              SMBWManager: kvui.GameManager subclass
+│           ├── lan_server.py       async TCP server on :17777
+│           ├── discovery.py        UDP responder on :17776
+│           ├── processor.py + play_report.py + state.py + protocol.py + wire.py
+│           ├── badge_table.py + royal_seed_table.py + location_table.py
+│           └── tests/              207 tests, runnable via `python -m pytest`
+├── vendor/
+│   └── Archipelago/                git submodule, pinned to commit 799e0b7b
 └── switch-mod/                     fork of mdietz94/wondar (its own git repo)
     ├── CMakeLists.txt              modified: -fpermissive + symlink shim for Windows
     ├── cmake/toolchain.cmake       devkitA64 cross-compile
@@ -40,6 +53,28 @@ smwonder_archipelago/             ← outer git repo (this one)
 ```
 
 The outer repo `.gitignore`s `switch-mod/` because switch-mod is itself a git repo (fork of `mdietz94/wondar`). It may be promoted to a git submodule once published.
+
+## Launching the SMBW Client
+
+The Kivy AP client is launched via Archipelago's Launcher.  For dev,
+expose the apworld via a junction under `vendor/Archipelago/custom_worlds/`
+(one-time setup; see `scripts/install_smbw_apworld.ps1`).  Then:
+
+```pwsh
+python vendor/Archipelago/Launcher.py
+# click "SMBW Client" → Kivy window opens with Archipelago + SMBW tabs
+```
+
+Direct module invocation also works (skips the Launcher chrome):
+
+```pwsh
+python -m apworld.smbw_archipelago.client.main --connect=localhost:38281 --name=Mario
+# add --nogui for headless CI runs
+```
+
+The client owns the LAN socket (:17777) and UDP discovery (:17776), so
+nothing else needs to run on the PC side -- just AP server + this client +
+Ryujinx with the SMBW mod.
 
 ## Daily dev loop
 
@@ -288,7 +323,7 @@ overwrites the Switch's bitfield to that exact set on three triggers:
 ~2 s periodic tick that reverts any in-game pickup within seconds.
 Idempotent by construction — same input always produces the same final
 state.  Wire type: `SetBadgesAbsoluteMsg { bits: u64 }`
-([bridge/wire.py](bridge/wire.py)) ↔ `WireSetBadgesAbsolute`
+([apworld/smbw_archipelago/client/wire.py](apworld/smbw_archipelago/client/wire.py)) ↔ `WireSetBadgesAbsolute`
 ([switch-mod/src/program/ap/ApProtocol.hpp](switch-mod/src/program/ap/ApProtocol.hpp)).
 
 ⚠️ **Gotchas during discovery (don't relearn)**:
@@ -342,11 +377,11 @@ Recipe for finding a new Nerve hook target:
 - `COURSE_CLEARED` — every successful flagpole touch + every palace boss clear (206 AP checks lumped; exit-type splitting is M2.5).
 - Total: 330 / 663 AP checks covered (49.8%).
 
-**M2.4 + M2.5 (✅ done — Switch capture, Python decoder, full corpus)**: PlayReport payload capture via the IPC-layer pattern; Python decoder in [bridge/play_report.py](bridge/play_report.py) handles the Nintendo CBOR-ish format end-to-end. **87 tests pass against 9 live fixtures** covering all 5 observed room types (`world_activity`, `world_result`, `course_in`, `course_result`, `koopajr_result`) and edge cases (Top of Flag, Secret Exit, palace LOSS, palace WIN, inter-world transition).
+**M2.4 + M2.5 (✅ done — Switch capture, Python decoder, full corpus)**: PlayReport payload capture via the IPC-layer pattern; Python decoder in [apworld/smbw_archipelago/client/play_report.py](apworld/smbw_archipelago/client/play_report.py) handles the Nintendo CBOR-ish format end-to-end. **87 tests pass against 9 live fixtures** covering all 5 observed room types (`world_activity`, `world_result`, `course_in`, `course_result`, `koopajr_result`) and edge cases (Top of Flag, Secret Exit, palace LOSS, palace WIN, inter-world transition).
 
 The M2.5 exit-type discriminator table is locked in (199/199 goal+palace AP checks structurally classifiable). Importantly: a palace WIN emits BOTH `course_result` AND `koopajr_result` ~1 ms apart for the same event — the bridge prefers `koopajr_result` when both fire; `course_result.world_mother_seed == True` is a defensive cross-check.
 
-**M2.6 (✅ done — bridge skeleton + course correlation)**: state + protocol + processor in `bridge/`, 106 Python tests passing across PlayReport decode + event-routing.
+**M2.6 (✅ done — bridge skeleton + course correlation)**: state + protocol + processor in `apworld/smbw_archipelago/client/`, 207 Python tests passing across PlayReport decode + event-routing + wire codec + LAN server.
 
 **Save-diff sprint (✅ done, 2026-05-22..23)**: byte-exact write targets identified for badges (file offset `0x0EA0` u64 bitfield), per-course flag arrays (16+ trailing-region u32 arrays, stride 4), and pair-region keys. Full layout + runtime anchor in [docs/save-diff-findings.md](docs/save-diff-findings.md). Externally cross-verified against MemetendoYT/SMBW-SaveGame-Editor.
 
@@ -355,7 +390,7 @@ The M2.5 exit-type discriminator table is locked in (199/199 goal+palace AP chec
 **Next** (per [docs/handoff.md](docs/handoff.md) "Next session priorities" 2026-05-24):
 - **Priority 1**: wire `gmd::GrantFlowerCoin(99)` smoke test in [switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp); validate via save-diff. ★ One-call test of the entire static-analysis sprint deliverable.
 - **Priority 2**: generalize to all 8 hash-keyed grants (regular_coin, 6 Royal Seeds, COMPLETE_GAME, INTRO). The Royal Seed test is the experimental case — if container A also holds the seed bools, M3.3b is solved with no further RE.
-- **Priority 3**: bridge integration — extend [bridge/protocol.py](bridge/protocol.py) with `GrantHashKeyed` message variant.
+- **Priority 3**: bridge integration — extend [apworld/smbw_archipelago/client/protocol.py](apworld/smbw_archipelago/client/protocol.py) with `GrantHashKeyed` message variant.
 - **Priority 4** (only if Royal Seeds DON'T work via container A): decompile `FUN_71005E93FC` + `FUN_710059F894` for container-B writes.
 - **M3.8 DeathLink detection** + **M4.1/M4.2 LAN socket** + **DeathLink trigger** + **per-course flag writers via [scripts/ghidra/find_offset_constant_xrefs.py](scripts/ghidra/find_offset_constant_xrefs.py)** — all queued but lower priority than proving the grant primitive end-to-end.
 - Deferred: M2.2 (10-coin), M3.1 (power-ups), M3.4 (chars), M3.5/M3.6/M3.7, M5/M6/M7.

@@ -14,13 +14,15 @@ __pycache__/
 *.pyo
 .pytest_cache/
 
-# Vendored Archipelago checkout + its venv (per-developer).  Pinned to
-# commit 799e0b7b -- see docs/m4-runbook.md for setup steps.
-vendor/Archipelago/
+# vendor/Archipelago is a git submodule (pinned to commit 799e0b7b, matching
+# the smo_archipelago sister project).  See .gitmodules.
 venv/
 
-# Bridge runtime log (rotated per-launch, per-developer)
-bridge.log
+# SMBW Client log (rotated per-launch, written by Utils.init_logging)
+SMBWClient.txt
+
+# Build output for the packaged .apworld zip (scripts/build_apworld.py)
+build/
 
 # OS noise
 Thumbs.db

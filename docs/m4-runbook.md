@@ -1,19 +1,28 @@
 # M4 — LAN bridge + AP client runbook
 
+> **2026-05-25 layout change** — `bridge/` and `manual_smbwonder_zim/`
+> were deleted.  Replace any `python -m bridge --slot=...` here with
+> `python -m apworld.smbw_archipelago.client.main --connect=... --name=...`
+> (or click "SMBW Client" in Archipelago Launcher for the Kivy UI).
+> Test seeds now need to target game `SMBWonder` instead of
+> `Manual_SMBWonder_Zim`.
+
 End-to-end smoke test for the M4 bidirectional MVP.  Validates:
 
-- **Outbound**: Wonder Seed + Course Clear on Switch → bridge → AP `LocationChecks`.
-- **Inbound**: AP server `/send <slot> Spring Feet Badge` → bridge → Switch → badge appears live in equip menu.
+- **Outbound**: Wonder Seed + Course Clear on Switch → client → AP `LocationChecks`.
+- **Inbound**: AP server `/send <slot> Spring Feet Badge` → client → Switch → badge appears live in equip menu.
 
 ## Prereqs
 
 - **Switch (Ryujinx)**: SMBW v1.0.0 mounted, modded with this subsdk.  Do NOT
   apply the v1.0.1 update — hook offsets are pinned to 1.0.0.
-- **Archipelago**: a working checkout (e.g. `smo_archipelago/vendor/Archipelago`).
-  The `manual_smbwonder_zim` apworld installed in `Archipelago/custom_worlds/`.
-- **A generated test seed**: one slot named e.g. `MarioTest` for
-  `Manual_SMBWonder_Zim`, with **1 Spring Feet Badge in starting inventory** so
-  the AP server has one to send immediately.
+- **Archipelago**: the vendored checkout at `vendor/Archipelago/` (git submodule).
+  Expose this repo's apworld via a junction at
+  `vendor/Archipelago/custom_worlds/smbw_archipelago` →
+  `apworld/smbw_archipelago` (see `scripts/install_smbw_apworld.ps1`).
+- **A generated test seed**: one slot named e.g. `MarioTest` for game `SMBWonder`,
+  with **1 Spring Feet Badge in starting inventory** so the AP server has one
+  to send immediately.
 - **Same LAN**: bridge PC + Switch on the same subnet, OR Ryujinx on the bridge
   PC (loopback works fine via the discovery loopback probe).
 
