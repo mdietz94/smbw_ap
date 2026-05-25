@@ -1,0 +1,328 @@
+"""Tests for the M4 wire codec.
+
+Round-trips every message type, exercises every documented
+ProtocolError path, and verifies the wire<->event translation for the
+NerveFire and PlayReport types.
+"""
+
+from __future__ import annotations
+
+import json
+import unittest
+
+# Dual-mode imports so tests run both as `python -m unittest bridge.test_wire`
+# and as `python bridge/test_wire.py` (matches the existing test files).
+if __package__ is None or __package__ == "":
+    import sys, os
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from protocol import NerveFireMsg, NerveKind, PlayReportMsg
+    from wire import (
+        MAX_LINE_BYTES,
+        WIRE_VERSION,
+        ErrMsg,
+        GrantBadgeMsg,
+        HelloAckMsg,
+        HelloMsg,
+        NerveFireWireMsg,
+        PingMsg,
+        PlayReportWireMsg,
+        PongMsg,
+        ProtocolError,
+        decode,
+        encode,
+    )
+else:
+    from .protocol import NerveFireMsg, NerveKind, PlayReportMsg
+    from .wire import (
+        MAX_LINE_BYTES,
+        WIRE_VERSION,
+        ErrMsg,
+        GrantBadgeMsg,
+        HelloAckMsg,
+        HelloMsg,
+        NerveFireWireMsg,
+        PingMsg,
+        PlayReportWireMsg,
+        PongMsg,
+        ProtocolError,
+        decode,
+        encode,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Round-trip every message type.
+
+class TestRoundTrip(unittest.TestCase):
+
+    def _round_trip(self, msg):
+        line = encode(msg)
+        self.assertIsInstance(line, bytes)
+        self.assertTrue(line.endswith(b"\n"))
+        # No bare newlines mid-line.
+        self.assertEqual(line.count(b"\n"), 1)
+        decoded = decode(line)
+        self.assertEqual(type(decoded), type(msg))
+        self.assertEqual(decoded, msg)
+
+    def test_hello(self):
+        self._round_trip(HelloMsg(mod_ver="smbwap-m4", game_ver="smbw-1.0.0", pid=1))
+
+    def test_hello_ack_ok(self):
+        self._round_trip(HelloAckMsg(ok=True, bridge_ver="bridge-m4-dev"))
+
+    def test_hello_ack_refused(self):
+        self._round_trip(HelloAckMsg(
+            ok=False, bridge_ver="bridge-m4-dev",
+            reason="wire version mismatch (mine=1, yours=99)"))
+
+    def test_nerve_wonder_seed(self):
+        self._round_trip(NerveFireWireMsg(kind=NerveKind.WONDER_SEED_AWARDED, seq=42))
+
+    def test_nerve_course_cleared(self):
+        # The bridge drops this in the processor, but the wire format
+        # must still admit it -- M3.8 will add DEATH_DETECTED on the
+        # same channel and we don't want a schema bump in between.
+        self._round_trip(NerveFireWireMsg(kind=NerveKind.COURSE_CLEARED, seq=17))
+
+    def test_nerve_death(self):
+        self._round_trip(NerveFireWireMsg(kind=NerveKind.DEATH_DETECTED, seq=3))
+
+    def test_play_report_short(self):
+        self._round_trip(PlayReportWireMsg(room="course_in", payload_hex="de0001"))
+
+    def test_play_report_realistic(self):
+        # A 100-byte synthetic payload to exercise the hex path.
+        raw = bytes(range(100))
+        self._round_trip(PlayReportWireMsg(room="course_result", payload_hex=raw.hex()))
+
+    def test_play_report_empty(self):
+        self._round_trip(PlayReportWireMsg(room="ping", payload_hex=""))
+
+    def test_grant_badge(self):
+        self._round_trip(GrantBadgeMsg(internal_id=4))
+
+    def test_grant_badge_zero(self):
+        self._round_trip(GrantBadgeMsg(internal_id=0))
+
+    def test_grant_badge_max(self):
+        self._round_trip(GrantBadgeMsg(internal_id=63))
+
+    def test_err(self):
+        self._round_trip(ErrMsg(reason="unknown message type 'foo'"))
+
+    def test_ping(self):
+        self._round_trip(PingMsg(ts_ms=1234567890))
+
+    def test_pong(self):
+        self._round_trip(PongMsg(ts_ms=1234567890))
+
+
+# ---------------------------------------------------------------------------
+# Wire <-> event translation for the types the processor consumes.
+
+class TestEventBridge(unittest.TestCase):
+
+    def test_nerve_to_event_preserves_kind_and_seq(self):
+        wire_msg = NerveFireWireMsg(kind=NerveKind.WONDER_SEED_AWARDED, seq=11)
+        ev = wire_msg.to_event()
+        self.assertIsInstance(ev, NerveFireMsg)
+        self.assertEqual(ev.kind, NerveKind.WONDER_SEED_AWARDED)
+        self.assertEqual(ev.seq, 11)
+
+    def test_nerve_from_event_round_trip(self):
+        ev = NerveFireMsg(kind=NerveKind.COURSE_CLEARED, seq=7)
+        wire_msg = NerveFireWireMsg.from_event(ev)
+        self.assertEqual(wire_msg.to_event(), ev)
+
+    def test_play_report_to_event_decodes_hex(self):
+        wire_msg = PlayReportWireMsg(room="course_in", payload_hex="deadbeef")
+        ev = wire_msg.to_event()
+        self.assertIsInstance(ev, PlayReportMsg)
+        self.assertEqual(ev.room, "course_in")
+        self.assertEqual(ev.payload, b"\xde\xad\xbe\xef")
+
+    def test_play_report_from_event_round_trip(self):
+        ev = PlayReportMsg(room="course_result", payload=b"\x01\x02\x03")
+        wire_msg = PlayReportWireMsg.from_event(ev)
+        self.assertEqual(wire_msg.room, "course_result")
+        self.assertEqual(wire_msg.payload_hex, "010203")
+        self.assertEqual(wire_msg.to_event(), ev)
+
+    def test_play_report_bad_hex_raises(self):
+        wire_msg = PlayReportWireMsg(room="x", payload_hex="not hex!")
+        with self.assertRaises(ProtocolError):
+            wire_msg.to_event()
+
+
+# ---------------------------------------------------------------------------
+# Encoded JSON shape.
+
+class TestEncodedShape(unittest.TestCase):
+
+    def test_hello_includes_wire_ver(self):
+        line = encode(HelloMsg(mod_ver="x", game_ver="y", pid=0))
+        obj = json.loads(line.decode("utf-8").rstrip("\n"))
+        self.assertEqual(obj["t"], "hello")
+        self.assertEqual(obj["wire_ver"], WIRE_VERSION)
+
+    def test_hello_ack_omits_empty_reason(self):
+        line = encode(HelloAckMsg(ok=True, bridge_ver="b"))
+        obj = json.loads(line.decode("utf-8").rstrip("\n"))
+        self.assertNotIn("reason", obj)
+
+    def test_hello_ack_includes_reason_when_set(self):
+        line = encode(HelloAckMsg(ok=False, bridge_ver="b", reason="nope"))
+        obj = json.loads(line.decode("utf-8").rstrip("\n"))
+        self.assertEqual(obj["reason"], "nope")
+
+    def test_compact_json_no_whitespace(self):
+        # Switch decoder reads byte-by-byte; extra spaces are wasted bandwidth.
+        line = encode(GrantBadgeMsg(internal_id=4))
+        self.assertNotIn(b" ", line[:-1])
+
+    def test_grant_badge_serializes_minimally(self):
+        line = encode(GrantBadgeMsg(internal_id=4))
+        self.assertEqual(line, b'{"t":"grant_badge","internal_id":4}\n')
+
+    def test_nerve_kind_serializes_as_string_value(self):
+        line = encode(NerveFireWireMsg(kind=NerveKind.WONDER_SEED_AWARDED, seq=0))
+        obj = json.loads(line.decode("utf-8").rstrip("\n"))
+        self.assertEqual(obj["kind"], "wonder_seed_awarded")
+
+
+# ---------------------------------------------------------------------------
+# Decoder accepts str OR bytes, with or without trailing newline.
+
+class TestDecodeInputForms(unittest.TestCase):
+
+    def test_decode_bytes_with_newline(self):
+        line = b'{"t":"ping","ts_ms":1}\n'
+        msg = decode(line)
+        self.assertEqual(msg, PingMsg(ts_ms=1))
+
+    def test_decode_bytes_without_newline(self):
+        line = b'{"t":"ping","ts_ms":1}'
+        msg = decode(line)
+        self.assertEqual(msg, PingMsg(ts_ms=1))
+
+    def test_decode_str(self):
+        msg = decode('{"t":"ping","ts_ms":1}')
+        self.assertEqual(msg, PingMsg(ts_ms=1))
+
+
+# ---------------------------------------------------------------------------
+# ProtocolError paths.
+
+class TestDecodeErrors(unittest.TestCase):
+
+    def test_invalid_json(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b"{this isn't JSON\n")
+        self.assertIn("not valid JSON", str(cm.exception))
+
+    def test_top_level_array(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'["t","hello"]\n')
+        self.assertIn("top-level JSON must be an object", str(cm.exception))
+
+    def test_top_level_string(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'"hello"\n')
+
+    def test_missing_t(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"foo":"bar"}\n')
+        self.assertIn("'t'", str(cm.exception))
+
+    def test_non_string_t(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":42}\n')
+
+    def test_unknown_message_type(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"warp_to_world_8"}\n')
+        self.assertIn("unknown message type", str(cm.exception))
+
+    def test_invalid_utf8(self):
+        with self.assertRaises(ProtocolError) as cm:
+            # 0x80 is a continuation byte with no leading byte.
+            decode(b'\x80')
+        self.assertIn("UTF-8", str(cm.exception))
+
+    def test_oversized_line_decode(self):
+        big = b'{"t":"err","reason":"' + b"x" * (MAX_LINE_BYTES * 2) + b'"}\n'
+        with self.assertRaises(ProtocolError) as cm:
+            decode(big)
+        self.assertIn("MAX_LINE_BYTES", str(cm.exception))
+
+    def test_hello_missing_mod_ver(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"hello","game_ver":"x"}\n')
+        self.assertIn("mod_ver", str(cm.exception))
+
+    def test_hello_ack_missing_bridge_ver(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"hello_ack","ok":true}\n')
+
+    def test_nerve_unknown_kind(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"nerve","kind":"ate_a_mushroom","seq":1}\n')
+        self.assertIn("unknown nerve kind", str(cm.exception))
+
+    def test_nerve_missing_kind(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"nerve","seq":1}\n')
+
+    def test_play_report_missing_room(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"play_report","payload":"00"}\n')
+
+    def test_play_report_missing_payload(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"play_report","room":"course_in"}\n')
+
+    def test_grant_badge_missing_internal_id(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"grant_badge"}\n')
+        self.assertIn("internal_id", str(cm.exception))
+
+    def test_grant_badge_non_int_internal_id(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"grant_badge","internal_id":"4"}\n')
+
+    def test_grant_badge_bool_internal_id(self):
+        # Python's int subsumes bool; the codec rejects bool explicitly.
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"grant_badge","internal_id":true}\n')
+
+    def test_grant_badge_negative_internal_id(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"grant_badge","internal_id":-1}\n')
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_grant_badge_too_large_internal_id(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"grant_badge","internal_id":64}\n')
+
+    def test_err_missing_reason(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"err"}\n')
+
+
+# ---------------------------------------------------------------------------
+# Encode-side guard against oversized lines.
+
+class TestEncodeErrors(unittest.TestCase):
+
+    def test_oversized_play_report_raises(self):
+        # 5000 bytes hex-encoded = 10000 chars, well over MAX_LINE_BYTES.
+        huge = "ab" * 5000
+        msg = PlayReportWireMsg(room="course_result", payload_hex=huge)
+        with self.assertRaises(ValueError) as cm:
+            encode(msg)
+        self.assertIn("MAX_LINE_BYTES", str(cm.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()
