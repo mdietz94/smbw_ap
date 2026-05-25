@@ -257,14 +257,30 @@ bitfield is at:
 under `namespace probe`):
 
 ```cpp
-probe::grantBadgeBit(internal_id);  // sets bit, mirrors at u32[2]/[3], returns bool
+probe::setBadgeBitfieldAbsolute(uint64_t bits);  // overwrites whole bitfield, returns bool
 ```
 
 Walks the container-C bucket at `gmd+0x80` for the badge hash, follows
-to the typed-sub-obj at `gmd+0x78 + idx*0x40 + 0x28`, ORs the bit
-directly into the live `uint32_t[]` data. Validated end-to-end with
-Spring Feet (bit 4) — appears immediately in the live game UI without
-save+reload.
+to the typed-sub-obj at `gmd+0x78 + idx*0x40 + 0x28`, writes `bits` to
+the live `uint32_t[]` data (`data[0..1] = lo, hi` plus mirror at
+`data[2..3]`).  Validated end-to-end via Spring Feet (bit 4 = 0x10) —
+badge appears immediately in the live game UI without save+reload.
+
+**M4 follow-up #2 — AP-authoritative badge sync (shipped 2026-05-25)**.
+The original M3.2 primitive `probe::grantBadgeBit(internal_id)` (OR a
+single bit) has been **replaced** by `setBadgeBitfieldAbsolute`.
+Rationale: in-game badge acquisition (Poplin shop, badge house, badge
+medley, badge challenges) bypassed AP, so AP wasn't the sole authority
+over the badge pool — required for M5.  Solution: bridge holds the
+canonical `_badge_mask` derived from AP `items_received`, and
+overwrites the Switch's bitfield to that exact set on three triggers:
+(1) every AP `ReceivedItems`, (2) every Switch `HelloMsg`
+(replay-on-reconnect; subsumes the planned M4.5 replay), and (3) a
+~2 s periodic tick that reverts any in-game pickup within seconds.
+Idempotent by construction — same input always produces the same final
+state.  Wire type: `SetBadgesAbsoluteMsg { bits: u64 }`
+([bridge/wire.py](bridge/wire.py)) ↔ `WireSetBadgesAbsolute`
+([switch-mod/src/program/ap/ApProtocol.hpp](switch-mod/src/program/ap/ApProtocol.hpp)).
 
 ⚠️ **Gotchas during discovery (don't relearn)**:
 - Hash `0x6d1b5c25` is an auxiliary "UI-slot" bitmap (file offset

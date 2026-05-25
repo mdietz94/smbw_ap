@@ -111,45 +111,43 @@ Reproducing the smoke-test win (for future regression checks):
 3. `python scripts/savediff.py <pre>.sav <post>.sav` → expect pair 269's
    value to flip from `current → 99`.
 
-## M4 follow-ups (must fix before M5 demo)
+## M4 follow-ups
 
 End-to-end smoke test on 2026-05-24 validated the full pipeline (AP server
-`/send Spring Feet Badge` → bridge → Switch worker → `probe::grantBadgeBit`
+`/send Spring Feet Badge` → bridge → Switch worker → container-C bitfield
 → badge appears live in equip menu).  Two production gaps surfaced during
-play:
+play; **both are now closed for badges** by the M4 follow-up #2 work
+shipped 2026-05-25:
 
-1. **Grants don't survive save/reload.**  `probe::grantBadgeBit` writes
-   the live container-C bitfield at `gmd+0x70..0x8c` (M3.2 anchor); on
-   save load the game rebuilds container-C from `game_data.sav` and our
-   bit is lost.  The same gap will apply to `probe::grantContainerACounter`
-   (M3.3) once it's used outside a smoke-then-save flow: the writer
-   queues to the dirty buffer at `gmd->[+0xf8]` and only flushes on the
-   next in-game save; if the player loads a fresh save before that, the
-   counter reverts.  M4.5 fixes both surfaces uniformly:
-   - **Bridge-side (preferred for M4.5)**: every `HelloMsg` from the
-     Switch triggers `SMBWContext` to re-emit `GrantBadgeMsg` for each
-     entry in `ctx.items_received` of badge kind, AND `GrantHashKeyedMsg`
-     for each entry in any container-A / future container-B table.
-     Idempotent because `grantBadgeBit` ORs into the bitfield and the
-     container-A writer is a setter (re-setting the same value is a no-op
-     against the canonical state).
-   - **Switch-side (longer term)**: hook a save-load Nerve and have it
-     mirror save-bytes for our previously-granted bits into the live
-     container, OR additionally write to the save-out staging buffer
-     at file offset `0x0EA0` so the next save round-trip persists.
-2. **In-game badge acquisition is not blocked.**  Buying a badge from
-   a Poplin shop, clearing a Badge House, or finishing the badge
-   tutorial still grants the badge directly to the player.  AP should
-   be the single source of truth.  **Fix path**: identify the in-game
-   path that calls into container-C / shop-purchase logic and suppress
-   it, then route the grant through AP (Switch reports "would have
-   acquired badge X" → AP sends LocationCheck for the shop location →
-   AP sends back GrantBadgeMsg in the natural item-routing flow).
-   The shop purchase deducts coins regardless, which is its own
-   sub-question.
+1. ✅ **Badge grants now survive save/reload** (was: open).  The bridge
+   pushes a `SetBadgesAbsoluteMsg(bits=mask)` to the Switch on every AP
+   `ReceivedItems`, on every Switch `HelloMsg` (replay-on-reconnect),
+   and on a ~2 s periodic tick.  The Switch's
+   `probe::setBadgeBitfieldAbsolute` overwrites the entire container-C
+   bitfield to that exact set.  Idempotent by construction; subsumes
+   the originally-planned M4.5 replay-on-HelloMsg pattern.
 
-Both are out of scope for the M4 MVP that just landed and should land in
-M4.5 (replay) and M5 (in-game suppression).
+   ⚠️ **Container-A grants (Royal Seeds, coins, COMPLETE_GAME,
+   INTRO_CUTSCENE) still don't survive save/reload.**  The
+   `FUN_710049F648` writer queues to a dirty buffer at `gmd->[+0xf8]`
+   that flushes on next save; load-fresh-save reverts.  A parallel
+   container-A replay design (same pattern as `SetBadgesAbsolute`)
+   needs to land before those grants are durable.  Currently the
+   bridge issues `GrantHashKeyedMsg` per item on `ReceivedItems` only
+   — no tick, no HelloMsg replay.
+2. ✅ **In-game badge acquisition is now AP-authoritative** (was: open).
+   The ~2 s tick overwrite cycle reverts any badge the player picks up
+   in-game (Poplin shop, badge house, badge medley, badge challenges,
+   badge tutorial) to AP's known set within seconds.  No call-site
+   suppression was needed — the absolute-overwrite makes per-path
+   suppression unnecessary.  Same pattern will apply to power-ups /
+   characters once M5 wires them up.
+
+   ⚠️ Side effect: a player who buys a badge from a Poplin shop sees
+   it disappear from their inventory ~2 s later (and they're still
+   short the coins).  This is intentional — AP is the sole authority.
+   The accompanying shop-coin debit / shop-purchase-as-LocationCheck
+   work is M5 (see milestones.md).
 
 ## TL;DR — where you are right now
 

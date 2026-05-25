@@ -8,7 +8,9 @@ manual intervention).
 
 Per connection, the server:
 
-  1. Waits for a HELLO, replies with HELLO_ACK.
+  1. Waits for a HELLO, replies with HELLO_ACK, then immediately pushes
+     a SetBadgesAbsolute with the current AP-known mask (replay-on-
+     reconnect, subsumes M4.5 badge replay).
   2. Reads framed JSON lines, dispatches by ``"t"``:
        nerve        -> processor.process_event(state, NerveFireMsg)
                         -> forward each CheckEmitted to ``on_check_emitted``
@@ -17,12 +19,19 @@ Per connection, the server:
        ping         -> reply pong (M4 keepalive)
        hello        -> bounce ErrMsg (already shook hands)
   3. Spins a writer coroutine that drains ``self._send_queue`` and writes
-     each grant message (:class:`GrantBadgeMsg` /
-     :class:`GrantHashKeyedMsg`) to the socket.  ``send_grant_badge`` and
-     ``send_grant_hash_keyed`` are the two public producers.
+     each grant message (:class:`SetBadgesAbsoluteMsg` /
+     :class:`GrantHashKeyedMsg`) to the socket.
+     ``send_set_badges_absolute`` and ``send_grant_hash_keyed`` are the
+     two public producers.
+  4. Runs a periodic ~2 s tick task while a client is connected; pulls
+     the current badge mask from ``badge_mask_provider`` and pushes a
+     SetBadgesAbsolute.  This is what reverts in-game badge pickups
+     (Poplin shop, badge house) to AP's view within seconds -- AP is
+     the sole authority over the badge pool.
 
 The server does NOT own the AP client; it takes a callback for emitted
-checks.  Wiring happens in :mod:`bridge.__main__`.
+checks and an optional provider for the current AP-known badge mask.
+Wiring happens in :mod:`bridge.__main__`.
 
 Modeled on smo_archipelago/apworld/smo_archipelago/client/switch_server.py
 (~1400 LOC) but trimmed to the M4 surface: no snapshot replay, no scout
@@ -50,17 +59,35 @@ BRIDGE_VERSION = "bridge-m4-dev"
 behavior changes that a Switch-side log reader might care about."""
 
 
+BADGE_SYNC_INTERVAL_SEC = 2.0
+"""How often the badge-sync tick fires while a Switch client is
+connected.  Each tick re-sends a SetBadgesAbsolute with whatever the
+``badge_mask_provider`` currently returns -- idempotent, so coalesces
+with the per-ReceivedItems and per-HelloMsg sends without debounce
+work.  Tradeoff: tighter intervals shrink the in-game-pickup visibility
+window at the cost of LAN socket traffic.  At 2 s, an in-game badge
+purchase is visible for up to ~2 s before being reverted; the LAN line
+itself is ~60 bytes JSON, trivially cheap."""
+
+
 # Type alias for the per-check callback the LAN server invokes when the
 # processor produces a CheckEmitted.  Async to leave room for AP send
 # coroutines without forcing the caller to schedule extra tasks.
 CheckEmittedHandler = Callable[[CheckEmitted], Awaitable[None]]
 
 
+# Synchronous callable that returns the current AP-known badge bitmask.
+# Set at construction time; the LAN server calls it on every Switch
+# HelloMsg and on every periodic tick.  Returning 0 is fine and means
+# "AP has no badges -- clobber the Switch to empty".
+BadgeMaskProvider = Callable[[], int]
+
+
 # Union of grant-message types the writer loop can drain.  Adding a new
 # inbound grant variant (e.g. ``GrantPowerUpMsg`` in M5) means: define it
 # in ``wire.py``, add a typed ``send_*`` method below, append to this
 # alias, and add a log-line branch in ``_writer_loop``.
-GrantMsg = wire.GrantBadgeMsg | wire.GrantHashKeyedMsg
+GrantMsg = wire.SetBadgesAbsoluteMsg | wire.GrantHashKeyedMsg
 
 
 class LanServer:
@@ -68,10 +95,12 @@ class LanServer:
 
     Lifecycle:
 
-      lan = LanServer(state, on_check_emitted=ctx._handle_check_emitted)
+      lan = LanServer(state,
+                      on_check_emitted=ctx.handle_check_emitted,
+                      badge_mask_provider=ctx._recompute_badge_mask)
       await lan.start(host="0.0.0.0", port=17777)
       ...
-      lan.send_grant_badge(internal_id=4)   # enqueue, returns immediately
+      lan.send_set_badges_absolute(bits=0x10)   # enqueue, returns
       ...
       await lan.stop()
     """
@@ -80,19 +109,22 @@ class LanServer:
         self,
         state: BridgeState,
         on_check_emitted: CheckEmittedHandler | None = None,
+        badge_mask_provider: BadgeMaskProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
+        self._badge_mask_provider = badge_mask_provider
 
         self._server: asyncio.base_events.Server | None = None
 
         # The currently-active Switch session (writer + send queue +
-        # writer task).  ``None`` means no client connected.  Replaced
-        # wholesale on each new connection -- a HELLO from a new TCP
-        # session displaces the previous holder.
+        # writer task + badge-sync tick task).  ``None`` means no client
+        # connected.  Replaced wholesale on each new connection -- a
+        # HELLO from a new TCP session displaces the previous holder.
         self._client_writer: asyncio.StreamWriter | None = None
         self._send_queue: asyncio.Queue[GrantMsg] | None = None
         self._writer_task: asyncio.Task[None] | None = None
+        self._badge_sync_task: asyncio.Task[None] | None = None
         self._client_lock = asyncio.Lock()
 
     # ---- Lifecycle ----------------------------------------------------
@@ -114,39 +146,45 @@ class LanServer:
 
     # ---- Public outbound API ------------------------------------------
 
-    def send_grant_badge(self, internal_id: int) -> None:
-        """Enqueue a GrantBadge to the active Switch client.
+    def send_set_badges_absolute(self, bits: int) -> None:
+        """Enqueue a SetBadgesAbsolute to the active Switch client.
+
+        ``bits`` is the absolute desired badge bitmask -- the Switch
+        will overwrite its entire container-C owned-badge bitfield to
+        match.  AP is the sole authority over the badge pool.
 
         Silently drops if no client is connected -- this matches the AP
-        client's "fire and forget" pattern for received items.  M5 can
-        add a per-client backlog if we need stronger guarantees, but for
-        M4 the Switch reboot path replays badges from their save bit
-        (the M3.2 primitive writes to the live gmd container which
-        persists across save+reload)."""
-        msg = wire.GrantBadgeMsg(internal_id=internal_id)
+        client's "fire and forget" pattern for received items.  The
+        next HelloMsg will trigger a fresh send anyway (via
+        :meth:`_push_badge_sync_now`), so any dropped tick is reliably
+        recovered on reconnect.
+        """
+        msg = wire.SetBadgesAbsoluteMsg(bits=bits)
         if self._send_queue is None:
             log.warning(
-                "send_grant_badge(%d): no Switch client connected; dropping",
-                internal_id)
+                "send_set_badges_absolute(bits=0x%x): no Switch client "
+                "connected; dropping", bits)
             return
         try:
             self._send_queue.put_nowait(msg)
-            log.debug("send_grant_badge: enqueued internal_id=%d", internal_id)
+            log.debug(
+                "send_set_badges_absolute: enqueued bits=0x%x", bits)
         except asyncio.QueueFull:
             log.error(
-                "send_grant_badge(%d): outbound queue full; dropping",
-                internal_id)
+                "send_set_badges_absolute(bits=0x%x): outbound queue "
+                "full; dropping", bits)
 
     def send_grant_hash_keyed(self, hash_: int, value: int) -> None:
         """Enqueue a GrantHashKeyed (M3.3 / M3.3b container-A counter
         write) to the active Switch client.
 
-        Same drop semantics as :meth:`send_grant_badge`.  Caveat: unlike
-        badges, container-A grants do NOT survive save/reload -- the
-        ``FUN_710049F648`` write queues to a dirty buffer that drains on
-        next save; if the player loads a fresh save, the grant is lost.
-        M4.5 replay-on-HelloMsg will cover both badges and container-A
-        grants uniformly."""
+        Same drop semantics as :meth:`send_set_badges_absolute`.
+        Caveat: unlike badges, container-A grants do NOT survive
+        save/reload -- the ``FUN_710049F648`` write queues to a dirty
+        buffer that drains on next save; if the player loads a fresh
+        save, the grant is lost.  A future container-A replay-on-
+        HelloMsg pass will need to follow the SetBadgesAbsolute pattern;
+        it's not wired here yet."""
         msg = wire.GrantHashKeyedMsg(hash=hash_, value=value)
         if self._send_queue is None:
             log.warning(
@@ -227,6 +265,11 @@ class LanServer:
                 peer, msg.mod_ver, msg.game_ver, msg.pid)
             await self._send(wire.HelloAckMsg(
                 ok=True, bridge_ver=BRIDGE_VERSION))
+            # Replay-on-HelloMsg: push the current AP-known badge mask
+            # immediately so the Switch's container-C bitfield matches
+            # AP's view from the moment the connection is up.  This is
+            # what makes badges survive save/reload and Switch reboots.
+            self._push_badge_sync_now()
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -298,14 +341,26 @@ class LanServer:
                 self._writer_loop(writer, self._send_queue),
                 name="lan-writer",
             )
+            self._badge_sync_task = asyncio.create_task(
+                self._badge_sync_loop(),
+                name="lan-badge-sync",
+            )
 
     async def _drop_active_client(self) -> None:
         async with self._client_lock:
             await self._drop_active_client_locked()
 
     async def _drop_active_client_locked(self) -> None:
-        # Caller holds ``_client_lock``.  Cancels the writer task and
-        # closes the writer.  Safe to call repeatedly.
+        # Caller holds ``_client_lock``.  Cancels the writer + badge-sync
+        # tasks and closes the writer.  Safe to call repeatedly.
+        if self._badge_sync_task is not None:
+            self._badge_sync_task.cancel()
+            try:
+                await self._badge_sync_task
+            except (asyncio.CancelledError, Exception):
+                pass
+            self._badge_sync_task = None
+
         if self._writer_task is not None:
             self._writer_task.cancel()
             try:
@@ -322,6 +377,42 @@ class LanServer:
             self._client_writer = None
 
         self._send_queue = None
+
+    # ---- Badge sync ---------------------------------------------------
+
+    def _push_badge_sync_now(self) -> None:
+        """Pull the current AP-known badge mask from the provider and
+        enqueue a SetBadgesAbsolute.  No-op if no provider was wired
+        (e.g. unit tests that don't care about badges) or no client is
+        connected.  Called from HelloMsg dispatch and from the periodic
+        tick loop."""
+        if self._badge_mask_provider is None:
+            return
+        try:
+            bits = int(self._badge_mask_provider())
+        except Exception:
+            log.exception("badge_mask_provider raised; skipping sync")
+            return
+        self.send_set_badges_absolute(bits)
+
+    async def _badge_sync_loop(self) -> None:
+        """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
+        current AP-known badge mask to the Switch.  This is what
+        reverts in-game badge pickups (Poplin shop, badge house) to
+        AP's view within seconds -- AP is the sole authority over the
+        badge pool.
+
+        Runs until cancelled by ``_drop_active_client_locked`` (i.e.
+        only while a Switch client is connected; no point ticking when
+        no one is listening)."""
+        try:
+            while True:
+                await asyncio.sleep(BADGE_SYNC_INTERVAL_SEC)
+                self._push_badge_sync_now()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            log.exception("badge_sync_loop crashed")
 
     async def _send(self, msg: wire.WireMsg) -> None:
         """Best-effort send to the active client; logs and drops on
@@ -352,8 +443,8 @@ class LanServer:
                 try:
                     writer.write(wire.encode(msg))
                     await writer.drain()
-                    if isinstance(msg, wire.GrantBadgeMsg):
-                        log.info("-> grant_badge internal_id=%d", msg.internal_id)
+                    if isinstance(msg, wire.SetBadgesAbsoluteMsg):
+                        log.info("-> set_badges_absolute bits=0x%x", msg.bits)
                     elif isinstance(msg, wire.GrantHashKeyedMsg):
                         log.info(
                             "-> grant_hash_keyed hash=0x%08x value=%d",

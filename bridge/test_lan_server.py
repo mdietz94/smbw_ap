@@ -2,9 +2,11 @@
 
 Spins up a real LanServer on an ephemeral port, connects a fake Switch
 client, and exercises every wire path the M4 plan calls out: HELLO
-handshake, nerve dispatch through the processor, play_report decode +
-course_in state update, GrantBadge send, malformed input handling,
-and the displace-old-client-on-reconnect policy.
+handshake + post-hello SetBadgesAbsolute replay, nerve dispatch through
+the processor, play_report decode + course_in state update,
+SetBadgesAbsolute + GrantHashKeyed outbound, periodic badge-sync tick,
+malformed input handling, and the displace-old-client-on-reconnect
+policy.
 """
 
 from __future__ import annotations
@@ -72,17 +74,24 @@ class _FakeSwitch:
 class _ServerHarness:
     """Manages LanServer lifecycle + the captured on_check_emitted list."""
 
-    def __init__(self) -> None:
+    def __init__(self, badge_mask: int = 0) -> None:
         self.state = BridgeState()
         self.emitted: list[CheckEmitted] = []
         self.server: LanServer | None = None
         self.port: int = 0
+        # Mutable mask the tests can mutate live; the lambda the LAN
+        # server holds re-reads each invocation.
+        self.badge_mask = badge_mask
 
     async def _on_check_emitted(self, check: CheckEmitted) -> None:
         self.emitted.append(check)
 
     async def start(self) -> None:
-        self.server = LanServer(self.state, on_check_emitted=self._on_check_emitted)
+        self.server = LanServer(
+            self.state,
+            on_check_emitted=self._on_check_emitted,
+            badge_mask_provider=lambda: self.badge_mask,
+        )
         # asyncio.start_server binds when you pass port=0 -> ephemeral; we
         # have to peek at the socket to learn what we got.
         await self.server.start(host="127.0.0.1", port=0)
@@ -121,6 +130,25 @@ class TestHelloHandshake(_AsyncTestCase):
             self.assertTrue(ack.ok)
             self.assertEqual(ack.wire_ver, wire.WIRE_VERSION)
             self.assertNotEqual(ack.bridge_ver, "")
+            # Replay-on-HelloMsg: bridge should also push the current
+            # AP-known badge mask right after the ack.  Default mask=0
+            # in the harness, so we expect bits=0.
+            sync = await client.recv()
+            self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
+            self.assertEqual(sync.bits, 0)
+        finally:
+            await client.close()
+
+    async def test_hello_replay_uses_provider_mask(self):
+        self.h.badge_mask = (1 << 4) | (1 << 9)
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(
+                mod_ver="t", game_ver="t", pid=0))
+            await client.recv()  # ack
+            sync = await client.recv()
+            self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
+            self.assertEqual(sync.bits, (1 << 4) | (1 << 9))
         finally:
             await client.close()
 
@@ -226,7 +254,8 @@ class TestPlayReportDispatch(_AsyncTestCase):
         client = await _FakeSwitch.connect(self.h.port)
         try:
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
-            await client.recv()
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute replay
 
             await client.send(wire.PlayReportWireMsg(
                 room="course_in", payload_hex="zznotahex"))
@@ -239,30 +268,58 @@ class TestPlayReportDispatch(_AsyncTestCase):
 
 
 # ---------------------------------------------------------------------------
-# Outbound GrantBadge.
+# Outbound SetBadgesAbsolute.
 
-class TestGrantBadgeOutbound(_AsyncTestCase):
+class TestSetBadgesAbsoluteOutbound(_AsyncTestCase):
 
-    async def test_send_grant_badge_reaches_client(self):
+    async def _drain_hello_replay(self, client: _FakeSwitch) -> None:
+        """Send hello, eat the ack + the post-hello replay."""
+        await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+        await client.recv()  # ack
+        await client.recv()  # replay SetBadgesAbsolute (bits=0)
+        await asyncio.sleep(0.02)  # let writer task settle
+
+    async def test_send_set_badges_absolute_reaches_client(self):
         client = await _FakeSwitch.connect(self.h.port)
         try:
-            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
-            await client.recv()
-
-            # Give _install_client a beat to settle the writer task.
-            await asyncio.sleep(0.02)
-            self.h.server.send_grant_badge(internal_id=4)
+            await self._drain_hello_replay(client)
+            self.h.server.send_set_badges_absolute(bits=(1 << 4))
 
             received = await client.recv()
-            self.assertIsInstance(received, wire.GrantBadgeMsg)
-            self.assertEqual(received.internal_id, 4)
+            self.assertIsInstance(received, wire.SetBadgesAbsoluteMsg)
+            self.assertEqual(received.bits, (1 << 4))
         finally:
             await client.close()
 
-    async def test_send_grant_badge_with_no_client_drops(self):
+    async def test_send_set_badges_absolute_with_no_client_drops(self):
         # No client connected; this should warn-and-drop, not raise.
-        self.h.server.send_grant_badge(internal_id=7)
+        self.h.server.send_set_badges_absolute(bits=0xF)
         # If we got here, success.
+
+    async def test_periodic_tick_pushes_provider_mask(self):
+        # Drop the tick interval so the test doesn't have to wait 2 s.
+        # Resolve the lan_server module via the already-imported LanServer
+        # so the dual-mode (package / script) import pattern still works.
+        import sys
+        ls_mod = sys.modules[LanServer.__module__]
+        original = ls_mod.BADGE_SYNC_INTERVAL_SEC
+        ls_mod.BADGE_SYNC_INTERVAL_SEC = 0.05
+        try:
+            self.h.badge_mask = (1 << 4)
+            client = await _FakeSwitch.connect(self.h.port)
+            try:
+                await self._drain_hello_replay(client)
+                # Update the live mask mid-flight; the next tick must
+                # send the new value.
+                self.h.badge_mask = (1 << 4) | (1 << 9)
+                # First tick should arrive within ~150 ms.
+                sync = await client.recv(timeout=0.5)
+                self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
+                self.assertEqual(sync.bits, (1 << 4) | (1 << 9))
+            finally:
+                await client.close()
+        finally:
+            ls_mod.BADGE_SYNC_INTERVAL_SEC = original
 
 
 class TestGrantHashKeyedOutbound(_AsyncTestCase):
@@ -271,7 +328,8 @@ class TestGrantHashKeyedOutbound(_AsyncTestCase):
         client = await _FakeSwitch.connect(self.h.port)
         try:
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
-            await client.recv()
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute replay
 
             await asyncio.sleep(0.02)
             # W1 Royal Seed hash + value=1; matches royal_seed_table.
@@ -330,22 +388,27 @@ class TestPingPongAndErrors(_AsyncTestCase):
 class TestClientDisplacement(_AsyncTestCase):
 
     async def test_second_connection_replaces_first(self):
-        # First client connects and gets its hello acked.
+        # First client connects and gets its hello acked + replay.
         client_a = await _FakeSwitch.connect(self.h.port)
         await client_a.send(wire.HelloMsg(mod_ver="a", game_ver="t"))
-        await client_a.recv()
+        await client_a.recv()  # ack
+        await client_a.recv()  # post-hello SetBadgesAbsolute replay
         await asyncio.sleep(0.02)
 
         # Second client connects.
         client_b = await _FakeSwitch.connect(self.h.port)
         await client_b.send(wire.HelloMsg(mod_ver="b", game_ver="t"))
-        await client_b.recv()
+        await client_b.recv()  # ack
+        await client_b.recv()  # post-hello SetBadgesAbsolute replay
         await asyncio.sleep(0.05)
 
-        # A grant should reach B, not A.
-        self.h.server.send_grant_badge(internal_id=11)
+        # An explicit send should reach B, not A.  Pick a value that
+        # differs from the post-hello replay (0) so the test isn't
+        # confused by ordering.
+        self.h.server.send_set_badges_absolute(bits=(1 << 11))
         received_b = await client_b.recv()
-        self.assertEqual(received_b, wire.GrantBadgeMsg(internal_id=11))
+        self.assertEqual(
+            received_b, wire.SetBadgesAbsoluteMsg(bits=(1 << 11)))
 
         # A's connection should be closed by the server.  Reading from
         # it should give EOF.
