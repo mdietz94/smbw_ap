@@ -22,11 +22,17 @@ from . import play_report
 from .protocol import (
     CheckEmitted,
     CheckKind,
+    DeathReported,
     NerveFireMsg,
     NerveKind,
     PlayReportMsg,
 )
 from .state import BridgeState, CurrentCourse
+
+
+# Anything the processor emits as a side-effect of consuming an event.
+# CheckEmitted -> AP LocationChecks; DeathReported -> AP DeathLink Bounce.
+ProcessorEmit = CheckEmitted | DeathReported
 
 
 log = logging.getLogger(__name__)
@@ -35,10 +41,11 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Top-level dispatch.
 
-def process_event(state: BridgeState, event: Any) -> list[CheckEmitted]:
+def process_event(state: BridgeState, event: Any) -> list[ProcessorEmit]:
     """Route an inbound event to its handler.  Returns the list of
-    CheckEmitted produced (empty if none — the event may just have
-    updated state)."""
+    emits produced (empty if none — the event may just have updated
+    state).  Emits are heterogeneous: CheckEmitted for AP location
+    checks, DeathReported for DeathLink bounces."""
     if isinstance(event, NerveFireMsg):
         return _handle_nerve_fire(state, event)
     if isinstance(event, PlayReportMsg):
@@ -50,8 +57,8 @@ def process_event(state: BridgeState, event: Any) -> list[CheckEmitted]:
 # ---------------------------------------------------------------------------
 # Nerve handlers.
 
-def _handle_nerve_fire(state: BridgeState, event: NerveFireMsg) -> list[CheckEmitted]:
-    emitted: list[CheckEmitted] = []
+def _handle_nerve_fire(state: BridgeState, event: NerveFireMsg) -> list[ProcessorEmit]:
+    emitted: list[ProcessorEmit] = []
     if event.kind == NerveKind.WONDER_SEED_AWARDED:
         # M2.6 core: attribute to the current course.
         course = state.current_course
@@ -81,12 +88,16 @@ def _handle_nerve_fire(state: BridgeState, event: NerveFireMsg) -> list[CheckEmi
         return []
 
     if event.kind == NerveKind.DEATH_DETECTED:
+        # The Switch-side discriminator (Phase 2) decides what counts as
+        # a real death; by the time it reaches us here, the death is
+        # confirmed.  Bump the local counter for diagnostics and emit a
+        # DeathReported so the AP layer can decide whether to bounce
+        # (gated on the per-slot DeathLink tag).
         state.bump_death_count()
-        log.info("death_detected fire #%d (total deaths: %d)",
-                 event.seq, state.death_count)
-        # No AP check emit; DeathLink forwarding happens at the AP layer
-        # (M3.8 incoming side).
-        return []
+        log.info(
+            "death_detected fire #%d (total deaths: %d) -> DeathReported",
+            event.seq, state.death_count)
+        return [DeathReported(seq=event.seq)]
 
     log.warning("unknown nerve kind: %r", event.kind)
     return []

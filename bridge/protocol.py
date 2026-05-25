@@ -88,6 +88,24 @@ class CheckKind(str, Enum):
 
 
 @dataclass(frozen=True)
+class DeathReported:
+    """M3.8 DeathLink outbound -- a Switch ``DEATH_DETECTED`` nerve fire
+    that survived the discriminator.
+
+    The processor emits this; the LanServer routes it to the AP layer's
+    ``handle_death_reported`` callback, which (when the slot is
+    DeathLink-tagged) sends a ``Bounce`` packet to the AP server.
+
+    ``seq`` is the Switch-side fire counter -- useful for diagnostics
+    when correlating bridge logs against Ryujinx logs.  Not used for
+    dedup: every detected death produces an emit; the AP server is the
+    one authority on how multiple bounces interact.
+    """
+
+    seq: int = 0
+
+
+@dataclass(frozen=True)
 class CheckEmitted:
     """A bridge-side classification of an in-game event into an AP
     location-family + per-course identifier.

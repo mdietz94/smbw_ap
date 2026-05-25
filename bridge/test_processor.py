@@ -18,7 +18,14 @@ if __package__ is None or __package__ == "":
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from processor import _emit_ten_coin_checks, process_event
-    from protocol import CheckKind, NerveFireMsg, NerveKind, PlayReportMsg
+    from protocol import (
+        CheckEmitted,
+        CheckKind,
+        DeathReported,
+        NerveFireMsg,
+        NerveKind,
+        PlayReportMsg,
+    )
     from state import BridgeState, CurrentCourse
     from test_play_report import (
         COURSE_RESULT,
@@ -33,7 +40,14 @@ if __package__ is None or __package__ == "":
     )
 else:
     from .processor import _emit_ten_coin_checks, process_event
-    from .protocol import CheckKind, NerveFireMsg, NerveKind, PlayReportMsg
+    from .protocol import (
+        CheckEmitted,
+        CheckKind,
+        DeathReported,
+        NerveFireMsg,
+        NerveKind,
+        PlayReportMsg,
+    )
     from .state import BridgeState, CurrentCourse
     from .test_play_report import (
         COURSE_RESULT,
@@ -341,7 +355,10 @@ class TestIgnoredRooms(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# DeathLink counter (M3.8 groundwork — counting only, no triggering yet).
+# DeathLink (M3.8 — outbound: emit DeathReported per DEATH_DETECTED so the
+# AP layer can decide whether to bounce.  The local death_count counter
+# is bumped for diagnostics on every detected death regardless of
+# DeathLink enable state.)
 
 class TestDeathTracking(unittest.TestCase):
     def test_death_detected_bumps_counter(self):
@@ -350,8 +367,23 @@ class TestDeathTracking(unittest.TestCase):
         process_event(state, NerveFireMsg(kind=NerveKind.DEATH_DETECTED, seq=1))
         process_event(state, NerveFireMsg(kind=NerveKind.DEATH_DETECTED, seq=2))
         self.assertEqual(state.death_count, 2)
-        # Deaths don't emit AP checks directly.
+        # Deaths don't emit AP location checks.
         self.assertEqual(state.count_emitted(), 0)
+
+    def test_death_detected_emits_death_reported(self):
+        state = BridgeState()
+        emitted = process_event(
+            state, NerveFireMsg(kind=NerveKind.DEATH_DETECTED, seq=42))
+        self.assertEqual(len(emitted), 1)
+        self.assertIsInstance(emitted[0], DeathReported)
+        self.assertEqual(emitted[0].seq, 42)
+
+    def test_death_detected_does_not_emit_check(self):
+        """DeathReported is its own emit type; no CheckEmitted produced."""
+        state = BridgeState()
+        emitted = process_event(
+            state, NerveFireMsg(kind=NerveKind.DEATH_DETECTED, seq=1))
+        self.assertFalse(any(isinstance(e, CheckEmitted) for e in emitted))
 
 
 # ---------------------------------------------------------------------------

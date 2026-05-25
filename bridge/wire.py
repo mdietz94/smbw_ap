@@ -314,6 +314,51 @@ class GrantHashKeyedMsg:
 
 
 @dataclass(frozen=True)
+class KillMsg:
+    """Bridge -> Switch.  M3.8 DeathLink incoming half.
+
+    Sent when an AP DeathLink Bounce arrives for a slot that has the
+    ``DeathLink`` tag.  The Switch dispatcher drains this on the game
+    thread and calls ``probe::synthKill()`` which writes 0 to the live
+    HP byte (``live_base + 0x1C``) to force Mario's death-handler tick.
+
+    ``source`` and ``cause`` are free-form strings from the AP Bounce's
+    ``data`` field.  Sizes are bounded so the Switch's fixed-buffer
+    decoder doesn't have to grow: ``source`` is typically an AP slot
+    name (we cap at 48 chars to match the Switch's WireKill struct);
+    ``cause`` is short human-readable text capped at 128.  Longer
+    incoming values are truncated on the wire encoder side; the bridge
+    validator below enforces those caps so a misbehaving sender never
+    overflows the Switch buffer.
+    """
+
+    T = "kill"
+
+    source: str
+    cause: str
+
+    # Source/cause caps -- MUST match WireKill char buffer sizes in
+    # switch-mod/src/program/ap/ApProtocol.hpp.  Bumping either side
+    # requires bumping the other.
+    SOURCE_CAP = 48
+    CAUSE_CAP = 128
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "t": self.T,
+            "source": self.source[: self.SOURCE_CAP],
+            "cause": self.cause[: self.CAUSE_CAP],
+        }
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> KillMsg:
+        return cls(
+            source=_req_str(d, "source"),
+            cause=_req_str(d, "cause"),
+        )
+
+
+@dataclass(frozen=True)
 class ErrMsg:
     """Either direction.  Protocol-level error notification.
 
@@ -377,6 +422,7 @@ WireMsg = (
     | PlayReportWireMsg
     | SetBadgesAbsoluteMsg
     | GrantHashKeyedMsg
+    | KillMsg
     | ErrMsg
     | PingMsg
     | PongMsg
@@ -393,6 +439,7 @@ _FROM_WIRE: dict[str, Any] = {
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
+    KillMsg.T: KillMsg.from_wire,
     ErrMsg.T: ErrMsg.from_wire,
     PingMsg.T: PingMsg.from_wire,
     PongMsg.T: PongMsg.from_wire,
