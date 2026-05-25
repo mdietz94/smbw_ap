@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 from typing import Final
 
+from .badge_table import _BADGES
 from .protocol import CheckEmitted, CheckKind
 
 
@@ -42,6 +43,13 @@ _STAGE_PIPEROCK_PALACE: Final[int] = 2308078743
 
 
 # (CheckKind, stage_key) -> AP location name.
+#
+# Note: for CheckKind.BADGE_ACQUIRED, ``stage_key`` holds the badge bit
+# position (== SMBW internal_id), not a course key.  See
+# ``protocol.CheckEmitted.stage_key`` docstring for the per-kind
+# semantics.  Badge entries are appended below from ``badge_table._BADGES``
+# so adding a new internal_id mapping in one place flows through to
+# both the inbound grant path and the outbound check path.
 _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     # W1-1: Welcome to the Flower Kingdom!
     (CheckKind.NORMAL_EXIT, _STAGE_W1_1): "W1: Welcome to the Flower Kingdom! - Normal Exit",
@@ -57,6 +65,26 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     # Pipe-Rock Plateau Palace (W1 Royal Seed boss)
     (CheckKind.PALACE_CLEAR, _STAGE_PIPEROCK_PALACE): "W1: Pipe-Rock Plateau Palace - Royal Seed",
 }
+
+
+# M2.3 badge entries.  AP location names usually follow the pattern
+# ``"<Badge Item Name> Obtained"``, but the apworld has one naming
+# asymmetry: items.json calls the bubble badge "All Bubble Flower Badge"
+# while locations.json calls the corresponding check
+# "All Bubble Power Badge Obtained".  The override map below patches
+# that single case; all 23 others follow the canonical pattern.
+_BADGE_LOCATION_NAME_OVERRIDES: Final[dict[str, str]] = {
+    "All Bubble Flower Badge": "All Bubble Power Badge Obtained",
+}
+
+
+def _populate_badge_entries() -> None:
+    for name, bit, _confidence in _BADGES:
+        loc = _BADGE_LOCATION_NAME_OVERRIDES.get(name, f"{name} Obtained")
+        _TABLE[(CheckKind.BADGE_ACQUIRED, bit)] = loc
+
+
+_populate_badge_entries()
 
 
 # (stage_key, coin_index) -> AP location name for TEN_COIN checks.

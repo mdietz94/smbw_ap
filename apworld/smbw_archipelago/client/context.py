@@ -35,7 +35,7 @@ from . import badge_table
 from . import royal_seed_table
 from .commands import SMBWCommandProcessor
 from .location_table import lookup_name
-from .protocol import CheckEmitted, DeathReported, GoalCompleted
+from .protocol import CheckEmitted, CheckKind, DeathReported, GoalCompleted
 from .state import BridgeState
 
 
@@ -79,6 +79,22 @@ class SMBWContext(CommonContext):
         # enabled) and inbound (on_deathlink forwards to Switch iff
         # enabled, belt-and-braces over CommonClient's tag-check).
         self.deathlink_enabled: bool = False
+
+        # M2.3 badge probe override -- when not None, ``_recompute_badge_mask``
+        # returns this instead of the AP-derived mask.  Lets a developer
+        # cycle through unmapped internal_ids (`/badge_probe <bit>`) to
+        # discover which AP badge each bit corresponds to.  The 2 s
+        # badge_sync tick keeps re-pushing the probe mask, so the badge
+        # stays visible in-game until the override is cleared.
+        self._badge_probe_mask: int | None = None
+
+        # M2.3 known-invalid bits the user has confirmed (via
+        # `/badge_probe_invalid`) don't correspond to any AP badge.
+        # `/badge_probe_next` skips these so the user doesn't re-probe
+        # dead bits.  Runtime-only -- not persisted across client
+        # restarts; for permanent records add to ``badge_table._BADGES``
+        # or paste the snippet from `/badge_status` somewhere durable.
+        self._badge_probe_invalid: set[int] = set()
 
     # ---- AP lifecycle overrides ---------------------------------------
 
@@ -164,7 +180,15 @@ class SMBWContext(CommonContext):
         doesn't recognize contribute 0 bits (silent drop).  This is what
         the LAN server pushes to the Switch as the authoritative badge
         set on HelloMsg, on a periodic tick, and after every
-        ReceivedItems."""
+        ReceivedItems.
+
+        M2.3 probe override: if ``self._badge_probe_mask`` is not None,
+        return it instead of the AP-derived mask.  Drives the
+        `/badge_probe` command loop where a developer sets a single bit
+        to see which badge it corresponds to in-game.
+        """
+        if self._badge_probe_mask is not None:
+            return self._badge_probe_mask
         mask = 0
         for it in self.items_received:
             item_id = getattr(it, "item", None)
@@ -181,6 +205,20 @@ class SMBWContext(CommonContext):
                 continue
             mask |= (1 << bit)
         return mask
+
+    def set_badge_probe_mask(self, mask: int | None) -> None:
+        """M2.3 probe-and-discover entry point.  Set or clear the badge
+        probe override and immediately push a SetBadgesAbsolute so the
+        Switch reflects the new mask without waiting for the next tick.
+
+        Passing ``None`` restores AP-authoritative mode (the badge mask
+        recomputes from items_received).  Passing 0 sends an empty mask
+        (useful for confirming the override is active).
+        """
+        self._badge_probe_mask = mask
+        lan = self.lan_server
+        if lan is not None and hasattr(lan, "_push_badge_sync_now"):
+            lan._push_badge_sync_now()
 
     def _collect_royal_seed_grants(self) -> list[tuple[int, int]]:
         """Walk :attr:`items_received` and return ``[(hash, value), ...]``
@@ -345,6 +383,20 @@ class SMBWContext(CommonContext):
 
     async def handle_check_emitted(self, check: CheckEmitted) -> None:
         """Translate a CheckEmitted to an AP LocationChecks message."""
+        # M2.3 probe-mode guard: each /badge_probe overwrites the
+        # container-C bitfield, which the Switch's diff-on-overwrite
+        # path then interprets as the player picking up the *previous*
+        # probe's bit.  Suppress BADGE_ACQUIRED checks while a probe is
+        # active so we don't spuriously tick off real AP locations
+        # during exploration.  Clear the probe before genuine play
+        # (`/badge_probe_clear`) to re-enable badge check emission.
+        if (check.kind == CheckKind.BADGE_ACQUIRED
+                and self._badge_probe_mask is not None):
+            log.info(
+                "badge probe active (mask=0x%x); suppressing AP "
+                "LocationCheck for BADGE_ACQUIRED internal_id=%d",
+                self._badge_probe_mask, check.stage_key)
+            return
         name = lookup_name(check)
         if name is None:
             log.info(

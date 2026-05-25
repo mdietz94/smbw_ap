@@ -14,6 +14,7 @@ import unittest
 
 from ..processor import _emit_ten_coin_checks, process_event
 from ..protocol import (
+    BadgeAcquiredMsg,
     CheckEmitted,
     CheckKind,
     DeathReported,
@@ -558,6 +559,59 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
             room="course_result", payload=PALACE_COURSE_RESULT))
         self.assertEqual(emitted, [])
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
+
+
+# ---------------------------------------------------------------------------
+# M2.3 badge acquisition.
+
+class TestBadgeAcquired(unittest.TestCase):
+    """Switch-detected in-game badge pickup -> CheckEmitted."""
+
+    def test_known_internal_id_emits_check(self):
+        state = BridgeState()
+        emitted = process_event(
+            state, BadgeAcquiredMsg(internal_id=4, seq=1))  # Spring Feet
+        self.assertEqual(len(emitted), 1)
+        self.assertIsInstance(emitted[0], CheckEmitted)
+        self.assertEqual(emitted[0].kind, CheckKind.BADGE_ACQUIRED)
+        self.assertEqual(emitted[0].stage_key, 4)
+        self.assertEqual(emitted[0].metadata["seq"], 1)
+
+    def test_unmapped_internal_id_still_emits(self):
+        """Mapping is the location_table's concern; the processor emits
+        a CheckEmitted for every distinct internal_id and lets the
+        downstream lookup decide what to do (log + drop for unmapped)."""
+        state = BridgeState()
+        emitted = process_event(
+            state, BadgeAcquiredMsg(internal_id=99, seq=42))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].stage_key, 99)
+
+    def test_duplicate_acquisition_dedups(self):
+        state = BridgeState()
+        first = process_event(
+            state, BadgeAcquiredMsg(internal_id=4, seq=1))
+        second = process_event(
+            state, BadgeAcquiredMsg(internal_id=4, seq=2))
+        self.assertEqual(len(first), 1)
+        self.assertEqual(second, [])
+        self.assertEqual(state.count_emitted(CheckKind.BADGE_ACQUIRED), 1)
+
+    def test_different_badges_emit_separately(self):
+        state = BridgeState()
+        process_event(state, BadgeAcquiredMsg(internal_id=4))
+        process_event(state, BadgeAcquiredMsg(internal_id=9))
+        process_event(state, BadgeAcquiredMsg(internal_id=46))
+        self.assertEqual(state.count_emitted(CheckKind.BADGE_ACQUIRED), 3)
+        self.assertTrue(state.has_emitted(CheckKind.BADGE_ACQUIRED, 4))
+        self.assertTrue(state.has_emitted(CheckKind.BADGE_ACQUIRED, 9))
+        self.assertTrue(state.has_emitted(CheckKind.BADGE_ACQUIRED, 46))
+
+    def test_badge_acquired_does_not_emit_death_reported(self):
+        state = BridgeState()
+        emitted = process_event(
+            state, BadgeAcquiredMsg(internal_id=4))
+        self.assertFalse(any(isinstance(e, DeathReported) for e in emitted))
 
 
 if __name__ == "__main__":

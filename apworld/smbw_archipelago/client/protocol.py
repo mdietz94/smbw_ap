@@ -54,6 +54,21 @@ class NerveFireMsg:
 
 
 @dataclass(frozen=True)
+class BadgeAcquiredMsg:
+    """An in-game badge pickup the Switch detected via diff-on-overwrite.
+
+    Distinct from :mod:`apworld.smbw_archipelago.client.wire`'s
+    ``BadgeAcquiredWireMsg`` so the processor's input shape can evolve
+    independently of the wire format.  ``internal_id`` is the bit
+    position in the container-C owned-badge bitfield, which is itself
+    the SMBW internal badge id.
+    """
+
+    internal_id: int
+    seq: int = 0
+
+
+@dataclass(frozen=True)
 class PlayReportMsg:
     """A PlayReport was committed to the prepo IPC layer on the Switch.
 
@@ -78,7 +93,7 @@ class PlayReportMsg:
 
 
 class CheckKind(str, Enum):
-    """The six AP location families this bridge classifies events into."""
+    """The AP location families this bridge classifies events into."""
 
     TOP_OF_FLAG = "top_of_flag"          # 89 AP checks
     NORMAL_EXIT = "normal_exit"          # 96 AP checks
@@ -89,6 +104,9 @@ class CheckKind(str, Enum):
     TEN_COIN = "ten_coin"                # 306 AP checks (102 courses × 3)
                                          # CheckEmitted.metadata["coin_index"]
                                          # is 0/1/2 — see docs/m2.2-runbook.md.
+    BADGE_ACQUIRED = "badge_acquired"    # 24 AP checks (M2.3) — stage_key
+                                         # holds the badge bit position
+                                         # (== SMBW internal_id).
 
 
 @dataclass(frozen=True)
@@ -138,8 +156,13 @@ class CheckEmitted:
 
     Fields:
         kind:       which AP family (see CheckKind)
-        stage_key:  unique 32-bit course identifier from
-                     stage_info.stage_key (M2.4)
+        stage_key:  the per-kind identifier.  For course-clear / wonder-
+                     seed / ten-coin kinds this is the unique 32-bit
+                     ``stage_info.stage_key`` (M2.4).  For
+                     ``BADGE_ACQUIRED`` (M2.3) this is the badge bit
+                     position == SMBW internal_id.  The state dedup key
+                     ``(kind, stage_key, sub_key)`` works uniformly
+                     because no two kinds share a numeric namespace.
         metadata:   free-form dict for extra context (course_no,
                      world_no, total_get_finish_seed_count, etc.) the
                      downstream consumer may want for diagnostics

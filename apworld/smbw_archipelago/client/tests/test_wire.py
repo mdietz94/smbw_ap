@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import unittest
 
-from ..protocol import NerveFireMsg, NerveKind, PlayReportMsg
+from ..protocol import BadgeAcquiredMsg, NerveFireMsg, NerveKind, PlayReportMsg
 from ..wire import (
     MAX_LINE_BYTES,
     WIRE_VERSION,
+    BadgeAcquiredWireMsg,
     ErrMsg,
     GrantHashKeyedMsg,
     HelloAckMsg,
@@ -115,6 +116,19 @@ class TestRoundTrip(unittest.TestCase):
         # Both fields at the high edge of the documented u32 range.
         self._round_trip(GrantHashKeyedMsg(hash=0xFFFFFFFF, value=0xFFFFFFFF))
 
+    def test_badge_acquired_typical(self):
+        self._round_trip(BadgeAcquiredWireMsg(internal_id=4, seq=1))
+
+    def test_badge_acquired_zero(self):
+        self._round_trip(BadgeAcquiredWireMsg(internal_id=0, seq=0))
+
+    def test_badge_acquired_high_internal_id(self):
+        self._round_trip(BadgeAcquiredWireMsg(internal_id=46, seq=99))
+
+    def test_badge_acquired_max_u32(self):
+        self._round_trip(BadgeAcquiredWireMsg(
+            internal_id=0xFFFFFFFF, seq=0xFFFFFFFF))
+
     def test_kill_typical(self):
         self._round_trip(KillMsg(source="MarioSlot1", cause="mario_died"))
 
@@ -164,6 +178,18 @@ class TestEventBridge(unittest.TestCase):
     def test_nerve_from_event_round_trip(self):
         ev = NerveFireMsg(kind=NerveKind.COURSE_CLEARED, seq=7)
         wire_msg = NerveFireWireMsg.from_event(ev)
+        self.assertEqual(wire_msg.to_event(), ev)
+
+    def test_badge_acquired_to_event_preserves_fields(self):
+        wire_msg = BadgeAcquiredWireMsg(internal_id=46, seq=7)
+        ev = wire_msg.to_event()
+        self.assertIsInstance(ev, BadgeAcquiredMsg)
+        self.assertEqual(ev.internal_id, 46)
+        self.assertEqual(ev.seq, 7)
+
+    def test_badge_acquired_from_event_round_trip(self):
+        ev = BadgeAcquiredMsg(internal_id=9, seq=3)
+        wire_msg = BadgeAcquiredWireMsg.from_event(ev)
         self.assertEqual(wire_msg.to_event(), ev)
 
     def test_play_report_to_event_decodes_hex(self):
@@ -225,6 +251,12 @@ class TestEncodedShape(unittest.TestCase):
         self.assertEqual(
             line,
             b'{"t":"grant_hash_keyed","hash":1434540121,"value":1}\n')
+
+    def test_badge_acquired_serializes_minimally(self):
+        line = encode(BadgeAcquiredWireMsg(internal_id=4, seq=1))
+        self.assertEqual(
+            line,
+            b'{"t":"badge_acquired","internal_id":4,"seq":1}\n')
 
     def test_nerve_kind_serializes_as_string_value(self):
         line = encode(NerveFireWireMsg(kind=NerveKind.WONDER_SEED_AWARDED, seq=0))
@@ -378,6 +410,34 @@ class TestDecodeErrors(unittest.TestCase):
         with self.assertRaises(ProtocolError) as cm:
             decode(b'{"t":"grant_hash_keyed","hash":1,"value":4294967296}\n')
         self.assertIn("out of range", str(cm.exception))
+
+    def test_badge_acquired_missing_internal_id(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"badge_acquired","seq":1}\n')
+        self.assertIn("internal_id", str(cm.exception))
+
+    def test_badge_acquired_non_int_internal_id(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"badge_acquired","internal_id":"4","seq":1}\n')
+
+    def test_badge_acquired_bool_internal_id(self):
+        # int subsumes bool in Python; codec rejects bool explicitly.
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"badge_acquired","internal_id":true,"seq":1}\n')
+
+    def test_badge_acquired_negative_internal_id(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"badge_acquired","internal_id":-1,"seq":1}\n')
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_badge_acquired_too_large_internal_id(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"badge_acquired","internal_id":4294967296,"seq":1}\n')
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_badge_acquired_seq_defaults_to_zero(self):
+        msg = decode(b'{"t":"badge_acquired","internal_id":4}\n')
+        self.assertEqual(msg, BadgeAcquiredWireMsg(internal_id=4, seq=0))
 
     def test_err_missing_reason(self):
         with self.assertRaises(ProtocolError):
