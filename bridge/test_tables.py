@@ -16,10 +16,22 @@ if __package__ is None or __package__ == "":
     from badge_table import _BADGES, grant_internal_id_for_item, is_badge_item
     from location_table import _TABLE, lookup_name
     from protocol import CheckEmitted, CheckKind
+    from royal_seed_table import (
+        ROYAL_SEED_VALUE,
+        _ROYAL_SEEDS,
+        hash_for_item,
+        is_royal_seed_item,
+    )
 else:
     from .badge_table import _BADGES, grant_internal_id_for_item, is_badge_item
     from .location_table import _TABLE, lookup_name
     from .protocol import CheckEmitted, CheckKind
+    from .royal_seed_table import (
+        ROYAL_SEED_VALUE,
+        _ROYAL_SEEDS,
+        hash_for_item,
+        is_royal_seed_item,
+    )
 
 
 _REPO_ROOT = os.path.abspath(
@@ -85,6 +97,60 @@ class TestLocationTable(unittest.TestCase):
     def test_lookup_unknown_returns_none(self):
         check = CheckEmitted(kind=CheckKind.WONDER_SEED, stage_key=99999999)
         self.assertIsNone(lookup_name(check))
+
+
+class TestRoyalSeedTable(unittest.TestCase):
+
+    def test_every_royal_seed_name_exists_in_items_json(self):
+        item_names = _load_names(_ITEMS_JSON)
+        missing = [n for n, _, _ in _ROYAL_SEEDS if n not in item_names]
+        self.assertEqual(
+            missing, [],
+            f"royal seeds not found in items.json: {missing}")
+
+    def test_all_six_worlds_present(self):
+        names = {n for n, _, _ in _ROYAL_SEEDS}
+        self.assertEqual(
+            names,
+            {f"W{i} Royal Seed" for i in range(1, 7)})
+
+    def test_no_duplicate_hashes(self):
+        seen: dict[int, str] = {}
+        for name, h, _ in _ROYAL_SEEDS:
+            self.assertNotIn(
+                h, seen,
+                f"duplicate hash=0x{h:08x}: "
+                f"{seen.get(h)!r} and {name!r}")
+            seen[h] = name
+
+    def test_w1_royal_seed_hash(self):
+        # MemetendoYT-verified; canonical reference for the smoke test.
+        self.assertEqual(hash_for_item("W1 Royal Seed"), 0x55815859)
+
+    def test_w6_royal_seed_hash(self):
+        self.assertEqual(hash_for_item("W6 Royal Seed"), 0xD4660D2B)
+
+    def test_is_royal_seed_item(self):
+        self.assertTrue(is_royal_seed_item("W3 Royal Seed"))
+        self.assertFalse(is_royal_seed_item("Spring Feet Badge"))
+        self.assertFalse(is_royal_seed_item("Filler"))
+
+    def test_unknown_item_returns_none(self):
+        self.assertIsNone(hash_for_item("Made-up Seed"))
+
+    def test_no_overlap_with_badge_table(self):
+        # Routing in ap_client checks is_badge_item first then
+        # is_royal_seed_item; the elif chain assumes the sets are
+        # disjoint.  If a badge name ever collides with a royal seed
+        # name, the routing would silently misclassify.
+        badge_names = {n for n, _, _ in _BADGES}
+        seed_names = {n for n, _, _ in _ROYAL_SEEDS}
+        overlap = badge_names & seed_names
+        self.assertEqual(overlap, set())
+
+    def test_royal_seed_value_is_one(self):
+        # u8 bool slot -- truncated by FUN_710049F648; 1 == True.
+        self.assertEqual(ROYAL_SEED_VALUE, 1)
 
 
 if __name__ == "__main__":

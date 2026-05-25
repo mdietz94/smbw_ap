@@ -129,7 +129,26 @@ Discovered 2026-05-24 via static-analysis sprint 2. Full decompile details in [d
 
 **The singleton anchor**: `gmd::GameDataMgr::sInstance` lives at NSO `+0x0363F0F0`. Dereferencing this qword at runtime gives the live `GameDataMgr*`. This replaces any pointer-scan workflow for finding the live save-data state.
 
-**The grant primitive (M3.3 / M3.3b)**:
+**The grant primitive (M3.3 counters)** — ✅ **shipped 2026-05-25** as
+`probe::grantContainerACounter(hash, value)` in
+[switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp).
+Live-validated end-to-end with `flower_coin`: the boot-time smoke test
+called `grantContainerACounter(0xf4ee6827, 99)`, saved + quit, save-diff
+showed file offset 0x0894 went `06 00 → 63 00`.  `regular_coin` works by
+the same path.  Wire protocol gained `GrantHashKeyedMsg` (bridge ↔ Switch),
+inbound dispatch in [switch-mod/src/program/ap/ApFrameBridge.cpp](switch-mod/src/program/ap/ApFrameBridge.cpp).
+
+⚠️ **M3.3b Royal Seeds** — primitive call FALSIFIED 2026-05-25.  The
+same writer was called with hash `0x55815859` value `1` (GRAND_SEED_WORLD1),
+trampoline confirmed the call, but post-save the value at file offset
+`0x0354` stayed at `0`.  Container-A writer is typed and silently no-ops
+on bool-typed slots.  M3.3b needs the container-B writer (candidate
+`FUN_71005E93FC`, per docs/static-analysis-findings.md).  Bridge plumbing
+(`royal_seed_table.py`, `send_grant_hash_keyed`, `GrantHashKeyedMsg`,
+`drainInbound` dispatch) is kept wired and reusable -- when the bool
+writer ships, only the Switch-side dispatcher branches on hash to route
+the 6 Royal Seed hashes to it.  `ap_client._handle_received_items` warns
+on Royal Seed forwards today so the operator isn't surprised.
 
 ```cpp
 // Container A counter writer.  Lock-free, thread-safe (uses ARM
@@ -175,6 +194,17 @@ Additional hash keys discovered 2026-05-24 in `FUN_7101a5d9a0` call sites:
 **The hash function for FIELD NAMES is unknown** (Murmur3 of obvious names like `"flower_coin"` doesn't match). Not blocking — we already have the 8 verified hashes. May be a different algorithm, may use internal/Japanese strings, may be precomputed offline.
 
 **Deferred-write implication**: a write via `FUN_710049F648` is applied to the live container at the next save. For UI to refresh immediately (in-game purple coin counter, etc.), the grant code should ALSO write the live-state struct field directly (HamletDuFromage cheat anchors give the offsets: flower_coin at `live_base + 0xC8`, lives at `live_base + 0x60`, etc.). Dual-write strategy described in [docs/static-analysis-findings.md](docs/static-analysis-findings.md).
+
+⚠️ **Save-survival caveat for all container-A grants** (coin counters
+today; bools once the M3.3b writer ships) — same root cause as the M3.2
+badge follow-up. The `FUN_710049F648` write queues to the dirty buffer
+at `gmd->[+0xf8]`; if the player loads a fresh save before the buffer
+flushes, the grant is lost.  Two mitigations: (a) explicit save after
+each grant (the smoke-test path), or (b) the M4.5 bridge
+replay-on-`HelloMsg` work that re-emits every received item every time
+the Switch reconnects.  Today's M3.3 wiring relies on (a); (b) is the
+only durable fix and covers badges + container-A items + future
+container-B items uniformly.
 
 ⚠️ **Critical — the save-diff sprint did NOT produce a live-grant mechanism.** The file-offset writers anchored on the `savedata_id` UUID at file offset `0x50b8` modify only the **save-OUT staging buffer**, which exists transiently during/after save serialization. The game populates this buffer FROM live state on every save; writes into it are overwritten on the next save event and never change live gameplay. What that work produced is a **save-file editor capability** (offline modification of `game_data.sav`) and a **verification target** (predict the bytes a successful live grant will write). For ALL live in-game grants, the only path we have is the GameDataMgr API above (`FUN_710049F648` for container-A counters; other accessors TBD for container-B fields like badges and per-course flags). See [docs/runtime-address-backtrace-plan.md](docs/runtime-address-backtrace-plan.md) for the discovery of this distinction.
 

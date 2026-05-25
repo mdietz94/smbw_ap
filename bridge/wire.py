@@ -249,6 +249,55 @@ class GrantBadgeMsg:
 
 
 @dataclass(frozen=True)
+class GrantHashKeyedMsg:
+    """Bridge -> Switch.  M3.3 / M3.3b inbound grant type.
+
+    Pairs a SMBW save-data field ``hash`` (e.g. ``0x55815859`` for
+    GRAND_SEED_WORLD1) with the counter ``value`` to set.  The Switch
+    routes this through ``probe::grantContainerACounter`` which calls
+    ``FUN_710049F648(gmd, value, hash)`` -- the GameDataMgr container-A
+    setter.  It's a SETTER, not an incrementer: the new value overwrites
+    the current one.  The writer truncates u32 -> u8 internally for
+    typed-bool slots (Royal Seeds, COMPLETE_GAME, INTRO), so the same
+    primitive serves both u16 counters and bool flags.
+
+    Both fields are validated to the full u32 range ``[0, 2**32)``;
+    semantic validation (e.g. "value=1 for Royal Seeds") lives in the
+    table layer above (``royal_seed_table``).
+    """
+
+    T = "grant_hash_keyed"
+
+    hash: int
+    value: int
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "hash": self.hash, "value": self.value}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> GrantHashKeyedMsg:
+        raw_hash = d.get("hash")
+        if not isinstance(raw_hash, int) or isinstance(raw_hash, bool):
+            raise ProtocolError(
+                f"grant_hash_keyed.hash must be int, got {raw_hash!r}"
+            )
+        if not (0 <= raw_hash < (1 << 32)):
+            raise ProtocolError(
+                f"grant_hash_keyed.hash out of range [0, 2**32): {raw_hash}"
+            )
+        raw_value = d.get("value")
+        if not isinstance(raw_value, int) or isinstance(raw_value, bool):
+            raise ProtocolError(
+                f"grant_hash_keyed.value must be int, got {raw_value!r}"
+            )
+        if not (0 <= raw_value < (1 << 32)):
+            raise ProtocolError(
+                f"grant_hash_keyed.value out of range [0, 2**32): {raw_value}"
+            )
+        return cls(hash=raw_hash, value=raw_value)
+
+
+@dataclass(frozen=True)
 class ErrMsg:
     """Either direction.  Protocol-level error notification.
 
@@ -311,6 +360,7 @@ WireMsg = (
     | NerveFireWireMsg
     | PlayReportWireMsg
     | GrantBadgeMsg
+    | GrantHashKeyedMsg
     | ErrMsg
     | PingMsg
     | PongMsg
@@ -326,6 +376,7 @@ _FROM_WIRE: dict[str, Any] = {
     NerveFireWireMsg.T: NerveFireWireMsg.from_wire,
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     GrantBadgeMsg.T: GrantBadgeMsg.from_wire,
+    GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     ErrMsg.T: ErrMsg.from_wire,
     PingMsg.T: PingMsg.from_wire,
     PongMsg.T: PongMsg.from_wire,

@@ -17,8 +17,9 @@ Per connection, the server:
        ping         -> reply pong (M4 keepalive)
        hello        -> bounce ErrMsg (already shook hands)
   3. Spins a writer coroutine that drains ``self._send_queue`` and writes
-     each :class:`GrantBadgeMsg` to the socket.  ``send_grant_badge`` is
-     the only public producer.
+     each grant message (:class:`GrantBadgeMsg` /
+     :class:`GrantHashKeyedMsg`) to the socket.  ``send_grant_badge`` and
+     ``send_grant_hash_keyed`` are the two public producers.
 
 The server does NOT own the AP client; it takes a callback for emitted
 checks.  Wiring happens in :mod:`bridge.__main__`.
@@ -55,6 +56,13 @@ behavior changes that a Switch-side log reader might care about."""
 CheckEmittedHandler = Callable[[CheckEmitted], Awaitable[None]]
 
 
+# Union of grant-message types the writer loop can drain.  Adding a new
+# inbound grant variant (e.g. ``GrantPowerUpMsg`` in M5) means: define it
+# in ``wire.py``, add a typed ``send_*`` method below, append to this
+# alias, and add a log-line branch in ``_writer_loop``.
+GrantMsg = wire.GrantBadgeMsg | wire.GrantHashKeyedMsg
+
+
 class LanServer:
     """One-Switch-at-a-time async TCP server.
 
@@ -83,7 +91,7 @@ class LanServer:
         # wholesale on each new connection -- a HELLO from a new TCP
         # session displaces the previous holder.
         self._client_writer: asyncio.StreamWriter | None = None
-        self._send_queue: asyncio.Queue[wire.GrantBadgeMsg] | None = None
+        self._send_queue: asyncio.Queue[GrantMsg] | None = None
         self._writer_task: asyncio.Task[None] | None = None
         self._client_lock = asyncio.Lock()
 
@@ -128,6 +136,34 @@ class LanServer:
             log.error(
                 "send_grant_badge(%d): outbound queue full; dropping",
                 internal_id)
+
+    def send_grant_hash_keyed(self, hash_: int, value: int) -> None:
+        """Enqueue a GrantHashKeyed (M3.3 / M3.3b container-A counter
+        write) to the active Switch client.
+
+        Same drop semantics as :meth:`send_grant_badge`.  Caveat: unlike
+        badges, container-A grants do NOT survive save/reload -- the
+        ``FUN_710049F648`` write queues to a dirty buffer that drains on
+        next save; if the player loads a fresh save, the grant is lost.
+        M4.5 replay-on-HelloMsg will cover both badges and container-A
+        grants uniformly."""
+        msg = wire.GrantHashKeyedMsg(hash=hash_, value=value)
+        if self._send_queue is None:
+            log.warning(
+                "send_grant_hash_keyed(hash=0x%08x, value=%d): no Switch "
+                "client connected; dropping",
+                hash_, value)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug(
+                "send_grant_hash_keyed: enqueued hash=0x%08x value=%d",
+                hash_, value)
+        except asyncio.QueueFull:
+            log.error(
+                "send_grant_hash_keyed(hash=0x%08x, value=%d): outbound "
+                "queue full; dropping",
+                hash_, value)
 
     # ---- Per-connection handler ---------------------------------------
 
@@ -306,7 +342,7 @@ class LanServer:
     async def _writer_loop(
         self,
         writer: asyncio.StreamWriter,
-        queue: asyncio.Queue[wire.GrantBadgeMsg],
+        queue: asyncio.Queue[GrantMsg],
     ) -> None:
         """Drain the outbound queue into the socket.  Runs until cancelled
         or the writer fails."""
@@ -316,11 +352,18 @@ class LanServer:
                 try:
                     writer.write(wire.encode(msg))
                     await writer.drain()
-                    log.info("-> grant_badge internal_id=%d", msg.internal_id)
+                    if isinstance(msg, wire.GrantBadgeMsg):
+                        log.info("-> grant_badge internal_id=%d", msg.internal_id)
+                    elif isinstance(msg, wire.GrantHashKeyedMsg):
+                        log.info(
+                            "-> grant_hash_keyed hash=0x%08x value=%d",
+                            msg.hash, msg.value)
+                    else:
+                        log.info("-> %s", type(msg).__name__)
                 except (ConnectionResetError, BrokenPipeError) as e:
                     log.warning(
-                        "writer_loop: send failed (%s); dropping grant_badge(%d)",
-                        e, msg.internal_id)
+                        "writer_loop: send failed (%s); dropping %s",
+                        e, type(msg).__name__)
                     return
         except asyncio.CancelledError:
             raise

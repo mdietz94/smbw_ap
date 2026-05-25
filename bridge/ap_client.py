@@ -35,6 +35,7 @@ from CommonClient import CommonContext  # type: ignore
 from NetUtils import ClientStatus  # type: ignore
 
 from . import badge_table
+from . import royal_seed_table
 from .location_table import lookup_name
 from .protocol import CheckEmitted
 from .state import BridgeState
@@ -174,26 +175,54 @@ class SMBWContext(CommonContext):
             except Exception as e:
                 log.warning("can't resolve item id %r: %s", item_id, e)
                 continue
-            if not badge_table.is_badge_item(item_name):
+            if badge_table.is_badge_item(item_name):
+                internal_id = badge_table.grant_internal_id_for_item(item_name)
+                if internal_id is None:
+                    # is_badge_item returned True so this shouldn't happen,
+                    # but belt-and-braces.
+                    log.warning(
+                        "badge_table inconsistency: is_badge_item(%r)=True but "
+                        "no internal_id available", item_name)
+                    continue
                 log.info(
-                    "received non-badge item %r (id=%s); ignoring (M4 only "
-                    "handles badges)", item_name, item_id)
-                continue
-            internal_id = badge_table.grant_internal_id_for_item(item_name)
-            if internal_id is None:
-                # is_badge_item returned True so this shouldn't happen,
-                # but belt-and-braces.
+                    "item received: %r (id=%s) -> grant_badge internal_id=%d",
+                    item_name, item_id, internal_id)
+                if self.lan_server is None:
+                    log.debug("no lan_server bound; cannot forward grant")
+                    continue
+                self.lan_server.send_grant_badge(internal_id)
+            elif royal_seed_table.is_royal_seed_item(item_name):
+                hash_ = royal_seed_table.hash_for_item(item_name)
+                if hash_ is None:
+                    log.warning(
+                        "royal_seed_table inconsistency: "
+                        "is_royal_seed_item(%r)=True but no hash", item_name)
+                    continue
+                # M3.3b is NOT yet wired on the Switch side -- the
+                # container-A writer no-ops for Royal Seed bool slots
+                # (live-falsified 2026-05-25; see royal_seed_table
+                # module docstring).  We still forward over the wire so
+                # the log trail is consistent and the M3.3b switch-mod
+                # work can land with no bridge-side change, but warn the
+                # operator that the in-game seed won't unlock yet.
                 log.warning(
-                    "badge_table inconsistency: is_badge_item(%r)=True but "
-                    "no internal_id available", item_name)
-                continue
-            log.info(
-                "item received: %r (id=%s) -> grant_badge internal_id=%d",
-                item_name, item_id, internal_id)
-            if self.lan_server is None:
-                log.debug("no lan_server bound; cannot forward grant")
-                continue
-            self.lan_server.send_grant_badge(internal_id)
+                    "item received: %r (id=%s) -> grant_hash_keyed "
+                    "hash=0x%08x value=%d  (NOTE: M3.3b not yet "
+                    "implemented in-game; container-A writer no-ops on "
+                    "this bool slot.  AP records the item received but "
+                    "the seed won't unlock until the container-B writer "
+                    "ships.)",
+                    item_name, item_id, hash_,
+                    royal_seed_table.ROYAL_SEED_VALUE)
+                if self.lan_server is None:
+                    log.debug("no lan_server bound; cannot forward grant")
+                    continue
+                self.lan_server.send_grant_hash_keyed(
+                    hash_, royal_seed_table.ROYAL_SEED_VALUE)
+            else:
+                log.info(
+                    "received unhandled item %r (id=%s); ignoring "
+                    "(no table entry)", item_name, item_id)
 
     # ---- Outbound: LanServer's CheckEmitted callback ------------------
 
