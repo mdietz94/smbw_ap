@@ -200,10 +200,17 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[CheckE
         course_no=stage_info.get("course_no", 0),
         world_kind=stage_info.get("world_kind", 0),
     ))
-    log.info("course_in: now in stage_key=%d (world %d, course %d)",
-             stage_info["stage_key"],
+    # M4 location_table playtest-sweep helper: tag the line with
+    # "STAGEKEY" so the operator can `Select-String STAGEKEY` against
+    # the AP client log file to filter out everything but course
+    # entries.  Both decimal (as PlayReport encodes it) and hex
+    # (what we paste into location_table.py constants) emit side by
+    # side -- see docs/playtest-stage-key-sweep.md.
+    sk = stage_info["stage_key"]
+    log.info("STAGEKEY  world=%d course=%d  stage_key=%d (0x%08X)",
              stage_info.get("world_no", 0),
-             stage_info.get("course_no", 0))
+             stage_info.get("course_no", 0),
+             sk, sk & 0xFFFFFFFF)
     return []
 
 
