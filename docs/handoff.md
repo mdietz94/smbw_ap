@@ -250,7 +250,7 @@ in Ghidra.
 
 ### Priority 3 — Deferred items pending future sessions
 
-- **M2.2 10-coin nerve hunt** (305 checks) — outgoing surface expansion.
+- **M2.2 10-coin** (306 checks) — ✅ **bridge implementation shipped 2026-05-25**; see [docs/m2.2-runbook.md](m2.2-runbook.md).  No Ghidra needed — `course_result` PlayReport's `big_flower_coin_course_{in,out}` bool[3] gives both detection AND per-instance identity for free.  ~30 LoC across [bridge/{protocol,state,processor,location_table}.py](../bridge/processor.py) + 21 new tests (224 total pass).  Two open items: (a) the diff-semantics interpretation is unproven by existing fixtures, **needs one empirical capture** where a 10-coin is collected within a single run; (b) `_TEN_COIN_TABLE` has 2 of 102 non-palace courses mapped, the rest fill in incrementally per playthrough.
 - **M3.2 badge follow-ups** — UI-slot mask hash `0x6d1b5c25` write may be
   needed for newly-granted badges to appear in the equip UI.
 - **M3.4 character roster unlock** — separate grant family.

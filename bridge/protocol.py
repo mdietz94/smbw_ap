@@ -74,7 +74,7 @@ class PlayReportMsg:
 
 
 class CheckKind(str, Enum):
-    """The five AP location families this bridge classifies events into."""
+    """The six AP location families this bridge classifies events into."""
 
     TOP_OF_FLAG = "top_of_flag"          # 89 AP checks
     NORMAL_EXIT = "normal_exit"          # 96 AP checks
@@ -82,6 +82,9 @@ class CheckKind(str, Enum):
     FAKE_EXIT = "fake_exit"              # 5 AP checks (goal_id=2 guessed)
     PALACE_CLEAR = "palace_clear"        # 7 AP checks (Royal Seed)
     WONDER_SEED = "wonder_seed"          # 124 AP checks (mid-course)
+    TEN_COIN = "ten_coin"                # 306 AP checks (102 courses × 3)
+                                         # CheckEmitted.metadata["coin_index"]
+                                         # is 0/1/2 — see docs/m2.2-runbook.md.
 
 
 @dataclass(frozen=True)

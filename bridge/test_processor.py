@@ -17,7 +17,7 @@ import unittest
 if __package__ is None or __package__ == "":
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-    from processor import process_event
+    from processor import _emit_ten_coin_checks, process_event
     from protocol import CheckKind, NerveFireMsg, NerveKind, PlayReportMsg
     from state import BridgeState, CurrentCourse
     from test_play_report import (
@@ -32,7 +32,7 @@ if __package__ is None or __package__ == "":
         WORLD_RESULT_W1_TO_W2,
     )
 else:
-    from .processor import process_event
+    from .processor import _emit_ten_coin_checks, process_event
     from .protocol import CheckKind, NerveFireMsg, NerveKind, PlayReportMsg
     from .state import BridgeState, CurrentCourse
     from .test_play_report import (
@@ -352,6 +352,170 @@ class TestDeathTracking(unittest.TestCase):
         self.assertEqual(state.death_count, 2)
         # Deaths don't emit AP checks directly.
         self.assertEqual(state.count_emitted(), 0)
+
+
+# ---------------------------------------------------------------------------
+# M2.2 TEN_COIN emission — diff of big_flower_coin_course_{in,out}.
+#
+# All live `course_result` fixtures (COURSE_RESULT, W1_2_COURSE_RESULT_SECRET,
+# PALACE_COURSE_RESULT) happen to have `_in == _out` so they exercise only
+# the no-op path.  The diff path itself is exercised via _emit_ten_coin_checks
+# called with synthetic field dicts — building a hand-encoded PlayReport
+# payload just to drive the same code through process_event would add a lot
+# of bytes for no extra coverage.
+
+class TestTenCoinDiffEmission(unittest.TestCase):
+
+    def _stage_info(self) -> dict:
+        return {"stage_key": W1_2_STAGE_KEY, "world_no": 1, "course_no": 3}
+
+    def test_single_coin_newly_collected_at_index_0(self):
+        state = BridgeState()
+        fields = {
+            "big_flower_coin_course_in":  [False, False, False],
+            "big_flower_coin_course_out": [True,  False, False],
+        }
+        emitted = _emit_ten_coin_checks(state, self._stage_info(), fields)
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].kind, CheckKind.TEN_COIN)
+        self.assertEqual(emitted[0].stage_key, W1_2_STAGE_KEY)
+        self.assertEqual(emitted[0].metadata["coin_index"], 0)
+
+    def test_two_coins_newly_collected_with_one_carryover(self):
+        state = BridgeState()
+        fields = {
+            "big_flower_coin_course_in":  [True, False, False],
+            "big_flower_coin_course_out": [True, True,  True],
+        }
+        emitted = _emit_ten_coin_checks(state, self._stage_info(), fields)
+        indices = sorted(c.metadata["coin_index"] for c in emitted)
+        self.assertEqual(indices, [1, 2])
+        # Existing carryover (#0) doesn't fire because we only emit on
+        # the False→True transition.
+        self.assertFalse(any(c.metadata["coin_index"] == 0 for c in emitted))
+
+    def test_all_three_collected_in_one_run_fires_three(self):
+        state = BridgeState()
+        fields = {
+            "big_flower_coin_course_in":  [False, False, False],
+            "big_flower_coin_course_out": [True,  True,  True],
+        }
+        emitted = _emit_ten_coin_checks(state, self._stage_info(), fields)
+        self.assertEqual(len(emitted), 3)
+        indices = sorted(c.metadata["coin_index"] for c in emitted)
+        self.assertEqual(indices, [0, 1, 2])
+
+    def test_no_change_emits_nothing(self):
+        state = BridgeState()
+        for arr in ([False, False, False], [True, True, True], [False, True, True]):
+            fields = {
+                "big_flower_coin_course_in":  arr,
+                "big_flower_coin_course_out": arr,
+            }
+            emitted = _emit_ten_coin_checks(state, self._stage_info(), fields)
+            self.assertEqual(emitted, [], f"arr={arr}")
+
+    def test_true_to_false_transition_emits_nothing(self):
+        # Shouldn't happen in practice (you can't un-collect a coin) but
+        # the bridge must not crash or emit spurious checks if it does.
+        state = BridgeState()
+        fields = {
+            "big_flower_coin_course_in":  [True, True, True],
+            "big_flower_coin_course_out": [False, False, False],
+        }
+        emitted = _emit_ten_coin_checks(state, self._stage_info(), fields)
+        self.assertEqual(emitted, [])
+
+    def test_missing_arrays_emits_nothing(self):
+        state = BridgeState()
+        emitted = _emit_ten_coin_checks(state, self._stage_info(), {})
+        self.assertEqual(emitted, [])
+
+    def test_non_list_arrays_emits_nothing(self):
+        state = BridgeState()
+        fields = {
+            "big_flower_coin_course_in":  None,
+            "big_flower_coin_course_out": True,
+        }
+        emitted = _emit_ten_coin_checks(state, self._stage_info(), fields)
+        self.assertEqual(emitted, [])
+
+    def test_mismatched_array_lengths_uses_shorter(self):
+        # Defensive: real payloads always have 3-element arrays, but
+        # don't crash if the shape ever drifts.
+        state = BridgeState()
+        fields = {
+            "big_flower_coin_course_in":  [False, False],
+            "big_flower_coin_course_out": [True,  True, True],
+        }
+        emitted = _emit_ten_coin_checks(state, self._stage_info(), fields)
+        indices = sorted(c.metadata["coin_index"] for c in emitted)
+        self.assertEqual(indices, [0, 1])
+
+    def test_duplicate_coin_grab_dedups(self):
+        state = BridgeState()
+        fields = {
+            "big_flower_coin_course_in":  [False, False, False],
+            "big_flower_coin_course_out": [True,  False, False],
+        }
+        first = _emit_ten_coin_checks(state, self._stage_info(), fields)
+        second = _emit_ten_coin_checks(state, self._stage_info(), fields)
+        self.assertEqual(len(first), 1)
+        self.assertEqual(second, [],
+            "same (stage_key, coin_index) must dedup on second emit")
+        self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 1)
+
+    def test_different_coin_indices_dedup_independently(self):
+        # Critical: stage_key W1_2 dedup must NOT collapse coin_index 0
+        # and coin_index 1 — they're separate AP locations.
+        state = BridgeState()
+        _emit_ten_coin_checks(state, self._stage_info(), {
+            "big_flower_coin_course_in":  [False, True, True],
+            "big_flower_coin_course_out": [True,  True, True],
+        })
+        # Re-enter the course, collect coin #1 (the second one).
+        _emit_ten_coin_checks(state, self._stage_info(), {
+            "big_flower_coin_course_in":  [True, False, True],
+            "big_flower_coin_course_out": [True, True,  True],
+        })
+        self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 2)
+        self.assertTrue(state.has_emitted(
+            CheckKind.TEN_COIN, W1_2_STAGE_KEY, coin_index=0))
+        self.assertTrue(state.has_emitted(
+            CheckKind.TEN_COIN, W1_2_STAGE_KEY, coin_index=1))
+        self.assertFalse(state.has_emitted(
+            CheckKind.TEN_COIN, W1_2_STAGE_KEY, coin_index=2))
+
+
+class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
+    """End-to-end check that the live fixtures don't accidentally emit
+    TEN_COIN — all three have `_in == _out`, so the existing exit-type
+    behaviour must be unchanged."""
+
+    def test_w1_1_top_of_flag_emits_no_ten_coin(self):
+        state = BridgeState()
+        emitted = process_event(
+            state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
+        self.assertEqual(
+            [c.kind for c in emitted], [CheckKind.TOP_OF_FLAG])
+        self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
+
+    def test_w1_2_secret_exit_emits_no_ten_coin(self):
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="course_result", payload=W1_2_COURSE_RESULT_SECRET))
+        self.assertEqual(
+            [c.kind for c in emitted], [CheckKind.SECRET_EXIT])
+        self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
+
+    def test_palace_companion_emits_no_ten_coin(self):
+        # world_mother_seed=True early-return must keep us out of the
+        # TEN_COIN code path entirely.
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="course_result", payload=PALACE_COURSE_RESULT))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
 
 
 if __name__ == "__main__":

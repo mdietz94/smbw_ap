@@ -14,7 +14,7 @@ if __package__ is None or __package__ == "":
     import sys
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from badge_table import _BADGES, grant_internal_id_for_item, is_badge_item
-    from location_table import _TABLE, lookup_name
+    from location_table import _TABLE, _TEN_COIN_TABLE, lookup_name
     from protocol import CheckEmitted, CheckKind
     from royal_seed_table import (
         ROYAL_SEED_VALUE,
@@ -24,7 +24,7 @@ if __package__ is None or __package__ == "":
     )
 else:
     from .badge_table import _BADGES, grant_internal_id_for_item, is_badge_item
-    from .location_table import _TABLE, lookup_name
+    from .location_table import _TABLE, _TEN_COIN_TABLE, lookup_name
     from .protocol import CheckEmitted, CheckKind
     from .royal_seed_table import (
         ROYAL_SEED_VALUE,
@@ -87,6 +87,13 @@ class TestLocationTable(unittest.TestCase):
         missing = [n for n in _TABLE.values() if n not in loc_names]
         self.assertEqual(missing, [], f"locations not found in locations.json: {missing}")
 
+    def test_every_ten_coin_name_exists_in_locations_json(self):
+        loc_names = _load_names(_LOCATIONS_JSON)
+        missing = [n for n in _TEN_COIN_TABLE.values() if n not in loc_names]
+        self.assertEqual(
+            missing, [],
+            f"ten_coin locations not found in locations.json: {missing}")
+
     def test_lookup_known_entry(self):
         check = CheckEmitted(
             kind=CheckKind.WONDER_SEED, stage_key=2937190396)
@@ -96,6 +103,35 @@ class TestLocationTable(unittest.TestCase):
 
     def test_lookup_unknown_returns_none(self):
         check = CheckEmitted(kind=CheckKind.WONDER_SEED, stage_key=99999999)
+        self.assertIsNone(lookup_name(check))
+
+    def test_lookup_ten_coin_returns_indexed_name(self):
+        # Index 0 → #1, index 2 → #3 (blind mapping per m2.2-runbook).
+        for idx, expected in enumerate([
+            "W1: Welcome to the Flower Kingdom! - 10 Coin #1",
+            "W1: Welcome to the Flower Kingdom! - 10 Coin #2",
+            "W1: Welcome to the Flower Kingdom! - 10 Coin #3",
+        ]):
+            check = CheckEmitted(
+                kind=CheckKind.TEN_COIN,
+                stage_key=2937190396,
+                metadata={"coin_index": idx})
+            self.assertEqual(lookup_name(check), expected)
+
+    def test_lookup_ten_coin_unknown_stage_returns_none(self):
+        check = CheckEmitted(
+            kind=CheckKind.TEN_COIN,
+            stage_key=99999999,
+            metadata={"coin_index": 0})
+        self.assertIsNone(lookup_name(check))
+
+    def test_lookup_ten_coin_palace_stage_returns_none(self):
+        # Palaces have no 10-coin locations; the apworld doesn't list any
+        # and we don't ship table entries for them.
+        check = CheckEmitted(
+            kind=CheckKind.TEN_COIN,
+            stage_key=2308078743,  # Pipe-Rock Plateau Palace
+            metadata={"coin_index": 0})
         self.assertIsNone(lookup_name(check))
 
 

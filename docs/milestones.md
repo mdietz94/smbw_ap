@@ -32,22 +32,24 @@ Confirmed post-M1: `COURSE_CLEARED` fires on palace boss clears (validated when 
 
 The tagging problem (palace clear vs normal-level clear) is the same M2.4 distinguisher problem — both flavors come through one hook. Solve once, get both Royal Seed identity AND Goal exit-type splitting in the same pass.
 
-### M2.2 — 10-coin pickups (305 checks) — biggest remaining bucket
+### M2.2 — 10-coin pickups (306 checks) — biggest remaining bucket
 
-Each level has up to 3 "10 Coins" (`ObjectBigTenLuckyCoin` placement actor — confirmed in M1.2). 305 AP checks across the manual; the single biggest piece of the surface.
+Each level has up to 3 "10 Coins" (`ObjectBigTenLuckyCoin` placement actor — confirmed in M1.2). 306 AP checks across the manual (102 courses × 3 coins, plus 1 stray duplicate); the single biggest piece of the surface.
 
-**Ghidra search list** (in priority order):
+**Status (2026-05-25)** — ✅ **scoped + bridge implementation shipped; no new Switch-side hook needed**. See [docs/m2.2-runbook.md](m2.2-runbook.md) for the full plan.
 
-- `RequestEventGetBigTenLuckyCoin` / `RequestEventGetTenCoin` / `RequestEventGetCoin`
-- `BigTenLuckyCoinGet` / `TenCoinGet`
-- `OnTenCoinPickup` / `PickupTenCoin`
-- Generic: search strings for `LuckyCoin`, `BigCoin`, `CoinTen`, `Coin10`
+The `course_result` PlayReport (M2.4 corpus) already carries `big_flower_coin_course_in` and `big_flower_coin_course_out` as `bool[3]` — per-instance state of the 3 "Big Flower Coin" placements at course entry vs exit. Diff = newly-collected this run. Implementation shipped: `CheckKind.TEN_COIN` in [bridge/protocol.py](../bridge/protocol.py); `_emit_ten_coin_checks` helper in [bridge/processor.py](../bridge/processor.py) extending `_handle_course_result`; dedup-key extended with sub_key in [bridge/state.py](../bridge/state.py); `_TEN_COIN_TABLE` for W1-1 and W1-2 in [bridge/location_table.py](../bridge/location_table.py); 21 new tests across `test_processor.py` and `test_tables.py` (224 bridge tests pass).  The original Ghidra Nerve-hunt + counter-write-hook paths are deferred indefinitely as fallback (only revisited if the diff-semantics empirical verification fails — see runbook).
 
-Likely outcome: a `RequestEventGet*Coin` Nerve exists. Find vtable, identify whether slot 8 is in `FUN_7100559f7c`'s xref list. If yes, add `vt_off=0xXXXXX` to `NerveActivateOnce`'s filter. Likely the *cleanest* hook in the entire project — coin pickups are discrete one-frame events, no ambiguity.
+**One blocking risk**: all 4 existing `course_result` fixtures have `_in == _out`. The diff interpretation is inferred from naming, unproven empirically. One capture with `_in[N]=False, _out[N]=True` would settle it. Captures are otherwise free side-effects of normal play.
 
-**Identity question**: 10-coin AP checks are per-instance (`W1: Welcome to the Flower Kingdom - 10 Coin #1` vs `#2` vs `#3`). We need to extract the placement hash from the Nerve at fire time to identify which coin was collected. Same identity-extraction problem as Wonder Seed (which we deferred); coin volume makes it more pressing here. Read fields at `nerve+0x??` (probably `+0xd8` or similar — see `FUN_7100299488`'s `param_2+0xd8+0x5c` pattern from M1's dispatcher).
+**Routing backlog**: only 2 of 102 non-palace courses have stage_key → name entries in `_TEN_COIN_TABLE`.  The 100 remaining are an incremental fill-out (one `course_in` PlayReport capture per course, same backlog as the existing CheckKinds).
 
-Fallback if no `RequestEvent*` Nerve exists: hook the coin counter write at NSO `+0x49253C` (from HamletDuFromage's cheat DB). It's not actor-specific — fires for *all* coin types — but we can filter to 10-coin via the value being added (10-coins increment by 10, regular coins by 1).
+**Historical Ghidra-hunt notes (deferred — kept for the fallback path)**:
+
+- Search list: `RequestEventGetBigTenLuckyCoin` / `RequestEventGetTenCoin` / `BigTenLuckyCoinGet` / `LuckyCoin` / `BigCoin` / `CoinTen` / `Coin10`.
+- Likely outcome: a `RequestEventGet*Coin` Nerve. If slot 8 is in `FUN_7100559f7c`'s xref list, add `vt_off=0xXXXXX` to `NerveActivateOnce`'s filter.
+- Identity question (per-instance #1/#2/#3) would have required reading the placement hash from the actor pointer at the nerve's `+0x??` offset.
+- Fallback to that fallback: hook the coin-counter write at NSO `+0x49253C` (HamletDuFromage cheat DB) with a +10 value-filter to distinguish from regular coins.
 
 ### M2.3 — Badge unlocks (24 checks)
 
@@ -441,7 +443,7 @@ Forward plan (revised 2026-05-25):
 - **Session 14**: DeathLink triggering (the "kill Mario from AP" half) — verify the `LiveBaseLatch` cheat-anchor prologue in Ghidra, flip `kEnableLiveBaseLatch` to true, validate `probe::synthKill`.
 
 Deferred indefinitely until after the MVP demo:
-- M2.2 (10-coin nerve hunt) — 305 outgoing checks, biggest unrouted bucket.
+- M2.2 (10-coin) — ✅ scoped 2026-05-25, bridge-side implementation pending in [docs/m2.2-runbook.md](m2.2-runbook.md). No Ghidra work needed.
 - M3.1 (power-up grant), M3.4 (characters), M3.5 (Wonder Flower / Effect suppression), M3.6 (button suppression), M3.7 (goal hook).
 - M5 (replace manual_smbwonder_zim with integrated apworld).
 - M6 (hardware Switch), M7 (UX polish).
