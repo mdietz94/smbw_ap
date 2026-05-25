@@ -10,7 +10,16 @@ import json
 import os
 import unittest
 
-from ..badge_table import _BADGES, grant_internal_id_for_item, is_badge_item
+from ..badge_table import (
+    _BADGES,
+    all_badge_item_names,
+    grant_internal_id_for_item,
+    is_badge_item,
+    mapped_bits,
+    name_for_internal_id,
+    next_unmapped_bit,
+    unmapped_item_names,
+)
 from ..location_table import _TABLE, _TEN_COIN_TABLE, lookup_name
 from ..protocol import CheckEmitted, CheckKind
 from ..royal_seed_table import (
@@ -65,6 +74,106 @@ class TestBadgeTable(unittest.TestCase):
         self.assertTrue(is_badge_item("Spring Feet Badge"))
         self.assertFalse(is_badge_item("Filler"))
 
+    def test_name_for_internal_id_spring_feet(self):
+        self.assertEqual(name_for_internal_id(4), "Spring Feet Badge")
+
+    def test_name_for_internal_id_unknown_returns_none(self):
+        self.assertIsNone(name_for_internal_id(999))
+
+    def test_reverse_lookup_round_trips(self):
+        for name, bit, _ in _BADGES:
+            self.assertEqual(name_for_internal_id(bit), name)
+            self.assertEqual(grant_internal_id_for_item(name), bit)
+
+    # ---- M2.3 probe-and-discover helpers --------------------------
+
+    def test_mapped_bits_matches_badges(self):
+        self.assertEqual(mapped_bits(), {bit for _, bit, _ in _BADGES})
+
+    def test_all_badge_item_names_count_is_24(self):
+        # The apworld currently ships exactly 24 badge AP items.  If
+        # this ever changes the M2.3 probe loop's "you've mapped N of M"
+        # status line needs no change -- the assertion just protects
+        # against a silent rename that would break the discovery flow.
+        self.assertEqual(len(all_badge_item_names()), 24)
+
+    def test_unmapped_item_names_excludes_mapped(self):
+        mapped = {n for n, _, _ in _BADGES}
+        for n in unmapped_item_names():
+            self.assertNotIn(n, mapped)
+
+    def test_all_24_badges_mapped(self):
+        """M2.3 completion lock: every badge in items.json has an
+        internal_id mapping in _BADGES.  This must NEVER regress -- if
+        you're adding a new badge to items.json, also add its bit to
+        _BADGES (probe via /badge_probe to find it).  If you're
+        removing a badge, drop the matching _BADGES row in the same
+        commit."""
+        self.assertEqual(
+            unmapped_item_names(), [],
+            "Some badges in items.json have no internal_id mapping. "
+            "Run the client + /badge_probe_next to fill them in, "
+            "then add the (name, bit, 'probe') tuple to _BADGES.")
+
+    def test_unmapped_plus_mapped_equals_all(self):
+        all_names = set(all_badge_item_names())
+        mapped = {n for n, _, _ in _BADGES if n in all_names}
+        self.assertEqual(set(unmapped_item_names()) | mapped, all_names)
+
+    def test_next_unmapped_bit_from_start(self):
+        # Returns the lowest unmapped bit position; this is whatever's
+        # not in mapped_bits().  Don't pin to a specific value -- the
+        # table grows as the probe loop fills in mappings; just assert
+        # the result is consistent with mapped_bits().
+        nxt = next_unmapped_bit(after=-1)
+        self.assertIsNotNone(nxt)
+        self.assertNotIn(nxt, mapped_bits())
+        # And it should be <= the smallest gap, i.e. lower than every
+        # unmapped value > nxt.
+        self.assertEqual(nxt, min(set(range(64)) - mapped_bits()))
+
+    def test_next_unmapped_bit_skips_mapped(self):
+        # Walking from -1 should eventually skip the 3 mapped bits.
+        seen: list[int] = []
+        cur = -1
+        for _ in range(64):
+            cur_opt = next_unmapped_bit(after=cur)
+            if cur_opt is None:
+                break
+            seen.append(cur_opt)
+            cur = cur_opt
+        for bit in mapped_bits():
+            self.assertNotIn(bit, seen)
+
+    def test_next_unmapped_bit_exhausts(self):
+        # After ceiling there are no more bits.
+        self.assertIsNone(next_unmapped_bit(after=63))
+        self.assertIsNone(next_unmapped_bit(after=100))
+
+    def test_next_unmapped_bit_honors_extra_skip(self):
+        # `/badge_probe_invalid` adds bits to a runtime skip set; the
+        # iterator must skip both _BADGES bits AND the invalid set.
+        # Build a skip set that covers every bit between two specific
+        # bits, then assert the returned bit isn't in either skip set.
+        skip = {1, 2, 3, 5, 6, 7}
+        nxt = next_unmapped_bit(after=0, extra_skip=skip)
+        self.assertIsNotNone(nxt)
+        self.assertNotIn(nxt, skip)
+        self.assertNotIn(nxt, mapped_bits())
+        # Walk the whole space with a big skip; should still terminate
+        # at some valid bit (or return None if every unmapped bit is
+        # also skipped).
+        big_skip = set(range(40)) - mapped_bits()  # nuke bits 0..39
+        nxt2 = next_unmapped_bit(after=-1, extra_skip=big_skip)
+        if nxt2 is not None:
+            self.assertGreaterEqual(nxt2, 40)
+            self.assertNotIn(nxt2, mapped_bits())
+
+    def test_next_unmapped_bit_extra_skip_none_equivalent_to_empty(self):
+        self.assertEqual(
+            next_unmapped_bit(after=-1, extra_skip=None),
+            next_unmapped_bit(after=-1, extra_skip=set()))
+
 
 class TestLocationTable(unittest.TestCase):
 
@@ -118,6 +227,26 @@ class TestLocationTable(unittest.TestCase):
             kind=CheckKind.TEN_COIN,
             stage_key=2308078743,  # Pipe-Rock Plateau Palace
             metadata={"coin_index": 0})
+        self.assertIsNone(lookup_name(check))
+
+    def test_badge_locations_present_for_every_mapped_badge(self):
+        """Every entry in badge_table._BADGES should resolve to SOME
+        AP location.  The default pattern is "<Name> Obtained" but the
+        apworld has one asymmetric case (All Bubble Flower Badge ->
+        All Bubble Power Badge Obtained); location_table's override
+        map handles that.  This test just checks every badge resolves;
+        the items-json-cross-check above asserts the resolved name
+        actually exists."""
+        from ..location_table import _BADGE_LOCATION_NAME_OVERRIDES
+        for name, bit, _ in _BADGES:
+            check = CheckEmitted(
+                kind=CheckKind.BADGE_ACQUIRED, stage_key=bit)
+            expected = _BADGE_LOCATION_NAME_OVERRIDES.get(
+                name, f"{name} Obtained")
+            self.assertEqual(lookup_name(check), expected)
+
+    def test_badge_location_unmapped_id_returns_none(self):
+        check = CheckEmitted(kind=CheckKind.BADGE_ACQUIRED, stage_key=99)
         self.assertIsNone(lookup_name(check))
 
 

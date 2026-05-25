@@ -246,6 +246,50 @@ class TestNerveDispatch(_AsyncTestCase):
 
 
 # ---------------------------------------------------------------------------
+# M2.3 badge_acquired inbound dispatch.
+
+class TestBadgeAcquiredDispatch(_AsyncTestCase):
+
+    async def test_known_badge_emits_check(self):
+        """Spring Feet (internal_id=4) is in badge_table._BADGES, so
+        the processor emits CheckEmitted(BADGE_ACQUIRED, 4) and the
+        LAN server forwards it to on_check_emitted."""
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()  # ack
+
+            await client.send(wire.BadgeAcquiredWireMsg(
+                internal_id=4, seq=1))
+            await asyncio.sleep(0.02)
+
+            self.assertEqual(len(self.h.emitted), 1)
+            self.assertEqual(self.h.emitted[0].kind, CheckKind.BADGE_ACQUIRED)
+            self.assertEqual(self.h.emitted[0].stage_key, 4)
+            self.assertEqual(self.h.emitted[0].metadata["seq"], 1)
+        finally:
+            await client.close()
+
+    async def test_duplicate_dedups_at_state(self):
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()  # ack
+
+            await client.send(wire.BadgeAcquiredWireMsg(
+                internal_id=4, seq=1))
+            await client.send(wire.BadgeAcquiredWireMsg(
+                internal_id=4, seq=2))
+            await asyncio.sleep(0.05)
+
+            # Only the first emit reaches the callback; the second is
+            # deduped by BridgeState.emit_check.
+            self.assertEqual(len(self.h.emitted), 1)
+        finally:
+            await client.close()
+
+
+# ---------------------------------------------------------------------------
 # PlayReport routing.
 
 class TestPlayReportDispatch(_AsyncTestCase):

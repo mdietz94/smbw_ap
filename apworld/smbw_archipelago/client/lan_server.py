@@ -50,7 +50,13 @@ from typing import Any
 
 from . import wire
 from .processor import process_event
-from .protocol import CheckEmitted, DeathReported, NerveFireMsg, PlayReportMsg
+from .protocol import (
+    BadgeAcquiredMsg,
+    CheckEmitted,
+    DeathReported,
+    NerveFireMsg,
+    PlayReportMsg,
+)
 from .state import BridgeState
 
 
@@ -335,6 +341,14 @@ class LanServer:
             log.debug("nerve: kind=%s seq=%d", msg.kind.value, msg.seq)
             ev: NerveFireMsg = msg.to_event()
             await self._run_processor(ev)
+            return
+
+        if isinstance(msg, wire.BadgeAcquiredWireMsg):
+            log.info(
+                "badge_acquired: internal_id=%d seq=%d",
+                msg.internal_id, msg.seq)
+            badge_ev: BadgeAcquiredMsg = msg.to_event()
+            await self._run_processor(badge_ev)
             return
 
         if isinstance(msg, wire.PlayReportWireMsg):

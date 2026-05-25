@@ -20,6 +20,7 @@ from typing import Any
 
 from . import play_report
 from .protocol import (
+    BadgeAcquiredMsg,
     CheckEmitted,
     CheckKind,
     DeathReported,
@@ -48,6 +49,8 @@ def process_event(state: BridgeState, event: Any) -> list[ProcessorEmit]:
     checks, DeathReported for DeathLink bounces."""
     if isinstance(event, NerveFireMsg):
         return _handle_nerve_fire(state, event)
+    if isinstance(event, BadgeAcquiredMsg):
+        return _handle_badge_acquired(state, event)
     if isinstance(event, PlayReportMsg):
         return _handle_play_report(state, event)
     log.warning("process_event: unknown event type %r", type(event).__name__)
@@ -100,6 +103,39 @@ def _handle_nerve_fire(state: BridgeState, event: NerveFireMsg) -> list[Processo
         return [DeathReported(seq=event.seq)]
 
     log.warning("unknown nerve kind: %r", event.kind)
+    return []
+
+
+# ---------------------------------------------------------------------------
+# Badge handler (M2.3).
+
+def _handle_badge_acquired(
+    state: BridgeState, event: BadgeAcquiredMsg,
+) -> list[ProcessorEmit]:
+    """Switch detected an in-game badge pickup (Poplin shop / badge
+    house / badge medley / badge challenge) — emit a CheckEmitted so the
+    AP layer can fire the "<Badge> Obtained" LocationCheck.
+
+    No course-correlation needed: badge AP locations are per-badge, not
+    per-acquisition-site.  The downstream ``location_table.lookup_name``
+    handles unmapped internal_ids by returning ``None`` (logs + drops);
+    no AP error.  M2.3 ships with 3 mapped (Spring Feet, Coin Reward,
+    Auto Super Mushroom); the remaining 21 mappings fill in incrementally
+    as gameplay reveals their bit positions (see scripts/badge_map_builder.py).
+    """
+    check = CheckEmitted(
+        kind=CheckKind.BADGE_ACQUIRED,
+        stage_key=event.internal_id,
+        metadata={"seq": event.seq},
+    )
+    if state.emit_check(check):
+        log.info(
+            "badge_acquired internal_id=%d seq=%d -> CheckEmitted",
+            event.internal_id, event.seq)
+        return [check]
+    log.debug(
+        "badge_acquired internal_id=%d seq=%d (dup; dropped)",
+        event.internal_id, event.seq)
     return []
 
 
