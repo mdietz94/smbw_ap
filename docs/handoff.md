@@ -1,5 +1,15 @@
 # SMBW Archipelago — handoff doc
 
+> **2026-05-25 layout change** — the headless `bridge/` package and the
+> Manual-template `manual_smbwonder_zim/` apworld were replaced by a
+> first-class **SMBWonder** apworld + Kivy client at
+> [apworld/smbw_archipelago/](../apworld/smbw_archipelago/).  Archipelago
+> Launcher now exposes a "SMBW Client" button.  Every `bridge/*.py`
+> path below has moved to `apworld/smbw_archipelago/client/*.py`;
+> `python -m bridge ...` is replaced by
+> `python -m apworld.smbw_archipelago.client.main ...` (or the Launcher
+> button).  See CLAUDE.md "Launching the SMBW Client" for the new flow.
+
 Last updated: 2026-05-25 — **M3.3 + M3.3b both shipped**.
 Container-A counter writer (`probe::grantContainerACounter`) shipped in
 [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp) and

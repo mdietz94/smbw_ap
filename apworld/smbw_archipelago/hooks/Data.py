@@ -1,0 +1,33 @@
+"""Hooks for transforming raw JSON data files after load, and for
+restoring extra state from slot_data (e.g. Universal Tracker).  All
+hooks currently no-op."""
+
+
+def after_load_game_file(game_table: dict) -> dict:
+    return game_table
+
+
+def after_load_item_file(item_table: list) -> list:
+    return item_table
+
+
+def after_load_location_file(location_table: list) -> list:
+    return location_table
+
+
+def after_load_region_file(region_table: dict) -> dict:
+    return region_table
+
+
+def after_load_category_file(category_table: dict) -> dict:
+    return category_table
+
+
+def after_load_meta_file(meta_table: dict) -> dict:
+    return meta_table
+
+
+# Universal Tracker compatibility — return True from this hook if you
+# mutated the world such that AP needs to regenerate state.
+def hook_interpret_slot_data(world, player: int, slot_data: dict) -> bool:
+    return False

@@ -2,3 +2,6 @@
 	path = switch-mod
 	url = git@github.com:mdietz94/wondar.git
 	branch = main
+[submodule "vendor/Archipelago"]
+	path = vendor/Archipelago
+	url = https://github.com/ArchipelagoMW/Archipelago.git
