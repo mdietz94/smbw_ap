@@ -254,8 +254,100 @@ bridge.proc  ...  (no log -- emit_check returned False)
 - Snapshot/replay on Switch reconnect (`BridgeState.emit_check` dedup is
   enough for AP; badges persist in the live gmd container across saves).
 - Wonder Flower / 10-coin Wonder Seed differentiation.
-- Power-up / character / non-badge item grants (M5 extends with `GrantHashKeyed`).
+- Power-up / character grants (M5+).
+- ✅ Hash-keyed counter grants (M3.3) — primitive shipped 2026-05-25;
+  smoke-test recipe below.  Coin/Wonder-Seed counter denomination
+  routing in AP is still future work.
+- ❌ Royal Seed bool grants (M3.3b) — container-A writer no-ops on
+  bool slots; bridge plumbing wired but Switch-side container-B writer
+  pending (see [docs/handoff.md](handoff.md) "M3.3b live-falsified").
 - Multi-Switch support (M4 rejects second connection).
 - `host.yaml` integration (M4 uses CLI args only).
 - Kivy GUI (headless for M4).
 - True per-frame drain hook (piggyback on existing nerve hooks).
+
+
+## M3.3 counter-writer smoke test (2026-05-25, validated)
+
+Reproducing the live validation of `probe::grantContainerACounter` end-
+to-end.  Same shape as the badge smoke test above.
+
+### Phase A — temporarily re-add the smoke trigger
+
+In [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp)'s
+`NerveActivateOnce::Callback`, right after `drainInbound()`:
+
+```cpp
+static std::atomic_flag s_smoke_fired = ATOMIC_FLAG_INIT;
+if (!s_smoke_fired.test_and_set()) {
+    SMBWAP_LOG_INFO("M3.3 smoke: firing flower_coin=99");
+    probe::grantContainerACounter(0xf4ee6827, 99);
+}
+```
+
+(This block is NOT committed in tree.  It's a regression-test snippet.)
+
+### Phase B — snapshot, build, deploy, play
+
+1. **Snapshot** `%APPDATA%\Ryujinx\bis\user\save\0000000000000002\<user>\game_data.sav`
+   to `game_data.sav.pre`.
+2. **Build** (`cmake --build ...\switch-mod\build`) and **deploy** subsdk9
+   to `$APPDATA\Ryujinx\mods\contents\010015100b514000\smbwap\exefs\`.
+3. **Launch** SMBW, enter ANY course (W1-1 works); the smoke trigger fires
+   on the first nerve activation.  Expect Switch log:
+   ```
+   [smbwap inf] M3.3 smoke: firing flower_coin=99
+   [smbwap inf] gmd.A_writer hash=0xf4ee6827 value=99 gmd=0x...
+   [smbwap inf] GrantHashKeyed: hash=0xf4ee6827 value=99 gmd=0x...
+   ```
+   (The `gmd.A_writer` line fires because our writer call recurses through
+   the existing `GmdContainerAWriter` probe trampoline -- free
+   observability.)
+4. **Save** the game in-overworld.  The dirty buffer at `gmd->[+0xf8]`
+   flushes to the persistent container at this save event.
+5. **Quit Ryujinx**.
+6. **Diff** with [scripts/savediff.py](../scripts/savediff.py):
+   ```pwsh
+   python scripts/savediff.py game_data.sav.pre game_data.sav
+   ```
+   Expect:
+   ```
+   [pair  269 @ 0x0890]  key=0xf4ee6827           <prior> → 99
+   ```
+
+### Phase C — remove the smoke block, redeploy
+
+Once the diff matches, drop the smoke `if`-block from the callback so
+fresh sessions don't mutate the save.  Rebuild + redeploy.
+
+### Royal Seed end-to-end is NOT yet functional
+
+The bridge plumbing (`royal_seed_table.py`, `send_grant_hash_keyed`,
+`GrantHashKeyedMsg`, `drainInbound` dispatch) is correct and reusable,
+but the Switch-side `probe::grantContainerACounter` silently no-ops on
+the Royal Seed bool slots (live-falsified 2026-05-25 — the M3.3 smoke
+test also called `grantContainerACounter(0x55815859, 1)` and observed
+no save-file change at file offset `0x0354`).  Once the M3.3b
+container-B writer ships, the bridge will route Royal Seeds end-to-end
+with no bridge-side change required.
+
+In the meantime, `/send MarioTest W1 Royal Seed` from AP:
+
+- Bridge logs `WARNING` flagging the in-game no-op.
+- Wire message still ships (`grant_hash_keyed hash=0x55815859 value=1`).
+- Switch log shows `grantContainerACounter returned true` (the function
+  returned cleanly; it just didn't change persistent state).
+- AP server records the item as received.
+- Save+quit+diff shows NO change at `0x0354`.
+
+### Known caveat — save-survival (container-A grants)
+
+Container-A grants do NOT survive save/reload.  The
+`FUN_710049F648` writer queues to `gmd->[+0xf8]`; if the player loads
+a fresh save before the next in-game save fires, the value reverts.
+Same gap as the M3.2 badge primitive.  Mitigations:
+
+- **For smoke testing**: always save explicitly after each `/send`.
+- **For dogfooding**: M4.5 replay-on-`HelloMsg` is the durable fix and
+  covers badges, container-A grants, and future container-B grants
+  uniformly.  Tracked in [docs/handoff.md](handoff.md) "M4 follow-ups".

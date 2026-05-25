@@ -265,6 +265,30 @@ class TestGrantBadgeOutbound(_AsyncTestCase):
         # If we got here, success.
 
 
+class TestGrantHashKeyedOutbound(_AsyncTestCase):
+
+    async def test_send_grant_hash_keyed_reaches_client(self):
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()
+
+            await asyncio.sleep(0.02)
+            # W1 Royal Seed hash + value=1; matches royal_seed_table.
+            self.h.server.send_grant_hash_keyed(0x55815859, 1)
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.GrantHashKeyedMsg)
+            self.assertEqual(received.hash, 0x55815859)
+            self.assertEqual(received.value, 1)
+        finally:
+            await client.close()
+
+    async def test_send_grant_hash_keyed_with_no_client_drops(self):
+        # No client connected; warn-and-drop, not raise.
+        self.h.server.send_grant_hash_keyed(0xF4EE6827, 99)
+
+
 # ---------------------------------------------------------------------------
 # Ping / pong + malformed input.
 

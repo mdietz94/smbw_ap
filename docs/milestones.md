@@ -185,9 +185,9 @@ Outgoing checks (M2) are only half the integration. AP also sends *items* to the
 
 | Section | Item count | Status |
 |---|--:|---|
-| M3.2 Badge unlock | 24 | function names known; need Ghidra + symbol lookup |
-| M3.3 Wonder Seed grant | 124 | counter address known; need the increment-function RE |
-| M3.3b Royal Seed grant | 7 (new section) | TBD — likely same family as Wonder Seed but per-palace |
+| M3.2 Badge unlock | 24 | ✅ primitive shipped 2026-05-24 (Spring Feet validated end-to-end); badge_table holds 1 live + 2 save-diff entries |
+| M3.3 Wonder Seed grant | 124 | ✅ container-A counter primitive shipped 2026-05-25 (`probe::grantContainerACounter`); flower_coin live-validated.  Per-seed Wonder Seed routing deferred (no AP item maps to per-seed grants; route via M2.6 course-correlation already covers per-course AP locations) |
+| M3.3b Royal Seed grant | 7 (new section) | ❌ live-falsified 2026-05-25 — container-A writer no-ops on bool slots; bridge plumbing wired but Switch-side dispatch needs container-B writer (candidate `FUN_71005E93FC`) |
 | M3.8 DeathLink trigger | 1 (bidirectional event) | TBD — companion to M3.8 detection |
 
 M3.1 (power-ups), M3.4 (characters), M3.5 (Wonder Flower suppression), M3.6 (button suppression), M3.7 (goal hook) are deferred until the MVP set ships.
@@ -246,13 +246,17 @@ Key results:
 
 The save-diff work from 2026-05-22..23 remains valid as a **byte-level verification target** — after writing via the hash API, the resulting save file should match save-diff's predicted byte changes.
 
-### M3.3b — Royal Seed grant (7 items) — likely solved by the same primitive (2026-05-24)
+**Status (2026-05-25)** — ✅ **counter primitive shipped + live-validated** as `probe::grantContainerACounter(hash, value)` in [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp). Boot-time smoke test on first `NerveActivateOnce` fire wrote `flower_coin=99` (hash `0xf4ee6827`); savediff confirmed `0x0890`'s value flipped from 6 → 99. Wire schema gained `GrantHashKeyedMsg` (`bridge/wire.py`) and `WireGrantHashKeyed` (`switch-mod/src/program/ap/ApProtocol.{hpp,cpp}`); inbound drain dispatches via `ApFrameBridge.cpp`. Bridge tests: 203 pass. Wonder Seed item routing per-seed isn't wired here because no AP item in the manual world maps to it; M2.6 course-correlation already attributes each WONDER_SEED_AWARDED nerve fire to a per-course AP location.
 
-The 6 GRAND_SEED_WORLD{1..6} hashes (verified by MemetendoYT) live in the same pair-region table as flower_coin in the save file, so they likely share container A — meaning `FUN_710049F648(gmd, 1, 0x55815859)` should grant Royal Seed W1, and similarly for W2..W6.
+### M3.3b — Royal Seed grant (7 items) — ❌ container-A theory falsified (2026-05-25)
 
-**Experimental verification (priority 2 of next session)**: after the flower_coin smoke test passes, try `GrantContainerA(1, 0x55815859)` and check pair-region offset `0x0350` (per [docs/save-diff-findings.md](save-diff-findings.md) "Pair-key sanity check") flips from 0 → 1. If success, M3.3b is solved with no further RE.
+The 6 GRAND_SEED_WORLD{1..6} hashes (verified by MemetendoYT) live in the same pair-region table as flower_coin in the save file, so the hypothesis (from 2026-05-24's findings doc) was that they shared container A — meaning `FUN_710049F648(gmd, 1, 0x55815859)` should grant Royal Seed W1.
 
-**Fallback if not**: container A only holds counters and bools are in container B (`gmd->[+0x260]`). Then decompile `FUN_71005E93FC` (the third call in the M1 hook chain at NSO `+0x1bf28cc`) to find the bool writer. Failing that, use the trailing-region direct memory write per [docs/runtime-address-backtrace-plan.md](runtime-address-backtrace-plan.md).
+**Status (2026-05-25)** — ❌ **falsified by live smoke test**. The same M3.3 smoke that validated `flower_coin` ALSO called `grantContainerACounter(0x55815859, 1)`. The `gmd.A_writer` trampoline log confirms the writer was entered with hash + value as expected. Post-save, the pair-region value slot at file offset `0x0354` stayed at `0`. All 6 Royal Seed hashes are present in the pair-region at their expected file offsets but the container-A writer's typed-slot routing silently no-ops on bool slots.
+
+**Bridge plumbing kept wired**: [bridge/royal_seed_table.py](../bridge/royal_seed_table.py), `send_grant_hash_keyed`, `GrantHashKeyedMsg`, and the `drainInbound` dispatch are all reusable as-is. `royal_seed_table` entries carry `source="memetendoYT-pending"` to mark the deferred state; `ap_client._handle_received_items` logs a WARNING when forwarding Royal Seeds so the operator isn't surprised when AP marks the item received but the seed doesn't unlock in-game.
+
+**Path forward**: decompile `FUN_71005E93FC` (third call in the M1 hook chain at NSO `+0x1bf28cc`) — primary candidate for the bool writer per [docs/static-analysis-findings.md](static-analysis-findings.md). Once located, add a sibling `probe::grantContainerBBool(hash, value)` primitive and branch the `drainInbound` `GrantHashKeyed` case by hash to route the 6 Royal Seed hashes (plus `COMPLETE_GAME`, `INTRO`) to it. Failing that, the trailing-region direct memory write per [docs/runtime-address-backtrace-plan.md](runtime-address-backtrace-plan.md) is the fallback (but writes only the save-out staging buffer, so a Nerve-load mirror would be needed for live state).
 
 ### M3.4 — character roster unlock (12 items) — DEFERRED
 
@@ -399,7 +403,7 @@ Things that could re-block the project, in rough probability order:
 8. **TCP on Switch hits firewall / NAT issues** — SMO already solved this with LAN-direct connection; should port without trouble.
 9. **v1.0.0-only support becomes a sticking point for users on v1.0.1** — port hooks via BinDiff/Diaphora when there's user demand; ~1 day per version-bump per hook.
 
-## Recommended pacing (revised 2026-05-24)
+## Recommended pacing (revised 2026-05-25)
 
 History (closed):
 - ✅ Session 1: M1 — Wonder Seed + Course Clear nerves.
@@ -408,14 +412,23 @@ History (closed):
 - ❌ Sessions 4 + 5 (2026-05-20→21): M3.2 + M3.3 + M3.3b first-pass Ghidra attempts declared dead-end after 11 scripts. **Pivoted** to save-diff.
 - ✅ Sessions 6 + 7 (2026-05-22→23): save-diff sprint. Byte-exact write targets identified for badges (`0x0EA0`), 16+ per-course u32 arrays, and pair-region keys. Cross-verified with MemetendoYT/SMBW-SaveGame-Editor.
 - ✅ Session 8 (2026-05-24): **static-analysis sprint 2 — succeeded**. `FUN_710049F648(gmd, value, hash)` confirmed as the M3.3 grant primitive. 5 of 8 MemetendoYT keys located live in code. Murmur3-32 hash function recovered. Full details in [docs/static-analysis-findings.md](static-analysis-findings.md). 5 new Ghidra scripts in [scripts/ghidra/](../scripts/ghidra/), all sprint-2 tagged.
+- ✅ Session 9 (2026-05-24): **M3.2 badge primitive + M4 LAN bridge** shipped end-to-end. `probe::grantBadgeBit` validated live with Spring Feet; bridge `LanServer` + `SMBWContext` route the AP `/send` flow.
+- ✅/❌ Session 10 (2026-05-25): **M3.3 counter shipped + M3.3b Royal Seed falsified**. `probe::grantContainerACounter` (counter writer) live-validated with `flower_coin` (6 → 99 at file offset 0x0894).  Same primitive + bridge plumbing called for `GRAND_SEED_WORLD1` (hash 0x55815859) returned cleanly but produced no save-file change — container-A writer is typed and no-ops on bool slots.  Royal Seed routing kept wired on the bridge with a warning log; Switch-side needs container-B writer.  Wire schema gained `GrantHashKeyedMsg`; tests: 203 pass (181 + 22 new).
 
-Forward plan (revised 2026-05-24):
+Forward plan (revised 2026-05-25):
 
-- **Session 9 (next)**: wire and validate `gmd::GrantFlowerCoin(99)` in [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp). End-to-end smoke test: build → deploy → run → save → quit → diff save file. Expected: `game_data.sav[0x0894]` = `63 00` (u16 LE = 99). If passes, generalize to all 10 known hashes including Royal Seeds (the M3.3b experimental case). See "Priority 1" / "Priority 2" in [docs/handoff.md](handoff.md).
-- **Session 10**: bridge integration — extend [bridge/protocol.py](../bridge/protocol.py) with `GrantHashKeyed` message variant, dispatch from [bridge/processor.py](../bridge/processor.py) on AP item receipt.
-- **Session 11**: M3.8 DeathLink detection — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8`, find a death-vs-noise discriminator. Switch-mod only, no RE dead-ends.
-- **Session 12**: M4.1 + M4.2 LAN socket — outgoing-only MVP ships here including the M3 grants from sessions 9-10.
-- **Session 13**: M3.2 badge grants — find the writer for the `0x0EA0` u64 bitfield via either direct-memory write (using the now-known GameDataMgr-relative trailing-region offset) OR by running [scripts/ghidra/find_offset_constant_xrefs.py](../scripts/ghidra/find_offset_constant_xrefs.py) to locate the bit-setting function.
+- **Session 11 (next)**: **M3.3b container-B writer hunt** — decompile
+  `FUN_71005E93FC` (or hunt other typed-bool writers near the M1 hook
+  chain at NSO `+0x1bf28cc`) to find the function that flips Royal Seed
+  / COMPLETE_GAME / INTRO bool slots.  Once located, add
+  `probe::grantContainerBBool(hash, value)` and branch the existing
+  `drainInbound` `GrantHashKeyed` case by hash.  Re-run the smoke test:
+  expect `0x0354: 00 → 01` for W1 Royal Seed.
+- **Session 12**: M4.5 replay-on-`HelloMsg` — bridge re-emits every received
+  item (badges + container-A grants + future container-B grants) on every
+  Switch reconnect.  Fixes the save-survival caveat for all grant surfaces
+  uniformly.
+- **Session 13**: M3.8 DeathLink detection — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8`, find a death-vs-noise discriminator. Switch-mod only, no RE dead-ends.
 - **Session 14**: DeathLink triggering (the "kill Mario from AP" half) — Ghidra for death-application function or HP=0 write fallback.
 
 Deferred indefinitely until after the MVP demo:

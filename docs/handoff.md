@@ -1,10 +1,98 @@
 # SMBW Archipelago — handoff doc
 
-Last updated: 2026-05-24 — **M4 LAN bridge + AP client landed end-to-end**;
-Spring Feet Badge granted live via `/send` from a real AP server.  Two
-follow-up gaps logged in "M4 follow-ups" section below.
+Last updated: 2026-05-25 — **M3.3 shipped, M3.3b falsified**.
+Container-A counter writer (`probe::grantContainerACounter`) shipped in
+[switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp) and
+live-validated end-to-end with `flower_coin` (6 → 99 at file offset
+`0x0894` after save+quit).  Wire schema extended with `GrantHashKeyedMsg`;
+inbound drain dispatches via `ApFrameBridge`.  The same writer called
+with `GRAND_SEED_WORLD1` produced **no save-file change** — container-A is
+typed and silently no-ops on bool slots.  Royal Seeds need the
+container-B writer; bridge plumbing kept wired so only the Switch-side
+primitive needs to grow.  203 bridge tests pass (M4's 181 + 22 new).  See
+also: M4 LAN bridge end-to-end (2026-05-24) — the shipped foundation this
+session built on.
 
 This is the "next session, hi me again" doc. Read it first.
+
+## M3.3 shipped + M3.3b live-falsified (2026-05-25)
+
+End-to-end path exists for **container-A counter** grants via
+`FUN_710049F648` at NSO `+0x0049F648`.  Live smoke test proved
+`flower_coin` works; same call sequence for `GRAND_SEED_WORLD1`
+(hash `0x55815859`) was a no-op in-game.
+
+- **Switch primitive**: `probe::grantContainerACounter(hash, value)` in
+  [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp).
+  Reuses the existing `probe::gmdSingleton()` helper from M3.2; calls the
+  writer via a function-pointer cast at NSO+0x49F648.
+- **Wire protocol**: new `grant_hash_keyed { hash: u32, value: u32 }` message
+  type.  Mirrors the existing `grant_badge` plumbing on both sides
+  ([bridge/wire.py](../bridge/wire.py),
+  [ApProtocol.{hpp,cpp}](../switch-mod/src/program/ap/ApProtocol.hpp),
+  [ApFrameBridge.{hpp,cpp}](../switch-mod/src/program/ap/ApFrameBridge.hpp),
+  [ApClient.cpp](../switch-mod/src/program/ap/ApClient.cpp)).
+- **AP routing**: [bridge/royal_seed_table.py](../bridge/royal_seed_table.py)
+  maps the 6 AP item names (`"W1 Royal Seed"` .. `"W6 Royal Seed"`) to their
+  MemetendoYT-verified hash keys; [ap_client.py](../bridge/ap_client.py)
+  routes them via `lan_server.send_grant_hash_keyed(hash, 1)`.
+
+### M3.3 ✅ — counter writer works
+
+Smoke test (2026-05-25): `probe::grantContainerACounter(0xf4ee6827, 99)`
+fired from first `NerveActivateOnce` callback.  Save + quit, then
+`python scripts/savediff.py game_data.sav.pre game_data.sav` shows:
+
+```
+[pair  269 @ 0x0890]  key=0xf4ee6827           6 → 99          (change (+93))
+```
+
+`regular_coin` should work via the same primitive (same writer, same
+container, u8 truncation pattern documented in static-analysis-findings).
+
+### M3.3b ❌ — Royal Seeds need container-B writer
+
+Same smoke test ALSO called `probe::grantContainerACounter(0x55815859, 1)`.
+The `gmd.A_writer` trampoline log line confirms the writer was entered
+with that hash + value.  Post-save pair-region offset `0x0350`'s value
+(file offset `0x0354`) stayed at `0`.  All 6 Royal Seed hashes are present
+in the pair-region at their expected offsets, but the container-A writer's
+typed-slot routing silently no-ops on bool slots.
+
+**Path forward** (deferred to a future session):
+
+1. Decompile `FUN_71005E93FC` (third call in the M1 hook chain at NSO
+   `+0x1bf28cc`) — primary candidate for the bool writer per
+   [docs/static-analysis-findings.md](static-analysis-findings.md).
+2. Once located, add a sibling `probe::grantContainerBBool(hash, value)`
+   primitive in [main.cpp](../switch-mod/src/program/main.cpp).
+3. Branch `grantContainerACounter` (or the `drainInbound` GrantHashKeyed
+   case) by hash: route the 6 Royal Seed hashes (plus `COMPLETE_GAME`,
+   `INTRO`) to the bool writer.  Bridge side stays untouched.
+4. Re-run the smoke test (this time only `grantContainerBBool(0x55815859, 1)`
+   in the trigger block).  Expect `0x0354: 00 → 01`.
+
+Bridge plumbing kept wired in anticipation: `royal_seed_table.py` carries
+all 6 hashes with `source="memetendoYT-pending"` and a module-level
+status note; `ap_client._handle_received_items` logs a WARNING on Royal
+Seed forwards so the operator isn't surprised when AP marks the item
+received but the seed doesn't unlock.
+
+### M3.3 verification recipe
+
+Reproducing the smoke-test win (for future regression checks):
+
+1. Temporarily re-add the smoke block to `NerveActivateOnce::Callback`
+   right after `drainInbound()`:
+   ```cpp
+   static std::atomic_flag s_smoke_fired = ATOMIC_FLAG_INIT;
+   if (!s_smoke_fired.test_and_set()) {
+       probe::grantContainerACounter(0xf4ee6827, 99);
+   }
+   ```
+2. Snapshot save, build + deploy, enter any course, save, quit.
+3. `python scripts/savediff.py <pre>.sav <post>.sav` → expect pair 269's
+   value to flip from `current → 99`.
 
 ## M4 follow-ups (must fix before M5 demo)
 
@@ -16,13 +104,18 @@ play:
 1. **Grants don't survive save/reload.**  `probe::grantBadgeBit` writes
    the live container-C bitfield at `gmd+0x70..0x8c` (M3.2 anchor); on
    save load the game rebuilds container-C from `game_data.sav` and our
-   bit is lost.  **Fix path**: the bridge needs to replay every
-   previously-received item every time the Switch reconnects OR every
-   time the player loads a save.  Two implementation options:
+   bit is lost.  The same gap will apply to `probe::grantContainerACounter`
+   (M3.3) once it's used outside a smoke-then-save flow: the writer
+   queues to the dirty buffer at `gmd->[+0xf8]` and only flushes on the
+   next in-game save; if the player loads a fresh save before that, the
+   counter reverts.  M4.5 fixes both surfaces uniformly:
    - **Bridge-side (preferred for M4.5)**: every `HelloMsg` from the
      Switch triggers `SMBWContext` to re-emit `GrantBadgeMsg` for each
-     entry in `ctx.items_received` of badge kind.  Idempotent because
-     `grantBadgeBit` ORs into the bitfield.
+     entry in `ctx.items_received` of badge kind, AND `GrantHashKeyedMsg`
+     for each entry in any container-A / future container-B table.
+     Idempotent because `grantBadgeBit` ORs into the bitfield and the
+     container-A writer is a setter (re-setting the same value is a no-op
+     against the canonical state).
    - **Switch-side (longer term)**: hook a save-load Nerve and have it
      mirror save-bytes for our previously-granted bits into the live
      container, OR additionally write to the save-out staging buffer

@@ -21,6 +21,7 @@ if __package__ is None or __package__ == "":
         WIRE_VERSION,
         ErrMsg,
         GrantBadgeMsg,
+        GrantHashKeyedMsg,
         HelloAckMsg,
         HelloMsg,
         NerveFireWireMsg,
@@ -38,6 +39,7 @@ else:
         WIRE_VERSION,
         ErrMsg,
         GrantBadgeMsg,
+        GrantHashKeyedMsg,
         HelloAckMsg,
         HelloMsg,
         NerveFireWireMsg,
@@ -107,6 +109,19 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_grant_badge_max(self):
         self._round_trip(GrantBadgeMsg(internal_id=63))
+
+    def test_grant_hash_keyed_royal_seed_w1(self):
+        self._round_trip(GrantHashKeyedMsg(hash=0x55815859, value=1))
+
+    def test_grant_hash_keyed_flower_coin(self):
+        self._round_trip(GrantHashKeyedMsg(hash=0xF4EE6827, value=99))
+
+    def test_grant_hash_keyed_zero(self):
+        self._round_trip(GrantHashKeyedMsg(hash=0, value=0))
+
+    def test_grant_hash_keyed_max_u32(self):
+        # Both fields at the high edge of the documented u32 range.
+        self._round_trip(GrantHashKeyedMsg(hash=0xFFFFFFFF, value=0xFFFFFFFF))
 
     def test_err(self):
         self._round_trip(ErrMsg(reason="unknown message type 'foo'"))
@@ -184,6 +199,15 @@ class TestEncodedShape(unittest.TestCase):
     def test_grant_badge_serializes_minimally(self):
         line = encode(GrantBadgeMsg(internal_id=4))
         self.assertEqual(line, b'{"t":"grant_badge","internal_id":4}\n')
+
+    def test_grant_hash_keyed_serializes_minimally(self):
+        line = encode(GrantHashKeyedMsg(hash=0x55815859, value=1))
+        # Python's json.dumps emits ints as decimal -- the Switch
+        # decoder (parseGrantHashKeyed) reads them via nextInt which
+        # handles decimal natively.  0x55815859 == 1434540121.
+        self.assertEqual(
+            line,
+            b'{"t":"grant_hash_keyed","hash":1434540121,"value":1}\n')
 
     def test_nerve_kind_serializes_as_string_value(self):
         line = encode(NerveFireWireMsg(kind=NerveKind.WONDER_SEED_AWARDED, seq=0))
@@ -304,6 +328,36 @@ class TestDecodeErrors(unittest.TestCase):
     def test_grant_badge_too_large_internal_id(self):
         with self.assertRaises(ProtocolError):
             decode(b'{"t":"grant_badge","internal_id":64}\n')
+
+    def test_grant_hash_keyed_missing_hash(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"grant_hash_keyed","value":1}\n')
+        self.assertIn("hash", str(cm.exception))
+
+    def test_grant_hash_keyed_missing_value(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"grant_hash_keyed","hash":1}\n')
+        self.assertIn("value", str(cm.exception))
+
+    def test_grant_hash_keyed_non_int_hash(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"grant_hash_keyed","hash":"0x1","value":1}\n')
+
+    def test_grant_hash_keyed_bool_value(self):
+        # int subsumes bool in Python; codec rejects bool explicitly.
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"grant_hash_keyed","hash":1,"value":true}\n')
+
+    def test_grant_hash_keyed_negative_hash(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"grant_hash_keyed","hash":-1,"value":1}\n')
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_grant_hash_keyed_too_large_value(self):
+        # 2**32 is one past the documented u32 range.
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"grant_hash_keyed","hash":1,"value":4294967296}\n')
+        self.assertIn("out of range", str(cm.exception))
 
     def test_err_missing_reason(self):
         with self.assertRaises(ProtocolError):
