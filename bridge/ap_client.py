@@ -198,20 +198,9 @@ class SMBWContext(CommonContext):
                         "royal_seed_table inconsistency: "
                         "is_royal_seed_item(%r)=True but no hash", item_name)
                     continue
-                # M3.3b is NOT yet wired on the Switch side -- the
-                # container-A writer no-ops for Royal Seed bool slots
-                # (live-falsified 2026-05-25; see royal_seed_table
-                # module docstring).  We still forward over the wire so
-                # the log trail is consistent and the M3.3b switch-mod
-                # work can land with no bridge-side change, but warn the
-                # operator that the in-game seed won't unlock yet.
-                log.warning(
+                log.info(
                     "item received: %r (id=%s) -> grant_hash_keyed "
-                    "hash=0x%08x value=%d  (NOTE: M3.3b not yet "
-                    "implemented in-game; container-A writer no-ops on "
-                    "this bool slot.  AP records the item received but "
-                    "the seed won't unlock until the container-B writer "
-                    "ships.)",
+                    "hash=0x%08x value=%d",
                     item_name, item_id, hash_,
                     royal_seed_table.ROYAL_SEED_VALUE)
                 if self.lan_server is None:
