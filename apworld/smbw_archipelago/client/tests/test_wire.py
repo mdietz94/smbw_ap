@@ -69,6 +69,11 @@ class TestRoundTrip(unittest.TestCase):
     def test_nerve_death(self):
         self._round_trip(NerveFireWireMsg(kind=NerveKind.DEATH_DETECTED, seq=3))
 
+    def test_nerve_game_goal_reached(self):
+        # M3.7 -- the one-shot Nerve translates to AP ClientStatus.CLIENT_GOAL
+        # in the processor; the wire format must round-trip cleanly.
+        self._round_trip(NerveFireWireMsg(kind=NerveKind.GAME_GOAL_REACHED, seq=1))
+
     def test_play_report_short(self):
         self._round_trip(PlayReportWireMsg(room="course_in", payload_hex="de0001"))
 

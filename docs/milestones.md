@@ -288,9 +288,43 @@ Per the manual's `wonder_flower_rando` and `wonder_effect_rando` yaml flags:
 
 For `button_shuffle` yaml flag — locks Y, ZL/Down, R, Up button capability until AP grants the item. Hook player-input polling (likely the `PlayerControlRef` component referenced in wondar's `include/game/actor/component/PlayerControlRef.h`). Per-button gates inside the input read; if not AP-granted, force-zero the bit before the game sees it.
 
-### M3.7 — game-completion goal hook
+### M3.7 — game-completion goal hook — ✅ shipped 2026-05-25
 
-Detect "all-clear" / final Bowser defeat → fire AP `goal complete`. The strings dump turned up `GameClear` (`0x710348e884`) and `SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss` (`0x710295d801`). The latter is the most specific signal we'll ever get — that flag is set exactly once per save, on first time defeating final Bowser. Find its setter and hook.
+Detect "all-clear" / final Bowser defeat → fire AP `goal complete`.  The
+`SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss` string at NSO
+`+0x295d801` is the most specific signal we'll get — that flag is set
+exactly once per save, on first time defeating final Bowser.
+
+**RE result (2026-05-25)** — done statically by walking decompressed
+`main.nso` segments in Python (no Ghidra):
+
+- Exactly one ADRP+ADD pair in `.text` computes the string address: a
+  3-instruction getter at NSO `+0x15b7790` (`adrp x0, 0x295d000; add x0,
+  x0, #0x801; ret`).
+- That getter is referenced by exactly one R_AARCH64_RELATIVE entry, at
+  `.data` offset `0x3363330` — the Nerve vtable's slot 0.
+- Slot 8 (execute) of that vtable resolves to NSO `+0x15b77a8`.  Zero
+  direct BL callers, not in `FUN_7100559f7c`'s caller list → **one-shot
+  Nerve**, same flavor as `SetCourseClearFlagToGameData` (M1.3).
+- Prologue is clean (no PC-relative loads in the first 5 instructions),
+  so `And64InlineHook` trampolining is safe.
+
+**Implementation**:
+
+- Switch: `HOOK_DEFINE_TRAMPOLINE(GameGoalReachedExecute)` installed at
+  NSO `+0x15b77a8` in [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp).
+  Callback drains inbound + enqueues `NerveKind::GameGoalReached`.
+  Wire: new `NerveKind::GameGoalReached = 3` →  `"game_goal_reached"`.
+- Bridge: `NerveKind.GAME_GOAL_REACHED` in
+  [apworld/smbw_archipelago/client/protocol.py](../apworld/smbw_archipelago/client/protocol.py);
+  new `GoalCompleted` emit type; new
+  `BridgeState.mark_goal_complete()` dedup so a replay (player
+  re-loads cleared save) doesn't generate redundant AP traffic;
+  `SMBWContext.handle_goal_completed` sends
+  `StatusUpdate(ClientStatus.CLIENT_GOAL)` to the AP server.
+- Tests: round-trip, dedup logic, LanServer dispatch, AP send — all
+  under
+  [apworld/smbw_archipelago/client/tests/](../apworld/smbw_archipelago/client/tests/).
 
 ### M3.8 — DeathLink (bidirectional — MVP)
 

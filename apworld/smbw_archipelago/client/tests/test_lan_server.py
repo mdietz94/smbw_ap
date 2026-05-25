@@ -15,7 +15,7 @@ import asyncio
 import unittest
 
 from ..lan_server import LanServer
-from ..protocol import CheckEmitted, CheckKind, DeathReported
+from ..protocol import CheckEmitted, CheckKind, DeathReported, GoalCompleted
 from ..state import BridgeState
 from .. import wire
 from .test_play_report import COURSE_RESULT, W1_2_COURSE_IN
@@ -70,6 +70,7 @@ class _ServerHarness:
         self.state = BridgeState()
         self.emitted: list[CheckEmitted] = []
         self.deaths: list[DeathReported] = []
+        self.goals: list[GoalCompleted] = []
         self.server: LanServer | None = None
         self.port: int = 0
         # Mutable mask the tests can mutate live; the lambda the LAN
@@ -86,11 +87,15 @@ class _ServerHarness:
     async def _on_death_reported(self, death: DeathReported) -> None:
         self.deaths.append(death)
 
+    async def _on_goal_completed(self, goal: GoalCompleted) -> None:
+        self.goals.append(goal)
+
     async def start(self) -> None:
         self.server = LanServer(
             self.state,
             on_check_emitted=self._on_check_emitted,
             on_death_reported=self._on_death_reported,
+            on_goal_completed=self._on_goal_completed,
             badge_mask_provider=lambda: self.badge_mask,
             royal_seed_grants_provider=lambda: list(self.royal_seed_grants),
         )
@@ -494,6 +499,52 @@ class TestDeathReportedDispatch(_AsyncTestCase):
 
 
 # ---------------------------------------------------------------------------
+# GoalCompleted routing (M3.7 game-completion goal hook).
+
+class TestGoalCompletedDispatch(_AsyncTestCase):
+
+    async def test_game_goal_nerve_routes_to_goal_callback(self):
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute replay
+
+            await client.send(wire.NerveFireWireMsg(
+                kind=wire.NerveKind.GAME_GOAL_REACHED, seq=1))
+            await asyncio.sleep(0.02)
+
+            # Goal emits GoalCompleted, NOT CheckEmitted nor DeathReported.
+            self.assertEqual(self.h.emitted, [])
+            self.assertEqual(self.h.deaths, [])
+            self.assertEqual(len(self.h.goals), 1)
+            self.assertEqual(self.h.goals[0].seq, 1)
+            self.assertTrue(self.h.state.goal_complete)
+        finally:
+            await client.close()
+
+    async def test_second_goal_nerve_is_deduped(self):
+        """A replay (player re-loads cleared save) MUST not generate a
+        second GoalCompleted dispatch."""
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()  # ack
+            await client.recv()  # post-hello replay
+
+            await client.send(wire.NerveFireWireMsg(
+                kind=wire.NerveKind.GAME_GOAL_REACHED, seq=1))
+            await client.send(wire.NerveFireWireMsg(
+                kind=wire.NerveKind.GAME_GOAL_REACHED, seq=2))
+            await asyncio.sleep(0.05)
+
+            self.assertEqual(len(self.h.goals), 1)
+            self.assertEqual(self.h.goals[0].seq, 1)
+        finally:
+            await client.close()
+
+
+# ---------------------------------------------------------------------------
 # Ping / pong + malformed input.
 
 class TestPingPongAndErrors(_AsyncTestCase):
@@ -566,6 +617,33 @@ class TestClientDisplacement(_AsyncTestCase):
 
         await client_a.close()
         await client_b.close()
+
+
+# ---------------------------------------------------------------------------
+# Shutdown hang regression: LanServer.stop() must drop a connected
+# client first so Python 3.12+'s Server.wait_closed() can return.
+# Without the fix, _handle_client is parked in reader.readuntil and
+# the listener's wait_closed blocks on it forever.
+
+class TestStopWithConnectedClient(unittest.IsolatedAsyncioTestCase):
+    """Build the server inline (not via _AsyncTestCase) so we control
+    the stop() timing directly and don't double-stop in teardown."""
+
+    async def test_stop_returns_promptly_with_connected_client(self):
+        h = _ServerHarness()
+        await h.start()
+        client = await _FakeSwitch.connect(h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute replay
+            # Now the Switch handler is parked in reader.readuntil --
+            # exactly the state that hung the Kivy close path on 3.12+.
+            # Stop should complete within the bounded timeout (we give
+            # it 3 s for slow CI; the server's own timeout is 2 s).
+            await asyncio.wait_for(h.server.stop(), timeout=3.0)
+        finally:
+            await client.close()
 
 
 if __name__ == "__main__":

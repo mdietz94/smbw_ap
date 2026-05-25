@@ -18,6 +18,7 @@ from ..protocol import (
     CheckEmitted,
     CheckKind,
     DeathReported,
+    GoalCompleted,
     NerveFireMsg,
     NerveKind,
     PlayReportMsg,
@@ -357,6 +358,42 @@ class TestDeathTracking(unittest.TestCase):
         state = BridgeState()
         emitted = process_event(
             state, NerveFireMsg(kind=NerveKind.DEATH_DETECTED, seq=1))
+        self.assertFalse(any(isinstance(e, CheckEmitted) for e in emitted))
+
+
+# ---------------------------------------------------------------------------
+# M3.7 Game-completion goal hook — outbound: emit GoalCompleted once on
+# the first GAME_GOAL_REACHED Nerve fire, deduped by BridgeState so a
+# replay (e.g. player re-enters the cleared save) is silenced.
+
+class TestGameGoalReached(unittest.TestCase):
+    def test_first_fire_emits_goal_completed(self):
+        state = BridgeState()
+        self.assertFalse(state.goal_complete)
+        emitted = process_event(
+            state, NerveFireMsg(kind=NerveKind.GAME_GOAL_REACHED, seq=1))
+        self.assertEqual(len(emitted), 1)
+        self.assertIsInstance(emitted[0], GoalCompleted)
+        self.assertEqual(emitted[0].seq, 1)
+        self.assertTrue(state.goal_complete)
+
+    def test_second_fire_is_deduped(self):
+        """The Nerve should only fire once per save, but a replay (save
+        reload + cleared post-Bowser cutscene) MUST not generate a second
+        AP StatusUpdate."""
+        state = BridgeState()
+        first = process_event(
+            state, NerveFireMsg(kind=NerveKind.GAME_GOAL_REACHED, seq=1))
+        second = process_event(
+            state, NerveFireMsg(kind=NerveKind.GAME_GOAL_REACHED, seq=2))
+        self.assertEqual(len(first), 1)
+        self.assertEqual(second, [])
+
+    def test_game_goal_does_not_emit_check(self):
+        """GoalCompleted is its own emit type; no CheckEmitted produced."""
+        state = BridgeState()
+        emitted = process_event(
+            state, NerveFireMsg(kind=NerveKind.GAME_GOAL_REACHED, seq=1))
         self.assertFalse(any(isinstance(e, CheckEmitted) for e in emitted))
 
 
