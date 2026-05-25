@@ -69,6 +69,13 @@ class BridgeState:
         # Mario death.  Bridge will forward to AP later.
         self.death_count: int = 0
 
+        # M3.7 game-completion flag.  Flipped True the first time a
+        # GAME_GOAL_REACHED nerve fire reaches the processor on this AP
+        # session; subsequent fires (e.g. a replay after the player
+        # reloads the cleared save) are deduped to one AP
+        # StatusUpdate(CLIENT_GOAL).
+        self.goal_complete: bool = False
+
     # ---- Mutators -----------------------------------------------------
 
     def set_current_course(self, course: CurrentCourse | None) -> None:
@@ -101,6 +108,18 @@ class BridgeState:
         Bridge forwards to AP later."""
         with self._lock:
             self.death_count += 1
+
+    def mark_goal_complete(self) -> bool:
+        """M3.7 — mark this save as goal-complete.  Returns True on the
+        first call (so the caller should emit one ``GoalCompleted`` /
+        AP StatusUpdate), False on subsequent calls so duplicate Nerve
+        fires (e.g. the player re-loads and replays the post-Bowser
+        scene) don't generate redundant AP traffic."""
+        with self._lock:
+            if self.goal_complete:
+                return False
+            self.goal_complete = True
+            return True
 
     # ---- Read accessors -----------------------------------------------
 

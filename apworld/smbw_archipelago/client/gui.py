@@ -79,6 +79,7 @@ class SMBWManager(GameManager):
         self._lbl_course = self._mk_label(inner, "Course: (none)")
         self._lbl_checks = self._mk_label(inner, "Emitted checks: 0")
         self._lbl_deaths = self._mk_label(inner, "Deaths: 0")
+        self._lbl_goal = self._mk_label(inner, "Goal: not yet")
         self._lbl_badges = self._mk_label(inner, "Badge mask: 0x0")
         self._lbl_items = self._mk_label(
             inner, "Items received: 0",
@@ -139,8 +140,14 @@ class SMBWManager(GameManager):
 
         emitted = state.count_emitted() if state else 0
         deaths = state.death_count if state else 0
+        goal_complete = bool(state.goal_complete) if state else False
         self._lbl_checks.text = f"Emitted checks: [b]{emitted}[/b]"
         self._lbl_deaths.text = f"Deaths: {deaths}"
+        self._lbl_goal.text = (
+            "Goal: [color=00ff00]complete (final Bowser defeated)[/color]"
+            if goal_complete
+            else "Goal: not yet"
+        )
 
         try:
             mask = ctx._recompute_badge_mask()

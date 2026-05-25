@@ -10,6 +10,20 @@
 > `python -m apworld.smbw_archipelago.client.main ...` (or the Launcher
 > button).  See CLAUDE.md "Launching the SMBW Client" for the new flow.
 
+Last updated: 2026-05-25 — **M3.7 shipped** (game-completion goal hook
+wired Switch ↔ bridge ↔ AP).  RE'd the
+`SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss` Nerve at NSO
+`+0x15b77a8` (vtable `+0x3363330`, slot 8) statically by walking the
+single ADRP+ADD that computes the string at NSO `+0x295d801` ->
+getter at NSO `+0x15b7790` -> R_AARCH64_RELATIVE entry pointing the
+vtable slot 0 at it -> vtable slot 8 = execute.  Zero direct BL
+callers and not in `FUN_7100559f7c` xref list -> one-shot Nerve (same
+flavor as M1.3 SetCourseClearFlagToGameData).  Bridge processor emits
+`GoalCompleted` deduped via `BridgeState.mark_goal_complete()`;
+`SMBWContext.handle_goal_completed` sends
+`StatusUpdate(ClientStatus.CLIENT_GOAL=30)`.  255 apworld tests green.
+Live-validation pending the player actually beating final Bowser.
+
 Last updated: 2026-05-25 — **M3.3 + M3.3b + M3.8 all shipped** (M3.8
 end-to-end live-validated: latched `live_base=0x20a1f27030`, `synthKill`
 wrote HP=0 at +0x38, Mario died on first frame).  Production path is

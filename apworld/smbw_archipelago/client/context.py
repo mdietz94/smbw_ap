@@ -35,7 +35,7 @@ from . import badge_table
 from . import royal_seed_table
 from .commands import SMBWCommandProcessor
 from .location_table import lookup_name
-from .protocol import CheckEmitted, DeathReported
+from .protocol import CheckEmitted, DeathReported, GoalCompleted
 from .state import BridgeState
 
 
@@ -305,6 +305,31 @@ class SMBWContext(CommonContext):
                 death.seq, self._own_player_name() or "?")
         except Exception:
             log.exception("send_death failed for seq=%d", death.seq)
+
+    # ---- Game-completion goal -----------------------------------------
+
+    async def handle_goal_completed(self, goal: GoalCompleted) -> None:
+        """LanServer dispatches this when the processor emits a
+        GoalCompleted (Switch fired the SetFlagEnd...AfterClearedLastBoss
+        Nerve at NSO+0x15b77a8 = Mario defeated final Bowser for the
+        first time on this save).
+
+        Sends a ``StatusUpdate`` with ``ClientStatus.CLIENT_GOAL`` so the
+        AP server marks this slot done.  Idempotent at the AP server
+        level, but the bridge already deduped via
+        ``BridgeState.mark_goal_complete`` so this should only fire
+        once per AP session.
+        """
+        try:
+            await self.send_msgs([{
+                "cmd": "StatusUpdate",
+                "status": ClientStatus.CLIENT_GOAL,
+            }])
+            log.info(
+                "-> AP StatusUpdate(CLIENT_GOAL) seq=%d", goal.seq)
+        except Exception:
+            log.exception(
+                "StatusUpdate(CLIENT_GOAL) failed for seq=%d", goal.seq)
 
     def _own_player_name(self) -> str:
         """Best-effort lookup of our own player name in the AP slot

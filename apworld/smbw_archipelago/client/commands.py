@@ -31,11 +31,15 @@ class SMBWCommandProcessor(ClientCommandProcessor):
         ) if course else "(none)"
         emitted = state.count_emitted() if state else 0
         deaths = state.death_count if state else 0
+        goal_complete = bool(state.goal_complete) if state else False
         mask = ctx._recompute_badge_mask() if hasattr(ctx, "_recompute_badge_mask") else 0
         self.output(f"AP slot: {ctx.auth or '(unset)'}  seed: {ctx.seed_name or '(unset)'}")
         self.output(f"Switch:  {'connected' if switch_connected else 'disconnected'}")
         self.output(f"Course:  {course_desc}")
         self.output(f"Emitted checks: {emitted}    Deaths: {deaths}")
+        self.output(
+            "Goal:    "
+            + ("COMPLETE (final Bowser defeated)" if goal_complete else "not yet"))
         self.output(f"Badge mask: 0x{mask:x}")
         return True
 
