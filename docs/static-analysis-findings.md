@@ -3507,3 +3507,110 @@ candidate" annotation, treat it as ready-to-ship pending a one-line
 empirical confirmation.  We deferred M3.3b 24 hours by labelling the
 M3.3 falsification a "container-B writer hunt" when the writer was
 already named in our own findings doc.
+
+---
+
+## 2026-05-25 — M3.8 outbound: death-vs-noise discriminator
+
+The "scene transition" active Nerve at vtable offset `0x33fd9a8` fires on
+Mario death AND on player-controlled course transitions (restart, exit).
+The outbound DeathLink filter rides on distinguishing these.
+
+**5-event observation run (R-2026-05-25 08:03:50)** — user triggered, in order:
+
+| Fire # | Event | Nerve `this` | `+0x18` (u64 LE)     |
+|--------|-------|--------------|----------------------|
+| 1      | restart course | `0x20c0daa7d0` (nerve_A) | `0x00ff003700000084` |
+| 2      | death (pit)    | `0x20c0d57e30` (nerve_B) | `0x00ff000600000004` |
+| 3      | death          | `0x20c0d57e30` (nerve_B) | `0x00ff000600000004` |
+| 4      | exit course    | `0x20c0daa7d0` (nerve_A) | `0x00ff003700000084` |
+| 5      | death          | `0x20c0d57e30` (nerve_B) | `0x00ff000600000004` |
+
+**Discriminator**: `*(uint32_t*)(nerve + 0x18) == 0x00000004` -> death.
+Per-instance signal: nerve_A and nerve_B are distinct C++ objects sharing
+the same vtable, each storing a type-discriminating enum at `+0x18`.
+Death is whitelisted in `NerveActivateOnce::Callback`'s scene-transition
+branch (`kDeathDiscriminator_Off=0x18, kDeathDiscriminator_Val=0x4`); any
+other value logs as `SCENE_TRANSITION non-death (state=0xN)` and drops --
+conservative against unobserved siblings (world-map travel, palace clear,
+pause-quit, file-select were NOT in the observation pass).
+
+---
+
+## 2026-05-25 — M3.8 inbound kill: corrected anchor
+
+The bundled M3.8 scaffolding from 85ccf59 latched X22 from the flower_coin
+writer at NSO `+0x49253C` and wrote uint8 0 to `+0x1C`, on the assumption
+that both HamletDuFromage cheat anchors targeted the same "live_base"
+struct.
+
+**Falsified live 2026-05-25**:
+```
+[smbwap inf] synthKill: wrote HP=0 at live_base=0x20dc152070 +0x1C
+```
+Mario kept playing.  Cross-anchor was an inference, not a verified fact.
+The two cheat anchors target two different structs:
+
+- `+0x49253C` (Coins (Purple)) uses **X22** in `FUN_7100491f60`, where
+  decompilation shows X22 = `(int*)param_1[7]` — a "stats / counters"
+  sub-object.  Has flower_coin at `+0xC8`, but `+0x1C` is unrelated.
+- `+0x2743C0` (Disable Death) uses **X9** in a different function — the
+  death-check code path inside `FUN_7100273868`.
+
+**Real HP location** — Ghidra trace of the death-check code path:
+```
++0x2743b8: ldr   x9, [x9, x10, LSL #0x0]   ; x9 = HP-bearing struct
++0x2743bc: cbz   x9, LAB_71002743d0         ; null check
++0x2743c0: ldrsh w9, [x9, #0x38]            ; load HP (signed int16)
++0x2743c4: cmp   w9, #0
++0x2743c8: b.le  LAB_710027593c              ; <= 0 -> death handler
+```
+
+HP is a **signed int16 at +0x38** of the X9-pointed struct.  The `+0x1C`
+the cheat manipulates is just an "alive flag" hack on a different field
+in the same struct — overwriting it makes the death check skip, but
+zeroing it doesn't trigger death the way zeroing the HP halfword does.
+
+**Inline hook at the cbz** (NSO `+0x2743BC`) was the first retry —
+exlaunch's relocator handles `cbz` + `b.le` per `__fix_cond_comp_test_branch`
+in [hook_impl.cpp](../switch-mod/src/lib/hook/nx64/hook_impl.cpp).  Live
+result: Ryujinx silently terminated when the patched code path was
+reached, even though the latch never fired.  Some interaction in the
+patch window we don't understand; abandoned for safety.
+
+**Final implementation — trampoline at the function entry**.
+`PlayerTickLatch::Callback` (`HOOK_DEFINE_TRAMPOLINE` at NSO `+0x273868`)
+reads `X0 = param_1` (which the function uses internally to reach the HP
+struct) and replicates the dereference chain in C:
+
+```cpp
+x8        = *(param_1 + 0x10);
+arr       = *(x8 + 0x208);
+ver       = *(x8 + 0x200);
+off       = (ver > 0x23) ? 0x118 : 0;
+hp_struct = *(arr + off);    // latch once via compare_exchange
+```
+
+`probe::synthKill` writes int16 0 to `hp_struct + 0x38` and sets
+`g_synthetic_death_this_frame` (consumed by the outbound nerve filter to
+suppress the echo).
+
+**Live-validated 2026-05-25 09:00:34**:
+```
+PlayerTickLatch: latched live_base=0x20a1f27030 (HP int16 at +0x38; ver=0x7c off=0x118)
+synthKill: wrote HP=0 (int16) at live_base=0x20a1f27030 +0x38
+```
+Mario died on the first frame.  Production path is now AP Bounce ->
+`SMBWContext.on_deathlink` -> `LanServer.send_kill` -> Switch
+`drainInbound` -> `probe::synthKill`.
+
+**Lessons**:
+- "Cheat DB anchor A and anchor B use the same register name" is NOT
+  evidence they target the same struct.  Verify with decompile.
+- exlaunch's inline-hook relocator nominally handles PC-relative
+  branches, but the empirical record shows at least one specific patch
+  window (the one starting at `+0x2743BC`) where it doesn't.  Function-
+  entry trampolines are the safer default.
+- When the function uses an internal dereference chain to reach the
+  data you want to latch, replicate the chain in your hook callback
+  rather than hooking deeper into the function body.

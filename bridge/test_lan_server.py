@@ -18,13 +18,13 @@ if __package__ is None or __package__ == "":
     import sys, os
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from lan_server import LanServer
-    from protocol import CheckEmitted, CheckKind
+    from protocol import CheckEmitted, CheckKind, DeathReported
     from state import BridgeState
     import wire
     from test_play_report import COURSE_RESULT, W1_2_COURSE_IN
 else:
     from .lan_server import LanServer
-    from .protocol import CheckEmitted, CheckKind
+    from .protocol import CheckEmitted, CheckKind, DeathReported
     from .state import BridgeState
     from . import wire
     from .test_play_report import COURSE_RESULT, W1_2_COURSE_IN
@@ -72,11 +72,13 @@ class _FakeSwitch:
 
 
 class _ServerHarness:
-    """Manages LanServer lifecycle + the captured on_check_emitted list."""
+    """Manages LanServer lifecycle + the captured on_check_emitted /
+    on_death_reported lists."""
 
     def __init__(self, badge_mask: int = 0) -> None:
         self.state = BridgeState()
         self.emitted: list[CheckEmitted] = []
+        self.deaths: list[DeathReported] = []
         self.server: LanServer | None = None
         self.port: int = 0
         # Mutable mask the tests can mutate live; the lambda the LAN
@@ -90,10 +92,14 @@ class _ServerHarness:
     async def _on_check_emitted(self, check: CheckEmitted) -> None:
         self.emitted.append(check)
 
+    async def _on_death_reported(self, death: DeathReported) -> None:
+        self.deaths.append(death)
+
     async def start(self) -> None:
         self.server = LanServer(
             self.state,
             on_check_emitted=self._on_check_emitted,
+            on_death_reported=self._on_death_reported,
             badge_mask_provider=lambda: self.badge_mask,
             royal_seed_grants_provider=lambda: list(self.royal_seed_grants),
         )
@@ -392,6 +398,64 @@ class TestGrantHashKeyedOutbound(_AsyncTestCase):
     async def test_send_grant_hash_keyed_with_no_client_drops(self):
         # No client connected; warn-and-drop, not raise.
         self.h.server.send_grant_hash_keyed(0xF4EE6827, 99)
+
+
+# ---------------------------------------------------------------------------
+# Outbound Kill (M3.8 DeathLink incoming half).
+
+class TestKillOutbound(_AsyncTestCase):
+
+    async def _drain_hello_replay(self, client: _FakeSwitch) -> None:
+        """Same pattern as TestSetBadgesAbsoluteOutbound._drain_hello_replay
+        -- HELLO_ACK is followed by a SetBadgesAbsolute(bits=0) replay
+        that the bridge sends on every fresh client connect.  We have to
+        drain it before send_kill's KillMsg arrives next."""
+        await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+        await client.recv()  # ack
+        await client.recv()  # replay SetBadgesAbsolute (bits=0)
+        await asyncio.sleep(0.02)
+
+    async def test_send_kill_reaches_client(self):
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await self._drain_hello_replay(client)
+            self.h.server.send_kill(source="OtherSlot", cause="mario_died")
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.KillMsg)
+            self.assertEqual(received.source, "OtherSlot")
+            self.assertEqual(received.cause, "mario_died")
+        finally:
+            await client.close()
+
+    async def test_send_kill_with_no_client_drops(self):
+        # No client connected; warn-and-drop, not raise.
+        self.h.server.send_kill(source="OtherSlot", cause="x")
+
+
+# ---------------------------------------------------------------------------
+# DeathReported routing (M3.8 outbound half).
+
+class TestDeathReportedDispatch(_AsyncTestCase):
+
+    async def test_death_nerve_routes_to_death_callback(self):
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()
+
+            await client.send(wire.NerveFireWireMsg(
+                kind=wire.NerveKind.DEATH_DETECTED, seq=7))
+            await asyncio.sleep(0.02)
+
+            # Death emits DeathReported, NOT CheckEmitted.
+            self.assertEqual(self.h.emitted, [])
+            self.assertEqual(len(self.h.deaths), 1)
+            self.assertEqual(self.h.deaths[0].seq, 7)
+            # Bookkeeping in state still happens.
+            self.assertEqual(self.h.state.death_count, 1)
+        finally:
+            await client.close()
 
 
 # ---------------------------------------------------------------------------

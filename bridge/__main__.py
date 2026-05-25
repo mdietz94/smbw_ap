@@ -191,6 +191,7 @@ async def _run(args: argparse.Namespace) -> int:
     lan = LanServer(
         state=state,
         on_check_emitted=ctx.handle_check_emitted,
+        on_death_reported=ctx.handle_death_reported,
         badge_mask_provider=ctx._recompute_badge_mask,
         royal_seed_grants_provider=ctx._collect_royal_seed_grants,
     )
