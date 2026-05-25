@@ -2,10 +2,16 @@
 and bridges between the AP MultiServer protocol and the LAN server.
 
 Inbound (AP -> Switch):
-  - ``ReceivedItems`` -> resolve each item id to a name -> look up in
-    :mod:`badge_table` -> ``LanServer.send_grant_badge`` -> Switch.
-  - Items the table doesn't recognize are logged + dropped (M4 ships
-    badges only; M5 will extend with power-ups / characters etc.).
+  - Badges: maintain a canonical ``_badge_mask`` derived from
+    :attr:`items_received` (each badge item -> bit position via
+    :mod:`badge_table`).  On every ``ReceivedItems``, recompute the
+    mask and push it to the Switch as a ``SetBadgesAbsolute`` (the
+    LAN server also re-pushes on HelloMsg and on a ~2 s tick -- AP
+    is the sole authority over the badge pool, see
+    docs/m4-followups.md and the lan_server module docstring).
+  - Royal Seeds: per-item ``GrantHashKeyed`` (container-A path).
+  - Items neither table recognizes are logged + dropped (M4 ships
+    badges + seeds; M5 will extend with power-ups / characters).
 
 Outbound (Switch -> AP):
   - The LanServer calls :meth:`SMBWContext.handle_check_emitted` for
@@ -160,12 +166,53 @@ class SMBWContext(CommonContext):
             self.game,
         )
 
+    def _recompute_badge_mask(self) -> int:
+        """Walk :attr:`items_received` and compute the absolute owned-
+        badge bitmask -- one bit per known badge item.  Items the badge
+        table doesn't recognize contribute 0 bits (silent drop, same
+        failure mode as the prior per-item grant path).  This is what
+        the LAN server pushes to the Switch as the authoritative badge
+        set on HelloMsg, on a periodic tick, and after every
+        ReceivedItems."""
+        mask = 0
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                item_name = self.item_names.lookup_in_game(int(item_id))
+            except Exception:
+                continue
+            bit = badge_table.grant_internal_id_for_item(item_name)
+            if bit is None:
+                continue
+            mask |= (1 << bit)
+        return mask
+
     async def _handle_received_items(self, args: dict) -> None:
         items = args.get("items", []) or []
+
+        # Recompute + push the badge mask once per ReceivedItems batch.
+        # super().on_package already merged the new items into
+        # self.items_received before this coroutine ran, so
+        # _recompute_badge_mask sees the new state.
+        new_mask = self._recompute_badge_mask()
+        if self.lan_server is not None:
+            log.info("ReceivedItems: badge mask now 0x%x", new_mask)
+            self.lan_server.send_set_badges_absolute(new_mask)
+        else:
+            log.debug(
+                "no lan_server bound; not forwarding badge mask 0x%x",
+                new_mask)
+
+        # Per-item routing for non-badge items (Royal Seeds today; M5
+        # will extend to power-ups + characters).  Badges are handled by
+        # the mask above; we skip them here to avoid double work.
         for it in items:
             item_id = it.get("item") if isinstance(it, dict) else None
             if item_id is None:
-                # NetworkItem dataclass or some other shape; ducktype it.
                 item_id = getattr(it, "item", None)
             if item_id is None:
                 log.warning("ReceivedItems entry without item id: %r", it)
@@ -176,22 +223,12 @@ class SMBWContext(CommonContext):
                 log.warning("can't resolve item id %r: %s", item_id, e)
                 continue
             if badge_table.is_badge_item(item_name):
-                internal_id = badge_table.grant_internal_id_for_item(item_name)
-                if internal_id is None:
-                    # is_badge_item returned True so this shouldn't happen,
-                    # but belt-and-braces.
-                    log.warning(
-                        "badge_table inconsistency: is_badge_item(%r)=True but "
-                        "no internal_id available", item_name)
-                    continue
-                log.info(
-                    "item received: %r (id=%s) -> grant_badge internal_id=%d",
-                    item_name, item_id, internal_id)
-                if self.lan_server is None:
-                    log.debug("no lan_server bound; cannot forward grant")
-                    continue
-                self.lan_server.send_grant_badge(internal_id)
-            elif royal_seed_table.is_royal_seed_item(item_name):
+                # Already covered by the absolute-mask push above.
+                log.debug(
+                    "badge item received: %r (id=%s) -- covered by "
+                    "SetBadgesAbsolute push", item_name, item_id)
+                continue
+            if royal_seed_table.is_royal_seed_item(item_name):
                 hash_ = royal_seed_table.hash_for_item(item_name)
                 if hash_ is None:
                     log.warning(

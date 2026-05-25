@@ -3,8 +3,9 @@
 Pure stdlib, asyncio-agnostic.  Modeled on
 smo_archipelago/apworld/smo_archipelago/client/protocol.py, but adapted
 to SMBW's event model: the Switch ships Nerve fires (M1) and raw
-PlayReport payload bytes (M2.4) up, and receives GrantBadge commands
-(M3.2) down.
+PlayReport payload bytes (M2.4) up, and receives SetBadgesAbsolute
+(M4 follow-up #2; AP-authoritative badge sync) and GrantHashKeyed
+(M3.3) commands down.
 
 Frame format: one JSON object per line, terminated by `b"\\n"`, capped
 at ``MAX_LINE_BYTES`` bytes per line.  The discriminator field is
@@ -215,37 +216,52 @@ class PlayReportWireMsg:
 
 
 @dataclass(frozen=True)
-class GrantBadgeMsg:
-    """Bridge -> Switch.  M4's single inbound item-grant type.
+class SetBadgesAbsoluteMsg:
+    """Bridge -> Switch.  AP-authoritative badge sync (M4 follow-up #2).
 
-    ``internal_id`` is the bit position in SMBW's container-C badge
-    bitfield (hash ``0x105df820``).  The Switch worker thread enqueues
-    onto its inbound SPSC ring; the game thread drains and calls
-    ``probe::grantBadgeBit(internal_id)``.
+    ``bits`` is the absolute desired contents of SMBW's container-C
+    owned-badge bitfield (hash ``0x105df820``).  Bit N == owned badge
+    with internal_id N.  The Switch worker enqueues onto its inbound
+    SPSC ring; the game thread drains and calls
+    ``probe::setBadgeBitfieldAbsolute(bits)`` which overwrites all 128
+    bits of the live container-C bitfield (low 64 = owned, high 64 =
+    mirror).
 
-    Range is bounded by the badge registry (max ~50ish badges); the
-    Switch caller still validates the registry before applying.
-    Values outside ``[0, 63]`` are dropped here so the wire never carries
-    nonsense.
+    Sent by the bridge on three triggers:
+      1. Every AP ``ReceivedItems`` update -- recompute mask + send.
+      2. Every Switch ``HelloMsg`` (replay-on-reconnect) so the bitfield
+         survives save/reload and game restarts.
+      3. A periodic ~2 s tick to revert any in-game badge pickup
+         (Poplin shop, badge house, badge medley) that AP didn't grant
+         -- AP is the sole authority over the badge pool.
+
+    Replaces the M3.2 per-bit ``GrantBadgeMsg``; the absolute-write
+    primitive is idempotent (same input always produces the same final
+    state), which subsumes both the M3.2 incremental grant and the
+    planned M4.5 replay-on-HelloMsg work for badges.
+
+    Range is ``[0, 2**64)``; the Switch parses as int64 so practical
+    badge masks (currently fit in u32, max bit position 46 = bit 46) are
+    well below the int64 limit.
     """
 
-    T = "grant_badge"
+    T = "set_badges_absolute"
 
-    internal_id: int
+    bits: int
 
     def to_wire(self) -> dict[str, Any]:
-        return {"t": self.T, "internal_id": self.internal_id}
+        return {"t": self.T, "bits": self.bits}
 
     @classmethod
-    def from_wire(cls, d: dict[str, Any]) -> GrantBadgeMsg:
-        raw = d.get("internal_id")
+    def from_wire(cls, d: dict[str, Any]) -> SetBadgesAbsoluteMsg:
+        raw = d.get("bits")
         if not isinstance(raw, int) or isinstance(raw, bool):
-            raise ProtocolError(f"grant_badge.internal_id must be int, got {raw!r}")
-        if not (0 <= raw < 64):
             raise ProtocolError(
-                f"grant_badge.internal_id out of range [0, 64): {raw}"
-            )
-        return cls(internal_id=raw)
+                f"set_badges_absolute.bits must be int, got {raw!r}")
+        if not (0 <= raw < (1 << 64)):
+            raise ProtocolError(
+                f"set_badges_absolute.bits out of range [0, 2**64): {raw}")
+        return cls(bits=raw)
 
 
 @dataclass(frozen=True)
@@ -359,7 +375,7 @@ WireMsg = (
     | HelloAckMsg
     | NerveFireWireMsg
     | PlayReportWireMsg
-    | GrantBadgeMsg
+    | SetBadgesAbsoluteMsg
     | GrantHashKeyedMsg
     | ErrMsg
     | PingMsg
@@ -375,7 +391,7 @@ _FROM_WIRE: dict[str, Any] = {
     HelloAckMsg.T: HelloAckMsg.from_wire,
     NerveFireWireMsg.T: NerveFireWireMsg.from_wire,
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
-    GrantBadgeMsg.T: GrantBadgeMsg.from_wire,
+    SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     ErrMsg.T: ErrMsg.from_wire,
     PingMsg.T: PingMsg.from_wire,

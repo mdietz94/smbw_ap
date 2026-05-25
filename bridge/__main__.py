@@ -188,7 +188,11 @@ async def _run(args: argparse.Namespace) -> int:
     )
     ctx.auth = args.slot
 
-    lan = LanServer(state=state, on_check_emitted=ctx.handle_check_emitted)
+    lan = LanServer(
+        state=state,
+        on_check_emitted=ctx.handle_check_emitted,
+        badge_mask_provider=ctx._recompute_badge_mask,
+    )
     ctx.lan_server = lan
 
     await lan.start(host=args.switch_host, port=args.switch_port)

@@ -20,7 +20,6 @@ if __package__ is None or __package__ == "":
         MAX_LINE_BYTES,
         WIRE_VERSION,
         ErrMsg,
-        GrantBadgeMsg,
         GrantHashKeyedMsg,
         HelloAckMsg,
         HelloMsg,
@@ -29,6 +28,7 @@ if __package__ is None or __package__ == "":
         PlayReportWireMsg,
         PongMsg,
         ProtocolError,
+        SetBadgesAbsoluteMsg,
         decode,
         encode,
     )
@@ -38,7 +38,6 @@ else:
         MAX_LINE_BYTES,
         WIRE_VERSION,
         ErrMsg,
-        GrantBadgeMsg,
         GrantHashKeyedMsg,
         HelloAckMsg,
         HelloMsg,
@@ -47,6 +46,7 @@ else:
         PlayReportWireMsg,
         PongMsg,
         ProtocolError,
+        SetBadgesAbsoluteMsg,
         decode,
         encode,
     )
@@ -101,14 +101,23 @@ class TestRoundTrip(unittest.TestCase):
     def test_play_report_empty(self):
         self._round_trip(PlayReportWireMsg(room="ping", payload_hex=""))
 
-    def test_grant_badge(self):
-        self._round_trip(GrantBadgeMsg(internal_id=4))
+    def test_set_badges_absolute_single_bit(self):
+        self._round_trip(SetBadgesAbsoluteMsg(bits=1 << 4))  # Spring Feet
 
-    def test_grant_badge_zero(self):
-        self._round_trip(GrantBadgeMsg(internal_id=0))
+    def test_set_badges_absolute_zero(self):
+        self._round_trip(SetBadgesAbsoluteMsg(bits=0))
 
-    def test_grant_badge_max(self):
-        self._round_trip(GrantBadgeMsg(internal_id=63))
+    def test_set_badges_absolute_multiple_bits(self):
+        # Spring Feet (4) + Coin Reward (9) + Auto Super Mushroom (46).
+        self._round_trip(SetBadgesAbsoluteMsg(
+            bits=(1 << 4) | (1 << 9) | (1 << 46)))
+
+    def test_set_badges_absolute_full_u32(self):
+        self._round_trip(SetBadgesAbsoluteMsg(bits=0xFFFFFFFF))
+
+    def test_set_badges_absolute_full_u63(self):
+        # Switch parses as int64; one below INT64_MAX is the safe upper.
+        self._round_trip(SetBadgesAbsoluteMsg(bits=(1 << 63) - 1))
 
     def test_grant_hash_keyed_royal_seed_w1(self):
         self._round_trip(GrantHashKeyedMsg(hash=0x55815859, value=1))
@@ -193,12 +202,13 @@ class TestEncodedShape(unittest.TestCase):
 
     def test_compact_json_no_whitespace(self):
         # Switch decoder reads byte-by-byte; extra spaces are wasted bandwidth.
-        line = encode(GrantBadgeMsg(internal_id=4))
+        line = encode(SetBadgesAbsoluteMsg(bits=1 << 4))
         self.assertNotIn(b" ", line[:-1])
 
-    def test_grant_badge_serializes_minimally(self):
-        line = encode(GrantBadgeMsg(internal_id=4))
-        self.assertEqual(line, b'{"t":"grant_badge","internal_id":4}\n')
+    def test_set_badges_absolute_serializes_minimally(self):
+        line = encode(SetBadgesAbsoluteMsg(bits=1 << 4))
+        self.assertEqual(
+            line, b'{"t":"set_badges_absolute","bits":16}\n')
 
     def test_grant_hash_keyed_serializes_minimally(self):
         line = encode(GrantHashKeyedMsg(hash=0x55815859, value=1))
@@ -306,28 +316,31 @@ class TestDecodeErrors(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             decode(b'{"t":"play_report","room":"course_in"}\n')
 
-    def test_grant_badge_missing_internal_id(self):
+    def test_set_badges_absolute_missing_bits(self):
         with self.assertRaises(ProtocolError) as cm:
-            decode(b'{"t":"grant_badge"}\n')
-        self.assertIn("internal_id", str(cm.exception))
+            decode(b'{"t":"set_badges_absolute"}\n')
+        self.assertIn("bits", str(cm.exception))
 
-    def test_grant_badge_non_int_internal_id(self):
+    def test_set_badges_absolute_non_int_bits(self):
         with self.assertRaises(ProtocolError):
-            decode(b'{"t":"grant_badge","internal_id":"4"}\n')
+            decode(b'{"t":"set_badges_absolute","bits":"0x10"}\n')
 
-    def test_grant_badge_bool_internal_id(self):
-        # Python's int subsumes bool; the codec rejects bool explicitly.
+    def test_set_badges_absolute_bool_bits(self):
+        # Python's int subsumes bool; codec rejects bool explicitly.
         with self.assertRaises(ProtocolError):
-            decode(b'{"t":"grant_badge","internal_id":true}\n')
+            decode(b'{"t":"set_badges_absolute","bits":true}\n')
 
-    def test_grant_badge_negative_internal_id(self):
+    def test_set_badges_absolute_negative_bits(self):
         with self.assertRaises(ProtocolError) as cm:
-            decode(b'{"t":"grant_badge","internal_id":-1}\n')
+            decode(b'{"t":"set_badges_absolute","bits":-1}\n')
         self.assertIn("out of range", str(cm.exception))
 
-    def test_grant_badge_too_large_internal_id(self):
-        with self.assertRaises(ProtocolError):
-            decode(b'{"t":"grant_badge","internal_id":64}\n')
+    def test_set_badges_absolute_too_large_bits(self):
+        # 2**64 is one past the documented u64 range.
+        big = (1 << 64)
+        with self.assertRaises(ProtocolError) as cm:
+            decode(f'{{"t":"set_badges_absolute","bits":{big}}}\n'.encode())
+        self.assertIn("out of range", str(cm.exception))
 
     def test_grant_hash_keyed_missing_hash(self):
         with self.assertRaises(ProtocolError) as cm:

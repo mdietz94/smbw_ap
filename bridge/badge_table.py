@@ -1,13 +1,15 @@
 """AP item name -> badge internal_id mapping.
 
-The M3.2 grant primitive (``probe::grantBadgeBit`` in
-``switch-mod/src/program/main.cpp``) takes the bit position of the
-badge in SMBW's container-C owned-bitfield at hash ``0x105df820``.
-That bit position IS the internal_id; bit 4 means internal_id 4.
+The M4 grant primitive (``probe::setBadgeBitfieldAbsolute`` in
+``switch-mod/src/program/main.cpp``) writes the absolute owned-badge
+bitfield in SMBW's container-C bitfield at hash ``0x105df820``.  The
+bit position of each badge IS the internal_id; bit 4 means internal_id
+4.  The bridge OR's together one bit per item in
+``CommonContext.items_received`` to build the mask it pushes.
 
 The manual apworld doesn't carry internal_ids, so this table is
 hand-coded.  Add a row as each badge's bit position is confirmed.
-Missing entries log + drop -- the bridge silently ignores grants it
+Missing entries log + drop -- the bridge silently ignores items it
 doesn't recognize, which is the desired failure mode (AP server is
 happy, in-game UI just doesn't show the badge until the table catches
 up).
@@ -15,8 +17,8 @@ up).
 Confidence levels:
 
   - **live** -- end-to-end validated: AP send -> bridge -> Switch ->
-    grantBadgeBit -> badge appears immediately in the equip menu live.
-    Sourced from the M3.2 sprint (2026-05-24).
+    container-C bitfield -> badge appears immediately in the equip
+    menu live.  Sourced from the M3.2 sprint (2026-05-24).
 
   - **save-diff** -- bit position identified by diffing pre/post save
     files against MemetendoYT's editor.  Highly likely correct (save
@@ -47,8 +49,8 @@ _BADGES: Final[list[tuple[str, int, str]]] = [
     # Save-diff identified; live-grant test pending.  Bit positions come
     # from ``docs/save-diff-findings.md``; the file-offset bitfield at
     # 0x0EA0 mirrors the live container-C bitfield, so these IDs should
-    # work via ``grantBadgeBit`` -- but until smoke-tested treat them as
-    # provisional.
+    # work via ``setBadgeBitfieldAbsolute`` -- but until smoke-tested
+    # treat them as provisional.
     ("Coin Reward Badge", 9, "save-diff"),
     ("Auto Super Mushroom Badge", 46, "save-diff"),
     # Parachute & Wall-Climb were identified as a pair at {34, 35}
