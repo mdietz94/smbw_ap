@@ -82,6 +82,10 @@ class _ServerHarness:
         # Mutable mask the tests can mutate live; the lambda the LAN
         # server holds re-reads each invocation.
         self.badge_mask = badge_mask
+        # Mutable Royal Seed grants list -- mirrors badge_mask shape.
+        # Each entry is (hash, value); the LAN server enqueues one
+        # GrantHashKeyedMsg per entry on every HelloMsg.
+        self.royal_seed_grants: list[tuple[int, int]] = []
 
     async def _on_check_emitted(self, check: CheckEmitted) -> None:
         self.emitted.append(check)
@@ -91,6 +95,7 @@ class _ServerHarness:
             self.state,
             on_check_emitted=self._on_check_emitted,
             badge_mask_provider=lambda: self.badge_mask,
+            royal_seed_grants_provider=lambda: list(self.royal_seed_grants),
         )
         # asyncio.start_server binds when you pass port=0 -> ephemeral; we
         # have to peek at the socket to learn what we got.
@@ -149,6 +154,48 @@ class TestHelloHandshake(_AsyncTestCase):
             sync = await client.recv()
             self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
             self.assertEqual(sync.bits, (1 << 4) | (1 << 9))
+        finally:
+            await client.close()
+
+    async def test_hello_replays_royal_seed_grants(self):
+        # M4.5: every Royal Seed in items_received gets re-emitted as
+        # GrantHashKeyed on every HelloMsg, so seeds survive Switch
+        # reconnect and save/reload.
+        self.h.royal_seed_grants = [
+            (0x55815859, 1),  # W1 Royal Seed
+            (0xB550D8D6, 1),  # W3 Royal Seed
+        ]
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(
+                mod_ver="t", game_ver="t", pid=0))
+            await client.recv()  # ack
+            await client.recv()  # SetBadgesAbsolute (mask=0)
+            m1 = await client.recv()
+            m2 = await client.recv()
+            self.assertIsInstance(m1, wire.GrantHashKeyedMsg)
+            self.assertIsInstance(m2, wire.GrantHashKeyedMsg)
+            self.assertEqual(
+                {(m1.hash, m1.value), (m2.hash, m2.value)},
+                {(0x55815859, 1), (0xB550D8D6, 1)})
+        finally:
+            await client.close()
+
+    async def test_hello_empty_royal_seeds_emits_no_grant(self):
+        # Fresh-connect path: no seeds received yet -> only the badge
+        # sync arrives, no GrantHashKeyedMsg.  Important so a brand-
+        # new connection doesn't generate spurious traffic.
+        # (royal_seed_grants defaults to [] in the harness.)
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(
+                mod_ver="t", game_ver="t", pid=0))
+            await client.recv()  # ack
+            sync = await client.recv()
+            self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
+            # The next recv should time out -- nothing else is queued.
+            with self.assertRaises(asyncio.TimeoutError):
+                await client.recv(timeout=0.1)
         finally:
             await client.close()
 

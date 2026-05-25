@@ -191,6 +191,35 @@ class SMBWContext(CommonContext):
             mask |= (1 << bit)
         return mask
 
+    def _collect_royal_seed_grants(self) -> list[tuple[int, int]]:
+        """Walk :attr:`items_received` and return ``[(hash, value), ...]``
+        for every Royal Seed AP item.  Deduplicated by hash (the Switch
+        primitive is idempotent for bool writes, but AP may legitimately
+        list the same item twice in items_received and there's no value
+        in sending the wire message twice).  This is the catch-up batch
+        the LAN server replays on every Switch HelloMsg so seeds survive
+        Switch reconnect and save/reload -- M4.5."""
+        seen: set[int] = set()
+        out: list[tuple[int, int]] = []
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                item_name = self.item_names.lookup_in_game(int(item_id))
+            except Exception:
+                continue
+            if not royal_seed_table.is_royal_seed_item(item_name):
+                continue
+            h = royal_seed_table.hash_for_item(item_name)
+            if h is None or h in seen:
+                continue
+            seen.add(h)
+            out.append((h, royal_seed_table.ROYAL_SEED_VALUE))
+        return out
+
     async def _handle_received_items(self, args: dict) -> None:
         items = args.get("items", []) or []
 

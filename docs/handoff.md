@@ -222,24 +222,29 @@ shipped 2026-05-25:
 | **M3.3b — container-B bool grants in subsdk** | ✅ **shipped** | `grantContainerBBool` live (8 hashes; 6 byte-flip diffs confirmed) |
 | M4 — LAN socket | ✅ shipped | bridge ↔ Switch end-to-end |
 | M3.8 — DeathLink detection | 🔄 **next priority** | nerve filter + discriminator |
-| M4.5 — save-survival replay-on-HelloMsg | ⏳ open | durable fix for all deferred-write grants |
+| **M4.5 — save-survival replay-on-HelloMsg** | ✅ **shipped** | Royal Seeds replayed on every Switch HelloMsg; badges already covered by M4 follow-up #2 |
 
-**Next session priorities** (revised 2026-05-25 after M3.3 + M3.3b shipped):
+**Next session priorities** (revised 2026-05-25 after M3.3 + M3.3b + M4.5 shipped):
 
-### Priority 1 — Remove M3.3b boot smoke + M4.5 save-survival
+### Just landed — M4.5 + M3.3b boot-smoke cleanup
 
-The boot-time 8-grant smoke in `NerveActivateOnce::Callback`
-(main.cpp ~line 327) was validation-only.  Remove it now that M3.3b is
-shipped — grants will flow exclusively through the AP bridge dispatch.
+Bridge-side `SMBWContext._collect_royal_seed_grants` →
+`LanServer._push_royal_seeds_now` re-emits one `GrantHashKeyedMsg` per
+received Royal Seed on every Switch `HelloMsg`, mirroring the M4
+follow-up #2 badge replay.  Together with the absolute-overwrite badge
+sync (HelloMsg + 2 s tick), all currently-AP-exposed deferred-write
+grants survive Switch reboots, Ryujinx restarts, and save/reload
+cycles.  Container-A counters (flower_coin, regular_coin) and the two
+container-B completion bools (COMPLETE_GAME, INTRO) are NOT replayed
+because they're not AP items today; the same provider/replay shape
+can be extended generically if they ever are.
 
-Then M4.5: bridge replay-on-`HelloMsg`.  Every received AP item is
-stored in the AP context; on Switch reconnect (`HelloAck` round-trip),
-re-emit every prior `GrantBadge` / `GrantHashKeyed` so grants survive
-the player loading a fresh save before the dirty buffer flushes.  This
-is the only durable fix for the deferred-write caveat and covers
-badges + container-A + container-B uniformly.
+The M3.3b boot smoke in `NerveActivateOnce::Callback` was already
+removed when M3.3b was merged — `main.cpp` now contains only the M3.8
+`kEnableSynthKillSmokeTest` block (unrelated; it's the DeathLink
+validation harness).
 
-### Priority 2 — M3.8 DeathLink detection
+### Priority 1 — M3.8 DeathLink detection
 
 Extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` and find a
 discriminator for actual deaths vs noise sources (damage, power-up
@@ -248,7 +253,7 @@ path (`probe::synthKill`) is already wired pending `LiveBaseLatch`
 flip — see `main.cpp` for the candidate cheat-anchor offsets to verify
 in Ghidra.
 
-### Priority 3 — Deferred items pending future sessions
+### Priority 2 — Deferred items pending future sessions
 
 - **M2.2 10-coin nerve hunt** (305 checks) — outgoing surface expansion.
 - **M3.2 badge follow-ups** — UI-slot mask hash `0x6d1b5c25` write may be
