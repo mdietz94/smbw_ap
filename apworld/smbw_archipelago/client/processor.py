@@ -24,6 +24,7 @@ from .protocol import (
     CheckEmitted,
     CheckKind,
     DeathReported,
+    GoalCompleted,
     NerveFireMsg,
     NerveKind,
     PlayReportMsg,
@@ -32,8 +33,9 @@ from .state import BridgeState, CurrentCourse
 
 
 # Anything the processor emits as a side-effect of consuming an event.
-# CheckEmitted -> AP LocationChecks; DeathReported -> AP DeathLink Bounce.
-ProcessorEmit = CheckEmitted | DeathReported
+# CheckEmitted -> AP LocationChecks; DeathReported -> AP DeathLink Bounce;
+# GoalCompleted -> AP StatusUpdate(CLIENT_GOAL).
+ProcessorEmit = CheckEmitted | DeathReported | GoalCompleted
 
 
 log = logging.getLogger("SMBW")
@@ -101,6 +103,21 @@ def _handle_nerve_fire(state: BridgeState, event: NerveFireMsg) -> list[Processo
             "death_detected fire #%d (total deaths: %d) -> DeathReported",
             event.seq, state.death_count)
         return [DeathReported(seq=event.seq)]
+
+    if event.kind == NerveKind.GAME_GOAL_REACHED:
+        # M3.7 -- one-shot Nerve guaranteed by the engine to fire exactly
+        # once per save the first time the player defeats final Bowser.
+        # mark_goal_complete is dedup'd so even if the engine somehow
+        # re-fires (e.g. save reload + post-Bowser cutscene replay) the
+        # AP server only sees one StatusUpdate.
+        if not state.mark_goal_complete():
+            log.info(
+                "game_goal_reached fire #%d already marked; suppressing",
+                event.seq)
+            return []
+        log.info(
+            "game_goal_reached fire #%d -> GoalCompleted", event.seq)
+        return [GoalCompleted(seq=event.seq)]
 
     log.warning("unknown nerve kind: %r", event.kind)
     return []

@@ -54,6 +54,7 @@ from .protocol import (
     BadgeAcquiredMsg,
     CheckEmitted,
     DeathReported,
+    GoalCompleted,
     NerveFireMsg,
     PlayReportMsg,
 )
@@ -87,6 +88,10 @@ CheckEmittedHandler = Callable[[CheckEmitted], Awaitable[None]]
 # M3.8 DeathLink -- analog of CheckEmittedHandler for DeathReported.
 # Wired to ``SMBWContext.handle_death_reported`` in :mod:`bridge.__main__`.
 DeathReportedHandler = Callable[[DeathReported], Awaitable[None]]
+
+# M3.7 game-completion -- analog for GoalCompleted.  Wired to
+# ``SMBWContext.handle_goal_completed`` in the bridge entry point.
+GoalCompletedHandler = Callable[[GoalCompleted], Awaitable[None]]
 
 # Synchronous callable that returns the current AP-known badge bitmask.
 # Set at construction time; the LAN server calls it on every Switch
@@ -131,12 +136,14 @@ class LanServer:
         state: BridgeState,
         on_check_emitted: CheckEmittedHandler | None = None,
         on_death_reported: DeathReportedHandler | None = None,
+        on_goal_completed: GoalCompletedHandler | None = None,
         badge_mask_provider: BadgeMaskProvider | None = None,
         royal_seed_grants_provider: RoyalSeedGrantsProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
         self._on_death_reported = on_death_reported
+        self._on_goal_completed = on_goal_completed
         self._badge_mask_provider = badge_mask_provider
         self._royal_seed_grants_provider = royal_seed_grants_provider
 
@@ -162,12 +169,36 @@ class LanServer:
         log.info("listening on %s", bound)
 
     async def stop(self) -> None:
-        """Stop accepting and tear down the active session."""
+        """Stop accepting and tear down the active session.
+
+        Order is load-bearing: close the active client writer FIRST so
+        its ``_handle_client`` reader unblocks and the per-connection
+        task can return, THEN close the listening socket and await
+        ``wait_closed``.  On Python 3.12+ ``Server.wait_closed()`` waits
+        for every active client handler to finish, and our
+        ``_handle_client`` is parked in ``reader.readuntil`` -- closing
+        the listener alone does NOT kick connected peers, so without
+        this teardown a clean window-close hangs forever whenever a
+        Switch is connected.  Mirrors smo_archipelago's SwitchServer.stop
+        (same Python 3.12 audit, same fix shape).
+        """
+        # 1) Close + cancel any active client first.  This drops the
+        # writer, which causes the reader's readuntil to raise
+        # IncompleteReadError and _handle_client's task to exit.
+        await self._drop_active_client()
+        # 2) Close the listener and bound-wait for it.  The timeout is
+        # defensive in case _handle_client somehow doesn't observe the
+        # writer close within a reasonable window (slow client teardown
+        # over a half-dead LAN).
         if self._server is not None:
             self._server.close()
-            await self._server.wait_closed()
+            try:
+                await asyncio.wait_for(self._server.wait_closed(), timeout=2.0)
+            except asyncio.TimeoutError:
+                log.warning("stop: server.wait_closed timed out; abandoning")
+            except Exception:
+                log.exception("stop: server.wait_closed raised; ignoring")
             self._server = None
-        await self._drop_active_client()
 
     # ---- Public outbound API ------------------------------------------
 
@@ -411,6 +442,14 @@ class LanServer:
                 except Exception:
                     log.exception(
                         "on_death_reported handler crashed for %r", emit)
+            elif isinstance(emit, GoalCompleted):
+                if self._on_goal_completed is None:
+                    continue
+                try:
+                    await self._on_goal_completed(emit)
+                except Exception:
+                    log.exception(
+                        "on_goal_completed handler crashed for %r", emit)
             else:
                 log.warning("processor emitted unknown type %r", type(emit).__name__)
 

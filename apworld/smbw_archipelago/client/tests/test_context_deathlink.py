@@ -49,10 +49,11 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
         # short-circuits before we try to construct anything when the
         # AP framework isn't reachable.
         from ..context import SMBWContext
-        from ..protocol import DeathReported
+        from ..protocol import DeathReported, GoalCompleted
         from ..state import BridgeState
         self._SMBWContext = SMBWContext
         self._DeathReported = DeathReported
+        self._GoalCompleted = GoalCompleted
 
         # CommonContext.__init__ reads `network_data_package["games"][game]`
         # to seed its checksums dict.  In a pytest run we haven't been
@@ -166,6 +167,29 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
         await self.ctx._handle_ap_package("Connected", {})
         self.assertFalse(self.ctx.deathlink_enabled)
         self.ctx.update_death_link.assert_awaited_with(False)
+
+    # ---- handle_goal_completed (M3.7) ------------------------------
+
+    async def test_handle_goal_completed_sends_status_update(self):
+        """The bridge translates a GoalCompleted into one AP
+        StatusUpdate with ClientStatus.CLIENT_GOAL (= 30)."""
+        from NetUtils import ClientStatus  # type: ignore
+        await self.ctx.handle_goal_completed(self._GoalCompleted(seq=1))
+        self.ctx.send_msgs.assert_awaited_once_with([{
+            "cmd": "StatusUpdate",
+            "status": ClientStatus.CLIENT_GOAL,
+        }])
+
+    async def test_handle_goal_completed_does_not_depend_on_deathlink(self):
+        """Game-completion is independent of DeathLink state -- the AP
+        StatusUpdate should fire whether DeathLink is on or off."""
+        from NetUtils import ClientStatus  # type: ignore
+        self.ctx.deathlink_enabled = False
+        await self.ctx.handle_goal_completed(self._GoalCompleted(seq=7))
+        self.ctx.send_msgs.assert_awaited_once_with([{
+            "cmd": "StatusUpdate",
+            "status": ClientStatus.CLIENT_GOAL,
+        }])
 
 
 if __name__ == "__main__":

@@ -37,6 +37,10 @@ class NerveKind(str, Enum):
     WONDER_SEED_AWARDED = "wonder_seed_awarded"
     COURSE_CLEARED = "course_cleared"
     DEATH_DETECTED = "death_detected"
+    # M3.7 -- the SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss
+    # Nerve fires exactly once per save the first time the player defeats
+    # final Bowser.  Bridge translates this to AP ClientStatus.CLIENT_GOAL.
+    GAME_GOAL_REACHED = "game_goal_reached"
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,24 @@ class CheckKind(str, Enum):
     BADGE_ACQUIRED = "badge_acquired"    # 24 AP checks (M2.3) — stage_key
                                          # holds the badge bit position
                                          # (== SMBW internal_id).
+
+
+@dataclass(frozen=True)
+class GoalCompleted:
+    """M3.7 game-completion -- the SetFlagEnd...AfterClearedLastBoss Nerve
+    fired on the Switch, meaning Mario just defeated final Bowser for the
+    first time on this save.
+
+    The processor emits this exactly once per AP session (deduplicated
+    via :meth:`BridgeState.mark_goal_complete`); the LanServer routes
+    it to ``handle_goal_completed`` in the AP layer, which sends a
+    StatusUpdate with ``ClientStatus.CLIENT_GOAL`` so the multiworld
+    marks this slot done.
+
+    ``seq`` is the Switch-side fire counter -- useful for diagnostics.
+    """
+
+    seq: int = 0
 
 
 @dataclass(frozen=True)
