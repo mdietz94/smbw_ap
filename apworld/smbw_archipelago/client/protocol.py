@@ -74,7 +74,7 @@ class PlayReportMsg:
 
 
 class CheckKind(str, Enum):
-    """The five AP location families this bridge classifies events into."""
+    """The six AP location families this bridge classifies events into."""
 
     TOP_OF_FLAG = "top_of_flag"          # 89 AP checks
     NORMAL_EXIT = "normal_exit"          # 96 AP checks
@@ -82,6 +82,27 @@ class CheckKind(str, Enum):
     FAKE_EXIT = "fake_exit"              # 5 AP checks (goal_id=2 guessed)
     PALACE_CLEAR = "palace_clear"        # 7 AP checks (Royal Seed)
     WONDER_SEED = "wonder_seed"          # 124 AP checks (mid-course)
+    TEN_COIN = "ten_coin"                # 306 AP checks (102 courses × 3)
+                                         # CheckEmitted.metadata["coin_index"]
+                                         # is 0/1/2 — see docs/m2.2-runbook.md.
+
+
+@dataclass(frozen=True)
+class DeathReported:
+    """M3.8 DeathLink outbound -- a Switch ``DEATH_DETECTED`` nerve fire
+    that survived the discriminator.
+
+    The processor emits this; the LanServer routes it to the AP layer's
+    ``handle_death_reported`` callback, which (when the slot is
+    DeathLink-tagged) sends a ``Bounce`` packet to the AP server.
+
+    ``seq`` is the Switch-side fire counter -- useful for diagnostics
+    when correlating bridge logs against Ryujinx logs.  Not used for
+    dedup: every detected death produces an emit; the AP server is the
+    one authority on how multiple bounces interact.
+    """
+
+    seq: int = 0
 
 
 @dataclass(frozen=True)

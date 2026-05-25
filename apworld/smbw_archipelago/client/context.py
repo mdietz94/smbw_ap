@@ -35,7 +35,7 @@ from . import badge_table
 from . import royal_seed_table
 from .commands import SMBWCommandProcessor
 from .location_table import lookup_name
-from .protocol import CheckEmitted
+from .protocol import CheckEmitted, DeathReported
 from .state import BridgeState
 
 
@@ -73,6 +73,13 @@ class SMBWContext(CommonContext):
         self._item_name_to_id: dict[str, int] = {}
         self._sent_loc_ids: set[int] = set()
 
+        # M3.8 DeathLink -- off by default; flipped on by slot_data
+        # ``death_link`` truthy when the AP server delivers it on
+        # Connected.  Gates both outbound (report_death sends Bounce iff
+        # enabled) and inbound (on_deathlink forwards to Switch iff
+        # enabled, belt-and-braces over CommonClient's tag-check).
+        self.deathlink_enabled: bool = False
+
     # ---- AP lifecycle overrides ---------------------------------------
 
     async def server_auth(self, password_requested: bool = False) -> None:
@@ -93,6 +100,25 @@ class SMBWContext(CommonContext):
                 "AP connected: slot=%s player=%s seed=%s",
                 self.auth, self.slot, self.seed_name)
             self._rebuild_reverse_maps_from_context()
+            # M3.8 -- pick up the player's per-slot DeathLink choice from
+            # slot_data and toggle the connection tag.  Slot_data wins
+            # over any local default; this is the only place the YAML's
+            # ``death_link`` setting takes effect.  ``update_death_link``
+            # mutates ``self.tags`` and sends a ConnectUpdate when
+            # changed mid-session.
+            slot_data = args.get("slot_data") or {}
+            dl = bool(slot_data.get("death_link"))
+            if dl != self.deathlink_enabled:
+                log.info(
+                    "DeathLink: %s (from slot_data)",
+                    "ENABLED" if dl else "disabled")
+            self.deathlink_enabled = dl
+            try:
+                await self.update_death_link(dl)
+            except Exception:
+                log.exception("update_death_link(%s) failed", dl)
+            # Tell the AP server the player is in-game so item routing
+            # starts flowing.  ClientStatus.CLIENT_PLAYING.
             try:
                 await self.send_msgs([{
                     "cmd": "StatusUpdate",
@@ -156,6 +182,35 @@ class SMBWContext(CommonContext):
             mask |= (1 << bit)
         return mask
 
+    def _collect_royal_seed_grants(self) -> list[tuple[int, int]]:
+        """Walk :attr:`items_received` and return ``[(hash, value), ...]``
+        for every Royal Seed AP item.  Deduplicated by hash (the Switch
+        primitive is idempotent for bool writes, but AP may legitimately
+        list the same item twice in items_received and there's no value
+        in sending the wire message twice).  This is the catch-up batch
+        the LAN server replays on every Switch HelloMsg so seeds survive
+        Switch reconnect and save/reload -- M4.5."""
+        seen: set[int] = set()
+        out: list[tuple[int, int]] = []
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                item_name = self.item_names.lookup_in_game(int(item_id))
+            except Exception:
+                continue
+            if not royal_seed_table.is_royal_seed_item(item_name):
+                continue
+            h = royal_seed_table.hash_for_item(item_name)
+            if h is None or h in seen:
+                continue
+            seen.add(h)
+            out.append((h, royal_seed_table.ROYAL_SEED_VALUE))
+        return out
+
     async def _handle_received_items(self, args: dict) -> None:
         items = args.get("items", []) or []
 
@@ -206,6 +261,60 @@ class SMBWContext(CommonContext):
                 log.info(
                     "received unhandled item %r (id=%s); ignoring "
                     "(no table entry)", item_name, item_id)
+
+    # ---- DeathLink ----------------------------------------------------
+
+    def on_deathlink(self, data: dict[str, Any]) -> None:
+        """CommonContext dispatches this when an AP DeathLink Bounce
+        arrives for a slot tagged ``DeathLink``.  Forward to the Switch
+        as a KillMsg unless we sourced it ourselves (CommonClient already
+        gates by timestamp; this is belt-and-braces).
+        """
+        super().on_deathlink(data)
+        if not self.deathlink_enabled:
+            return
+        source = str(data.get("source") or "")
+        if source and source == self._own_player_name():
+            log.debug("on_deathlink: ignoring self-sourced bounce")
+            return
+        cause = str(data.get("cause") or "")
+        if self.lan_server is None:
+            log.info(
+                "[deathlink in] source=%s cause=%s (no Switch bound; dropping)",
+                source, cause)
+            return
+        log.info("[deathlink in] source=%s cause=%s -> Switch", source, cause)
+        self.lan_server.send_kill(source=source, cause=cause)
+
+    async def handle_death_reported(self, death: DeathReported) -> None:
+        """LanServer dispatches this when the processor emits a
+        DeathReported (a Switch-side DEATH_DETECTED that survived the
+        discriminator).  We delegate to CommonContext's ``send_death``
+        which composes the Bounce with our slot name as ``source`` and
+        updates ``last_death_link`` (so an echo back doesn't re-trigger
+        ``on_deathlink``)."""
+        if not self.deathlink_enabled:
+            log.debug(
+                "handle_death_reported(seq=%d): deathlink disabled, dropping",
+                death.seq)
+            return
+        try:
+            await self.send_death("mario_died")
+            log.info(
+                "-> AP Bounce DeathLink seq=%d source=%s",
+                death.seq, self._own_player_name() or "?")
+        except Exception:
+            log.exception("send_death failed for seq=%d", death.seq)
+
+    def _own_player_name(self) -> str:
+        """Best-effort lookup of our own player name in the AP slot
+        roster.  CommonContext populates ``player_names`` on Connected;
+        before that, fall back to the configured ``auth`` slot name.
+        Used for the self-ping guard in ``on_deathlink``."""
+        try:
+            return self.player_names[self.slot]
+        except Exception:
+            return self.auth or ""
 
     # ---- Outbound: LanServer's CheckEmitted callback ------------------
 

@@ -59,6 +59,29 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
 }
 
 
+# (stage_key, coin_index) -> AP location name for TEN_COIN checks.
+# Each non-palace course has three "10 Coin" AP locations named
+# #1/#2/#3.  The PlayReport ``big_flower_coin_course_in/out`` arrays
+# carry per-course coin state at indices 0/1/2; whether those align
+# with the apworld's #1/#2/#3 numbering is unverified — see
+# docs/m2.2-runbook.md "Open question: array index vs apworld # numbering"
+# for the blind-mapping MVP choice (index N → #N+1).
+_TEN_COIN_TABLE: Final[dict[tuple[int, int], str]] = {
+    (_STAGE_W1_1, 0): "W1: Welcome to the Flower Kingdom! - 10 Coin #1",
+    (_STAGE_W1_1, 1): "W1: Welcome to the Flower Kingdom! - 10 Coin #2",
+    (_STAGE_W1_1, 2): "W1: Welcome to the Flower Kingdom! - 10 Coin #3",
+
+    (_STAGE_W1_2, 0): "W1: Piranha Plants on Parade - 10 Coin #1",
+    (_STAGE_W1_2, 1): "W1: Piranha Plants on Parade - 10 Coin #2",
+    (_STAGE_W1_2, 2): "W1: Piranha Plants on Parade - 10 Coin #3",
+
+    # Pipe-Rock Plateau Palace is intentionally absent — palaces have
+    # zero "Big Flower Coin" placements (the W1 palace fixture shows
+    # big_flower_coin_course_in/out = [F,F,F]/[F,F,F]) and the apworld
+    # has no "Palace - 10 Coin" locations.
+}
+
+
 def lookup_name(check: CheckEmitted) -> str | None:
     """Resolve a CheckEmitted to its canonical AP location name.
 
@@ -68,6 +91,15 @@ def lookup_name(check: CheckEmitted) -> str | None:
     error -- the bridge stays connected and the player just doesn't
     get credit for the un-mapped course until the table extends.
     """
+    if check.kind == CheckKind.TEN_COIN:
+        idx = int(check.metadata.get("coin_index", 0))
+        name = _TEN_COIN_TABLE.get((check.stage_key, idx))
+        if name is None:
+            log.debug(
+                "location_table: no AP location for ten_coin stage_key=%d index=%d",
+                check.stage_key, idx)
+        return name
+
     name = _TABLE.get((check.kind, check.stage_key))
     if name is None:
         log.debug(

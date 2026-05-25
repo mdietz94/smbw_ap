@@ -34,12 +34,18 @@ Missing item names log + drop (silent no-op) -- the bridge ignores
 grants for items not in this table, which is the desired failure
 mode (AP server is happy, in-game state just stays put).
 
-⚠️ **Save-survival caveat** -- the bool writer is deferred-write (queues
-to the dirty buffer at gmd+0xf8, flushed at next save).  Grants survive
-the current play session but if the player loads a fresh save before
-the buffer flushes, the grant is lost.  M4.5 bridge replay-on-HelloMsg
-re-emits every received item on Switch reconnect, which is the durable
-fix; M3.3b alone covers in-session grants.
+✅ **Save-survival (M4.5, shipped 2026-05-25)** -- the bool writer is
+deferred-write (queues to the dirty buffer at gmd+0xf8, flushed at
+next save), so a load-before-flush would otherwise drop the grant.
+The bridge mitigates this by replaying every currently-known Royal
+Seed on every Switch ``HelloMsg`` via
+``SMBWContext._collect_royal_seed_grants`` ->
+``LanServer._push_royal_seeds_now`` -> one ``GrantHashKeyedMsg`` per
+seed.  Reconnects (Switch reboot, Ryujinx restart, save/reload that
+triggers a fresh handshake) re-grant all seeds idempotently.  No
+periodic tick is needed because Royal Seeds have no in-game
+acquisition path that bypasses AP (palace clears report to AP first
+via ``koopajr_result``).
 """
 
 from __future__ import annotations

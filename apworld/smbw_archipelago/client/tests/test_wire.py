@@ -18,6 +18,7 @@ from ..wire import (
     GrantHashKeyedMsg,
     HelloAckMsg,
     HelloMsg,
+    KillMsg,
     NerveFireWireMsg,
     PingMsg,
     PlayReportWireMsg,
@@ -108,6 +109,30 @@ class TestRoundTrip(unittest.TestCase):
     def test_grant_hash_keyed_max_u32(self):
         # Both fields at the high edge of the documented u32 range.
         self._round_trip(GrantHashKeyedMsg(hash=0xFFFFFFFF, value=0xFFFFFFFF))
+
+    def test_kill_typical(self):
+        self._round_trip(KillMsg(source="MarioSlot1", cause="mario_died"))
+
+    def test_kill_empty_cause(self):
+        # AP sometimes ships a Bounce with no cause string; we still
+        # carry it across so the Switch log can record source only.
+        self._round_trip(KillMsg(source="OtherPlayer", cause=""))
+
+    def test_kill_truncates_oversize_source(self):
+        # KillMsg.to_wire clips source to SOURCE_CAP before serializing;
+        # decode reads the truncated form, so the round-trip equality
+        # asserts the truncated source survives.
+        long_src = "x" * (KillMsg.SOURCE_CAP + 10)
+        encoded = encode(KillMsg(source=long_src, cause="c"))
+        decoded = decode(encoded)
+        self.assertEqual(decoded.source, "x" * KillMsg.SOURCE_CAP)
+        self.assertEqual(decoded.cause, "c")
+
+    def test_kill_truncates_oversize_cause(self):
+        long_cause = "y" * (KillMsg.CAUSE_CAP + 50)
+        encoded = encode(KillMsg(source="s", cause=long_cause))
+        decoded = decode(encoded)
+        self.assertEqual(decoded.cause, "y" * KillMsg.CAUSE_CAP)
 
     def test_err(self):
         self._round_trip(ErrMsg(reason="unknown message type 'foo'"))
@@ -352,6 +377,20 @@ class TestDecodeErrors(unittest.TestCase):
     def test_err_missing_reason(self):
         with self.assertRaises(ProtocolError):
             decode(b'{"t":"err"}\n')
+
+    def test_kill_missing_source(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"kill","cause":"x"}\n')
+        self.assertIn("source", str(cm.exception))
+
+    def test_kill_missing_cause(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"kill","source":"x"}\n')
+        self.assertIn("cause", str(cm.exception))
+
+    def test_kill_non_string_source(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"kill","source":42,"cause":"x"}\n')
 
 
 # ---------------------------------------------------------------------------

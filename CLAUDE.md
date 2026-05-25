@@ -264,17 +264,26 @@ Additional hash keys discovered 2026-05-24 in `FUN_7101a5d9a0` call sites:
 
 **Deferred-write implication**: a write via `FUN_710049F648` is applied to the live container at the next save. For UI to refresh immediately (in-game purple coin counter, etc.), the grant code should ALSO write the live-state struct field directly (HamletDuFromage cheat anchors give the offsets: flower_coin at `live_base + 0xC8`, lives at `live_base + 0x60`, etc.). Dual-write strategy described in [docs/static-analysis-findings.md](docs/static-analysis-findings.md).
 
-⚠️ **Save-survival caveat for all container-A and container-B grants**
-(coin counters + Royal Seeds + COMPLETE_GAME + INTRO) — same root
-cause as the M3.2 badge follow-up. Both `FUN_710049F648` (A) and
-`FUN_710049EA24 → FUN_7101F263FC` (B) write to the dirty buffer at
-`gmd->[+0xf8]`; if the player loads a fresh save before the buffer
-flushes, the grant is lost.  Two mitigations: (a) explicit save after
-each grant (the smoke-test path), or (b) the M4.5 bridge
-replay-on-`HelloMsg` work that re-emits every received item every time
-the Switch reconnects.  Today's M3.3 + M3.3b wiring relies on (a);
-(b) is the only durable fix and covers badges + container-A items +
-container-B items uniformly.
+**Save-survival for container-A and container-B grants** — root cause:
+both `FUN_710049F648` (A) and `FUN_710049EA24 → FUN_7101F263FC` (B)
+write to the dirty buffer at `gmd->[+0xf8]`; a load-before-flush
+silently drops the grant.
+
+- ✅ **Royal Seeds (container-B bools)** — solved by M4.5 (shipped
+  2026-05-25): `SMBWContext._collect_royal_seed_grants` →
+  `LanServer._push_royal_seeds_now` re-emits one `GrantHashKeyedMsg`
+  per received Royal Seed on every Switch `HelloMsg`.  Idempotent at
+  the Switch primitive.  No periodic tick because Royal Seeds have no
+  in-game acquisition path that bypasses AP.
+- ✅ **Badges (container-C bitfield)** — solved by M4 follow-up #2
+  (different root cause but same shape): AP-authoritative absolute
+  overwrite via `SetBadgesAbsoluteMsg` on every `ReceivedItems`,
+  `HelloMsg`, and a 2 s periodic tick.
+- ⏳ **Container-A counters (flower_coin, regular_coin) and the two
+  container-B completion bools (COMPLETE_GAME, INTRO)** — not
+  currently AP items, so no replay wired.  When/if they become AP
+  items, extend `_collect_royal_seed_grants` into a more general
+  `_collect_hash_keyed_grants`.
 
 ⚠️ **Critical — the save-diff sprint did NOT produce a live-grant mechanism.** The file-offset writers anchored on the `savedata_id` UUID at file offset `0x50b8` modify only the **save-OUT staging buffer**, which exists transiently during/after save serialization. The game populates this buffer FROM live state on every save; writes into it are overwritten on the next save event and never change live gameplay. What that work produced is a **save-file editor capability** (offline modification of `game_data.sav`) and a **verification target** (predict the bytes a successful live grant will write). For ALL live in-game grants, the only path we have is the GameDataMgr API above (`FUN_710049F648` for container-A counters; other accessors TBD for container-B fields like badges and per-course flags). See [docs/runtime-address-backtrace-plan.md](docs/runtime-address-backtrace-plan.md) for the discovery of this distinction.
 

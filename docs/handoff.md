@@ -10,7 +10,11 @@
 > `python -m apworld.smbw_archipelago.client.main ...` (or the Launcher
 > button).  See CLAUDE.md "Launching the SMBW Client" for the new flow.
 
-Last updated: 2026-05-25 — **M3.3 + M3.3b both shipped**.
+Last updated: 2026-05-25 — **M3.3 + M3.3b + M3.8 all shipped** (M3.8
+end-to-end live-validated: latched `live_base=0x20a1f27030`, `synthKill`
+wrote HP=0 at +0x38, Mario died on first frame).  Production path is
+AP Bounce -> `SMBWContext.on_deathlink` -> `LanServer.send_kill` ->
+Switch `drainInbound` -> `probe::synthKill` (no constexpr gates).
 Container-A counter writer (`probe::grantContainerACounter`) shipped in
 [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp) and
 live-validated with `flower_coin` (6 → 99 at file offset `0x0894`).
@@ -104,6 +108,88 @@ the 8-hash whitelist in `ApFrameBridge.hpp`; bool hashes route to
 **Bridge cleanup landed**: `royal_seed_table.py` `source` flipped to
 `"live"`, docstring updated; `ap_client._handle_received_items` WARN
 replaced with INFO matching the badge branch pattern.
+
+## M3.8 DeathLink — shipped end-to-end 2026-05-25
+
+Plan: [`.claude/plans/let-s-work-on-m3-8-cosmic-hickey.md`](../.claude/plans/let-s-work-on-m3-8-cosmic-hickey.md).
+Live-validated end-to-end on Ryujinx 2026-05-25 09:00 (run log
+`Ryujinx_1.3.3_2026-05-25_09-00-34.log`): latched
+`live_base=0x20a1f27030`, `probe::synthKill` wrote int16 `0` at
+`+0x38`, Mario died on the first frame.
+
+### Production wire path
+
+**Outbound (Switch death -> AP Bounce)**:
+1. `NerveActivateOnce::Callback` filters the noisy `vt_off=0x33fd9a8`
+   scene-transition Nerve: only `*(u32)(nerve+0x18) == 0x04` (Mario
+   death) enqueues `NerveKind::DeathDetected`.  Controlled exit
+   (`== 0x84`), and any unobserved sibling enums, are logged as
+   `SCENE_TRANSITION non-death (state=0xN)` and dropped.
+2. `probe::g_synthetic_death_this_frame` consumes-once via `exchange`
+   to suppress the echo when the death we'd just detected was caused
+   by our own inbound `synthKill`.
+3. `enqueueNerveFire(DeathDetected, seq)` -> outbound ring ->
+   `ApClient` worker -> JSON `{"t":"nerve","kind":"death_detected",...}`
+   -> bridge's `LanServer._dispatch_line`.
+4. `processor._handle_nerve_fire(DEATH_DETECTED)` -> `state.bump_death_count()`
+   + emits `DeathReported(seq)`.
+5. `LanServer._run_processor` -> `on_death_reported` -> bound to
+   `SMBWContext.handle_death_reported` in `bridge.__main__`.
+6. `handle_death_reported` calls `CommonContext.send_death("mario_died")`
+   iff `self.deathlink_enabled` (set from `slot_data["death_link"]`
+   on `Connected`).
+7. CommonClient writes the Bounce: `{"cmd":"Bounce","tags":["DeathLink"],"data":{...}}`.
+
+**Inbound (AP Bounce -> Switch death)**:
+1. AP server delivers `Bounce` to our DeathLink-tagged slot.
+2. CommonContext routes to `SMBWContext.on_deathlink(data)`.
+3. Override forwards to `LanServer.send_kill(source, cause)` unless
+   `source == self.player_names[self.slot]` (belt-and-braces self-ping
+   guard over CommonClient's timestamp check).
+4. `LanServer._writer_loop` ships `KillMsg(source, cause)` as
+   `{"t":"kill","source":"...","cause":"..."}` to the Switch.
+5. Switch `ApClient::handleLine` decodes via `parseKill` into
+   `WireKill` and pushes onto the inbound SPSC ring.
+6. `ApFrameBridge::drainInbound`'s `case InboundKind::Kill` calls
+   `probe::synthKill()` from the game thread.
+7. `probe::synthKill` sets `g_synthetic_death_this_frame=true` then
+   writes `int16(0)` to `g_live_base + 0x38`.  `g_live_base` is
+   captured by `PlayerTickLatch` (trampoline hook on `FUN_7100273868`
+   entry at NSO `+0x273868`), which walks
+   `param_1 -> +0x10 -> +0x208 -> ver-conditional +0 or +0x118 -> HP
+   struct` and latches the result once.
+8. The very next tick of `FUN_7100273868` re-reads HP at +0x38, sees
+   `<= 0`, and takes the `b.le LAB_710027593c` death branch.  Mario
+   dies on screen; the loop-guard atomic from step 7 suppresses the
+   outbound echo when `0x33fd9a8` fires as a consequence.
+
+### Test coverage
+
+240 bridge tests green (224 prior + 16 new across `test_wire`,
+`test_processor`, `test_lan_server`, `test_ap_client_deathlink`):
+- `TestRoundTrip.test_kill_*` (4): KillMsg encode/decode + truncation.
+- `TestDecodeErrors.test_kill_*` (3): missing/non-string field
+  rejections.
+- `TestDeathTracking.test_death_detected_*` (2): processor emits
+  `DeathReported`, never a `CheckEmitted`.
+- `TestKillOutbound`, `TestDeathReportedDispatch` (3): LAN-server
+  round-trip + death-route through processor.
+- `TestApClientDeathLink` (9): on_deathlink forwarding, self-source
+  drop, slot_data wiring, `handle_death_reported -> send_death` gating.
+
+### Untested scenarios (low-risk follow-ups)
+
+- World-map travel, palace boss clear, pause-quit, and file-select
+  scene transitions were NOT in the 5-event observation pass.  If any
+  fire `0x33fd9a8` with yet another `+0x18` enum, the whitelist
+  conservatively drops them and the dump logs the new state -- extend
+  the filter if observed in normal play.
+- `PlayerTickLatch` captures once per session.  Cross-life persistence
+  is fine because Mario's HP struct address can change but the latch
+  re-runs from a fresh session.  An adversarial Switch reboot mid-AP-
+  session would currently leave `g_live_base = 0` until the level is
+  re-entered; an inbound DeathLink in that window is dropped with a
+  `synthKill: no live_base latched yet` log line.
 
 ### M3.3 verification recipe
 
@@ -231,36 +317,33 @@ shipped 2026-05-25:
 | **M3.3 — container-A counter grants in subsdk** | ✅ **shipped** | `grantContainerACounter` live (flower_coin 6→99) |
 | **M3.3b — container-B bool grants in subsdk** | ✅ **shipped** | `grantContainerBBool` live (8 hashes; 6 byte-flip diffs confirmed) |
 | M4 — LAN socket | ✅ shipped | bridge ↔ Switch end-to-end |
-| M3.8 — DeathLink detection | 🔄 **next priority** | nerve filter + discriminator |
-| M4.5 — save-survival replay-on-HelloMsg | ⏳ open | durable fix for all deferred-write grants |
+| **M3.8 — DeathLink (both halves)** | ✅ **shipped** | nerve discriminator + PlayerTickLatch + synthKill live |
+| **M4.5 — save-survival replay-on-HelloMsg** | ✅ **shipped** | Royal Seeds replayed on every Switch HelloMsg; badges already covered by M4 follow-up #2 |
 
-**Next session priorities** (revised 2026-05-25 after M3.3 + M3.3b shipped):
+**Next session priorities** (revised 2026-05-25 after M3.3 + M3.3b + M4.5 shipped):
 
-### Priority 1 — Remove M3.3b boot smoke + M4.5 save-survival
+### Just landed — M4.5 + M3.3b boot-smoke cleanup
 
-The boot-time 8-grant smoke in `NerveActivateOnce::Callback`
-(main.cpp ~line 327) was validation-only.  Remove it now that M3.3b is
-shipped — grants will flow exclusively through the AP bridge dispatch.
+Bridge-side `SMBWContext._collect_royal_seed_grants` →
+`LanServer._push_royal_seeds_now` re-emits one `GrantHashKeyedMsg` per
+received Royal Seed on every Switch `HelloMsg`, mirroring the M4
+follow-up #2 badge replay.  Together with the absolute-overwrite badge
+sync (HelloMsg + 2 s tick), all currently-AP-exposed deferred-write
+grants survive Switch reboots, Ryujinx restarts, and save/reload
+cycles.  Container-A counters (flower_coin, regular_coin) and the two
+container-B completion bools (COMPLETE_GAME, INTRO) are NOT replayed
+because they're not AP items today; the same provider/replay shape
+can be extended generically if they ever are.
 
-Then M4.5: bridge replay-on-`HelloMsg`.  Every received AP item is
-stored in the AP context; on Switch reconnect (`HelloAck` round-trip),
-re-emit every prior `GrantBadge` / `GrantHashKeyed` so grants survive
-the player loading a fresh save before the dirty buffer flushes.  This
-is the only durable fix for the deferred-write caveat and covers
-badges + container-A + container-B uniformly.
+The M3.3b boot smoke in `NerveActivateOnce::Callback` was already
+removed when M3.3b was merged.  The M3.8 `kEnableSynthKillSmokeTest`
+block (Validation harness that auto-killed Mario on first level entry)
+landed with the original M3.8 commit as constexpr-false dead code; a
+follow-up PR removes it entirely.
 
-### Priority 2 — M3.8 DeathLink detection
+### Priority 1 — Deferred items pending future sessions
 
-Extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8` and find a
-discriminator for actual deaths vs noise sources (damage, power-up
-pickup).  Switch-mod only, no RE dead-ends.  The inbound `Kill` apply
-path (`probe::synthKill`) is already wired pending `LiveBaseLatch`
-flip — see `main.cpp` for the candidate cheat-anchor offsets to verify
-in Ghidra.
-
-### Priority 3 — Deferred items pending future sessions
-
-- **M2.2 10-coin nerve hunt** (305 checks) — outgoing surface expansion.
+- **M2.2 10-coin** (306 checks) — ✅ **bridge implementation shipped 2026-05-25**; see [docs/m2.2-runbook.md](m2.2-runbook.md).  No Ghidra needed — `course_result` PlayReport's `big_flower_coin_course_{in,out}` bool[3] gives both detection AND per-instance identity for free.  ~30 LoC across [bridge/{protocol,state,processor,location_table}.py](../bridge/processor.py) + 21 new tests (224 total pass).  Two open items: (a) the diff-semantics interpretation is unproven by existing fixtures, **needs one empirical capture** where a 10-coin is collected within a single run; (b) `_TEN_COIN_TABLE` has 2 of 102 non-palace courses mapped, the rest fill in incrementally per playthrough.
 - **M3.2 badge follow-ups** — UI-slot mask hash `0x6d1b5c25` write may be
   needed for newly-granted badges to appear in the equip UI.
 - **M3.4 character roster unlock** — separate grant family.
