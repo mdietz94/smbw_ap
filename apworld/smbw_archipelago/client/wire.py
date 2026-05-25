@@ -27,7 +27,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any
 
-from .protocol import NerveFireMsg, NerveKind, PlayReportMsg
+from .protocol import BadgeAcquiredMsg, NerveFireMsg, NerveKind, PlayReportMsg
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +174,73 @@ class NerveFireWireMsg:
     @classmethod
     def from_event(cls, ev: NerveFireMsg) -> NerveFireWireMsg:
         return cls(kind=ev.kind, seq=ev.seq)
+
+
+@dataclass(frozen=True)
+class BadgeAcquiredWireMsg:
+    """Switch -> Bridge.  M2.3 outbound: an in-game badge acquisition
+    that AP hadn't already granted.
+
+    Detected Switch-side by ``probe::setBadgeBitfieldAbsolute`` diffing
+    the live container-C bitfield against the AP-known mask just before
+    each absolute-overwrite.  Any bit set in the live state but not in
+    AP's mask is a Poplin-shop / badge-house / badge-medley / badge-
+    challenge acquisition the bridge should report as a LocationCheck.
+    The overwrite then strips the bit; the player will see the badge
+    re-appear ~roundtrip later when AP swaps in the actual item.
+
+    ``internal_id`` is the bit position in the container-C owned-badge
+    bitfield (0..63), which IS the SMBW internal badge id.  ``seq`` is
+    the Switch's per-message-kind fire counter, useful for log
+    correlation.
+
+    Sized as u32 on both fields to match the Switch ``WireBadgeAcquired``
+    struct; in practice ``internal_id`` is small (<= 63 for currently-
+    documented badges) but the wire range is the full u32.
+
+    Kept as a separate type from the in-process
+    :class:`apworld.smbw_archipelago.client.protocol.BadgeAcquiredMsg`
+    so the wire layer can grow new fields (e.g. a per-fire timestamp)
+    without polluting the processor's input dataclass.  Convert via
+    :meth:`to_event` / :meth:`from_event`.
+    """
+
+    T = "badge_acquired"
+
+    internal_id: int
+    seq: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "internal_id": self.internal_id, "seq": self.seq}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> BadgeAcquiredWireMsg:
+        raw_id = d.get("internal_id")
+        if not isinstance(raw_id, int) or isinstance(raw_id, bool):
+            raise ProtocolError(
+                f"badge_acquired.internal_id must be int, got {raw_id!r}"
+            )
+        if not (0 <= raw_id < (1 << 32)):
+            raise ProtocolError(
+                f"badge_acquired.internal_id out of range [0, 2**32): {raw_id}"
+            )
+        raw_seq = d.get("seq", 0)
+        if not isinstance(raw_seq, int) or isinstance(raw_seq, bool):
+            raise ProtocolError(
+                f"badge_acquired.seq must be int, got {raw_seq!r}"
+            )
+        if not (0 <= raw_seq < (1 << 32)):
+            raise ProtocolError(
+                f"badge_acquired.seq out of range [0, 2**32): {raw_seq}"
+            )
+        return cls(internal_id=raw_id, seq=raw_seq)
+
+    def to_event(self) -> BadgeAcquiredMsg:
+        return BadgeAcquiredMsg(internal_id=self.internal_id, seq=self.seq)
+
+    @classmethod
+    def from_event(cls, ev: BadgeAcquiredMsg) -> BadgeAcquiredWireMsg:
+        return cls(internal_id=ev.internal_id, seq=ev.seq)
 
 
 @dataclass(frozen=True)
@@ -419,6 +486,7 @@ WireMsg = (
     HelloMsg
     | HelloAckMsg
     | NerveFireWireMsg
+    | BadgeAcquiredWireMsg
     | PlayReportWireMsg
     | SetBadgesAbsoluteMsg
     | GrantHashKeyedMsg
@@ -436,6 +504,7 @@ _FROM_WIRE: dict[str, Any] = {
     HelloMsg.T: HelloMsg.from_wire,
     HelloAckMsg.T: HelloAckMsg.from_wire,
     NerveFireWireMsg.T: NerveFireWireMsg.from_wire,
+    BadgeAcquiredWireMsg.T: BadgeAcquiredWireMsg.from_wire,
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,

@@ -31,7 +31,9 @@ sources of truth for new entries; cross-reference before adding.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 from typing import Final
 
 
@@ -46,22 +48,53 @@ _BADGES: Final[list[tuple[str, int, str]]] = [
     # Live-validated end-to-end (M3.2, 2026-05-24).
     ("Spring Feet Badge", 4, "live"),
 
-    # Save-diff identified; live-grant test pending.  Bit positions come
-    # from ``docs/save-diff-findings.md``; the file-offset bitfield at
-    # 0x0EA0 mirrors the live container-C bitfield, so these IDs should
-    # work via ``setBadgeBitfieldAbsolute`` -- but until smoke-tested
-    # treat them as provisional.
+    # Save-diff identified.  Bit positions come from
+    # ``docs/save-diff-findings.md``; the file-offset bitfield at
+    # 0x0EA0 mirrors the live container-C bitfield.  Both indirectly
+    # corroborated by the M2.3 probe completion (no other bit's probe
+    # produced these badges).
     ("Coin Reward Badge", 9, "save-diff"),
     ("Auto Super Mushroom Badge", 46, "save-diff"),
-    # Parachute & Wall-Climb were identified as a pair at {34, 35}
-    # without a determined ordering.  Skipping both for now; the AP
-    # server will get warnings instead of granting the wrong badge.
-    # ("Parachute Cap Badge",  34_or_35, "save-diff:unordered"),
-    # ("Wall-Climb Jump Badge", 34_or_35, "save-diff:unordered"),
+
+    # M2.3 probe-loop finds (2026-05-26; user-verified via /badge_probe
+    # in the live game — opened the badge inventory and read off the
+    # single visible badge for each mask).  Parachute & Wall-Climb's
+    # {34, 35} ambiguity (previously noted in docs/save-diff-findings.md)
+    # is resolved here: probe bit 34 produced Wall-Climb, bit 35 produced
+    # Parachute Cap.
+    ("Floating High Jump Badge", 0, "probe"),
+    ("Fast Dash Badge", 8, "probe"),
+    ("Boosting Spin Jump Badge", 14, "probe"),
+    ("Jet Run Badge", 19, "probe"),
+    ("Add ! Blocks Badge", 28, "probe"),
+    ("Dolphin Kick Badge", 29, "probe"),
+    ("Sensor Badge", 32, "probe"),
+    ("Sound Off? Badge", 33, "probe"),
+    ("Wall-Climb Jump Badge", 34, "probe"),
+    ("Parachute Cap Badge", 35, "probe"),
+    ("Invisibility Badge", 38, "probe"),
+    ("Crouching High Jump Badge", 39, "probe"),
+    ("Coin Magnet Badge", 40, "probe"),
+    ("Timed High Jump Badge", 42, "probe"),
+    ("Rhythm Jump Badge", 47, "probe"),
+    ("Safety Bounce Badge", 49, "probe"),
+    ("Grappling Vine Badge", 53, "probe"),
+    ("All Fire Power Badge", 54, "probe"),
+    ("All Elephant Power Badge", 55, "probe"),
+    ("All Drill Power Badge", 57, "probe"),
+    # User probed as "All Bubble Power"; AP item name is "All Bubble
+    # Flower Badge" (only one "Bubble" badge in items.json so the
+    # mapping is unambiguous; the in-game display name differs).
+    ("All Bubble Flower Badge", 58, "probe"),
 ]
 
 
 _NAME_TO_ID: Final[dict[str, int]] = {name: bit for name, bit, _ in _BADGES}
+
+# Reverse lookup for M2.3 outbound badge-check detection: the Switch
+# reports the bit position it observed going set; the bridge needs the
+# matching AP item / location name.  Built once at module load.
+_ID_TO_NAME: Final[dict[int, str]] = {bit: name for name, bit, _ in _BADGES}
 
 
 def grant_internal_id_for_item(item_name: str) -> int | None:
@@ -74,6 +107,17 @@ def grant_internal_id_for_item(item_name: str) -> int | None:
     return bit
 
 
+def name_for_internal_id(internal_id: int) -> str | None:
+    """Look up the AP item name for a badge bit position.  Returns
+    ``None`` if the bit isn't a known badge (the caller should log +
+    drop, then update ``_BADGES`` with a save-diff capture)."""
+    name = _ID_TO_NAME.get(internal_id)
+    if name is None:
+        log.debug("badge_table: no name for internal_id %d", internal_id)
+        return None
+    return name
+
+
 def is_badge_item(item_name: str) -> bool:
     """Cheap check: does this AP item name correspond to a known badge?
 
@@ -82,3 +126,66 @@ def is_badge_item(item_name: str) -> bool:
     dispatch via the manual apworld's item category metadata.
     """
     return item_name in _NAME_TO_ID
+
+
+# ---------------------------------------------------------------------------
+# M2.3 probe-and-discover helpers.  Drive `/badge_probe_next` and
+# `/badge_status` in commands.py to walk the unmapped bits and item names.
+
+
+def mapped_bits() -> set[int]:
+    """Set of badge bit positions (== internal_ids) already in _BADGES."""
+    return set(_NAME_TO_ID.values())
+
+
+# Path to the apworld's items.json -- the source of truth for the 24
+# badge item names.  badge_table.py lives at
+# apworld/smbw_archipelago/client/badge_table.py; items.json lives at
+# apworld/smbw_archipelago/data/items.json.
+_ITEMS_JSON = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    os.pardir, "data", "items.json")
+
+
+def all_badge_item_names() -> list[str]:
+    """Read items.json and return every AP item whose name contains
+    'Badge'.  This is the canonical 24-name list; the probe loop uses
+    it to know which items still need an internal_id mapping."""
+    try:
+        with open(_ITEMS_JSON, encoding="utf-8") as f:
+            entries = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        log.warning("badge_table: can't read %s: %s", _ITEMS_JSON, e)
+        return []
+    return [e["name"] for e in entries if "Badge" in e.get("name", "")]
+
+
+def unmapped_item_names() -> list[str]:
+    """Badge item names from items.json that don't yet have an
+    internal_id in _BADGES.  21 of 24 at M2.3 ship time."""
+    return [n for n in all_badge_item_names() if n not in _NAME_TO_ID]
+
+
+def next_unmapped_bit(
+    after: int = -1,
+    ceiling: int = 64,
+    extra_skip: set[int] | None = None,
+) -> int | None:
+    """Find the lowest bit position strictly greater than `after` that
+    isn't already in _BADGES.  Returns ``None`` if every bit in
+    [after+1, ceiling) is already mapped (or in ``extra_skip``).  Used
+    by `/badge_probe_next` to walk the unknown space.
+
+    ``extra_skip`` is the runtime "known-invalid" set the context
+    accumulates from `/badge_probe_invalid`.  Pass it so the
+    probe-next loop skips bits the user has already confirmed don't
+    correspond to any badge (the SMBW badge bitfield is sparse:
+    ~24 valid bits scattered across 0..63, so most bits are dead).
+    """
+    taken = mapped_bits()
+    skip = extra_skip or set()
+    for b in range(max(0, after + 1), ceiling):
+        if b in taken or b in skip:
+            continue
+        return b
+    return None
