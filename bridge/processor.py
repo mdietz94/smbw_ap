@@ -168,6 +168,15 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
         goal_id == 0 + !touch_goal_top     → Normal Exit
         goal_id == 1                       → Secret Exit
         goal_id == 2                       → Fake Exit (guessed)
+
+    M2.2 10-coin layer (added 2026-05-25): after the exit-type emit,
+    diff ``big_flower_coin_course_in`` against ``_out`` and emit one
+    TEN_COIN per newly-True index.  Suppressed on palace courses (the
+    early-return above keeps us out of this path) and on rooms where
+    the field is absent (palace-shaped fixtures have it `[F,F,F]/[F,F,F]`
+    so the diff naturally yields zero emits anyway).  See
+    docs/m2.2-runbook.md for the field semantics + the unproven
+    diff-interpretation caveat.
     """
     stage_info = fields.get("stage_info")
     if not isinstance(stage_info, dict):
@@ -180,6 +189,8 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
         log.debug("course_result with world_mother_seed=True; deferring to koopajr_result")
         return []
 
+    emitted: list[CheckEmitted] = []
+
     goal_id = fields.get("goal_id", 0)
     top = bool(fields.get("touch_goal_top_result", False))
     if goal_id == 0:
@@ -191,23 +202,59 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
     else:
         log.warning("course_result unknown goal_id=%r at stage_key=%d",
                     goal_id, stage_info["stage_key"])
+        kind = None
+
+    if kind is not None:
+        clear = CheckEmitted(
+            kind=kind,
+            stage_key=stage_info["stage_key"],
+            metadata={
+                "world_no": stage_info.get("world_no", 0),
+                "course_no": stage_info.get("course_no", 0),
+                "goal_id": goal_id,
+                "touch_goal_top": top,
+                "got_finish_seed": bool(fields.get("total_get_finish_seed_count", 0)),
+            },
+        )
+        if state.emit_check(clear):
+            log.info("course_result → %s at stage_key=%d", kind.value, clear.stage_key)
+            emitted.append(clear)
+
+    emitted.extend(_emit_ten_coin_checks(state, stage_info, fields))
+    return emitted
+
+
+def _emit_ten_coin_checks(
+    state: BridgeState,
+    stage_info: dict[str, Any],
+    fields: dict[str, Any],
+) -> list[CheckEmitted]:
+    """Diff ``big_flower_coin_course_in`` vs ``_out`` and emit a
+    TEN_COIN ``CheckEmitted`` per newly-True index.  No-op if either
+    array is missing/non-list or no index flipped False → True."""
+    in_arr = fields.get("big_flower_coin_course_in")
+    out_arr = fields.get("big_flower_coin_course_out")
+    if not isinstance(in_arr, list) or not isinstance(out_arr, list):
         return []
 
-    check = CheckEmitted(
-        kind=kind,
-        stage_key=stage_info["stage_key"],
-        metadata={
-            "world_no": stage_info.get("world_no", 0),
-            "course_no": stage_info.get("course_no", 0),
-            "goal_id": goal_id,
-            "touch_goal_top": top,
-            "got_finish_seed": bool(fields.get("total_get_finish_seed_count", 0)),
-        },
-    )
-    if state.emit_check(check):
-        log.info("course_result → %s at stage_key=%d", kind.value, check.stage_key)
-        return [check]
-    return []
+    emitted: list[CheckEmitted] = []
+    stage_key = stage_info["stage_key"]
+    for idx in range(min(len(in_arr), len(out_arr))):
+        if bool(out_arr[idx]) and not bool(in_arr[idx]):
+            check = CheckEmitted(
+                kind=CheckKind.TEN_COIN,
+                stage_key=stage_key,
+                metadata={
+                    "world_no": stage_info.get("world_no", 0),
+                    "course_no": stage_info.get("course_no", 0),
+                    "coin_index": idx,
+                },
+            )
+            if state.emit_check(check):
+                log.info("course_result → ten_coin #%d at stage_key=%d",
+                         idx + 1, stage_key)
+                emitted.append(check)
+    return emitted
 
 
 def _handle_koopajr_result(state: BridgeState, fields: dict[str, Any]) -> list[CheckEmitted]:

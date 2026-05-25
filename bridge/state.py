@@ -59,7 +59,11 @@ class BridgeState:
         # a re-cleared course on a fresh save) doesn't re-fire the AP
         # check.
         self.emitted_checks: list[CheckEmitted] = []
-        self._emitted_keys: set[tuple[str, int]] = set()
+        # Dedup key is (kind, stage_key, sub_key).  `sub_key` is 0 for
+        # everything except TEN_COIN, where it's the 0/1/2 coin index
+        # so that a single course can dedup its three coin checks
+        # independently.
+        self._emitted_keys: set[tuple[str, int, int]] = set()
 
         # M3.8 DeathLink groundwork — incremented on every detected
         # Mario death.  Bridge will forward to AP later.
@@ -77,11 +81,14 @@ class BridgeState:
         """Record a CheckEmitted from the processor. Returns True if
         newly added, False if a duplicate of an earlier emit.
 
-        Dedup key is (kind, stage_key) — a single course can produce
-        multiple distinct AP checks (e.g. Top of Flag AND Wonder Seed on
-        the same playthrough) but the *same* (kind, stage_key) pair
-        firing twice means the player re-cleared the same course."""
-        key = (check.kind.value, check.stage_key)
+        Dedup key is (kind, stage_key, sub_key).  For most kinds
+        sub_key is 0 — a single course produces at most one
+        TOP_OF_FLAG / NORMAL_EXIT / etc. check.  For TEN_COIN the
+        sub_key is the per-course coin index (0/1/2) from
+        ``metadata["coin_index"]`` so the 3 distinct 10-coin checks
+        dedup independently."""
+        sub_key = int(check.metadata.get("coin_index", 0))
+        key = (check.kind.value, check.stage_key, sub_key)
         with self._lock:
             if key in self._emitted_keys:
                 return False
@@ -97,10 +104,16 @@ class BridgeState:
 
     # ---- Read accessors -----------------------------------------------
 
-    def has_emitted(self, kind: CheckKind, stage_key: int) -> bool:
-        """Cheap dedup-status read, mostly for tests."""
+    def has_emitted(
+        self,
+        kind: CheckKind,
+        stage_key: int,
+        coin_index: int = 0,
+    ) -> bool:
+        """Cheap dedup-status read, mostly for tests.  Pass ``coin_index``
+        for TEN_COIN; defaults to 0 for all other kinds."""
         with self._lock:
-            return (kind.value, stage_key) in self._emitted_keys
+            return (kind.value, stage_key, coin_index) in self._emitted_keys
 
     def count_emitted(self, kind: CheckKind | None = None) -> int:
         """Number of CheckEmitted entries, optionally filtered by kind."""
