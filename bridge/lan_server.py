@@ -9,8 +9,11 @@ manual intervention).
 Per connection, the server:
 
   1. Waits for a HELLO, replies with HELLO_ACK, then immediately pushes
-     a SetBadgesAbsolute with the current AP-known mask (replay-on-
-     reconnect, subsumes M4.5 badge replay).
+     a SetBadgesAbsolute with the current AP-known mask AND one
+     GrantHashKeyed per currently-known Royal Seed (replay-on-reconnect;
+     this is M4.5 -- container-B bool grants survive Switch reconnect
+     and save/reload because the bridge replays every seed every time
+     the Switch handshakes).
   2. Reads framed JSON lines, dispatches by ``"t"``:
        nerve        -> processor.process_event(state, NerveFireMsg)
                         -> forward each CheckEmitted to ``on_check_emitted``
@@ -83,6 +86,15 @@ CheckEmittedHandler = Callable[[CheckEmitted], Awaitable[None]]
 BadgeMaskProvider = Callable[[], int]
 
 
+# Synchronous callable returning all currently-known container-B bool
+# grants to replay on HelloMsg.  Each tuple is (hash, value).  Empty
+# list is fine and means "no Royal Seeds received yet".  No periodic
+# tick: Royal Seeds have no in-game acquisition path that bypasses AP
+# (palace clears flow through AP first), so HelloMsg replay alone
+# closes the save-survival gap.
+RoyalSeedGrantsProvider = Callable[[], list[tuple[int, int]]]
+
+
 # Union of grant-message types the writer loop can drain.  Adding a new
 # inbound grant variant (e.g. ``GrantPowerUpMsg`` in M5) means: define it
 # in ``wire.py``, add a typed ``send_*`` method below, append to this
@@ -110,10 +122,12 @@ class LanServer:
         state: BridgeState,
         on_check_emitted: CheckEmittedHandler | None = None,
         badge_mask_provider: BadgeMaskProvider | None = None,
+        royal_seed_grants_provider: RoyalSeedGrantsProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
         self._badge_mask_provider = badge_mask_provider
+        self._royal_seed_grants_provider = royal_seed_grants_provider
 
         self._server: asyncio.base_events.Server | None = None
 
@@ -175,16 +189,22 @@ class LanServer:
                 "full; dropping", bits)
 
     def send_grant_hash_keyed(self, hash_: int, value: int) -> None:
-        """Enqueue a GrantHashKeyed (M3.3 / M3.3b container-A counter
-        write) to the active Switch client.
+        """Enqueue a GrantHashKeyed (container-A counter or container-B
+        bool write, routed Switch-side by ``isBoolHash`` in
+        ``ApFrameBridge.cpp``) to the active Switch client.
 
         Same drop semantics as :meth:`send_set_badges_absolute`.
-        Caveat: unlike badges, container-A grants do NOT survive
-        save/reload -- the ``FUN_710049F648`` write queues to a dirty
-        buffer that drains on next save; if the player loads a fresh
-        save, the grant is lost.  A future container-A replay-on-
-        HelloMsg pass will need to follow the SetBadgesAbsolute pattern;
-        it's not wired here yet."""
+
+        Save-survival: the Switch-side primitive (both container-A
+        ``FUN_710049F648`` and container-B ``FUN_710049EA24``) writes
+        to a deferred-write dirty buffer at ``gmd+0xf8`` that flushes
+        on next save.  If the player loads a fresh save before the
+        flush lands, the grant is lost.  The HelloMsg dispatch above
+        replays every currently-known Royal Seed via
+        :meth:`_push_royal_seeds_now` (M4.5), so seeds survive Switch
+        reconnect and save/reload.  Container-A counters
+        (flower_coin, regular_coin) are NOT replayed -- not currently
+        AP items; revisit if/when they are."""
         msg = wire.GrantHashKeyedMsg(hash=hash_, value=value)
         if self._send_queue is None:
             log.warning(
@@ -270,6 +290,11 @@ class LanServer:
             # AP's view from the moment the connection is up.  This is
             # what makes badges survive save/reload and Switch reboots.
             self._push_badge_sync_now()
+            # M4.5: same idea for container-B bool grants (Royal Seeds).
+            # The container-B writer is deferred-write so a load-before-
+            # flush silently drops the grant; replaying on every HelloMsg
+            # is the durable fix.
+            self._push_royal_seeds_now()
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -394,6 +419,27 @@ class LanServer:
             log.exception("badge_mask_provider raised; skipping sync")
             return
         self.send_set_badges_absolute(bits)
+
+    def _push_royal_seeds_now(self) -> None:
+        """Pull all currently-known Royal Seed grants from the provider
+        and enqueue one GrantHashKeyed per (hash, value).  No-op if no
+        provider was wired or no client is connected.  Called from the
+        HelloMsg dispatch -- the durable fix for the container-B
+        deferred-write save-survival gap (M4.5).  No periodic tick:
+        Royal Seeds can only be earned through AP-routed palace clears,
+        so there's nothing in-game to revert."""
+        if self._royal_seed_grants_provider is None:
+            return
+        try:
+            grants = self._royal_seed_grants_provider()
+        except Exception:
+            log.exception("royal_seed_grants_provider raised; skipping replay")
+            return
+        if not grants:
+            return
+        log.info("HelloMsg replay: %d Royal Seed grant(s)", len(grants))
+        for h, v in grants:
+            self.send_grant_hash_keyed(h, v)
 
     async def _badge_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the

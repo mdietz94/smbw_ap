@@ -355,15 +355,32 @@ Mirror smo_archipelago's `apworld/` and `scripts/` layout. Re-uses Archipelago's
 
 SMO has a `/setup` slash command in their AP client that handles first-time prereq checks + bridge-IP configuration + Switch-mod build. We can defer this until the rest works manually.
 
-### M4.5 — Grant persistence across save/reload (new, 2026-05-24)
+### M4.5 — Grant persistence across save/reload (new, 2026-05-24; ✅ shipped 2026-05-25)
 
-First M4 smoke test showed that `probe::grantBadgeBit` writes the LIVE
-container-C bitfield only -- save/reload reverts.  Bridge must replay
-all `items_received` of badge kind on every Switch `HelloMsg` to
-restore state across Ryujinx restarts and in-game save loads.  Also
-write the save-out staging buffer at file offset `0x0EA0` (see
-`docs/save-diff-findings.md`) so the next save round-trip persists the
-bit and a cold-start without bridge still shows the badge.
+First M4 smoke test showed that the live writers (badges, container-A
+counters, container-B bools) all write to deferred-write buffers or
+non-persistent state that save/reload can revert.  The fix landed in
+two passes:
+
+- **Badges**: M4 follow-up #2 (commit
+  [9a5716c](https://github.com/mdietz94/wondar/commit/9a5716c))
+  switched to AP-authoritative absolute-overwrite via
+  `SetBadgesAbsoluteMsg` on every `ReceivedItems`, every `HelloMsg`,
+  and a 2 s periodic tick.  Subsumes "replay every badge grant" with
+  a stronger guarantee (covers in-game pickups too).
+- **Royal Seeds (container-B bools)**: M4.5 proper
+  (`SMBWContext._collect_royal_seed_grants` →
+  `LanServer._push_royal_seeds_now`) re-emits one
+  `GrantHashKeyedMsg` per seed on every Switch `HelloMsg`.  No periodic
+  tick — Royal Seeds have no in-game acquisition path that bypasses
+  AP.  Idempotent at the Switch primitive level (`probe::grantContainerBBool`
+  setting a bool to 1 when it's already 1 is a no-op).
+
+Container-A counters (flower_coin, regular_coin) and the two
+container-B completion bools (COMPLETE_GAME, INTRO) are NOT replayed
+today because they're not AP items.  When/if they become AP items, the
+same `_collect_*_grants` / `_push_*_now` provider shape extends
+trivially.
 
 ## M5 — Convert manual_smbwonder_zim to integrated apworld + suppress in-game item acquisition
 
@@ -436,8 +453,8 @@ History (closed):
 
 Forward plan (revised 2026-05-25):
 
-- **Session 12 (next)**: Remove the M3.3b boot smoke from `NerveActivateOnce::Callback` now that validation is done — grants flow exclusively through the AP bridge dispatch.  Then M4.5 replay-on-`HelloMsg` — bridge re-emits every received item (badges + container-A grants + container-B grants) on every Switch reconnect.  Fixes the save-survival caveat for all grant surfaces uniformly.
-- **Session 13**: M3.8 DeathLink detection — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8`, find a death-vs-noise discriminator. Switch-mod only, no RE dead-ends.
+- ✅ Session 12 (2026-05-25, same day): **M4.5 Royal Seed replay-on-HelloMsg shipped**.  Bridge-side `_collect_royal_seed_grants` + `_push_royal_seeds_now` re-emit one `GrantHashKeyedMsg` per received Royal Seed every Switch handshake; mirrors the M4 follow-up #2 badge replay.  M3.3b boot smoke was already removed when M3.3b merged — `main.cpp` now contains only the unrelated M3.8 synthKill smoke.  209 bridge tests pass (207 + 2 new HelloMsg-replay tests).
+- **Session 13 (next)**: M3.8 DeathLink detection — extend `NerveActivateOnce` to filter on `vt_off=0x33fd9a8`, find a death-vs-noise discriminator. Switch-mod only, no RE dead-ends.
 - **Session 14**: DeathLink triggering (the "kill Mario from AP" half) — verify the `LiveBaseLatch` cheat-anchor prologue in Ghidra, flip `kEnableLiveBaseLatch` to true, validate `probe::synthKill`.
 
 Deferred indefinitely until after the MVP demo:

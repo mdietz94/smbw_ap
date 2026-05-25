@@ -192,6 +192,7 @@ async def _run(args: argparse.Namespace) -> int:
         state=state,
         on_check_emitted=ctx.handle_check_emitted,
         badge_mask_provider=ctx._recompute_badge_mask,
+        royal_seed_grants_provider=ctx._collect_royal_seed_grants,
     )
     ctx.lan_server = lan
 
