@@ -3473,3 +3473,37 @@ void GrantBadge(uint8_t internal_id) {
 - Sister project lessons reused: 0 (this is the first save-data RE work for this codebase)
 - Lines of mod code added: ~150
 - M3.2 is unblocked end-to-end for the AP bridge (M4) work.
+
+## 2026-05-25 — M3.3b SOLVED (no new RE required)
+
+Royal Seed bool grant primitive shipped via `probe::grantContainerBBool`
+in [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp).
+Calls `FUN_710049EA24` at NSO `+0x0049EA24` (the high-level bool wrapper),
+which gates on the gmd+0x68 init/lock and delegates to
+`FUN_7101F263FC(gmd+8, value & 1, hash)` — already documented above
+(lines 3170-3171, 3215, 3327, 3467) as the "deferred-write bool WRITER
+for gmd+8 substruct".
+
+**The entire M3.3b work was reading our own notes.** Sprint-2 had
+already identified both the wrapper and its delegate; only the
+`probe::grantContainerBBool` primitive (mirroring `grantContainerACounter`)
+and the `isBoolHash()` dispatch branch in
+[ApFrameBridge.cpp](../switch-mod/src/program/ap/ApFrameBridge.cpp)
+`drainInbound()` needed writing.  Total switch-mod diff: ~70 LoC.
+
+**Live validation 2026-05-25**: boot-time smoke test wrote all 8
+documented bool hashes (6 Royal Seeds + COMPLETE_GAME + INTRO).
+Save-diff confirmed 6 expected byte flips at pair-region value
+offsets (W2 @ 0x0064, W3 @ 0x0384, W4 @ 0x01F4, W5 @ 0x036C,
+W6 @ 0x00BC, COMPLETE_GAME @ 0x0044); W1 (0x0354) and INTRO (0x012C)
+were already `0x01` in the test save and the writer was correctly
+idempotent.  Existing `GmdBoolWriter` trampoline at NSO `+0x01F263FC`
+(installed in M3.2 as a badge-investigation probe) provided free
+observability: each log line showed `substruct = gmd + 8` exactly as
+predicted.
+
+**Lesson**: when sprint-2-style dataflow analysis produces a "writer
+candidate" annotation, treat it as ready-to-ship pending a one-line
+empirical confirmation.  We deferred M3.3b 24 hours by labelling the
+M3.3 falsification a "container-B writer hunt" when the writer was
+already named in our own findings doc.

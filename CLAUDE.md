@@ -138,17 +138,48 @@ showed file offset 0x0894 went `06 00 → 63 00`.  `regular_coin` works by
 the same path.  Wire protocol gained `GrantHashKeyedMsg` (bridge ↔ Switch),
 inbound dispatch in [switch-mod/src/program/ap/ApFrameBridge.cpp](switch-mod/src/program/ap/ApFrameBridge.cpp).
 
-⚠️ **M3.3b Royal Seeds** — primitive call FALSIFIED 2026-05-25.  The
-same writer was called with hash `0x55815859` value `1` (GRAND_SEED_WORLD1),
-trampoline confirmed the call, but post-save the value at file offset
-`0x0354` stayed at `0`.  Container-A writer is typed and silently no-ops
-on bool-typed slots.  M3.3b needs the container-B writer (candidate
-`FUN_71005E93FC`, per docs/static-analysis-findings.md).  Bridge plumbing
-(`royal_seed_table.py`, `send_grant_hash_keyed`, `GrantHashKeyedMsg`,
-`drainInbound` dispatch) is kept wired and reusable -- when the bool
-writer ships, only the Switch-side dispatcher branches on hash to route
-the 6 Royal Seed hashes to it.  `ap_client._handle_received_items` warns
-on Royal Seed forwards today so the operator isn't surprised.
+✅ **M3.3b Royal Seeds — shipped 2026-05-25** as
+`probe::grantContainerBBool(hash, value)` in
+[switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp).
+Calls `FUN_710049EA24` at NSO `+0x0049EA24` (the high-level container-B
+bool writer wrapper), which gates on the gmd+0x68 init/lock and
+delegates to `FUN_7101F263FC(gmd+8, value & 1, hash)` — the
+deferred-write bool setter for the gmd+8 substruct.  Lessons-learned
+tag: the bool writer was already statically identified in sprint 2
+(docs/static-analysis-findings.md lines 3215/3327) — the M3.3b work
+was 90% reading our own notes, 10% writing the primitive that mirrored
+`grantContainerACounter`.
+
+Live-validated end-to-end with the boot-time smoke test that wrote
+all 8 bool hashes:
+
+| Hash | Pair offset (value byte) | Save-diff result |
+|---|---|---|
+| `0x55815859` W1 Royal Seed | `0x0354` | already 0x01 (idempotent ✓) |
+| `0x49ABBA86` W2 Royal Seed | `0x0064` | `00 → 01` ✓ |
+| `0xB550D8D6` W3 Royal Seed | `0x0384` | `00 → 01` ✓ |
+| `0x1DCF7F6E` W4 Royal Seed | `0x01F4` | `00 → 01` ✓ |
+| `0x0D5A3E00` W5 Royal Seed | `0x036C` | `00 → 01` ✓ |
+| `0xD4660D2B` W6 Royal Seed | `0x00BC` | `00 → 01` ✓ |
+| `0x5D3EC9B4` COMPLETE_GAME | `0x0044` | `00 → 01` ✓ |
+| `0x89F1CC52` INTRO | `0x012C` | already 0x01 (idempotent ✓) |
+
+Trampoline log confirmed `substruct = gmd + 8` exactly as documented.
+Dispatch in [switch-mod/src/program/ap/ApFrameBridge.cpp](switch-mod/src/program/ap/ApFrameBridge.cpp)
+`drainInbound()` branches on `isBoolHash(h)` (defined in
+`ApFrameBridge.hpp` with the 8-hash whitelist) — counters stay on
+container-A, bools route to container-B.  Bridge side unchanged:
+`royal_seed_table.py` `source` flipped from `"memetendoYT-pending"` to
+`"live"`, `ap_client._handle_received_items` WARN replaced with INFO.
+
+```cpp
+// Container B bool writer.  High-level wrapper; gates on the gmd+0x68
+// init/lock and delegates to FUN_7101F263FC(gmd+8, value & 1, hash).
+// Deferred-write: value is queued at gmd+0xf8 dirty buffer and applied
+// to the persistent container at next save.
+void FUN_710049EA24(GameDataMgr* gmd, uint32_t value, uint32_t hash);
+// at NSO +0x0049EA24
+```
 
 ```cpp
 // Container A counter writer.  Lock-free, thread-safe (uses ARM
@@ -181,6 +212,9 @@ Confirmed hash keys (cross-verified via MemetendoYT save editor):
 |---|---|---|
 | `+0x710012AE94` | Container A **reader** (counter GET) | `(gmd, uint32_t* out, uint32_t hash)` ← corrected 2026-05-24 from FUN_7101a5d9a0 call site |
 | **`+0x710049F648`** | Container A **WRITER** (counter SET) | `(gmd, value, hash)` ★ grant primitive |
+| **`+0x710049EA24`** | Container B bool **WRITER** (high-level wrapper) | `(gmd, value, hash)` ★ grant primitive (M3.3b) |
+| `+0x71005E93FC` | Container B inner delegate (called from +0x49EA24) | `(gmd+8 substruct, u8 value & 1, hash)` |
+| `+0x71001F263FC` | Container B bool deferred-write delegate | same as above; see HOOK_DEFINE_TRAMPOLINE GmdBoolWriter for observability |
 | `+0x71003838AC` | Sub-bool **reader** (handles INTRO, COMPLETE_GAME reads) | `(sub_obj, uint8_t* out, uint32_t hash)` |
 | `+0x71003D3FB0` | Stage-info hash → course-index **translator** | `(top_hash, &out_index)` |
 | `+0x71003D4110` | **Murmur3-32(course_name) → course_index** lookup over 81 hardcoded course strings | `(target_hash, &out_index)` |
@@ -195,15 +229,16 @@ Additional hash keys discovered 2026-05-24 in `FUN_7101a5d9a0` call sites:
 
 **Deferred-write implication**: a write via `FUN_710049F648` is applied to the live container at the next save. For UI to refresh immediately (in-game purple coin counter, etc.), the grant code should ALSO write the live-state struct field directly (HamletDuFromage cheat anchors give the offsets: flower_coin at `live_base + 0xC8`, lives at `live_base + 0x60`, etc.). Dual-write strategy described in [docs/static-analysis-findings.md](docs/static-analysis-findings.md).
 
-⚠️ **Save-survival caveat for all container-A grants** (coin counters
-today; bools once the M3.3b writer ships) — same root cause as the M3.2
-badge follow-up. The `FUN_710049F648` write queues to the dirty buffer
-at `gmd->[+0xf8]`; if the player loads a fresh save before the buffer
+⚠️ **Save-survival caveat for all container-A and container-B grants**
+(coin counters + Royal Seeds + COMPLETE_GAME + INTRO) — same root
+cause as the M3.2 badge follow-up. Both `FUN_710049F648` (A) and
+`FUN_710049EA24 → FUN_7101F263FC` (B) write to the dirty buffer at
+`gmd->[+0xf8]`; if the player loads a fresh save before the buffer
 flushes, the grant is lost.  Two mitigations: (a) explicit save after
 each grant (the smoke-test path), or (b) the M4.5 bridge
 replay-on-`HelloMsg` work that re-emits every received item every time
-the Switch reconnects.  Today's M3.3 wiring relies on (a); (b) is the
-only durable fix and covers badges + container-A items + future
+the Switch reconnects.  Today's M3.3 + M3.3b wiring relies on (a);
+(b) is the only durable fix and covers badges + container-A items +
 container-B items uniformly.
 
 ⚠️ **Critical — the save-diff sprint did NOT produce a live-grant mechanism.** The file-offset writers anchored on the `savedata_id` UUID at file offset `0x50b8` modify only the **save-OUT staging buffer**, which exists transiently during/after save serialization. The game populates this buffer FROM live state on every save; writes into it are overwritten on the next save event and never change live gameplay. What that work produced is a **save-file editor capability** (offline modification of `game_data.sav`) and a **verification target** (predict the bytes a successful live grant will write). For ALL live in-game grants, the only path we have is the GameDataMgr API above (`FUN_710049F648` for container-A counters; other accessors TBD for container-B fields like badges and per-course flags). See [docs/runtime-address-backtrace-plan.md](docs/runtime-address-backtrace-plan.md) for the discovery of this distinction.
