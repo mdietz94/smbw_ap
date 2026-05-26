@@ -533,6 +533,7 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await asyncio.sleep(0.02)
             self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
@@ -551,8 +552,9 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
         client = await _FakeSwitch.connect(self.h.port)
         try:
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
-            await client.recv()
-            await client.recv()
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await asyncio.sleep(0.02)
             self.h.server.send_increment_hash_keyed(0xF4EE6827, -10)
@@ -721,6 +723,7 @@ class TestClientDisplacement(_AsyncTestCase):
         await client_a.send(wire.HelloMsg(mod_ver="a", game_ver="t"))
         await client_a.recv()  # ack
         await client_a.recv()  # post-hello SetBadgesAbsolute replay
+        await client_a.recv()  # post-hello SetWonderSeedCounts replay
         await asyncio.sleep(0.02)
 
         # Second client connects.
@@ -728,6 +731,7 @@ class TestClientDisplacement(_AsyncTestCase):
         await client_b.send(wire.HelloMsg(mod_ver="b", game_ver="t"))
         await client_b.recv()  # ack
         await client_b.recv()  # post-hello SetBadgesAbsolute replay
+        await client_b.recv()  # post-hello SetWonderSeedCounts replay
         await asyncio.sleep(0.05)
 
         # An explicit send should reach B, not A.  Pick a value that
