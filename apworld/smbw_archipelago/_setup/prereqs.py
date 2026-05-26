@@ -106,8 +106,65 @@ def repo_root() -> Path:
     Python loaded the module through the dev-mode junction at
     ``vendor/Archipelago/custom_worlds/smbw_archipelago/`` (we resolve()
     so the junction is followed back to the real path).
+
+    In a ``git worktree`` checkout this returns the *worktree's* root.
+    Use :func:`primary_worktree_root` when you need the clone that owns
+    submodule checkouts (notably ``vendor/Archipelago/``, which is
+    where the AP Launcher's custom_worlds junction must live).
     """
     return Path(__file__).resolve().parents[3]
+
+
+def primary_worktree_root(start: Path | None = None) -> Path:
+    """Resolve the *primary* worktree's repo root.
+
+    Submodules (``vendor/Archipelago/`` and ``switch-mod/``) only get
+    checked out into the primary clone, not into auxiliary ``git
+    worktree`` checkouts.  The apworld junction therefore must be
+    created in the primary's ``vendor/Archipelago/custom_worlds/``
+    even when the installer is invoked from a worktree -- otherwise
+    the junction lands in an empty worktree-side vendor dir that AP
+    Launcher never reads.
+
+    The junction's *target* (the apworld source) is a separate
+    decision; we deliberately keep that pointing at the *current*
+    worktree so dev iteration on a feature branch reflects immediately.
+
+    Strategy:
+      1. Ask git: ``rev-parse --path-format=absolute --git-common-dir``.
+         Git's common-dir lives inside the primary worktree's ``.git``
+         (literally the ``.git/`` directory), no matter which worktree
+         the command runs from.  Its parent is the primary repo root.
+      2. Fall back to ``start`` when git isn't available or the cwd
+         isn't a git checkout (e.g. unit tests building a fake repo
+         under ``tmp_path``).  Preserves the pre-worktree behavior.
+
+    Returns the same path as :func:`repo_root` on a vanilla clone.
+    """
+    start = start if start is not None else repo_root()
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+            cwd=str(start),
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+            creationflags=_NO_WINDOW,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return start
+    if res.returncode != 0:
+        return start
+    common = Path((res.stdout or "").strip())
+    if not common.is_absolute() or not common.is_dir():
+        return start
+    # The common-dir is the primary worktree's `.git/` (named exactly
+    # `.git`, even when the worktree we ran from has its own `.git`
+    # file pointing here).  Parent of `.git` is the primary working
+    # tree root.
+    if common.name == ".git":
+        return common.parent
+    return start
 
 
 def _run(cmd: list[str], *, timeout: float = 10.0) -> tuple[int, str, str]:
