@@ -631,7 +631,10 @@ class LanServer:
                     writer.write(wire.encode(msg))
                     await writer.drain()
                     if isinstance(msg, wire.SetBadgesAbsoluteMsg):
-                        log.info("-> set_badges_absolute bits=0x%x", msg.bits)
+                        # Suppress the empty-mask periodic-tick spam; only
+                        # log when there's an actual badge state to push.
+                        if msg.bits:
+                            log.info("-> set_badges_absolute bits=0x%x", msg.bits)
                     elif isinstance(msg, wire.GrantHashKeyedMsg):
                         log.info(
                             "-> grant_hash_keyed hash=0x%08x value=%d",
