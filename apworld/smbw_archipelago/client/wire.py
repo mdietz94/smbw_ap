@@ -500,6 +500,15 @@ class IncrementHashKeyedMsg:
     would double-count.  Acceptable for coin-style filler; if a
     counter ever becomes progression-critical, a dedup story (per-AP-
     item-index applied-set persisted across reconnects) is required.
+
+    Coalesce caveat: because the Switch reader does NOT observe the
+    dirty buffer, back-to-back RMWs without an intervening save all
+    read the same ``cur`` and clobber each other in the dirty queue --
+    only the last delta survives.  The bridge therefore folds every
+    pending ``send_increment_hash_keyed(hash, *)`` call into a single
+    outbound message per hash before letting the writer drain (see
+    ``LanServer._DrainIncrementsSentinel``).  Senders never need to
+    debounce themselves.
     """
 
     T = "increment_hash_keyed"
