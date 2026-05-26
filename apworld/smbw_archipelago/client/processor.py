@@ -41,6 +41,21 @@ ProcessorEmit = CheckEmitted | DeathReported | GoalCompleted
 log = logging.getLogger("SMBW")
 
 
+# Hub-house stage_keys: small interior "houses" whose only AP check is
+# the Wonder Seed handed out inside (no Normal/Secret/Top-of-Flag in
+# locations.json).  We route their AP check off the exit event rather
+# than WONDER_SEED_AWARDED so a player disconnected from AP at pickup
+# can re-fire it by re-entering and re-exiting -- the in-game seed
+# only awards once per save, but course_result fires every exit.
+# Stage keys mirror location_table.py constants.
+_HUB_HOUSE_STAGE_KEYS: frozenset[int] = frozenset({
+    0x3D3FE9D4,  # PI: Angler Poplin's House
+    0x4A493BE1,  # W3: Master Poplin's House
+    0x9D67C898,  # W4: Sunbaked Desert House
+    0x2A876538,  # W5: Loyal Poplin's House
+})
+
+
 # ---------------------------------------------------------------------------
 # Top-level dispatch.
 
@@ -74,6 +89,16 @@ def _handle_nerve_fire(state: BridgeState, event: NerveFireMsg) -> list[Processo
             log.warning(
                 "wonder_seed_awarded fire #%d with no current_course; dropping",
                 event.seq)
+            return []
+        if course.stage_key in _HUB_HOUSE_STAGE_KEYS:
+            # Hub-house wonder seeds only award once per save -- replay
+            # after disconnect can't re-fire this nerve.  Suppress here
+            # and let _handle_course_result emit the AP check off the
+            # exit event instead.
+            log.info(
+                "wonder_seed_awarded fire #%d inside hub-house "
+                "stage_key=0x%08x; suppressing (routed via course_result)",
+                event.seq, course.stage_key)
             return []
         check = CheckEmitted(
             kind=CheckKind.WONDER_SEED,
@@ -277,7 +302,14 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
 
     goal_id = fields.get("goal_id", 0)
     top = bool(fields.get("touch_goal_top_result", False))
-    if goal_id == 0:
+    stage_key = stage_info["stage_key"]
+    if stage_key in _HUB_HOUSE_STAGE_KEYS:
+        # Hub-house exits route to the WONDER_SEED AP location.  The
+        # in-game wonder-seed nerve fires once-per-save (suppressed in
+        # _handle_nerve_fire); the exit event re-fires on every visit,
+        # so a disconnected player can retry by re-entering the house.
+        kinds = [CheckKind.WONDER_SEED]
+    elif goal_id == 0:
         kinds = [CheckKind.NORMAL_EXIT]
         if top:
             kinds.append(CheckKind.TOP_OF_FLAG)
@@ -287,7 +319,7 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
         kinds = [CheckKind.FAKE_EXIT]
     else:
         log.warning("course_result unknown goal_id=%r at stage_key=%d",
-                    goal_id, stage_info["stage_key"])
+                    goal_id, stage_key)
         kinds = []
 
     for kind in kinds:

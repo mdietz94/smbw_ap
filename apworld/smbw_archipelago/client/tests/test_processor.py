@@ -12,7 +12,12 @@ from __future__ import annotations
 
 import unittest
 
-from ..processor import _emit_ten_coin_checks, process_event
+from ..processor import (
+    _HUB_HOUSE_STAGE_KEYS,
+    _emit_ten_coin_checks,
+    _handle_course_result,
+    process_event,
+)
 from ..protocol import (
     BadgeAcquiredMsg,
     CheckEmitted,
@@ -185,6 +190,110 @@ class TestCourseResultClassification(unittest.TestCase):
         self.assertFalse(state.has_emitted(
             CheckKind.TOP_OF_FLAG, ROBBIRD_COVE_STAGE_KEY))
         self.assertEqual(state.count_emitted(), 0)
+
+
+# ---------------------------------------------------------------------------
+# Hub-house remap: poplin houses + Sunbaked Desert House route their
+# AP check off the exit event so replay-after-disconnect can re-fire.
+
+ANGLER_POPLIN_STAGE_KEY = 0x3D3FE9D4   # PI: Angler Poplin's House
+
+
+class TestHubHouseRemap(unittest.TestCase):
+
+    def test_hub_house_set_membership(self):
+        """Guard: all four hubs must be in the set so the remap fires."""
+        self.assertIn(0x3D3FE9D4, _HUB_HOUSE_STAGE_KEYS)  # Angler
+        self.assertIn(0x4A493BE1, _HUB_HOUSE_STAGE_KEYS)  # Master
+        self.assertIn(0x9D67C898, _HUB_HOUSE_STAGE_KEYS)  # Sunbaked Desert
+        self.assertIn(0x2A876538, _HUB_HOUSE_STAGE_KEYS)  # Loyal
+
+    def test_wonder_seed_nerve_inside_hub_house_is_suppressed(self):
+        """Seed-pickup nerve inside a hub-house must NOT fire an AP
+        check -- the hub's WONDER_SEED check is routed off the exit
+        event in _handle_course_result instead."""
+        state = BridgeState()
+        state.set_current_course(CurrentCourse(
+            stage_key=ANGLER_POPLIN_STAGE_KEY, world_no=7, course_no=1))
+        emitted = process_event(state, NerveFireMsg(
+            kind=NerveKind.WONDER_SEED_AWARDED, seq=1))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+    def test_hub_house_exit_emits_wonder_seed_not_secret_exit(self):
+        """course_result with goal_id=1 (the shape the game emits when
+        leaving Angler Poplin's House) at a hub-house stage_key must
+        emit WONDER_SEED, never SECRET_EXIT."""
+        state = BridgeState()
+        fields = {
+            "stage_info": {
+                "stage_key": ANGLER_POPLIN_STAGE_KEY,
+                "world_no": 7,
+                "course_no": 1,
+            },
+            "course_result": 1,
+            "goal_id": 1,
+            "touch_goal_top_result": False,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+        }
+        emitted = _handle_course_result(state, fields)
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].kind, CheckKind.WONDER_SEED)
+        self.assertEqual(emitted[0].stage_key, ANGLER_POPLIN_STAGE_KEY)
+        self.assertFalse(
+            state.has_emitted(CheckKind.SECRET_EXIT, ANGLER_POPLIN_STAGE_KEY))
+
+    def test_hub_house_normal_exit_shape_also_emits_wonder_seed(self):
+        """Defence-in-depth: even if a future game patch flipped the
+        hub-house exit to goal_id=0, the remap still wins -- we want
+        the AP check, not a NORMAL_EXIT to a location that doesn't
+        exist in locations.json."""
+        state = BridgeState()
+        fields = {
+            "stage_info": {
+                "stage_key": ANGLER_POPLIN_STAGE_KEY,
+                "world_no": 7,
+                "course_no": 1,
+            },
+            "course_result": 1,
+            "goal_id": 0,
+            "touch_goal_top_result": False,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+        }
+        emitted = _handle_course_result(state, fields)
+        self.assertEqual([c.kind for c in emitted], [CheckKind.WONDER_SEED])
+
+    def test_hub_house_replay_after_session_restart_re_fires(self):
+        """The motivating use case: player picked up the seed but was
+        disconnected from AP.  After restart (fresh BridgeState), the
+        next exit must successfully fire the AP check."""
+        # Session 1: pickup fires nothing (suppressed), exit fires once.
+        state1 = BridgeState()
+        state1.set_current_course(CurrentCourse(
+            stage_key=ANGLER_POPLIN_STAGE_KEY, world_no=7, course_no=1))
+        process_event(state1, NerveFireMsg(
+            kind=NerveKind.WONDER_SEED_AWARDED, seq=1))
+        self.assertEqual(state1.count_emitted(), 0)
+
+        # Session 2 (post-restart): seed already collected in-game so
+        # no nerve fires.  Exit still emits.
+        state2 = BridgeState()
+        fields = {
+            "stage_info": {
+                "stage_key": ANGLER_POPLIN_STAGE_KEY,
+                "world_no": 7, "course_no": 1,
+            },
+            "course_result": 1,
+            "goal_id": 1,
+            "touch_goal_top_result": False,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+        }
+        emitted = _handle_course_result(state2, fields)
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].kind, CheckKind.WONDER_SEED)
 
 
 # ---------------------------------------------------------------------------
