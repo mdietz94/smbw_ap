@@ -181,6 +181,19 @@ bool synthKill();
 // game-initiated).
 bool isSaveLoaded();
 
+// Scene-transition gate.  Returns true while the elapsed delta from
+// the last SceneTransition Nerve fire (vt_off 0x33fd9a8: death, course
+// entry/exit, world-map, palace, Poplin shop, post-Wonder-Seed cleanup)
+// is below kSceneTransitionGateTicks (3 s @ 19.2 MHz).  drainInbound
+// uses this as a top-level skip: all container writers
+// (FUN_710049F648 container-A, FUN_710049EA24/FUN_71001F263FC
+// container-B, setBadgeBitfieldAbsolute container-C, FUN_7101F2B354
+// container-D, synthKill HP write) race with game-natural writes
+// during transitions.  All bridge grants are idempotent
+// absolute-overwrite or AP-replayed-on-next-tick, so deferring during
+// the window costs at most ~3 s of staleness with no progress loss.
+bool isInSceneTransitionWindow();
+
 // Iteration #5 (2026-05-26) — Wonder Seed gate override smoke test.
 // Writes `value` to all 5 per-current-world Wonder Seed count hashes
 // (0x21f89ab1, 0x8c20ccb7, 0xeeff353b, 0x390eb960, 0xa0e5f253) via the
