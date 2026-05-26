@@ -1,5 +1,3 @@
-# switch-mod is a git submodule (fork at mdietz94/wondar). See .gitmodules.
-
 # Claude Code state (per-developer).
 .claude/
 

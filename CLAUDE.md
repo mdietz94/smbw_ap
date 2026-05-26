@@ -37,11 +37,13 @@ smwonder_archipelago/             ← outer git repo (this one)
 │           └── tests/              207 tests, runnable via `python -m pytest`
 ├── vendor/
 │   └── Archipelago/                git submodule, pinned to commit 799e0b7b
-└── switch-mod/                     fork of mdietz94/wondar (its own git repo)
+└── switch-mod/                     inlined wondar fork (subsdk source; tracked in this repo)
     ├── CMakeLists.txt              modified: -fpermissive + symlink shim for Windows
     ├── cmake/toolchain.cmake       devkitA64 cross-compile
     ├── syms/100/sdk.sym            ★ Nintendo SDK symbol map for InstallAtSymbol
-    ├── lib/                        vendored sead/imgui/NintendoSDK submodules
+    ├── lib/imgui                   git submodule (ocornut/imgui, docking branch)
+    ├── lib/NintendoSDK             git submodule (fruityloops1/nnheaders)
+    ├── lib/sead                    git submodule (open-ead/sead)
     ├── src/
     │   ├── lib/                    wondar's inlined exlaunch source
     │   └── program/
@@ -52,7 +54,7 @@ smwonder_archipelago/             ← outer git repo (this one)
     └── build/                      ← gitignored, CMake artifacts
 ```
 
-The outer repo `.gitignore`s `switch-mod/` because switch-mod is itself a git repo (fork of `mdietz94/wondar`). It may be promoted to a git submodule once published.
+`switch-mod/` was previously a separate git repo (fork of `mdietz94/wondar`) referenced as a submodule. It has been absorbed into this repo as plain tracked files so the Switch subsdk ships alongside the apworld in a single release. Only the upstream third-party libs under `switch-mod/lib/` remain as submodules; the original wondar repo on GitHub is kept around for historical reference.
 
 ## Launching the SMBW Client
 
