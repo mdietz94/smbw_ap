@@ -105,6 +105,35 @@ void drainInbound() {
         return;
     }
 
+    // 2026-05-26: scene-transition gate.  All game writers we call
+    // (FUN_710049F648 container-A, FUN_710049EA24/FUN_71001F263FC
+    // container-B, setBadgeBitfieldAbsolute container-C, FUN_7101F2B354
+    // container-D, synthKill HP write) race with game-natural writes
+    // during scene transitions.  Live-reproduced abort sites:
+    //   * FUN_710049F750+0x0  -- container-A secondary insert (fixed
+    //                            for the WS interceptor; this gate
+    //                            covers the rest)
+    //   * FUN_71001F263FC+0xF8 -- container-B bool secondary path
+    //                             (triggered SetRoyalSeedsAbsolute
+    //                             writes during a gate-unlock
+    //                             transition, 2026-05-26)
+    // All bridge messages are either idempotent absolute-overwrite or
+    // AP-replayed on next 2 s tick / HelloMsg / ReceivedItems, so
+    // deferring during a ~3 s window costs at most that much
+    // staleness with no progress loss.  The bridge keeps producing;
+    // messages sit in the SPSC ring (256 cap, ample for 3 s of 1.5
+    // msg/s).
+    if (probe::isInSceneTransitionWindow()) {
+        static std::atomic<std::uint32_t> s_trans_log_budget{20};
+        if (s_trans_log_budget.fetch_sub(1, std::memory_order_relaxed) > 0) {
+            const auto pending = inboundRing().pendingApprox();
+            SMBWAP_LOG_DEBUG(
+                "[grant] drainInbound: scene transition active; "
+                "deferring %zu msg(s)", pending);
+        }
+        return;
+    }
+
     InboundMsg msg;
     int drained = 0;
     while (inboundRing().pop(msg)) {

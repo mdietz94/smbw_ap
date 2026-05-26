@@ -38,8 +38,26 @@
 namespace probe {
 extern std::atomic<bool> g_synthetic_death_this_frame;
 extern std::atomic<uintptr_t> g_live_base;
+// Scene-transition gate for the GmdContainerAWriter WS override
+// interceptor.  Latched (svcGetSystemTick) when the SceneTransition
+// Nerve fires (death, course entry/exit, world map, palace, Poplin
+// shop -- anything that changes scene).  Read on whatever thread the
+// container-A writer runs on (ModuleSystemWorker2 observed) to skip
+// our pre-Orig getfn during transitions -- the writer's secondary
+// container at gmd+0x128 is not safe to probe concurrently with the
+// game's transition-time mutations (observed abort inside
+// FUN_710049F750).
+extern std::atomic<std::uint64_t> g_last_scene_transition_tick;
+// 19.2 MHz tick rate -- 3 s window.
+constexpr std::uint64_t kSceneTransitionGateTicks = 3ULL * 19'200'000ULL;
 static long gmdSingleton();
 }
+
+// svcGetSystemTick is declared in nx/kernel/svc.h; forward-declare here
+// so we don't have to pull the whole svc header into main.cpp.  Matches
+// the pattern used elsewhere in this codebase (random.cpp gets it via
+// transitive include).
+extern "C" std::uint64_t svcGetSystemTick(void);
 
 static void initHeap()
 {
@@ -443,6 +461,13 @@ void NerveActivateOnce::Callback(void* nerve)
     // false -> apply the filter -> reset s_scene_fires bound to 0 to
     // drop the dump from production.
     if (vt_off == kVtableOff_SceneTransition) {
+        // Latch the tick so GmdContainerAWriter's WS override gates
+        // for the next ~3 s.  Covers every transition family we've
+        // observed (death, course/area entry+exit, world-map travel,
+        // palace, Poplin shop entry).
+        probe::g_last_scene_transition_tick.store(
+            svcGetSystemTick(), std::memory_order_relaxed);
+
         static int s_scene_fires = 0;
         s_scene_fires++;
         if (s_scene_fires <= 30 && nerve) {
@@ -848,6 +873,19 @@ namespace probe {
 // SPSC ring (256 entries) holds the entire HelloMsg replay backlog while
 // we're sitting on the title / save-select screen.
 static std::atomic_bool s_save_loaded{false};
+
+// Shared scene-transition gate -- exposed via ApFrameBridge.hpp so
+// drainInbound can defer all container-touching writes during the
+// 3 s window.  Same check the GmdContainerAWriter interceptor uses
+// in-line; centralized here so both readers stay consistent.
+bool isInSceneTransitionWindow()
+{
+    const auto last_trans = g_last_scene_transition_tick.load(
+        std::memory_order_relaxed);
+    if (last_trans == 0) return false;
+    const auto now = svcGetSystemTick();
+    return (now - last_trans) < kSceneTransitionGateTicks;
+}
 
 bool isSaveLoaded()
 {
@@ -1860,6 +1898,23 @@ std::atomic<uintptr_t> g_live_base{0};
 // (loop-guard).  Mirrors SMO's ApState::synthetic_death_this_frame.
 std::atomic<bool> g_synthetic_death_this_frame{false};
 
+// Latched by NerveActivateOnce when the SceneTransition Nerve fires
+// (vt_off == 0x33fd9a8 -- covers death, course entry/exit, world-map
+// travel, palace, Poplin shop entry, post-Wonder-Seed cleanup).  The
+// GmdContainerAWriter WS override interceptor reads this on whatever
+// thread the container-A writer runs from (ModuleSystemWorker2
+// observed) and skips its pre-Orig getfn while the elapsed delta is
+// below kSceneTransitionGateTicks (3 s).  Rationale: an abort inside
+// FUN_710049F750 (writer's secondary-container insert path at
+// gmd+0x128) was reproducible on transitions; the secondary container
+// isn't safe to probe concurrently with the game's transition-time
+// bucket mutations.  3 s is generous -- gameplay is paused or
+// non-interactive during transitions, so a brief gate has no visible
+// cost; missing 3 s of override coverage post-transition is invisible
+// because Wonder Seed gates only matter inside courses, not during
+// transitions.
+std::atomic<std::uint64_t> g_last_scene_transition_tick{0};
+
 // External linkage so ap/ApFrameBridge.cpp can resolve probe::synthKill
 // at link time -- the inbound drain path on the game thread calls this.
 bool synthKill()
@@ -1914,6 +1969,68 @@ HOOK_DEFINE_TRAMPOLINE(PlayerTickLatch) {
 
 void PlayerTickLatch::Callback(long param_1, long param_2)
 {
+    // Periodic AP-authoritative Wonder Seed push.  Runs on the main
+    // game thread (per-frame), throttled to once per 2 s.  Gated by:
+    //   * isSaveLoaded() -- gmd singleton populated + container-A
+    //     readable.
+    //   * Outside scene-transition window -- same 3 s gate as the
+    //     GmdContainerAWriter interceptor.  Calling getfn / setfn
+    //     against container-A during transition-time bucket mutations
+    //     races with FUN_710049F750's secondary-container insert
+    //     path (live-reproduced crash 2026-05-26).
+    // Complements the GmdContainerAWriter interceptor: the interceptor
+    // catches the game's own writes to the 5 mirror hashes (which
+    // empirically happen only on transitions); this push covers
+    // standing-still play where the game never writes them and the
+    // bridge's SetWonderSeedCounts updates otherwise sit idle in
+    // g_wonder_seed_counts.
+    if (probe::isSaveLoaded()) {
+        const auto now_tick = svcGetSystemTick();
+        const auto last_trans = probe::g_last_scene_transition_tick.load(
+            std::memory_order_relaxed);
+        const bool in_transition_window = last_trans != 0
+            && (now_tick - last_trans) < probe::kSceneTransitionGateTicks;
+        if (!in_transition_window) {
+            static std::atomic<std::uint64_t> s_last_ws_push_tick{0};
+            const auto last_push = s_last_ws_push_tick.load(
+                std::memory_order_relaxed);
+            constexpr std::uint64_t kWsPushIntervalTicks =
+                2ULL * 19'200'000ULL;  // 2 s @ 19.2 MHz tick rate.
+            if (now_tick - last_push >= kWsPushIntervalTicks) {
+                s_last_ws_push_tick.store(now_tick, std::memory_order_relaxed);
+                long gmd = probe::gmdSingleton();
+                if (gmd != 0) {
+                    const uintptr_t base = exl::util::modules::GetTargetStart();
+                    using GmdGetFn = void (*)(long, std::uint32_t*, std::uint32_t);
+                    auto getfn = reinterpret_cast<GmdGetFn>(base + 0x0012AE94);
+                    std::uint32_t world_val = 0;
+                    getfn(gmd, &world_val, 0x9f5ead3c);
+                    // Same in-game world index -> AP bucket remap as
+                    // the GmdContainerAWriter interceptor (Petal Isles
+                    // = 2nd region, not 7th).
+                    static constexpr std::int8_t kWorldValToBucket[9] = {
+                        -1, 0, 6, 1, 2, 3, 4, 5, 7,
+                    };
+                    if (world_val >= 1 && world_val <= 8) {
+                        const std::uint32_t bucket =
+                            static_cast<std::uint32_t>(
+                                kWorldValToBucket[world_val]);
+                        const std::uint32_t ap_count =
+                            smbwap::ap::getWonderSeedCount(bucket);
+                        static std::atomic<std::uint32_t> push_log_budget{8};
+                        if (push_log_budget.fetch_sub(1) > 0) {
+                            SMBWAP_LOG_INFO(
+                                "WS periodic push: world_val=%u bucket=%u "
+                                "ap_count=%u",
+                                world_val, bucket, ap_count);
+                        }
+                        probe::pushWonderSeedOverride(ap_count);
+                    }
+                }
+            }
+        }
+    }
+
     // Once-only latch -- this function is called every frame so the
     // first non-null walk captures, subsequent calls are an atomic
     // load + branch.
@@ -1983,7 +2100,34 @@ void GmdContainerAWriter::Callback(long gmd, uint32_t value, uint32_t hash)
     for (uint32_t h : kWsMirrorHashes) {
         if (h == hash) { is_ws_mirror = true; break; }
     }
-    if (is_ws_mirror && gmd != 0 && probe::isSaveLoaded()) {
+    // Scene-transition gate: skip the WS override during transitions
+    // (death, course/area entry+exit, world-map travel, palace,
+    // Poplin shop entry).  Calling getfn from inside the container-A
+    // writer's frame races with the game's transition-time bucket
+    // mutations and aborts inside FUN_710049F750 (secondary-container
+    // insert path).  Throttled log so we can verify the gate fires
+    // without flooding.
+    bool in_transition_window = false;
+    if (is_ws_mirror) {
+        const auto last_trans = probe::g_last_scene_transition_tick.load(
+            std::memory_order_relaxed);
+        if (last_trans != 0) {
+            const auto now_tick = svcGetSystemTick();
+            if (now_tick - last_trans < probe::kSceneTransitionGateTicks) {
+                in_transition_window = true;
+                static std::atomic<uint32_t> gate_log_budget{32};
+                if (gate_log_budget.fetch_sub(1) > 0) {
+                    SMBWAP_LOG_INFO(
+                        "WS override gated (scene transition %llu ticks ago) "
+                        "hash=0x%08x value=%u",
+                        static_cast<unsigned long long>(now_tick - last_trans),
+                        hash, value);
+                }
+            }
+        }
+    }
+
+    if (is_ws_mirror && gmd != 0 && probe::isSaveLoaded() && !in_transition_window) {
         const uintptr_t base = exl::util::modules::GetTargetStart();
         using GmdGetFn = void (*)(long, uint32_t*, uint32_t);
         auto getfn = reinterpret_cast<GmdGetFn>(base + 0x0012AE94);
