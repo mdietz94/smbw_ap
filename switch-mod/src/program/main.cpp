@@ -1543,8 +1543,56 @@ void pushWonderSeedOverride(uint32_t value)
 // double-count.  Accepted for coin-style filler; if a counter ever
 // becomes progression-critical, see IncrementHashKeyedMsg in
 // apworld/.../wire.py for the dedup story we'd need.
+//
+// Same-session clobber (2026-05-26): the dirty queue at gmd+0xf8 is
+// write-only from the reader's perspective -- getfn at +0x12AE94 reads
+// the *persistent* container, which doesn't see queued writes until
+// save flush.  So two RMW calls in quick succession (e.g. 10 "10 Coin"
+// AP items arriving as 10 IncrementHashKeyed messages during one play
+// session) both read the same persistent cur and each writes
+// cur+delta to the queue, with the second clobbering the first --
+// only the final delta survives.  Bridge-side coalescing
+// (LanServer._pending_increments) handles same-event-loop bursts but
+// can't help when the deltas arrive as separate ReceivedItems hundreds
+// of ms apart (confirmed empirically in the 2026-05-26 16:12 Ryujinx
+// log: 10 +10s landed 111 -> 121 instead of 111 -> 211).
+//
+// Fix: a small per-hash shadow table tracks the effective post-write
+// value.  On each call, if the persistent reader returns the value we
+// remember from the last call's input (-> the queue hasn't been
+// flushed yet, our previous setfn is still pending), use our shadow
+// total as the basis for the new RMW.  If the persistent value has
+// diverged from what we last saw, a save flush has happened and the
+// shadow is stale -- discard it and trust the persistent read.
+// Self-resetting; no save-flush hook required.
+//
+// Trade-off: if the game itself writes to the same hash via setfn
+// while our shadow is hot (between AP grants, before save flush), our
+// next RMW would clobber the game's queued write.  Empirically the
+// game doesn't appear to use setfn for the AP-targeted counters
+// (flower_coin, regular_coin) during play -- it tracks them through a
+// separate live-state struct, with setfn only invoked at save
+// serialization time.  If that ever turns out to be wrong, the right
+// fix is to read+write the live-state struct directly (latch TBD);
+// the warning emitted below would surface the mismatch.
 // ----------------------------------------------------------------------------
 using GmdGetCounterFn = void (*)(long gmd, uint32_t* out, uint32_t hash);
+
+namespace {
+    // Small fixed-size shadow table.  Linear-scan lookup is fine at
+    // this scale -- AP-targeted counter hashes are <=2 today
+    // (flower_coin, regular_coin); kShadowSlots leaves headroom.  No
+    // STL containers because the subsdk has no TLS allocator wired up
+    // and heap-allocating containers in module-init code is hazardous
+    // (same family of crash as the thread_local one in CLAUDE.md).
+    struct IncrementShadow {
+        uint32_t hash;             // 0 means slot is empty
+        uint32_t last_persistent;  // what getfn returned at last call
+        uint32_t shadow_value;     // what we wrote (effective live total)
+    };
+    constexpr size_t kShadowSlots = 8;
+    IncrementShadow s_increment_shadow[kShadowSlots] = {};
+}
 
 bool incrementContainerACounter(uint32_t hash, int32_t delta)
 {
@@ -1554,23 +1602,76 @@ bool incrementContainerACounter(uint32_t hash, int32_t delta)
     auto getfn = reinterpret_cast<GmdGetCounterFn>(base + 0x0012AE94);
     auto setfn = reinterpret_cast<GmdSetCounterFn>(base + 0x0049F648);
 
-    uint32_t cur = 0;
-    getfn(gmd, &cur, hash);
+    uint32_t cur_persistent = 0;
+    getfn(gmd, &cur_persistent, hash);
+
+    // Find shadow slot for this hash (or allocate an empty one).  Hash
+    // of 0 is treated as "slot empty" -- the bridge never sends hash=0,
+    // so no collision with a real key.
+    IncrementShadow* slot = nullptr;
+    IncrementShadow* free_slot = nullptr;
+    for (auto& s : s_increment_shadow) {
+        if (s.hash == hash) { slot = &s; break; }
+        if (s.hash == 0 && free_slot == nullptr) free_slot = &s;
+    }
+
+    uint32_t effective;
+    bool used_shadow = false;
+    if (slot != nullptr && slot->last_persistent == cur_persistent) {
+        // Queue not flushed since last write -- persistent reader still
+        // shows the pre-our-write value.  Trust our shadow as the real
+        // live total.
+        effective = slot->shadow_value;
+        used_shadow = true;
+    } else {
+        // Either no prior write for this hash, or the persistent value
+        // has changed since (save flush happened).  Trust the
+        // persistent read; reset shadow.
+        effective = cur_persistent;
+        if (slot != nullptr && slot->last_persistent != cur_persistent
+            && slot->shadow_value != cur_persistent) {
+            // Persistent diverged from BOTH our last input AND our last
+            // output -- a save flush happened OR a game-side setfn
+            // landed.  Either way the shadow is stale; the log below
+            // surfaces the case in case it ever becomes a game-side
+            // collision worth investigating.
+            SMBWAP_LOG_DEBUG(
+                "IncrementHashKeyed: hash=0x%08x shadow reset "
+                "(persistent=%u was last_seen=%u shadow=%u)",
+                hash, cur_persistent,
+                slot->last_persistent, slot->shadow_value);
+        }
+    }
+
     uint32_t next;
     if (delta >= 0) {
         const uint32_t udelta = static_cast<uint32_t>(delta);
-        next = cur + udelta;  // u32 wrap; writer truncates per-slot
+        next = effective + udelta;  // u32 wrap; writer truncates per-slot
     } else {
         const uint32_t udec = static_cast<uint32_t>(-static_cast<int64_t>(delta));
-        next = (cur >= udec) ? (cur - udec) : 0u;  // saturate at 0
+        next = (effective >= udec) ? (effective - udec) : 0u;  // saturate at 0
     }
     setfn(gmd, next, hash);
+
+    // Install or update the shadow entry.  If we couldn't find a slot
+    // and the free_slot is also null (>kShadowSlots distinct hashes in
+    // play) we silently lose the shadow for this hash -- worst case
+    // the next call clobbers as before, no worse than today.
+    if (slot == nullptr) slot = free_slot;
+    if (slot != nullptr) {
+        slot->hash = hash;
+        slot->last_persistent = cur_persistent;
+        slot->shadow_value = next;
+    }
 
     static std::atomic<uint32_t> log_budget{16};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
-            "IncrementHashKeyed: hash=0x%08x cur=%u delta=%d -> %u gmd=%p",
-            hash, cur, static_cast<int>(delta), next, reinterpret_cast<void*>(gmd));
+            "IncrementHashKeyed: hash=0x%08x persistent=%u effective=%u "
+            "(%s) delta=%d -> %u gmd=%p",
+            hash, cur_persistent, effective,
+            used_shadow ? "shadow" : "persistent",
+            static_cast<int>(delta), next, reinterpret_cast<void*>(gmd));
     }
     return true;
 }
