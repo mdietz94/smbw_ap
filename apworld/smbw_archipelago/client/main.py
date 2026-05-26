@@ -84,6 +84,7 @@ async def _main(args: argparse.Namespace) -> int:
         on_goal_completed=ctx.handle_goal_completed,
         badge_mask_provider=ctx._recompute_badge_mask,
         royal_seed_grants_provider=ctx._collect_royal_seed_grants,
+        wonder_seed_counts_provider=ctx._recompute_wonder_seed_counts,
     )
     ctx.lan_server = lan
 

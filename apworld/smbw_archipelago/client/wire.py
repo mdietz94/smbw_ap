@@ -381,6 +381,83 @@ class GrantHashKeyedMsg:
 
 
 @dataclass(frozen=True)
+class SetWonderSeedCountsMsg:
+    """Bridge -> Switch.  AP-authoritative Wonder Seed gate override.
+
+    Carries an 8-element array of cumulative Wonder Seed counts received
+    from AP, one per world bucket:
+
+      index 0  W1 Wonder Seed
+      index 1  W2 Wonder Seed
+      index 2  W3 Wonder Seed
+      index 3  W4 Wonder Seed
+      index 4  W5 Wonder Seed
+      index 5  W6 Wonder Seed
+      index 6  Petal Isles Wonder Seed
+      index 7  Special World Wonder Seed
+
+    Switch-side: ``ApFrameBridge::drainInbound`` caches the array in
+    static storage.  On each NerveActivateOnce tick (~2 s under normal
+    play), the Switch reads container-A hash ``0x9f5ead3c`` (the live
+    "current world index"), maps it to a bucket index, and calls
+    ``probe::pushWonderSeedOverride(counts[bucket])`` -- which writes
+    that value to all 5 mirror hashes of the per-current-world Wonder
+    Seed count (``0x21f89ab1``, ``0x8c20ccb7``, ``0xeeff353b``,
+    ``0x390eb960``, ``0xa0e5f253``).  ``0x390eb960`` is the one the
+    gate predicate ``FUN_71001787b40`` reads when deciding whether the
+    player has enough seeds to enter a level -- making AP the sole
+    authority over Wonder Seed gating.
+
+    Live-validated 2026-05-26: with all 5 hashes overridden to 99, a
+    W3 gate that previously denied entry (player had 1 actual W3 seed)
+    opened on the next attempt and the in-game UI counter showed 99.
+
+    Sent by the bridge on the badge-sync triggers:
+      1. Every AP ``ReceivedItems`` update -- recompute counts + send.
+      2. Every Switch ``HelloMsg`` (replay-on-reconnect).
+      3. The periodic ~2 s tick (the natural world-map transition
+         resets the 5 mirror hashes from per-course-bitfield recompute;
+         the tick re-asserts AP's authority within ~2 s).
+
+    Counts are validated to ``[0, 2**32)``; the array length is fixed
+    at 8 (asserted in both ``from_wire`` and ``to_wire``).
+    """
+
+    T = "set_wonder_seed_counts"
+
+    WORLD_COUNT: int = 8
+
+    counts: tuple[int, ...] = ()
+
+    def __post_init__(self) -> None:
+        if len(self.counts) != self.WORLD_COUNT:
+            raise ProtocolError(
+                f"set_wonder_seed_counts.counts must have length "
+                f"{self.WORLD_COUNT}, got {len(self.counts)}")
+        for i, v in enumerate(self.counts):
+            if not isinstance(v, int) or isinstance(v, bool):
+                raise ProtocolError(
+                    f"set_wonder_seed_counts.counts[{i}] must be int, "
+                    f"got {v!r}")
+            if not (0 <= v < (1 << 32)):
+                raise ProtocolError(
+                    f"set_wonder_seed_counts.counts[{i}] out of range "
+                    f"[0, 2**32): {v}")
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "counts": list(self.counts)}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetWonderSeedCountsMsg:
+        raw = d.get("counts")
+        if not isinstance(raw, list):
+            raise ProtocolError(
+                f"set_wonder_seed_counts.counts must be list, got {raw!r}")
+        # __post_init__ validates length + per-element int + range.
+        return cls(counts=tuple(raw))
+
+
+@dataclass(frozen=True)
 class KillMsg:
     """Bridge -> Switch.  M3.8 DeathLink incoming half.
 
@@ -490,6 +567,7 @@ WireMsg = (
     | PlayReportWireMsg
     | SetBadgesAbsoluteMsg
     | GrantHashKeyedMsg
+    | SetWonderSeedCountsMsg
     | KillMsg
     | ErrMsg
     | PingMsg
@@ -508,6 +586,7 @@ _FROM_WIRE: dict[str, Any] = {
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
+    SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,
     KillMsg.T: KillMsg.from_wire,
     ErrMsg.T: ErrMsg.from_wire,
     PingMsg.T: PingMsg.from_wire,
