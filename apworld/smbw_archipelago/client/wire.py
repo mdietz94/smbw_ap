@@ -381,6 +381,89 @@ class GrantHashKeyedMsg:
 
 
 @dataclass(frozen=True)
+class IncrementHashKeyedMsg:
+    """Bridge -> Switch.  Saturating add/sub on a container-A counter.
+
+    Sibling of :class:`GrantHashKeyedMsg`; differs in semantic: the
+    Switch reads the current counter value via ``FUN_710012AE94`` (the
+    container-A reader, signature ``(gmd, uint32_t* out, uint32_t hash)``
+    at NSO ``+0x0012AE94``), computes ``saturating(cur + delta)`` in the
+    range ``[0, 2**32)``, and writes the result via ``FUN_710049F648``
+    (the container-A writer used by ``GrantHashKeyed``).  The writer
+    truncates to the slot's typed width internally (u8/u16) just like
+    an absolute set.
+
+    Delta is signed (i32 range, ``[-2**31, 2**31)``) so the bridge can
+    express both grants (positive) and refunds (negative).  Two users
+    today:
+
+      * ``+10`` per "10 Coin" AP item received -- the existing route
+        adds 10 to the player's purple-coin running total per filler
+        grant.
+      * ``-10`` per TEN_COIN CheckEmitted -- when the player picks up
+        a 10-coin block in game, the game increments the live counter
+        by 10 *before* the bridge sees the location check.  AP is now
+        the authority over what the block actually grants, so we
+        refund the +10 at the same moment we report the check.  If
+        AP's payload happens to be a "10 Coin" item routed back to us,
+        the inbound side's ``+10`` cancels the refund and the net is
+        +10; if AP scattered the item elsewhere (or replaced it with
+        a badge), the refund stands and the player gets the actual
+        item rather than free coins.
+
+    Saturation is on the Switch side: a refund that would underflow
+    clamps to 0 (so picking up a 10-coin block when at 0 purple coins
+    -- which the game shouldn't really allow but defensive arithmetic
+    is cheap -- doesn't wrap to ~4.3 billion via the u16 truncate).
+
+    Save-survival caveat: the writer is deferred-write (queues to
+    ``gmd+0xf8`` dirty buffer, flushes on next save).  A load-before-
+    flush would silently drop the increment.  Unlike Royal Seeds,
+    container-A counter grants are NOT replayed on HelloMsg -- replay
+    would double-count.  Acceptable for coin-style filler; if a
+    counter ever becomes progression-critical, a dedup story (per-AP-
+    item-index applied-set persisted across reconnects) is required.
+    """
+
+    T = "increment_hash_keyed"
+
+    # The signed-i32 range matches what the Switch decoder accepts via
+    # nextInt (int64-typed) after the [INT32_MIN, INT32_MAX] cap; keep
+    # the Python validator in sync.
+    _DELTA_MIN = -(1 << 31)
+    _DELTA_MAX = (1 << 31) - 1
+
+    hash: int
+    delta: int
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "hash": self.hash, "delta": self.delta}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> IncrementHashKeyedMsg:
+        raw_hash = d.get("hash")
+        if not isinstance(raw_hash, int) or isinstance(raw_hash, bool):
+            raise ProtocolError(
+                f"increment_hash_keyed.hash must be int, got {raw_hash!r}"
+            )
+        if not (0 <= raw_hash < (1 << 32)):
+            raise ProtocolError(
+                f"increment_hash_keyed.hash out of range [0, 2**32): {raw_hash}"
+            )
+        raw_delta = d.get("delta")
+        if not isinstance(raw_delta, int) or isinstance(raw_delta, bool):
+            raise ProtocolError(
+                f"increment_hash_keyed.delta must be int, got {raw_delta!r}"
+            )
+        if not (cls._DELTA_MIN <= raw_delta <= cls._DELTA_MAX):
+            raise ProtocolError(
+                f"increment_hash_keyed.delta out of i32 range "
+                f"[{cls._DELTA_MIN}, {cls._DELTA_MAX}]: {raw_delta}"
+            )
+        return cls(hash=raw_hash, delta=raw_delta)
+
+
+@dataclass(frozen=True)
 class KillMsg:
     """Bridge -> Switch.  M3.8 DeathLink incoming half.
 
@@ -490,6 +573,7 @@ WireMsg = (
     | PlayReportWireMsg
     | SetBadgesAbsoluteMsg
     | GrantHashKeyedMsg
+    | IncrementHashKeyedMsg
     | KillMsg
     | ErrMsg
     | PingMsg
@@ -508,6 +592,7 @@ _FROM_WIRE: dict[str, Any] = {
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
+    IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,
     KillMsg.T: KillMsg.from_wire,
     ErrMsg.T: ErrMsg.from_wire,
     PingMsg.T: PingMsg.from_wire,

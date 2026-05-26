@@ -19,6 +19,7 @@ from ..wire import (
     GrantHashKeyedMsg,
     HelloAckMsg,
     HelloMsg,
+    IncrementHashKeyedMsg,
     KillMsg,
     NerveFireWireMsg,
     PingMsg,
@@ -115,6 +116,26 @@ class TestRoundTrip(unittest.TestCase):
     def test_grant_hash_keyed_max_u32(self):
         # Both fields at the high edge of the documented u32 range.
         self._round_trip(GrantHashKeyedMsg(hash=0xFFFFFFFF, value=0xFFFFFFFF))
+
+    def test_increment_hash_keyed_ten_coin(self):
+        # First user: "10 Coin" item adds 10 to flower_coin.
+        self._round_trip(IncrementHashKeyedMsg(hash=0xF4EE6827, delta=10))
+
+    def test_increment_hash_keyed_zero_delta(self):
+        # A delta of 0 is legal on the wire (degenerate but harmless: RMW
+        # writes the unchanged value back).
+        self._round_trip(IncrementHashKeyedMsg(hash=0xF4EE6827, delta=0))
+
+    def test_increment_hash_keyed_max_i32(self):
+        self._round_trip(IncrementHashKeyedMsg(hash=0xFFFFFFFF, delta=(1 << 31) - 1))
+
+    def test_increment_hash_keyed_negative_refund(self):
+        # The TEN_COIN refund path sends delta=-10 to undo the in-game
+        # purple-coin add when a 10-coin block is picked up locally.
+        self._round_trip(IncrementHashKeyedMsg(hash=0xF4EE6827, delta=-10))
+
+    def test_increment_hash_keyed_min_i32(self):
+        self._round_trip(IncrementHashKeyedMsg(hash=0xF4EE6827, delta=-(1 << 31)))
 
     def test_badge_acquired_typical(self):
         self._round_trip(BadgeAcquiredWireMsg(internal_id=4, seq=1))
@@ -251,6 +272,19 @@ class TestEncodedShape(unittest.TestCase):
         self.assertEqual(
             line,
             b'{"t":"grant_hash_keyed","hash":1434540121,"value":1}\n')
+
+    def test_increment_hash_keyed_serializes_minimally(self):
+        line = encode(IncrementHashKeyedMsg(hash=0xF4EE6827, delta=10))
+        # 0xF4EE6827 == 4109264935.  Delta is signed decimal.
+        self.assertEqual(
+            line,
+            b'{"t":"increment_hash_keyed","hash":4109264935,"delta":10}\n')
+
+    def test_increment_hash_keyed_negative_delta_serializes_signed(self):
+        line = encode(IncrementHashKeyedMsg(hash=0xF4EE6827, delta=-10))
+        self.assertEqual(
+            line,
+            b'{"t":"increment_hash_keyed","hash":4109264935,"delta":-10}\n')
 
     def test_badge_acquired_serializes_minimally(self):
         line = encode(BadgeAcquiredWireMsg(internal_id=4, seq=1))
@@ -410,6 +444,43 @@ class TestDecodeErrors(unittest.TestCase):
         with self.assertRaises(ProtocolError) as cm:
             decode(b'{"t":"grant_hash_keyed","hash":1,"value":4294967296}\n')
         self.assertIn("out of range", str(cm.exception))
+
+    def test_increment_hash_keyed_missing_hash(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"increment_hash_keyed","delta":10}\n')
+        self.assertIn("hash", str(cm.exception))
+
+    def test_increment_hash_keyed_missing_delta(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"increment_hash_keyed","hash":1}\n')
+        self.assertIn("delta", str(cm.exception))
+
+    def test_increment_hash_keyed_non_int_delta(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"increment_hash_keyed","hash":1,"delta":"10"}\n')
+
+    def test_increment_hash_keyed_bool_delta(self):
+        # int subsumes bool in Python; codec rejects bool explicitly so a
+        # JSON `true` doesn't get silently treated as delta=1.
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"increment_hash_keyed","hash":1,"delta":true}\n')
+
+    def test_increment_hash_keyed_negative_hash(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"increment_hash_keyed","hash":-1,"delta":10}\n')
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_increment_hash_keyed_too_large_delta(self):
+        # 2**31 is one past the documented i32 range.
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"increment_hash_keyed","hash":1,"delta":2147483648}\n')
+        self.assertIn("out of i32 range", str(cm.exception))
+
+    def test_increment_hash_keyed_too_negative_delta(self):
+        # -2**31 - 1 is one past the i32 negative limit.
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"increment_hash_keyed","hash":1,"delta":-2147483649}\n')
+        self.assertIn("out of i32 range", str(cm.exception))
 
     def test_badge_acquired_missing_internal_id(self):
         with self.assertRaises(ProtocolError) as cm:
