@@ -48,6 +48,18 @@ log = logging.getLogger("SMBW")
 GAME_NAME = "SMBWonder"
 
 
+# The single goal-location name (from apworld locations.json) whose
+# completion is signalled by the M3.7 Switch-side Nerve trampoline at
+# NSO+0x15b77a8 (SetFlagEnd...AfterClearedLastBoss).  Used to gate
+# ``handle_goal_completed`` so the hook only marks AP done when the
+# player actually picked the Bowser goal -- otherwise the Bowser kill
+# is just a milestone, not victory.  The two other victory locations
+# (Special: Wonder Gauntlet - Normal Exit, Special: WONDER? - Normal
+# Exit) reach CLIENT_GOAL via ``handle_check_emitted`` matching the
+# goal name on a normal LocationCheck.
+GOAL_LOCATION_NAME_BOWSER = "PI: Bowser's Rage Stage - Royal Seed"
+
+
 class SMBWContext(CommonContext):
     """CommonContext that ties the LAN server to the AP server.
 
@@ -96,6 +108,18 @@ class SMBWContext(CommonContext):
         # ON could ship a 10 Coin item to a slot with sanity OFF, and
         # the recipient should still receive the +10.
         self.ten_coin_sanity_enabled: bool = True
+
+        # M3.7 goal-option respect (apworld fill_slot_data ships the
+        # player's chosen goal as the resolved location name).  None
+        # until ``Connected`` populates it; ``handle_goal_completed``
+        # uses it to gate the Bowser-Nerve hook and
+        # ``handle_check_emitted`` uses it to convert a goal-location
+        # LocationCheck into a StatusUpdate(CLIENT_GOAL).  The dedup
+        # flag stops the same session from sending CLIENT_GOAL twice
+        # (e.g. Bowser kill firing both the M3.7 hook and the
+        # PALACE_CLEAR check path).
+        self.goal_location_name: str | None = None
+        self._goal_status_sent: bool = False
 
         # M2.3 badge probe override -- when not None, ``_recompute_badge_mask``
         # returns this instead of the AP-derived mask.  Lets a developer
@@ -158,6 +182,25 @@ class SMBWContext(CommonContext):
                     "ten_coin_sanity: %s (from slot_data)",
                     "ENABLED" if tcs else "disabled")
             self.ten_coin_sanity_enabled = tcs
+
+            # M3.7 -- pick up the player's chosen goal location from
+            # slot_data.  The apworld's fill_slot_data resolves the
+            # integer ``goal`` option to its location name, which the
+            # bridge then uses to gate both the Bowser-Nerve hook and
+            # the per-check CLIENT_GOAL path.  An older apworld that
+            # only ships the integer drops to None here and we fall
+            # back to the prior unconditional behavior with a warning.
+            goal_name = slot_data.get("goal_location_name")
+            if isinstance(goal_name, str) and goal_name:
+                if goal_name != self.goal_location_name:
+                    log.info("goal location: %r (from slot_data)", goal_name)
+                self.goal_location_name = goal_name
+            else:
+                log.warning(
+                    "slot_data missing 'goal_location_name'; "
+                    "goal hook will fire on Bowser regardless of "
+                    "the player's chosen goal option")
+                self.goal_location_name = None
             # Tell the AP server the player is in-game so item routing
             # starts flowing.  ClientStatus.CLIENT_PLAYING.
             try:
@@ -393,22 +436,44 @@ class SMBWContext(CommonContext):
         Nerve at NSO+0x15b77a8 = Mario defeated final Bowser for the
         first time on this save).
 
-        Sends a ``StatusUpdate`` with ``ClientStatus.CLIENT_GOAL`` so the
-        AP server marks this slot done.  Idempotent at the AP server
-        level, but the bridge already deduped via
-        ``BridgeState.mark_goal_complete`` so this should only fire
-        once per AP session.
+        Sends a ``StatusUpdate`` with ``ClientStatus.CLIENT_GOAL`` only
+        if the player's chosen goal is the Bowser one -- otherwise this
+        Nerve is just a milestone and the actual goal (Wonder Gauntlet
+        / WONDER?) is reached via ``handle_check_emitted`` matching the
+        goal location name on a regular CheckEmitted.  Pre-slot_data
+        fallback (no goal_location_name received): assume Bowser so
+        legacy apworlds still goal-complete on Bowser kill.
         """
+        if (self.goal_location_name is not None
+                and self.goal_location_name != GOAL_LOCATION_NAME_BOWSER):
+            log.info(
+                "GameGoalReached Nerve fired (seq=%d) but goal is %r "
+                "-- not signalling CLIENT_GOAL on Bowser kill",
+                goal.seq, self.goal_location_name)
+            return
+        await self._send_client_goal(reason=f"GameGoalReached seq={goal.seq}")
+
+    async def _send_client_goal(self, reason: str) -> None:
+        """Send the StatusUpdate(CLIENT_GOAL) at most once per session.
+
+        Both the M3.7 Bowser-Nerve path and the goal-location
+        CheckEmitted path funnel through here; the AP server tolerates
+        repeats but the bridge logs would be confusing if both fired
+        for the same Bowser-goal seed.
+        """
+        if self._goal_status_sent:
+            log.debug("CLIENT_GOAL already sent this session; "
+                      "ignoring duplicate trigger (%s)", reason)
+            return
         try:
             await self.send_msgs([{
                 "cmd": "StatusUpdate",
                 "status": ClientStatus.CLIENT_GOAL,
             }])
-            log.info(
-                "-> AP StatusUpdate(CLIENT_GOAL) seq=%d", goal.seq)
+            self._goal_status_sent = True
+            log.info("-> AP StatusUpdate(CLIENT_GOAL) (%s)", reason)
         except Exception:
-            log.exception(
-                "StatusUpdate(CLIENT_GOAL) failed for seq=%d", goal.seq)
+            log.exception("StatusUpdate(CLIENT_GOAL) failed (%s)", reason)
 
     def _own_player_name(self) -> str:
         """Best-effort lookup of our own player name in the AP slot
@@ -445,6 +510,20 @@ class SMBWContext(CommonContext):
                 "extending)",
                 check.kind.value, check.stage_key)
             return
+        # M3.7 goal-option respect: if this check is the player's chosen
+        # goal location, send CLIENT_GOAL.  Done before the loc_id
+        # lookup because the apworld wipes the goal location's address
+        # in create_regions, so the regular LocationCheck path would
+        # log a spurious warning and drop the message.  CLIENT_GOAL is
+        # the authoritative signal; the LocationCheck attempt below is
+        # best-effort.
+        if (self.goal_location_name is not None
+                and name == self.goal_location_name):
+            log.info(
+                "goal-location check emitted (%r); signalling CLIENT_GOAL",
+                name)
+            await self._send_client_goal(
+                reason=f"goal-location check {name!r}")
         loc_id = self._location_name_to_id.get(name)
         if loc_id is None:
             log.warning(

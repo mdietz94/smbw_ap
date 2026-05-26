@@ -172,7 +172,11 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
 
     async def test_handle_goal_completed_sends_status_update(self):
         """The bridge translates a GoalCompleted into one AP
-        StatusUpdate with ClientStatus.CLIENT_GOAL (= 30)."""
+        StatusUpdate with ClientStatus.CLIENT_GOAL (= 30).
+
+        Legacy-fallback shape: ``goal_location_name`` is still None
+        (no Connected fired), so the hook assumes Bowser and fires
+        unconditionally."""
         from NetUtils import ClientStatus  # type: ignore
         await self.ctx.handle_goal_completed(self._GoalCompleted(seq=1))
         self.ctx.send_msgs.assert_awaited_once_with([{
@@ -190,6 +194,134 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
             "cmd": "StatusUpdate",
             "status": ClientStatus.CLIENT_GOAL,
         }])
+
+    async def test_handle_goal_completed_bowser_goal_fires(self):
+        """When slot_data declared Bowser as the goal, the Switch's
+        Bowser-Nerve hook is the authoritative trigger for
+        CLIENT_GOAL."""
+        from NetUtils import ClientStatus  # type: ignore
+        from ..context import GOAL_LOCATION_NAME_BOWSER
+        self.ctx.goal_location_name = GOAL_LOCATION_NAME_BOWSER
+        await self.ctx.handle_goal_completed(self._GoalCompleted(seq=2))
+        self.ctx.send_msgs.assert_awaited_once_with([{
+            "cmd": "StatusUpdate",
+            "status": ClientStatus.CLIENT_GOAL,
+        }])
+
+    async def test_handle_goal_completed_other_goal_suppressed(self):
+        """When the player picked a non-Bowser goal (Wonder Gauntlet /
+        WONDER?), defeating Bowser is just a milestone -- the Nerve
+        hook must NOT mark the slot done.  CLIENT_GOAL flows through
+        ``handle_check_emitted`` on the actual goal-location check."""
+        self.ctx.goal_location_name = (
+            "Special: Wonder Gauntlet - Normal Exit")
+        await self.ctx.handle_goal_completed(self._GoalCompleted(seq=3))
+        self.ctx.send_msgs.assert_not_called()
+
+    # ---- Connected -> slot_data goal_location_name ------------------
+
+    async def test_connected_reads_goal_location_name(self):
+        from ..context import GOAL_LOCATION_NAME_BOWSER
+        self.assertIsNone(self.ctx.goal_location_name)
+        await self.ctx._handle_ap_package(
+            "Connected",
+            {"slot_data": {"goal_location_name": GOAL_LOCATION_NAME_BOWSER}})
+        self.assertEqual(self.ctx.goal_location_name,
+                         GOAL_LOCATION_NAME_BOWSER)
+
+    async def test_connected_missing_goal_location_name_leaves_none(self):
+        """Pre-M3.7-respect apworlds don't populate goal_location_name;
+        the bridge logs a warning and falls back to the legacy
+        unconditional-Bowser-fire path in handle_goal_completed."""
+        await self.ctx._handle_ap_package("Connected", {"slot_data": {}})
+        self.assertIsNone(self.ctx.goal_location_name)
+
+    async def test_connected_non_string_goal_location_name_ignored(self):
+        """Defensive: if slot_data has a wrong-typed value, ignore it
+        rather than crashing the Connected handler."""
+        await self.ctx._handle_ap_package(
+            "Connected", {"slot_data": {"goal_location_name": 42}})
+        self.assertIsNone(self.ctx.goal_location_name)
+
+    # ---- handle_check_emitted -> CLIENT_GOAL on goal-location -------
+
+    async def test_handle_check_emitted_goal_location_sends_client_goal(
+            self):
+        """When the player's goal is Wonder Gauntlet and the player
+        clears it (NORMAL_EXIT CheckEmitted that resolves to the
+        Wonder Gauntlet location), the bridge sends CLIENT_GOAL
+        even though that AP location has address=None and thus no
+        LocationCheck reaches the server."""
+        from NetUtils import ClientStatus  # type: ignore
+        from ..protocol import CheckEmitted, CheckKind
+        self.ctx.goal_location_name = (
+            "Special: Wonder Gauntlet - Normal Exit")
+        # Goal locations have address=None so they won't be in the
+        # name-to-id map -- intentionally omitted.
+        self.ctx._location_name_to_id = {}
+        await self.ctx.handle_check_emitted(CheckEmitted(
+            kind=CheckKind.NORMAL_EXIT, stage_key=0x4871EB85))
+        self.ctx.send_msgs.assert_any_await([{
+            "cmd": "StatusUpdate",
+            "status": ClientStatus.CLIENT_GOAL,
+        }])
+
+    async def test_handle_check_emitted_non_goal_location_no_client_goal(
+            self):
+        """A LocationCheck for a non-goal location must not signal
+        CLIENT_GOAL."""
+        from ..protocol import CheckEmitted, CheckKind
+        self.ctx.goal_location_name = (
+            "Special: Wonder Gauntlet - Normal Exit")
+        self.ctx._location_name_to_id = {
+            "W1: Welcome to the Flower Kingdom! - Wonder Seed": 12345,
+        }
+        await self.ctx.handle_check_emitted(CheckEmitted(
+            kind=CheckKind.WONDER_SEED, stage_key=2937190396))
+        # send_msgs fired exactly once -- the LocationChecks, not a
+        # StatusUpdate.
+        self.assertEqual(self.ctx.send_msgs.await_count, 1)
+        call = self.ctx.send_msgs.await_args_list[0]
+        msgs = call.args[0]
+        self.assertEqual(msgs[0]["cmd"], "LocationChecks")
+
+    async def test_handle_check_emitted_no_goal_set_no_client_goal(self):
+        """Before Connected fires (goal_location_name is None), no
+        check should accidentally trigger CLIENT_GOAL."""
+        from ..protocol import CheckEmitted, CheckKind
+        self.assertIsNone(self.ctx.goal_location_name)
+        self.ctx._location_name_to_id = {
+            "Special: Wonder Gauntlet - Normal Exit": 99999,
+        }
+        await self.ctx.handle_check_emitted(CheckEmitted(
+            kind=CheckKind.NORMAL_EXIT, stage_key=0x4871EB85))
+        for call in self.ctx.send_msgs.await_args_list:
+            for msg in call.args[0]:
+                self.assertNotEqual(msg["cmd"], "StatusUpdate")
+
+    async def test_goal_dedup_bowser_then_check(self):
+        """Bowser kill fires the Nerve hook first; then the
+        PALACE_CLEAR check for Bowser's Rage Stage fires from the
+        SetCourseClearFlagToGameData path.  CLIENT_GOAL must be sent
+        at most once."""
+        from NetUtils import ClientStatus  # type: ignore
+        from ..context import GOAL_LOCATION_NAME_BOWSER
+        from ..protocol import CheckEmitted, CheckKind
+        self.ctx.goal_location_name = GOAL_LOCATION_NAME_BOWSER
+        self.ctx._location_name_to_id = {}
+
+        await self.ctx.handle_goal_completed(self._GoalCompleted(seq=1))
+        await self.ctx.handle_check_emitted(CheckEmitted(
+            kind=CheckKind.PALACE_CLEAR, stage_key=0x6895BF00))
+
+        client_goal_msgs = [
+            msg
+            for call in self.ctx.send_msgs.await_args_list
+            for msg in call.args[0]
+            if msg.get("cmd") == "StatusUpdate"
+            and msg.get("status") == ClientStatus.CLIENT_GOAL
+        ]
+        self.assertEqual(len(client_goal_msgs), 1)
 
 
 if __name__ == "__main__":
