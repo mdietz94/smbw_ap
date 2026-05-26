@@ -109,6 +109,23 @@ BadgeMaskProvider = Callable[[], int]
 RoyalSeedGrantsProvider = Callable[[], list[tuple[int, int]]]
 
 
+# Synchronous callable returning the cumulative per-world Wonder Seed
+# counts as a list of length ``wonder_seed_table.WORLD_COUNT`` (8).
+# Used for the gate-override sync analog of ``BadgeMaskProvider``:
+# every HelloMsg / 2 s tick / ReceivedItems event overwrites the
+# Switch's "current-world Wonder Seed count" mirror hashes to the AP
+# value for whichever world the player is viewing (Switch picks the
+# bucket via container-A hash ``0x9f5ead3c``).  Returning all zeros
+# is fine and means "AP knows of no Wonder Seeds yet -- clobber every
+# world's count to 0".  Same idempotent-absolute-write pattern as
+# badges: AP is the sole authority over the Wonder Seed gate, any
+# in-game pickup (Wonder phase, flag-pole goal seed, 10-coin reward)
+# is reverted within ~2 s.  See [wonder_seed_table.py](wonder_seed_table.py)
+# for the bucket convention and [wire.py](wire.py)
+# ``SetWonderSeedCountsMsg`` for the Switch-side dispatch.
+WonderSeedCountsProvider = Callable[[], list[int]]
+
+
 # Union of bridge-to-Switch message types the writer loop can drain.
 # Adding a new inbound variant (e.g. ``GrantPowerUpMsg`` in M5) means:
 # define it in ``wire.py``, add a typed ``send_*`` method below, append
@@ -117,6 +134,7 @@ GrantMsg = (
     wire.SetBadgesAbsoluteMsg
     | wire.GrantHashKeyedMsg
     | wire.IncrementHashKeyedMsg
+    | wire.SetWonderSeedCountsMsg
     | wire.KillMsg
 )
 
@@ -144,6 +162,7 @@ class LanServer:
         on_goal_completed: GoalCompletedHandler | None = None,
         badge_mask_provider: BadgeMaskProvider | None = None,
         royal_seed_grants_provider: RoyalSeedGrantsProvider | None = None,
+        wonder_seed_counts_provider: WonderSeedCountsProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
@@ -151,6 +170,7 @@ class LanServer:
         self._on_goal_completed = on_goal_completed
         self._badge_mask_provider = badge_mask_provider
         self._royal_seed_grants_provider = royal_seed_grants_provider
+        self._wonder_seed_counts_provider = wonder_seed_counts_provider
 
         self._server: asyncio.base_events.Server | None = None
 
@@ -263,6 +283,40 @@ class LanServer:
                 "send_kill(source=%r, cause=%r): outbound queue full; "
                 "dropping",
                 source, cause)
+
+    def send_set_wonder_seed_counts(self, counts: list[int]) -> None:
+        """Enqueue a SetWonderSeedCounts (per-world Wonder Seed gate
+        override) to the active Switch client.  ``counts`` must be a
+        list of length ``wonder_seed_table.WORLD_COUNT`` (8); see
+        ``SetWonderSeedCountsMsg`` for the bucket convention.
+
+        Same drop semantics as :meth:`send_set_badges_absolute`.
+
+        The Switch caches the array on receipt; the in-game tick (~2 s
+        cadence via NerveActivateOnce) reads container-A hash
+        ``0x9f5ead3c`` to pick the current world's bucket and calls
+        ``probe::pushWonderSeedOverride(counts[bucket])`` -- which
+        writes that value to the 5 mirror hashes including
+        ``0x390eb960`` (the one the gate predicate reads).  Idempotent
+        absolute-overwrite: AP is the sole authority over Wonder Seed
+        gating."""
+        msg = wire.SetWonderSeedCountsMsg(counts=tuple(counts))
+        if self._send_queue is None:
+            log.warning(
+                "send_set_wonder_seed_counts(counts=%s): no Switch "
+                "client connected; dropping",
+                counts)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug(
+                "send_set_wonder_seed_counts: enqueued counts=%s",
+                counts)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_wonder_seed_counts(counts=%s): outbound queue "
+                "full; dropping",
+                counts)
 
     def send_increment_hash_keyed(self, hash_: int, delta: int) -> None:
         """Enqueue an IncrementHashKeyed (container-A counter RMW) to the
@@ -406,6 +460,11 @@ class LanServer:
             # flush silently drops the grant; replaying on every HelloMsg
             # is the durable fix.
             self._push_royal_seeds_now()
+            # Same idempotent absolute-overwrite pattern for the
+            # container-A Wonder Seed counter (M3.3 follow-up): the
+            # bridge holds the canonical AP-derived count and clobbers
+            # the Switch's lifetime counter to match on every handshake.
+            self._push_wonder_seeds_now()
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -582,20 +641,53 @@ class LanServer:
         for h, v in grants:
             self.send_grant_hash_keyed(h, v)
 
+    def _push_wonder_seeds_now(self) -> None:
+        """Pull the AP-known per-world Wonder Seed counts from the
+        provider and enqueue a ``SetWonderSeedCountsMsg``.  No-op if no
+        provider was wired or no client is connected.  Same idempotent
+        absolute-overwrite pattern as badges: AP holds the canonical
+        per-world counts derived from ``items_received``; any in-game
+        pickup (Wonder phase grab, flag-pole goal seed, 10-coin reward)
+        gets clobbered back to AP's view within ~2 s by the sync loop.
+        Called from HelloMsg dispatch, per-ReceivedItems push (via
+        :meth:`send_set_wonder_seed_counts` directly in
+        ``SMBWContext._handle_received_items``), and the periodic tick.
+        See [wonder_seed_table.py](wonder_seed_table.py) for the bucket
+        convention; Switch routes to the right bucket via container-A
+        hash ``0x9f5ead3c`` (current world index)."""
+        if self._wonder_seed_counts_provider is None:
+            return
+        try:
+            counts = list(self._wonder_seed_counts_provider())
+        except Exception:
+            log.exception(
+                "wonder_seed_counts_provider raised; skipping sync")
+            return
+        self.send_set_wonder_seed_counts(counts)
+
     async def _badge_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
-        current AP-known badge mask to the Switch.  This is what
-        reverts in-game badge pickups (Poplin shop, badge house) to
-        AP's view within seconds -- AP is the sole authority over the
-        badge pool.
+        current AP-known badge mask AND the current AP-known Wonder
+        Seed counter to the Switch.  This is what reverts in-game
+        pickups that bypass AP (badge purchases at Poplin shop / badge
+        house, Wonder phase seed grabs, flag-pole goal seeds, 10-coin
+        rewards) to AP's view within seconds -- AP is the sole
+        authority over both surfaces.
 
         Runs until cancelled by ``_drop_active_client_locked`` (i.e.
         only while a Switch client is connected; no point ticking when
-        no one is listening)."""
+        no one is listening).
+
+        Naming note: this loop now syncs both badges and Wonder Seeds.
+        The name is kept for diff continuity with the M3.2/M4 badge
+        rollout; if a third idempotent-overwrite surface lands (e.g.
+        per-course Wonder Seed flags after M3.3 follow-up), consider
+        renaming to ``_idempotent_sync_loop``."""
         try:
             while True:
                 await asyncio.sleep(BADGE_SYNC_INTERVAL_SEC)
                 self._push_badge_sync_now()
+                self._push_wonder_seeds_now()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -643,6 +735,10 @@ class LanServer:
                         log.info(
                             "-> increment_hash_keyed hash=0x%08x delta=%d",
                             msg.hash, msg.delta)
+                    elif isinstance(msg, wire.SetWonderSeedCountsMsg):
+                        log.info(
+                            "-> set_wonder_seed_counts counts=%s",
+                            list(msg.counts))
                     elif isinstance(msg, wire.KillMsg):
                         log.info(
                             "-> kill source=%r cause=%r",

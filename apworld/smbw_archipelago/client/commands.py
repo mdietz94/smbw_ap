@@ -419,3 +419,35 @@ class SMBWCommandProcessor(ClientCommandProcessor):
             sent += 1
         self.output(f"-> replayed {sent} Royal Seed grants")
         return True
+
+    def _cmd_grant_hash(self, hash_spec: str = "", value_spec: str = "") -> bool:
+        """Send one ``GrantHashKeyedMsg(hash, value)`` to the Switch.  The
+        Switch dispatcher routes via ``isBoolHash`` -- counters
+        (e.g. flower_coin ``0xf4ee6827``) go to ``grantContainerACounter``
+        (FUN_710049F648), bools (the 8 documented hashes) go to
+        ``grantContainerBBool`` (FUN_710049EA24).
+
+        Usage: ``/grant_hash <hex_or_int> <value>``.  Example:
+        ``/grant_hash 0x8c20ccb7 99`` -- candidate Wonder Seed counter
+        probe (validate against save-diff to confirm the field).
+
+        Deferred-write: the value lands in the dirty buffer at gmd+0xf8
+        and only persists to the live container on next save.  To verify:
+        run this, then save + quit in-game, then run scripts/savediff.py
+        against the pre/post save files."""
+        if not hash_spec or not value_spec:
+            self.output("usage: /grant_hash <hex_or_int> <value>")
+            return True
+        try:
+            h = int(hash_spec, 0) & 0xFFFFFFFF
+            v = int(value_spec, 0) & 0xFFFFFFFF
+        except ValueError:
+            self.output(f"ERROR: bad hash or value (got {hash_spec!r}, {value_spec!r})")
+            return True
+        lan = getattr(self.ctx, "lan_server", None)
+        if lan is None:
+            self.output("ERROR: lan_server not wired")
+            return True
+        lan.send_grant_hash_keyed(h, v)
+        self.output(f"-> grant_hash_keyed hash=0x{h:08x} value={v}")
+        return True

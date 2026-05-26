@@ -34,6 +34,7 @@ from NetUtils import ClientStatus  # type: ignore
 from . import badge_table
 from . import coin_table
 from . import royal_seed_table
+from . import wonder_seed_table
 from .commands import SMBWCommandProcessor
 from .location_table import lookup_name
 from .protocol import CheckEmitted, CheckKind, DeathReported, GoalCompleted
@@ -288,6 +289,38 @@ class SMBWContext(CommonContext):
         if lan is not None and hasattr(lan, "_push_badge_sync_now"):
             lan._push_badge_sync_now()
 
+    def _recompute_wonder_seed_counts(self) -> list[int]:
+        """Walk :attr:`items_received` and return cumulative Wonder Seed
+        counts bucketed by world.  Returns a list of length
+        ``wonder_seed_table.WORLD_COUNT`` (8 buckets:
+        W1/W2/W3/W4/W5/W6/Petal Isles/Special).  Idempotent and
+        side-effect-free; the bridge pushes the tuple as
+        ``SetWonderSeedCountsMsg`` on HelloMsg, on every ReceivedItems,
+        and on the periodic 2 s tick.  The Switch reads container-A
+        hash ``0x9f5ead3c`` (current world index) and applies
+        ``counts[bucket]`` via ``probe::pushWonderSeedOverride`` --
+        making AP the sole authority over Wonder Seed gating.
+
+        Items the table doesn't recognize contribute to nothing
+        (silent drop), matching the rest of the table layer's fallback
+        semantics."""
+        counts = [0] * wonder_seed_table.WORLD_COUNT
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                item_name = self.item_names.lookup_in_game(int(item_id))
+            except Exception:
+                continue
+            idx = wonder_seed_table.world_index_for_item(item_name)
+            if idx is None:
+                continue
+            counts[idx] += 1
+        return counts
+
     def _collect_royal_seed_grants(self) -> list[tuple[int, int]]:
         """Walk :attr:`items_received` and return ``[(hash, value), ...]``
         for every Royal Seed AP item.  Deduplicated by hash (the Switch
@@ -321,13 +354,20 @@ class SMBWContext(CommonContext):
         items = args.get("items", []) or []
 
         new_mask = self._recompute_badge_mask()
+        new_seed_counts = self._recompute_wonder_seed_counts()
         if self.lan_server is not None:
-            log.info("ReceivedItems: badge mask now 0x%x", new_mask)
+            log.info(
+                "ReceivedItems: badge mask now 0x%x, wonder_seed counts=%s",
+                new_mask, new_seed_counts)
             self.lan_server.send_set_badges_absolute(new_mask)
+            # Idempotent absolute-overwrite: AP is the sole authority
+            # over the per-world Wonder Seed counts (same pattern as
+            # badges).  Switch routes via current-world hash 0x9f5ead3c.
+            self.lan_server.send_set_wonder_seed_counts(new_seed_counts)
         else:
             log.debug(
-                "no lan_server bound; not forwarding badge mask 0x%x",
-                new_mask)
+                "no lan_server bound; not forwarding badge mask 0x%x / "
+                "wonder_seed counts=%s", new_mask, new_seed_counts)
 
         for it in items:
             item_id = it.get("item") if isinstance(it, dict) else None
@@ -345,6 +385,11 @@ class SMBWContext(CommonContext):
                 log.debug(
                     "badge item received: %r (id=%s) -- covered by "
                     "SetBadgesAbsolute push", item_name, item_id)
+                continue
+            if wonder_seed_table.is_wonder_seed_item(item_name):
+                log.debug(
+                    "wonder seed item received: %r (id=%s) -- covered by "
+                    "SetWonderSeedCounts push", item_name, item_id)
                 continue
             if royal_seed_table.is_royal_seed_item(item_name):
                 hash_ = royal_seed_table.hash_for_item(item_name)

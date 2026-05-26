@@ -1,5 +1,92 @@
 # SMBW Archipelago — handoff doc
 
+> Last updated: 2026-05-26 — **AP-authoritative Wonder Seed gate
+> override wired end-to-end (M3.3 production path)**.  The earlier
+> "0x8c20ccb7 is the lifetime Wonder Seed counter" note was wrong;
+> `0x8c20ccb7` is one of **five mirror hashes of the per-current-world
+> Wonder Seed count**, not a lifetime total.  See the
+> [smbwap-wonder-seed-gate-solved](C:\Users\maxwe\.claude\projects\C--Users-maxwe-Documents-smwonder-archipelago\memory\smbwap_wonder_seed_gate_solved.md)
+> memory and `docs/static-analysis-findings.md` "2026-05-26 ✅ HYPOTHESIS
+> CONFIRMED" for the full discovery trail.
+>
+> **The gate problem**: ``FUN_71001787b40`` @ NSO ``+0x1787b40`` is the
+> Wonder Seed gate predicate.  It reads container-A hash ``0x390eb960``
+> for the *current world's* seed count and compares against a per-gate
+> threshold.  Five hashes mirror that count and update in lockstep on
+> every seed-count change:
+>
+>   - ``0x21f89ab1``
+>   - ``0x8c20ccb7``  (the value formerly assumed to be "lifetime" --
+>                     actually per-current-world; resets on world
+>                     transitions to whatever the per-course bitfield
+>                     recompute produces)
+>   - ``0xeeff353b``
+>   - ``0x390eb960``  (the one the gate predicate reads)
+>   - ``0xa0e5f253``
+>
+> **Live-validated 2026-05-26**: Switch-side
+> ``probe::pushWonderSeedOverride(value)`` writes ``value`` to all 5 via
+> the container-A counter writer (``FUN_710049F648``).  With value=99
+> hard-coded, a W3 gate that previously denied entry on the test save
+> (1 actual W3 seed) opened on the next attempt and the in-game UI
+> counter showed 99.  Confirms AP can be the sole authority over Wonder
+> Seed gating without touching per-course persistent storage.
+>
+> **The production wiring (shipped 2026-05-26)** — same
+> idempotent-absolute-overwrite pattern as badges, plumbed
+> through:
+>   1. New wire message ``SetWonderSeedCountsMsg { counts: [u32; 8] }``
+>      ([wire.py](../apworld/smbw_archipelago/client/wire.py),
+>      ``WireSetWonderSeedCounts`` in
+>      [ApProtocol.hpp](../switch-mod/src/program/ap/ApProtocol.hpp))
+>      indexed by AP item bucket (W1=0..W6=5, Petal Isles=6, Special=7).
+>   2. [wonder_seed_table.py](../apworld/smbw_archipelago/client/wonder_seed_table.py)
+>      maps the 8 Wonder Seed AP item names to their bucket indices.
+>   3. [``SMBWContext._recompute_wonder_seed_counts``](../apworld/smbw_archipelago/client/context.py)
+>      walks ``items_received`` and returns ``list[int]`` of length 8.
+>   4. [``LanServer.send_set_wonder_seed_counts``](../apworld/smbw_archipelago/client/lan_server.py)
+>      pushes the array on the same three triggers as badges:
+>      every ``ReceivedItems``, every Switch ``HelloMsg``, every ~2 s
+>      tick (``_badge_sync_loop``).
+>   5. Switch worker thread routes the message via
+>      [ApClient.cpp](../switch-mod/src/program/ap/ApClient.cpp)
+>      ``InboundKind::SetWonderSeedCounts`` to the inbound ring;
+>      [drainInbound](../switch-mod/src/program/ap/ApFrameBridge.cpp)
+>      caches the 8 values into ``g_wonder_seed_counts[8]`` (atomic).
+>   6. [main.cpp](../switch-mod/src/program/main.cpp) NerveActivateOnce
+>      tick (~2 s cadence under normal play) replaces the iteration-5
+>      hard-coded ``pushWonderSeedOverride(99)`` smoke with: read
+>      container-A hash ``0x9f5ead3c`` (live current-world index, 1..8),
+>      map to bucket index (0..7), call
+>      ``probe::pushWonderSeedOverride(getWonderSeedCount(bucket))``.
+>      Values outside [1, 8] preserve the game's natural state.
+>
+> AP becomes the sole authority over Wonder Seed gating: any in-game
+> pickup (Wonder phase grab, flag-pole goal seed, 10-coin reward) and
+> the natural world-transition recompute both get clobbered back to AP's
+> view within ~2 s.  Idempotent absolute-overwrite, no double-counting.
+>
+> **Per-world bucket convention** (encoded both in
+> ``wonder_seed_table.py`` and the Switch's ``world_val -> bucket``
+> map): W1=1→0, W2=2→1, ..., W6=6→5, Petal Isles=7→6, Special=8→7.
+> The W2 and W3 values are observed live; W1/W4-W6 follow the natural
+> 1-indexed sequence; Petal Isles and Special at 7/8 are **tentative**
+> -- if the live values turn out to be something else, fix the map in
+> [main.cpp](../switch-mod/src/program/main.cpp) without touching the
+> bridge-side table.
+>
+> **Scope caveat — gate override only, not per-course storage**:
+> ``pushWonderSeedOverride`` makes gates pass for the *current world*
+> based on AP's count, but does NOT write the per-course Wonder Seed
+> bitfield in persistent storage (file offset ``0x3AF8 + 4*course_index``
+> -- writer not yet RE'd; see the
+> [smbwap-wonder-seed-counter-candidate](C:\Users\maxwe\.claude\projects\C--Users-maxwe-Documents-smwonder-archipelago\memory\smbwap_wonder_seed_counter_candidate.md)
+> memory for the open discovery work).  As long as the tick is running,
+> the game won't notice; if the player saves+quits and AP is offline on
+> next load, per-course completion markers and the lifetime counter
+> revert to the genuine in-game state.  This is fine for the gate-pass
+> goal; it's the open follow-up for proper persistence.
+
 > **2026-05-25 layout change** — the headless `bridge/` package and the
 > Manual-template `manual_smbwonder_zim/` apworld were replaced by a
 > first-class **SMBWonder** apworld + Kivy client at
