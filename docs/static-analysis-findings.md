@@ -3614,3 +3614,1682 @@ Mario died on the first frame.  Production path is now AP Bounce ->
 - When the function uses an internal dereference chain to reach the
   data you want to latch, replicate the chain in your hook callback
   rather than hooking deeper into the function body.
+
+
+## 2026-05-26 — Wonder Seed gate-check RE (scaffold)
+
+**Status**: SCAFFOLD ONLY.  Plan filed at `~/.claude/plans/we-have-had-
+a-calm-eclipse.md`.  This block is the empty result template that the
+Ghidra-running RE session fills in; the implementation session reads
+this block to write the hook.  Three new Ghidra scripts shipped with
+this scaffold ([scripts/ghidra/find_gate_strings.py](../scripts/ghidra/find_gate_strings.py),
+[scripts/ghidra/walk_reader_compare_sites.py](../scripts/ghidra/walk_reader_compare_sites.py),
+[scripts/ghidra/playreport_field_backtrace_seed.py](../scripts/ghidra/playreport_field_backtrace_seed.py)).
+
+### Problem statement
+
+Every prior attempt to control Mario's visible Wonder Seed total has
+fallen over because the counter is **computed** at runtime by
+popcount over per-acquisition flag arrays (`+0x3348` GoalSeed,
+`+0x3AF8` Wonder-Phase, `+0x3480` shop) — there is no single stored
+counter to write.  Writes to the contained flag bits collide with
+per-course completion state.
+
+The pivot: **leave the visible counter alone.**  Find the in-game
+function(s) that consult Wonder Seed totals when deciding whether the
+player may unlock the next world, enter a palace boss, or progress to
+the final boss; hook those functions and substitute the AP-granted
+per-world count derived from `items_received`.
+
+Eventual implementation will push **per-world counts** (8 buckets:
+W1, W2, W3, W4, W5, W6, Petal Isles, Special World) over a new wire
+message.  Scope is **all seed-gated decisions in one hook** (or a
+matched set if the call graph forces it).
+
+### Known-going-in facts (don't re-derive)
+
+- The lifetime counter at hash `0x8c20ccb7` (container A) is
+  recomputed from per-course flags at save-time.  **Not a stable gate
+  input candidate** — it would show stale values mid-session.  If a
+  gate read this, the game's behavior would drift away from the
+  visible counter as the player progressed, which doesn't happen.
+- Hash `0xb9bd745d` is the **AP-grant queue**, NOT per-course seed
+  storage (corrected 2026-05-25; see memory note
+  `smbwap_wonder_seed_counter_candidate.md`).
+- `FUN_7101F2B354` is statically inferred only — untested at runtime.
+  Do not assume it.
+- Confirmed seed-related accessors:
+  - `FUN_710012AE94` — container-A reader, `(gmd, u32* out, u32 hash)`, 66 xrefs.
+  - `FUN_71003838AC` — sub-bool reader, `(sub, u8* out, u32 hash)`, 38 xrefs.
+  - `FUN_7100124134` — candidate per-bit reader, 42 xrefs (signature TBD).
+- `course_result` PlayReport carries `total_get_finish_seed_count`
+  (PlayReport builder chain: `FUN_7101a5d93c` → `FUN_7101a5d9a0` →
+  `FUN_7101a5de58` → `FUN_7101a5ea50`).  Any non-PR-chain reader of
+  the same backing storage is a gate-reader candidate.
+
+### regions.json threshold corpus (2026-05-26)
+
+Per-bucket thresholds from
+[apworld/smbw_archipelago/data/regions.json](../apworld/smbw_archipelago/data/regions.json):
+
+| Bucket | Thresholds |
+|---|---|
+| W1 Wonder Seed | 3, 10, 14 |
+| W2 Wonder Seed | 4, 9, 14 |
+| W3 Wonder Seed | 4, 10 |
+| W4 Wonder Seed | 15 |
+| W5 Wonder Seed | 6, 11 |
+| W6 Wonder Seed | 15, 25 |
+| Petal Isles Wonder Seed | 2, 5, 8, 10, 12, 15 |
+| Special World Wonder Seed | 6, 16 |
+
+Union: `{2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 14, 15, 16, 25}`.  Embedded
+verbatim in `walk_reader_compare_sites.py` as `SEED_THRESHOLDS`.
+
+### Phase results (2026-05-26 script runs)
+
+#### Phase 0a — lifetime-counter falsifier
+
+- Result: hash `0x8c20ccb7` does NOT appear in any walker output row.
+  No `bl FUN_710012AE94(gmd, &out, 0x8c20ccb7)` callsite in the
+  scanned readers was followed by a threshold-corpus cmp.
+- Verdict: [x] confirmed stale (not a gate input)
+- Notes: aligns with the 2026-05-25 memory correction.  The lifetime
+  counter is recomputed-at-save-time only and is not consulted at
+  decision points.
+
+#### Phase 0b — `find_gate_strings.py`
+
+- Result: 201 unique string addresses; 23 with ≥1 xref.
+- **Strongest single hit**: `FUN_7100884040` loads BOTH `'Lock'`
+  (at `0x71028d4dd6`) AND `'Unlock'` (at `0x71028d4ddb`).  Strings are
+  adjacent in `.rodata` (5 bytes apart), and the function references
+  both at `+0x4c` and `+0x74` from its entry.  **This is the only
+  function in the binary that touches both gate-state vocabulary
+  strings.**  However, it does NOT appear in the walker's top 30 —
+  meaning it doesn't reach the scanned readers.  Either it inlines
+  the gate logic, uses a reader we didn't scan, or is a state-enum
+  helper (Lock/Unlock as state names).  Manual decompile required.
+- Other high-xref hits worth following up:
+  - `'GateOpen'` (8 xrefs) → `FUN_7101abd140`, `FUN_7101abd3c8`
+    (gate/door object class)
+  - `'Gate'` (2 xrefs) → `FUN_71005e7b28`
+  - `'WonderSeed'` strings (3 instances) xref'd from:
+    `FUN_71008b5768`, `FUN_71017ca460`, `FUN_71009290d0`,
+    `FUN_7101b27240`, `FUN_71017d7138`, `FUN_71005eccec`,
+    `FUN_7100938a40` — none overlap with the walker top 30.
+  - `'SpecialWorld'` strings (3 instances) — all `(not in a function)`
+    addresses; likely lookup tables.
+  - `'Castle'` (10 xrefs) → many; broad term, low-value alone.
+- Multi-string detection: **0 functions** touched ≥2 distinct
+  seed-like terms via the script's matcher (the matcher counted
+  distinct text contents, missing the `Lock`/`Unlock` adjacency in
+  `FUN_7100884040` because they're different strings even though
+  they're 5 bytes apart).  Manual cross-check above caught it.
+
+#### Phase 1 — Cheat-DB anchor decompile
+
+| Cheat anchor | Containing fn | Patches | Upstream call chain | Reads seed state? |
+|---|---|---|---|---|
+| NSO `+0x48A528` (Fast-Travel) | [pending — manual decompile] | | | |
+| NSO `+0x5D9F58` (Fast-Travel) | [pending — manual decompile] | | | |
+| NSO `+0x935E10` (Fast-Travel) | [pending — manual decompile] | | | |
+| NSO `+0x48A818` (Top-of-Flag) | [pending — manual decompile] | | | |
+
+Phase 1 was not run in the 2026-05-26 script-only session — these
+require interactive Ghidra decompile work.  Next session should
+populate this table by decompiling the four anchors and tracing 2-3
+levels upstream.
+
+#### Phase 2 — `walk_reader_compare_sites.py`
+
+Script run summary:
+- **5 readers scanned**: `FUN_710012ae94` (66 xrefs), `FUN_71003838ac`
+  (38), `FUN_7100124134` (42), `FUN_7100472be4` (41), `FUN_71003d3fb0`
+  (10).  Note xref counts came back higher in this run than the
+  CLAUDE.md baseline — Ghidra picked up more after symbol import.
+- **11 candidates with score=80** (strict gate-shape: imm-cmp matching
+  a seed threshold + intervening `ldr` + nearby conditional branch).
+
+**Score=80 candidate ranking** (highest confidence first):
+
+| # | Function | Reader | Hash | cmp imm | Branch | Notes |
+|---|---|---|---|---|---|---|
+| 1 | `FUN_7100383418` | A | `0x90d4d0f2` | `#2`  | `b.ne`  | unknown hash; cmp w8,#2 d=3 |
+| 2 | `FUN_710064d6c4` | A | `0xf4d9942a` | `#9`  | `b.hi`  | unknown hash; **#9 = W2 threshold** |
+| 3 | `FUN_7101b5bcd0` | A | `0x2544a518` | `#2`  | `b.hi`  | unknown hash; multiple cmps |
+| 4 | `FUN_710066e548` | B | **?**       | `#12` | `b.eq`  | hash unreconstructable; **#12 = Petal Isles threshold** |
+| 5 | `FUN_7101c7d06c` | B | `0x1faf41e5` | `#2`  | `b.lt`  | unknown hash; gate-shape branch |
+| 6 | `FUN_7100689880` | B | `0xe237fbc6` | `#5`  | `b.hi`  | unknown hash; **#5 = Petal Isles threshold** |
+| 7 | `FUN_7101babf2c` | C | `0x65634476` | `#3`  | `b.ne`  | unknown hash; **#3 = W1 threshold** |
+| 8 | `FUN_71006c12a0` | C | `0x42ffdf00` | `#2`  | `b.lt`  | unknown hash; **strict gate shape (b.lt = blocked-if-less)** |
+| 9 | `FUN_7101c2155c` | A | `0xf4ee6827` | `#2`  | `b.cc`  | **known: flower_coin (PURPLE_COINS)** — not seeds, ruled out as gate input |
+| 10 | `FUN_7101a5d9a0` | sub-bool | `0xed817774` | `#2` | `b.eq`  | **known: PlayReport builder** (`touch_goal_top_result`) — ruled out (telemetry) |
+| 11 | `FUN_7101c6347c` | sub-bool | `0x89f1cc52` | `#6`  | `b.lt`  | **known: INTRO_CUTSCENE_COMPLETED** — bool reader; suspicious cmp #6 (Petal Isles?). Investigate. |
+
+**Top 5 candidates for manual decompile** (highest priority — rank by
+"unknown hash + gate-shape branch + threshold in regions corpus"):
+
+1. **`FUN_71006c12a0`** (Reader C, hash `0x42ffdf00`, cmp `#2`, `b.lt`) —
+   strictest gate shape.  Decompile to check: does it return bool?
+   What are its callers?  Is its prologue trampoline-safe?
+2. **`FUN_7100689880`** (Reader B, hash `0xe237fbc6`, cmp `#5`, `b.hi`) —
+   `#5` is Petal Isles threshold; b.hi inverts to "if >5 take this
+   path", which is the gate's "allow" branch.
+3. **`FUN_710066e548`** (Reader B, hash unknown, cmp `#12`, `b.eq`) —
+   `#12` matches Petal Isles.  Hash reconstruction failed; manually
+   inspect `+0x710066e5d0..0x710066e5e8` to recover the immediate.
+4. **`FUN_710064d6c4`** (Reader A, hash `0xf4d9942a`, cmp `#9`, `b.hi`) —
+   `#9` is W2 threshold; b.hi is "allow" branch shape.
+5. **`FUN_7101babf2c`** (Reader C, hash `0x65634476`, cmp `#3`, `b.ne`) —
+   `#3` is W1 threshold; b.ne suggests equality test (less gate-like
+   than b.lt/b.hi but still worth checking).
+
+**The pattern that would be conclusive**: if any ONE of these
+functions consistently reads the SAME hash with multiple threshold
+values matching a single AP bucket — e.g., a function that reads
+`0x42ffdf00` and compares to `{3, 10, 14}` (the W1 bucket) — that
+hash is the per-world subtotal key for that bucket.  The script's
+"buckets" summary line for each reader shows the seed-threshold
+count per reader:
+
+| Reader | seed-threshold hits | broad hits | weak | zero |
+|---|---|---|---|---|
+| A `FUN_710012ae94` | **11** | 27 | 8 | 39 |
+| sub-bool `FUN_71003838ac` | 5 | 21 | 8 | 9 |
+| B `FUN_7100124134` | 3 | 25 | 20 | 7 |
+| C `FUN_7100472be4` | 3 | 7 | 2 | 44 |
+| sibling `FUN_71003d3fb0` | 0 | 1 | 5 | 4 |
+
+Container-A is the dominant reader for gate-shape compares (11 hits),
+consistent with the M3.3 hypothesis that per-world subtotals live in
+container A.
+
+#### Phase 3 — `playreport_field_backtrace_seed.py`
+
+Phase 1 backtrace results:
+
+| PlayReport field | Load idiom | Note |
+|---|---|---|
+| `total_get_finish_seed_count` | `mov w2, w20` (no memory load) | Dead end — value pre-computed in `w20` upstream of the `Add` call; no `[base, #off]` pattern to scan |
+| `wonder_seed` | `[x19, #0x1c]` | Very small offset; likely false positive (64 hits in Phase 2, all "GATE-CANDIDATE" but distributed) |
+| `world_mother_seed` | `[x19, #0x47c]` AND `[x19, #0x190]` | The `+0x47c` pattern has only 17 total matches (15 non-PR) — **most focused**.  This is the palace-WIN bool slot. |
+| `world_wonder_flower` | `[x19, #0x410]` | 64 hits; broad |
+
+**Focused result (`[x19, #0x47c]`)**: 15 non-PR consumers and 2 PR-chain
+consumers (`FUN_7101a5d9a0`, `FUN_7101a5ea50` — both already known
+telemetry).  The 15 non-PR consumers include:
+
+- **`FUN_71005572c0`** — reads `[x19, #0x47c]` twice (at `+0x10dc` and
+  `+0x1f98`).  Worth a decompile: does it return a bool based on this
+  field?  Pure-reader access at two sites in one function suggests
+  a "look up the palace-WIN flag" helper.
+- `FUN_710071a4a8` — writes `[x19, #0x47c]` three times (likely the
+  setter; ruled out as a gate-check candidate).
+- `FUN_71005e3274`, `FUN_710069a014`, `FUN_7101d151a8`,
+  `FUN_7101d951b0`, `FUN_710152b3e8`, `FUN_7101aac760` — single
+  read/write each; smaller scope, lower priority.
+
+**Overlap with Phase 2 (functions in BOTH walker top 30 AND non-PR
+load list)**: ZERO direct overlap.  This means the gate-check
+function (whichever score=80 candidate it is) does NOT load
+`[x19, #0x47c]` directly — it goes through a hash-keyed reader instead.
+Consistent with container-A being the access path.
+
+### Primary candidate
+
+```
+Verdict: MULTIPLE CANDIDATES — manual decompile required to converge
+Primary candidate (highest priority): FUN_71006c12a0 @ NSO +0x6c12a0
+Confidence anchors so far: [x] cmp+corpus  [ ] string  [ ] cheat  [ ] Nerve/event  [ ] PR-overlap
+```
+
+The 2026-05-26 script-only run produced 11 strict-gate-shape
+candidates but no single function meets the ≥2 anchor bar yet.
+Section-4 test #1 (cmp+corpus) is satisfied by every score=80 row;
+none of those rows also has string adjacency (test #2), cheat
+adjacency (test #3 — Phase 1 not yet run), Nerve caller (test #4 —
+direct callers not yet enumerated), or non-PR overlap (test #5 —
+zero overlap observed).  **The next session must do interactive
+Ghidra work** to:
+
+1. Decompile the top 5 candidates and confirm one returns a bool.
+2. Walk the callers of each.
+3. Decompile the four cheat anchors (Phase 1).
+4. Inspect `FUN_7100884040` (the `Lock`/`Unlock` string holder) for
+   inline gate logic.
+
+Until at least 2 anchors are met for one specific function, the
+implementation session MUST NOT install a return-value-overriding
+hook.  An observability-only trampoline (smoke test 1) is permitted
+on the top candidate as long as it doesn't modify return values.
+
+#### The candidate function — `FUN_71006c12a0` (PRELIMINARY, needs decompile)
+
+- NSO offset: `+0x6c12a0`
+- Signature (inferred): unknown until decompile.  Hits Reader C
+  (`FUN_7100472be4`) at `+0x6c12f0` with hash `0x42ffdf00` and arg
+  layout consistent with `(gmd, &out, hash)` per Reader C's
+  speculated signature.
+- Decompile body: **NOT YET CAPTURED** — manual step required next
+  session.
+- What it reads: container-C (or sibling) field via hash `0x42ffdf00`
+  (currently unknown semantic).
+- How it decides: `cmp w8, #0x2` at `+0x6c1308` distance 6 from the
+  reader call, followed by `b.lt 0x71006c1348` — **strict
+  blocked-if-less gate shape**.
+- Inputs: TBD.  If the function takes a "which world" enum, that's
+  the per-world dispatch mechanism.
+- Outputs / side effects: TBD; expect bool return.
+
+**Other live candidates ranked by priority** (decompile in this order):
+
+1. `FUN_71006c12a0` — strictest gate shape (b.lt)
+2. `FUN_7100689880` — Petal Isles threshold #5 (b.hi)
+3. `FUN_710066e548` — Petal Isles threshold #12 + missing hash
+4. `FUN_710064d6c4` — W2 threshold #9 (b.hi)
+5. `FUN_7101babf2c` — W1 threshold #3 (b.ne)
+6. `FUN_7100884040` — Lock/Unlock string adjacency; not in walker top
+   30, may inline gate logic
+7. `FUN_71005572c0` — reads `[x19, #0x47c]` (world_mother_seed) twice;
+   non-PR consumer of the most focused load pattern
+
+#### Caller analysis
+
+- Direct callers of top candidates: **NOT YET ENUMERATED**.  Next
+  session: for each top-5 function, list `getReferencesTo(entry)` and
+  classify each caller (regular fn / Nerve vtable region / data-table
+  reference).
+- Nerves among callers? Unknown.  World-map travel Nerve at
+  `vt_off=0x33fd738` (CLAUDE.md M1) is the highest-priority caller to
+  check for.
+- Cheat-DB anchor adjacency: pending Phase 1.
+- String adjacency: ZERO direct overlap between top-30 walker hits
+  and the 23 functions surfaced by the string sweep.  Notable
+  unexplained: `FUN_7100884040` carries `Lock`+`Unlock` strings but is
+  not in the walker top 30.
+
+#### Per-world semantics — CRITICAL for implementation
+
+- Does the function read **one total** vs **per-world dispatch**?
+  **NOT YET DETERMINED.**  The hypothesis is per-world dispatch
+  (matching the AP world's 8-bucket structure), but the data so far
+  shows each top candidate using a SINGLE hash at a SINGLE call site.
+  Two interpretations remain on the table:
+  - (a) **One function per bucket**: 8 separate gate-check functions,
+    each hashed to one bucket.  Decompiling the top candidates and
+    finding 8 distinct functions with hashes in the same
+    {container A, container C} family would confirm this.
+  - (b) **One generic function called 8 times**: one helper, called
+    with a per-bucket (hash, threshold) tuple.  Decompiling would
+    show the function takes the hash as a parameter rather than
+    embedding it.
+- Dispatch mechanism: TBD after decompile.
+- For each of the 8 buckets, the hash / container / threshold:
+
+  | Bucket | Hash | Container | Threshold immediates seen | Walker candidate |
+  |---|---|---|---|---|
+  | W1 | TBD | TBD | 3, 10, 14 | `FUN_7101babf2c` (cmp #3) |
+  | W2 | TBD | TBD | 4, 9, 14 | `FUN_710064d6c4` (cmp #9) |
+  | W3 | TBD | TBD | 4, 10 | none observed |
+  | W4 | TBD | TBD | 15 | none observed |
+  | W5 | TBD | TBD | 6, 11 | `FUN_7101c4dc90` (cmp #10 — could be W3 or W1) |
+  | W6 | TBD | TBD | 15, 25 | `FUN_7100383418` (`cmp x11, #0x19`=25 in 2nd hit) |
+  | Petal Isles | TBD | TBD | 2, 5, 8, 10, 12, 15 | `FUN_7100689880` (#5), `FUN_710066e548` (#12), `FUN_7101a59d24` (#8) |
+  | Special World | TBD | TBD | 6, 16 | `FUN_7101c6347c` (#6 — INTRO bool, ruled out), `FUN_71004853e4` (cmp #8 close to W5/PI) |
+
+  Manual decompile required to assign hashes confidently.
+
+#### Prologue safety check (MANDATORY before any hook)
+
+**NOT YET CAPTURED.**  Next session must paste the first 5 insns of
+each viable candidate.  Paste into this block:
+
+```
+FUN_71006c12a0:
+  +0x6c12a0:  <insn 1>
+  +0x6c12a4:  <insn 2>
+  +0x6c12a8:  <insn 3>
+  +0x6c12ac:  <insn 4>
+  +0x6c12b0:  <insn 5>
+```
+
+- Trampoline-safe? [ ] yes / [ ] no — reason:
+- Alternative hook target if unsafe:
+
+#### Falsified alternatives
+
+| Candidate fn | Reason ruled out |
+|---|---|
+| `FUN_7101a5d9a0` | Known PlayReport builder (telemetry, not gate). Score=80 hit on `0xed817774` is the `touch_goal_top_result` value being attached to the report. |
+| `FUN_7101c2155c` | Reads `flower_coin` hash (purple coins). AP world does not gate on coins; threshold #2 cmp is a "do you have 2 coins to spend in shop?" check, not a seed gate. |
+| `FUN_7101c6347c` | Reads `INTRO_CUTSCENE_COMPLETED` bool. cmp #6 against a bool value is a state-machine compare, not a seed gate. |
+| `FUN_7100383418` (rank #1) | cmp #2 b.ne is an LSB-test idiom `(local_5c \| 2) != 2` (tests bit 0). Function reads `WorldMap_OpenGate_Failure` event-name strings — post-event observer, not gate. |
+| `FUN_7101b5bcd0` (rank #3) | State-machine dispatch on enum value. cmp #2 b.hi at +0x7101b5bd0c rejects values > 2; function dispatches on {0, 1, 2}. Hash `0x2544a518` is a 3-state enum, not seed count. |
+| `FUN_71004853e4` (rank #18) | cmp #8 is `if (*param_3 != 8) iVar6 = *param_3; else iVar6 = 2;` — saturate-to-2 enum normalization. Hash `0xdcfeed18` used as course-index lookup. |
+| `FUN_7101a59d24` (rank #14) | cmp #8 is `if (iStack_24 < 9) iStack_24++` — saturate-counter-at-9 increment. Hash `0x47b4307b` is a monotonic interaction count. |
+
+### 🎯 BREAKTHROUGH (2026-05-26 iteration 3) — `FUN_7100935ce0` is the per-world dispatch target
+
+After running [dump_gate_candidates_v2.py](../scripts/ghidra/dump_gate_candidates_v2.py)
+and reading the full output ([dump_v2_output.txt](../scripts/ghidra/dump_v2_output.txt)),
+the picture changes substantially.
+
+**Most score=80 walker candidates are false positives.**  Decompile review
+ruled out (in addition to the 4 ruled out in iteration 2): `FUN_710064d6c4`
+(saturate-to-9 UI cap), `FUN_7100689880` (mode-dispatch switch),
+`FUN_71006c12a0` (setup/teardown helper, discards reader result),
+`FUN_7101babf2c` (record-copy helper; cmp was `param_2[5]==0x1f`, not #3),
+`FUN_710066e548` (enum value `0xc` stored at struct offset, not threshold),
+`FUN_710074e6cc`, `FUN_71005f4550`, `FUN_71005c7fcc` (all UI updaters).
+
+Cause: the walker's "cmp + threshold-corpus immediate + ldr + branch"
+pattern is too broad.  Small ints {2, 3, 5, 9, 10} appear in pervasive
+non-gate idioms (vector size checks, enum dispatch, saturation caps,
+LSB tests).  Tightening the scoring criteria would help in a future
+iteration but the breakthrough below makes it unnecessary.
+
+**The world-map aggregators are NOT gates either.**  `FUN_710048907c`
+and `FUN_7100487b0c` (the two cheat-anchor common callers) iterate
+courses and BUILD progress records (with `Lock`/`Unlock`/Top-of-Flag
+bits) into lists at `param_1 + 0x650`.  They're downstream of the
+gate, used for rendering the world-map UI.
+
+**The breakthrough**: the 8 orphan-code call sites at
+`0x7100480ff8..0x710048104c` form a hardcoded per-world dispatch:
+
+```asm
+mov w0, #0x1; bl 0x7100935ce0; tbnz w0,#0,0x71004816c8  ; world 1
+mov w0, #0x3; bl 0x7100935ce0; tbnz w0,#0,0x71004816dc  ; world 3
+mov w0, #0x4; bl 0x7100935ce0; tbnz w0,#0,0x71004816f0  ; world 4
+mov w0, #0x5; bl 0x7100935ce0; tbnz w0,#0,0x7100481704  ; world 5
+mov w0, #0x6; bl 0x7100935ce0; tbnz w0,#0,0x7100481718  ; world 6
+mov w0, #0x7; bl 0x7100935ce0; tbnz w0,#0,0x710048172c  ; world 7 (PI?)
+mov w0, #0x2; bl 0x7100935ce0; tbnz w0,#0,0x7100481740  ; world 2
+mov w0, #0x9; bl 0x7100935ce0; tbnz w0,#0,0x7100481754  ; world 9 (Special?)
+```
+
+8 hardcoded world IDs `{1, 3, 4, 5, 6, 7, 2, 9}` — exactly matches the
+8 AP buckets (W1-W6 + PI + Special) modulo the world-numbering scheme.
+Each `tbnz w0,#0` branches to a per-world handler at
+`0x71004816c8..0x7100481754` (20 bytes apart, 5 insns each).
+
+**`FUN_7100935ce0` (500 bytes)**:
+- Takes `param_1` (uint32_t world_id)
+- Translates `param_1` → context via `FUN_71000d33e0` (`uStack_38 = param_1`)
+- Reads hash at `context+0x68`
+- Queries container A (byte at `gmd+0x18 + idx*0x18 + 0x16`) OR
+  container C (bit 0 of `gmd+0x78 + idx*0x40 + 0x28`)
+- Returns `bool` (any nonzero → true)
+- **0 direct function callers; ONLY these 8 orphan sites call it.**
+
+This is **the per-world dispatch helper we've been looking for**.
+
+**Open questions that block hooking this**:
+
+1. What does `FUN_7100935ce0` actually check?  Three semantic
+   possibilities, distinguishable by playing the game:
+   - "world N is unlocked / enterable" (the gate we want)
+   - "world N's palace boss defeated"
+   - "world N's Royal Seed acquired" (already AP-controlled via M3.3b)
+2. What containing function holds the 8 orphan sites?  Ghidra reports
+   "NOT inside any defined function" — needs manual Create Function
+   at `0x7100480fd8` (or wherever the prologue starts upstream).
+3. What do the 8 per-world handlers at `0x71004816c8..0x7100481754` do?
+4. What calls the containing function? (top-level world-map tick? a
+   transition event handler?)
+
+**If `FUN_7100935ce0` checks world-unlock status**: hooking it is
+perfect.  Trampoline at entry, read `param_1` (world ID), look up the
+AP-granted seed count for that bucket, compare to the per-world
+threshold, return true if AP says unlocked.  Prologue is trampoline-
+safe (no PC-relative ops in first 5 insns).  0 fn callers means no
+collateral damage outside the 8 dispatch sites.
+
+**If it checks palace-defeated or Royal-Seed-acquired**: it's still
+useful as a corroborator but not the gate.  We'd need to find what
+calls the 8-orphan-dispatch function.
+
+### 2026-05-26 iteration 7 — Static-analysis DEAD END; pivot to runtime
+
+After iterations 6 and 7 the static-analysis path is exhausted.
+Documented findings + the pivot recommendation:
+
+**New confirmed facts** (useful even though they don't solve the gate
+question):
+- `0x60458608` is the **per-course Wonder Seed bitfield** (container-D
+  shape; one bit per course).  Read via
+  `FUN_7100124134(gmd, &out, 0x60458608, bit_index)`.  Written via
+  `FUN_710049ea24(gmd, value, 0x60458608, bit_index)` — a 4-arg
+  overload of the documented 3-arg Royal-Seed writer.  This is a
+  USEFUL primitive for AP-driven seed granting at a per-course level.
+- `0x580b7eb4` is an **adjacent per-course course-state** bitfield
+  (semantics unconfirmed — possibly per-course "have ever played" or
+  "have reached goal"; differentiated from seed-acquisition).
+- `0x33bf655f` is a per-world data hash (read by `FUN_71005c1a18` with
+  a per-world `lVar7` arg in `FUN_7100743d10`).
+- **Internal world name strings** in `.rodata` at `0x71034d82f8..0x71034d8337`:
+  "Invalid"=0, "Savanna"=W1 Pipe-Rock, DAT_71034d830a..8322=W2-W6
+  (unparsed), "Nettai"=7 (= Petal Isles or W6 Deep Magma), "Castle"=
+  Bowser-related (aliased to slot 2), "Himitu"=9 (= Special World).
+- `FUN_7100743d10` is a per-world PlayReport-extension builder that
+  reads per-world hashes for telemetry — **not a gate** but exposes
+  the per-world hash inventory.
+- `FUN_7101c41f20` is a per-course seed-bit **writer** triggered when
+  a state field at `+0xa38 == 5` and a UI button input matches the
+  second slot — looks like a "results screen apply" handler.
+
+**The seed-count gate is NOT detectable statically.**  Specifically:
+- The walker (cmp + threshold immediate + ldr + branch) produced 11
+  score=80 candidates, all of which decompiled to non-gate idioms.
+- All 4 cheat-DB Fast-Travel/Top-of-Flag anchors are per-course bit
+  readers (container-D), not seed-count aggregators.
+- The 8-world dispatch (`FUN_7100480fd8`) is a list builder that
+  appends per-world IDs to a vector — not a gate.
+- ZERO Nerve name-getters match ~45 gate-relevant English strings.
+- ZERO popcount-shaped functions iterate over `0x60458608` bits.
+- Per-world record tables `0x71029f0b34`/`0x71029f0f94`/`0x71029f13f4`
+  are runtime-populated (all zeros statically); the per-world hash at
+  `+0x68` of each record is unreadable without runtime observation.
+
+**Three remaining hypotheses for how SMBW gates seed thresholds**
+(none distinguishable statically):
+
+1. **`FUN_7100935ce0` IS the gate**, reading a per-path "is unlocked"
+   flag.  An unidentified SETTER runs the seed-count comparison
+   elsewhere (post seed-collect Nerve) and sets the flag.
+2. **The gate is flag-based via a different mechanism** entirely —
+   a per-path state stored in a container we haven't identified.
+3. **There is no runtime seed-count gate** — paths unlock via
+   one-time progression events, and the AP world's seed-count
+   requirements would map to a different in-game predicate.
+
+**Recommendation: pivot to runtime observability.**
+
+Cheapest experiment: a switch-mod observability trampoline on
+`FUN_7100935ce0` that logs `(param_1, return_value)` for every call.
+Boot Ryujinx, walk the world map, attempt entry to each gated
+location.  Observations distinguish the three hypotheses:
+- If the function fires on every gate-entry attempt and returns
+  false → true at the exact moment seed count crosses the threshold,
+  it's the gate (hypothesis 1).
+- If it fires only at startup / world-map-load with stable values,
+  it's a UI/static-state reader (hypothesis 2 or 3).
+- If it doesn't fire at all on gate attempts, the gate is elsewhere
+  (hypothesis 2 or 3).
+
+Estimated cost: ~30-45 min to write the hook, ~15 min in-game testing.
+
+Secondary observability: hook `FUN_7100124134` filtered on hash
+`0x60458608` and log every call's (caller PC, bit_index, result).
+Caller PC trace reveals what game logic queries the seed bitfield —
+including any function that does its own per-bit iteration.
+
+If both observability passes turn up nothing actionable, fall back to
+Cheat Engine memory-access breakpoint on the live mirror of save
+offset `0x3AF8` (per-course Wonder Phase seeds) — the breakpoint hit
+PC is the gate function unambiguously.
+
+**Status update for the implementation session**:
+- DO NOT attempt to write a seed-count gate hook based on the
+  current static evidence — every score=80 candidate has been
+  falsified.
+- DO write the observability hooks above.  They unblock everything.
+- Hash `0x60458608` IS valuable separately: AP can grant per-course
+  Wonder Seeds via `FUN_710049ea24(gmd, 1, 0x60458608, course_idx)`
+  if the implementation session wants to expose that primitive (e.g.,
+  for a future "AP-grants individual seeds" feature distinct from
+  the gating problem).
+
+### NEW direction (2026-05-26 iteration 2)
+
+**The cheat-anchor analysis re-shapes the hunt entirely.**  All four
+cheat anchors live inside functions of the same shape — `byte FUN(uint
+hash, uint bit_index)` — that walks a container-D-style table in
+GameDataMgr (offsets `+0x80` table-base, `+0x8c` table-size, `+0x70`
+type-registry-size, `+0x78` type-registry-base) and returns the
+bit at position `bit_index` from a u32[] data array.  These are the
+**per-course bit readers** for container D.  The cheats force the
+returned bit to 1 = "course is complete".  They are NOT gate checks
+themselves — they are the LOOKUP that gates consult.
+
+The gate check is one level up.  Two callers stand out:
+
+- **`FUN_710048907c`** — called from 3 of the 4 cheat-anchored bit
+  readers (FUN_710048a440, FUN_71005d9e70, FUN_710048a730).  This is
+  the universal caller and likely the upstream "is this course / world
+  / palace gated?" aggregator.  **NEXT-ITERATION HIGHEST PRIORITY.**
+- **`FUN_7100487b0c`** — called from 2 of the 4.  Secondary candidate.
+
+Even more compelling: **`FUN_7100935ce0`** (the function containing
+the +0x935E10 cheat anchor) has 8 callers at orphan-code addresses
+`0x7100480ff8`, `0x7100481004`, ..., `0x710048104c` — exactly 12 bytes
+apart.  These are 8 consecutive `bl FUN_7100935ce0` calls inside a
+larger function we haven't yet identified.  **8 calls = the 8 AP
+buckets (W1, W2, W3, W4, W5, W6, PI, Special).**  This is the per-
+world dispatch loop.  Finding the function that contains
+`0x7100480ff8` and seeing what it does with the 8 return values is
+the most direct path to the gate check.
+
+**Hash recovery confirms register/memory passing**: the 4 failed-
+reconstruction sites all pass the hash dynamically:
+- `FUN_710074e6cc`: hash via `ldr w2, [x19, #0x264]`
+- `FUN_71005f4550`: hash via `ldr w2, [x1, #0xa0]`
+- `FUN_71005c7fcc`: hash via `mov w2, w1` (caller-passed)
+- `FUN_710066e548`: hash via `mov w2, w22` (caller-passed)
+
+These functions take the hash as a struct field or argument — exactly
+the "generic helper called per-world with each bucket's hash" pattern.
+`FUN_710074e6cc` and `FUN_71005f4550` are the highest-priority of
+this group because they read the hash from a struct at a known offset:
+the struct at `x19+0x264` (or `x1+0xa0`) is likely the per-world
+descriptor table.
+
+#### Open risks
+
+- The 7 score=80 candidates with unknown hashes might still be NON-seed
+  state (e.g., progression flags, coin counts in another currency,
+  difficulty settings).  Decompile is the only way to disambiguate.
+- `FUN_7100884040` carrying `Lock`/`Unlock` may turn out to be an
+  audio-state helper or animation-state enum, not a gate.  Strings
+  alone are not proof.
+- The walker scored on "cmp + ldr + branch" — if the real gate uses
+  a different idiom (e.g., switch table, computed jump, popcount of
+  a bitfield), the walker would miss it.  Phase 1 (cheat DB anchors)
+  is the orthogonal fallback that should catch this.
+- The script's hash reconstruction failed on at least one high-priority
+  candidate (`FUN_710066e548`).  Manual `+0x710066e5d0..0x710066e5e8`
+  read needed.
+
+### Implementation guidance (NOT READY — see "Next session priorities" below)
+
+The 2026-05-26 script run met **only 1 of the 2 minimum confidence
+anchors** required by the plan (cmp+corpus only; string adjacency
+and cheat anchors not yet checked).  The follow-up session must
+complete the Ghidra work below BEFORE installing any return-value-
+overriding hook.
+
+### Next session priorities (RE — must complete before implementation)
+
+The remaining work is all interactive Ghidra (decompile-and-read),
+not new automation.  Estimated ~3-4 hours.
+
+**Priority A — Decompile the top 7 candidates** (≤30 min each):
+
+For each of these, paste the decompile into a follow-up artifact
+section, identify the return type, and check the function's caller
+list.  Specifically answer: "Does this function return a bool, and
+is it called from a world-map-transition or palace-entry path?"
+
+1. `FUN_71006c12a0` @ NSO `+0x6c12a0` — strictest gate shape
+2. `FUN_7100689880` @ NSO `+0x689880` — Petal Isles threshold #5
+3. `FUN_710066e548` @ NSO `+0x66e548` — Petal Isles threshold #12,
+   missing hash (manually read `+0x66e5d0..+0x66e5e8`)
+4. `FUN_710064d6c4` @ NSO `+0x64d6c4` — W2 threshold #9
+5. `FUN_7101babf2c` @ NSO `+0x1babf2c` — W1 threshold #3
+6. `FUN_7100884040` @ NSO `+0x884040` — `Lock`/`Unlock` strings
+7. `FUN_71005572c0` @ NSO `+0x5572c0` — reads `[x19, #0x47c]` twice
+
+**Priority B — Phase 1 cheat-DB anchor decompile** (~45 min):
+
+Decompile the four anchors at NSO `+0x48A528`, `+0x5D9F58`,
+`+0x935E10`, `+0x48A818`.  Identify what the cheat patches and walk
+2-3 levels upstream.  Cross-reference against the Priority A list —
+if a cheat sits inside or directly calls one of the candidates,
+that's an immediate anchor #3 (cheat-adjacency).
+
+**Priority C — Hash reconstruction for unknown candidates** (~30 min):
+
+The walker failed to reconstruct hashes at several score=80 sites:
+- `FUN_710066e548` call `+0x66e5e8`
+- `FUN_710074e6cc` call `+0x74e708`
+- `FUN_71005c7fcc` call `+0x5c8000`
+- `FUN_71005f4550` call `+0x5f45a8`
+
+Manually inspect the 8-16 insns preceding each call to recover the
+`w2` immediate.  If any reconstructs to a hash already in the
+KNOWN_KEYS table or to a value that also appears at sites with
+different thresholds in the same bucket — that's a per-world
+subtotal hash, the most important deliverable.
+
+**Priority D — Caller enumeration** (~30 min):
+
+For each surviving candidate (after A+B+C), run
+`getReferencesTo(entry)` in Ghidra (or write a small script).
+Classify each caller:
+- Direct call from another function → record the caller fn
+- Address in a vtable region (`0x710334XXXX`/`0x71033fXXXX`/
+  `0x71034BXXXX`) → record the vtable + slot index
+- Address in `.data` table → record the table address + offset
+
+A candidate with callers in the world-map / palace-door Nerve
+vtables earns anchor #4.
+
+**Priority E — Prologue safety capture** (~5 min per candidate):
+
+For each surviving candidate, paste the first 5 instructions into the
+artifact's "Prologue safety check" block.  Flag any PC-relative ops
+(adrp / ldr-literal / b / bl).  If the prologue is unsafe, identify
+a shared inner helper as the alternative hook target (M1
+`FUN_7100559f7c` analog).
+
+**Priority F — Fallback if A-E converge on no clear winner**:
+
+Run Cheat Engine on Ryujinx with a memory-access breakpoint on the
+live-state mirror of file offsets `0x3348` (GoalSeed) and `0x3AF8`
+(Wonder Phase).  Trigger a gated transition.  The hit address is the
+gate-check.  Time-expensive; only escalate if static work plateaus.
+
+### Verification of this scaffold
+
+What was delivered 2026-05-26:
+- [x] Three new Ghidra scripts: [find_gate_strings.py](../scripts/ghidra/find_gate_strings.py),
+      [walk_reader_compare_sites.py](../scripts/ghidra/walk_reader_compare_sites.py),
+      [playreport_field_backtrace_seed.py](../scripts/ghidra/playreport_field_backtrace_seed.py)
+- [x] All three scripts run cleanly on the live binary; output above
+      includes one or more strong gate-shape candidates
+- [x] Falsifier on the lifetime counter `0x8c20ccb7` ruled it out
+- [x] 11 score=80 candidates identified, with 5 ranked for top-priority
+      manual review
+- [x] Known false positives (`FUN_7101a5d9a0` PlayReport,
+      `FUN_7101c2155c` flower_coin, `FUN_7101c6347c` INTRO bool) marked
+      in the falsified-alternatives table
+
+What is NOT yet done (blocks implementation):
+- [ ] Manual decompile of the top candidates
+- [ ] Cheat-DB anchor Phase 1
+- [ ] Hash reconstruction for the 4 unknown sites
+- [ ] Caller enumeration / Nerve check
+- [ ] Prologue safety capture
+- [ ] Primary candidate named with ≥2 confidence anchors
+
+## 2026-05-26 — Wonder Seed gate observability run
+
+Two `HOOK_DEFINE_TRAMPOLINE` observability hooks were installed (no
+state mutation, logging only) per the plan in
+[wonder-seed-observability-hook-prompt.md](wonder-seed-observability-hook-prompt.md)
+to disambiguate the three hypotheses about `FUN_7100935ce0`:
+
+- **`WorldUnlockCheck`** @ NSO `+0x935ce0` — logs every call's
+  `(world_id, return_value, saveLoaded)`.  Prologue verified safe via
+  [scripts/dump_prologue.py](../scripts/dump_prologue.py).
+- **`SeedBitfieldRead`** @ NSO `+0x124134` — logs every call where
+  `hash == 0x60458608` (the per-course Wonder Seed bitfield confirmed
+  in iteration 7) with `(bit_index, success, *out, saveLoaded)`.
+
+### Test session (Ryujinx_1.3.3_2026-05-26_09-08-06.log)
+
+3:46 of gameplay; the player loaded a save, walked the world map,
+unlocked a level "with seeds" (their exact words), entered a course
+and died, re-entered and cleared it, then attempted a third course
+entry — at which point Ryujinx hung mid-actor-placement
+(`MapObjHajimariChikaKazariJimenIwaA`, the W1 intro/cave decoration
+batch was streaming).  The hang has no `User Break` / `GuestBroke`
+trace in the log, the gmd.A_writer fired normally up to the final
+`hash=0xa42ada00 value=1` save tick, and none of our trampolines'
+callbacks ran at the time of the freeze — almost certainly a Ryujinx
+level-streaming flake unrelated to the observability hooks.
+
+### Representative log slice
+
+```
+00:00:16.544  installing WorldUnlockCheck @ 0x935ce0
+00:00:16.544  installing SeedBitfieldRead @ 0x124134 (filtered on hash=0x60458608)
+00:00:22.394  SaveDeserializerHook: captured save_struct=0x20d95c9470 ...
+00:00:32.548  SeedBitfieldRead(hash=0x60458608, bit=0) -> success=1 value=1  saveLoaded=1
+   ── no further SeedBitfieldRead or WorldUnlockCheck fires for the rest of the session ──
+00:01:12.452  prepo.set_event ... event=world_activity         (player on world map)
+00:01:20.599  prepo.set_event ... event=world_result           (player picks a course)
+00:01:27.359  prepo.set_event ... event=course_in              (course loads)
+00:03:19.984  gmd.D_writer hash=0x46721422 course=2 value=0x00000001
+00:03:19.990  COURSE_CLEARED: nerve=0x20c0d992a8 (fire #1)
+00:03:19.998  prepo.set_event ... event=course_result
+00:03:44.565  prepo.set_event ... event=world_activity         (back on map)
+00:03:45.280  prepo.set_event ... event=world_result           (next course)
+00:03:46.32x  actor_placement: ... ⟂ log abruptly ends; Ryujinx hung
+```
+
+Totals across the entire session:
+
+| Hook | Fires | Notes |
+|---|---:|---|
+| `WorldUnlockCheck(FUN_7100935ce0)` | **0** | Zero across boot, world map, unlock event, 2 course entries, 1 attempted entry |
+| `SeedBitfieldRead(hash=0x60458608)` | **1** | Once only, at save-load (32.548 s), `bit=0 success=1 value=1` |
+
+### Hypothesis verdict
+
+**H3 confirmed for `FUN_7100935ce0` — it is NOT the per-world unlock
+gate.**  The function (and the 8 hardcoded `bl 0x7100935ce0` orphan-
+code sites at `0x7100480ff8..0x710048104c`) is never reached during
+normal gameplay, including the explicit "unlock a level with seeds"
+moment the player triggered.  The 8-call dispatch we identified in
+[iteration 3 BREAKTHROUGH](#-breakthrough-2026-05-26-iteration-3---fun_7100935ce0-is-the-per-world-dispatch-target)
+is either compile-time dead code, gated on an in-game state we did
+not reach (intro cutscene? post-game?), or a debug/release toggle
+that's never live in retail.  Whatever it is, **the per-world unlock
+gate does not flow through it**.
+
+**`FUN_7100124134(hash=0x60458608)` is the persistent-storage reader,
+not a gate input.**  The single fire at save-load (32.548 s,
+`bit=0 success=1 value=1`) is the save deserializer populating the
+live state from the persisted bitfield.  After that population step,
+the function is never invoked again for this hash for the entire
+3 min 46 s of play — meaning the gate logic (and the world-map UI
+that displays seed counts, and the per-course seed indicator on the
+map) reads from a **different in-memory data structure**.  The
+0x60458608 bitfield is write-back storage that the game refreshes
+**from** that live cache on save, not the source of truth at decision
+time.
+
+This matches the H3 signal for that hook too: it's not on the gate
+read path during gameplay.
+
+### Concrete next session work
+
+The next session is unblocked but pivots away from `FUN_7100935ce0`.
+The right next move depends on which is cheapest to land:
+
+**Option A (highest information yield, ~1 hour): caller-PC capture +
+live-cache discovery.**  Modify `SeedBitfieldRead` to also log the
+**caller's link register (LR)** on the save-load fire — the value of
+LR at callback entry is the address inside the save-deserializer
+function that did `bl FUN_7100124134`.  That caller IS the live-cache
+populator; its decompile tells us:
+1. Where it stores the bit value (= the live-cache address / struct
+   offset).
+2. What index/key it associates with each bit.
+
+Once the live cache is mapped, the gate function decompiles trivially:
+search Ghidra xrefs for reads of the live cache address/offset — that
+short list contains the gate.
+
+Caller-PC capture in exlaunch is one line in the callback:
+```cpp
+uintptr_t caller_pc;
+__asm__ volatile("mov %0, x30" : "=r"(caller_pc));
+```
+(Note: `x30 == LR` only on entry to the callback; capture it before
+any other call.)
+
+**Option B (orthogonal, ~30 min once live cache is roughly located):
+Cheat Engine pointer-scan + memory-access breakpoint** on the live
+cache once Option A or static analysis localizes it.  The breakpoint
+hit PC is the gate-check unambiguously.  Same fallback strategy
+listed in iteration 7's recommendation; now better-targeted because
+we know SeedBitfieldRead populates the cache and we can capture the
+write destination there.
+
+**Option C (cheapest but slowest, ~hours): broaden the observability
+filter on `SeedBitfieldRead`.**  Drop the `hash == 0x60458608` filter
+and bracket the gate event narrowly with a level-attempt fire-counter
+toggled by player input.  If a different hash IS the gate input,
+its reads will surface this way.  Discouraged: the 55+ unfiltered
+xrefs will produce log spam that dwarfs the signal.
+
+**Recommended: Option A.**  Smallest change, biggest unblock.  We
+already have the trampoline installed; the diff is ~3 lines to log
+LR.  Once that LR is logged, the static-analysis loop closes — we
+read the caller, identify the live cache write, and the gate
+function falls out from there.
+
+**Do NOT remove the existing observability hooks** before Option A
+lands — the next run needs SeedBitfieldRead to fire its one save-load
+shot with the LR captured.  After Option A produces the live-cache
+function, the hooks can be retired.
+
+### Falsified candidates (carry forward)
+
+| Candidate fn | Status | Falsifier |
+|---|---|---|
+| `FUN_7100935ce0` | ❌ ruled out | Zero fires across 3:46 of gameplay including an unlock event (2026-05-26 obs run) |
+| `FUN_7100124134(hash=0x60458608)` as gate input | ❌ ruled out | Fires once at save-load only; never on gate-decision path (2026-05-26 obs run) |
+| `FUN_7101a5d9a0` | ❌ ruled out | PlayReport telemetry builder |
+| `FUN_7101c2155c` | ❌ ruled out | flower_coin (shop currency) |
+| `FUN_7101c6347c` | ❌ ruled out | INTRO_CUTSCENE_COMPLETED bool |
+| `FUN_7100383418` | ❌ ruled out | LSB-test idiom |
+| `FUN_7101b5bcd0` | ❌ ruled out | State-machine dispatch |
+| `FUN_71004853e4` | ❌ ruled out | Saturate-to-2 enum normalization |
+| `FUN_7101a59d24` | ❌ ruled out | Saturate-counter-at-9 increment |
+
+## 2026-05-26 — Wonder Seed gate observability run #2 (caller-PC capture)
+
+Same `SeedBitfieldRead` hook plus a one-line addition:
+`__builtin_return_address(0)` is captured BEFORE `Orig()`.  exlaunch's
+`And64InlineHook` patches the original function entry with
+`LDR X17 / BR X17 / <callback>` (an unconditional branch, not BLR — see
+[src/lib/hook/nx64/hook_impl.cpp:584-585](../switch-mod/src/lib/hook/nx64/hook_impl.cpp)),
+so LR on callback entry is the game-caller's return address.  Our C++
+prologue spills LR to the stack and `__builtin_return_address(0)` reads
+back from there — stable across `Orig()`.
+
+### Result
+
+Single line captured at boot:
+
+```
+00:00:35.092  SeedBitfieldRead(hash=0x60458608, bit=0) -> success=1 value=1
+              saveLoaded=1  caller_ret=NSO+0x66e5ec  call_at=NSO+0x66e5e8
+```
+
+The `call_at=NSO+0x66e5e8` lands inside **`FUN_710066e548`** — a
+function the walker had already flagged but iteration 3 falsified as a
+gate (correctly: the `cmp #12` was the enum value `0xc` being assigned
+to a struct field, not a threshold).  The hash the walker couldn't
+statically reconstruct at that site is now confirmed: `0x60458608`.
+
+### What FUN_710066e548 actually does — the live-cache populator
+
+Decompile (verbatim from
+[dump_v2_output.txt:1864-1936](../scripts/ghidra/dump_v2_output.txt)):
+
+```c
+void FUN_710066e548(long param_1) {
+  iVar4 = FUN_71001e4ae0();                    // course count for current world
+  *(int *)(param_1 + 0xa78) = iVar4;
+  if (iVar4 >= 1) {
+    uVar8 = 0;
+    lVar6 = param_1 + 0x650;                   // ← live-cache base
+    do {
+      bVar3 = *(byte *)(param_1 + 0xa28);      // in-session byte mask (≤4 courses)
+      ...
+      *(uint *)(lVar2 + 0x10) = uVar7;         // course index
+      *(bool *)(lVar2 + 0x0b) = uVar1 != 0;    // "set this session"
+      if (uVar1 == 0) {
+        FUN_7100124134(gmd, &local, 0x60458608, uVar8);   // ← our hooked read
+        *(bool *)(lVar2 + 0x0c) = local != 0;             //   persistent bit
+        if (local != 0 && *(int *)(lVar2 + 0x30) != 0xc) {
+          *(int *)(lVar2 + 0x30) = 0xc;        // ← status enum = "completed"
+          *(u8  *)(lVar2 + 0x34) = 1;          // ← dirty flag
+        }
+      } else {
+        FUN_710064f4f0(0x580b7eb4, uVar8, &iStack_68);    // ← sibling state
+        if (succ && *(int *)(lVar2 + 0x30) != iStack_68) {
+          *(int *)(lVar2 + 0x30) = iStack_68;
+          *(u8 *)(lVar2 + 0x34) = 1;
+        }
+      }
+      ...
+      uVar8 += 1;
+      lVar6 += 0xd0;                           // 208-byte stride per record
+    } while (uVar8 < count);
+  }
+}
+```
+
+**Inferred live-cache record layout** (208-byte stride at
+`param_1 + 0x650 + i*0xd0`):
+
+| Offset | Type | Field |
+|---|---|---|
+| `+0x08` | u8 | valid (set to 1) |
+| `+0x0b` | u8 | set-this-session (mask bit at `param_1+0xa28`) |
+| `+0x0c` | u8 | set-in-persistent (from `0x60458608`) |
+| `+0x10` | u32 | course index |
+| `+0x20` | u16 | UI status (0x100 if active) |
+| **`+0x30`** | **i32** | **status enum** (`0xc` = "completed"; other values populated from `0x580b7eb4`) |
+| `+0x34` | u8 | dirty flag |
+| `+0x38` | u64 | back-pointer to `param_1` |
+| `+0x50` | u32 | course index (mirror) |
+
+### This is the SAME structure iteration 3 identified
+
+[Iteration 3](#-breakthrough-2026-05-26-iteration-3---fun_7100935ce0-is-the-per-world-dispatch-target)
+documented:
+
+> `FUN_710048907c` and `FUN_7100487b0c` (the two cheat-anchor common
+> callers) iterate courses and BUILD progress records (with `Lock`/
+> `Unlock`/Top-of-Flag bits) into lists at `param_1 + 0x650`.  They're
+> downstream of the gate, used for rendering the world-map UI.
+
+We now have **three writers** to `param_1 + 0x650` (the world-map state
+cache):
+
+- `FUN_710066e548` — observed at save-load, reads `0x60458608` + `0x580b7eb4`
+- `FUN_710048907c` — cheat-anchor convergence (3 of 4)
+- `FUN_7100487b0c` — cheat-anchor convergence (2 of 4)
+
+Iteration 3 was right that these populate, not gate.  But it didn't go
+the next step: **the gate function is a READER of this cache**,
+specifically of the status enum at offset `+0x30` (e.g.,
+`ldr w*, [x*, #0x680]` for course 0, `+0xa48` for course 6, etc., for a
+direct base pointer — or `ldr w*, [x*+0x30]` once iterated to the
+per-course record).
+
+### Second per-course state confirmed: `0x580b7eb4` is an int (not a bool)
+
+The sibling hash `0x580b7eb4` (iteration 7's "adjacent per-course
+course-state" of unknown semantics) is queried via
+`FUN_710064f4f0(0x580b7eb4, course_idx, &int_out)` and the result is
+stored directly into the cache's status enum.  Two implications:
+
+1. `0x580b7eb4` is an INT-per-course, not a bitfield.  Likely the
+   `goal_id` / exit-type / completion-state enum.
+2. `FUN_710064f4f0` @ NSO `+0x64f4f0` is a NEW gmd reader (prologue
+   has `adrp x8, #0x363f000` — the page containing
+   `gmd::sInstance` at `+0x363F0F0`).  Probably container-A counter
+   reader with the same signature shape as `FUN_710012ae94` but
+   different bucket location.
+
+### Three new prologue-verified hook candidates (all trampoline-safe)
+
+| NSO offset | Function | Prologue first insn | Safety |
+|---|---|---|---|
+| `+0x66deec` | `FUN_710066deec` — sole caller of cache populator | `stp x29, x30, [sp, #-0x20]!` | ✅ safe |
+| `+0x64f4f0` | `FUN_710064f4f0` — `0x580b7eb4` reader | `sub sp, sp, #0x50` | ✅ safe |
+| `+0x66e548` | `FUN_710066e548` — cache populator (already known) | `sub sp, sp, #0x70` | ✅ safe |
+
+### Concrete next session work
+
+**Priority A — Decompile `FUN_710066deec` @ NSO `+0x66deec` (~20 min).**
+This is the ONE caller of the cache populator (per dump_v2_output
+"Direct callers: Total refs: 1").  Its prologue at +0x66defc loads
+`x0 = [x0, #0x30]` — so it's reading a substructure at offset 0x30
+from its own param_1, then `bl FUN_7100???dfb0` (one of its callees,
+likely a child accessor).  Decompile reveals:
+- What `param_1` represents (a world manager? a session struct?)
+- What calls `FUN_710066deec` — the upstream gate-control entry point
+- Whether the populator runs every frame, only at world-map-load, or
+  only on certain events
+
+**Priority B — Decompile `FUN_710064f4f0` @ NSO `+0x64f4f0` (~15 min).**
+Recover its container source.  If it's container-A (`gmd+0xe0..0xf8`),
+then `0x580b7eb4` is a counter-per-course and the M3.3
+`grantContainerACounter` primitive can already grant it.  This would
+let AP grant per-course completion state directly.
+
+**Priority C — Cache-read xref walk (~30 min).**  In Ghidra, find all
+readers of the cache record's status field (offset `+0x30` of any
+0xd0-byte record at `param_1 + 0x650`).  Concrete searches:
+
+- `ldr w*, [x*, #0x680]` — status field of course 0 record (`+0x650 + 0x30`)
+- `ldr w*, [x*, #0x750]` — status field of course 1 record (`+0x650 + 0xd0 + 0x30`)
+- Generic: `ldr w*, [x*, #0x30]` within functions that also touch
+  `param_1 + 0xa78` (the count field) or that iterate by `+0xd0`
+
+The smaller list those produce is the candidate gate-reader set.  Cross-
+reference against world-map travel Nerves (vtable `0x33fd738`) for
+caller context.  Expected: one function does `cmp w8, #0xc; b.eq <allow>`
+or similar — that's the gate.
+
+**Priority D — Optional confirmation hook**: install a trampoline on
+`FUN_710066deec`.  It should fire whenever the world-map UI refreshes
+the live cache.  Frequency tells us whether the cache is per-frame
+(unlikely; would have shown more SeedBitfieldRead fires) or
+event-driven.  Low priority — Priority A's decompile likely answers
+this directly.
+
+### Implementation note for the next implementation session (once gate is found)
+
+The eventual gate-override hook will read the world ID + course index
+from the cache record's struct context, look up the AP-granted Wonder
+Seed count for that world bucket, compare against the per-world
+threshold table (from [regions.json](../apworld/smbw_archipelago/data/regions.json)),
+and either:
+
+- (A) Return the override result from the gate function directly (if
+  the gate is a single bool reader of the status enum), OR
+- (B) Modify the cache record's status enum field before the gate
+  reads it (if the gate runs against the cache and the cache is
+  refreshed independently of AP) — note this approach competes with
+  the legitimate writers (`FUN_710066e548`, `FUN_710048907c`,
+  `FUN_7100487b0c`) and needs the same "absolute-overwrite + periodic
+  tick" pattern as the badge sync.
+
+Option A is preferred if structurally feasible.
+
+### Remove the observability hooks once Priority A-C land
+
+`WorldUnlockCheck` should be removed (confirmed irrelevant).
+`SeedBitfieldRead` can stay during gate-hook development as a sanity
+signal but should be retired before shipping.
+
+### 2026-05-26 — REVISION after decompiling FUN_710066deec + FUN_710064f4f0
+
+**Reversal of the previous section's interpretation.**  User pasted
+decompiles of the two follow-up targets.  Both functions decompile
+cleanly — but their semantics overturn the "gate is a reader of
+`+0x30`" hypothesis.
+
+#### `FUN_710064f4f0` — per-course PLAYER CHARACTER lookup, not status
+
+The function reads an int from a typed-virtual container at
+`gmd+0x2b0..0x2cc` keyed by `(hash, course_idx)`, then resolves that
+int through a 12-way string-match against character names: `Mario`,
+`Luigi`, `Peach`, `Daisy`, `KinopioYellow`, `KinopioBlue`, `Kinopico`,
+`Totten`, `YoshiGreen`, `YoshiRed`, `YoshiYellow`, `YoshiBlue` (indices
+0..11).  Returns 1 + writes the character index to `*param_3`.
+
+So **`0x580b7eb4` is per-course "which character last played this
+course"** — for displaying the character portrait icon next to the
+course on the world map.  Not a state enum.
+
+This also surfaces a new container we'll call **Container E** at
+`gmd+0x2b0..0x2cc`:
+
+| Offset | Field | Role |
+|---|---|---|
+| `+0x2b0` | u32 | container-E limit |
+| `+0x2b8` | ptr | container-E typed-sub-obj array (stride 0x50) |
+| `+0x2c0` | ptr | container-E bucket array (8-byte entries: key + idx) |
+| `+0x2cc` | u32 | container-E bucket count |
+
+Sub-obj layout (different from container C): vtable at `+0`, size at
+`+0x20`, **data pointer at `+0x28` pointing to a `uint32_t[]` array**
+indexed by course (not bit-indexed).  So container E holds u32-per-key
+arrays.
+
+#### `FUN_710066deec` — world-map UI cache REBUILD orchestrator
+
+```c
+void FUN_710066deec(long param_1) {
+  FUN_710066dfb0(*(undefined8 *)(param_1 + 0x30));     // sub-thing setup
+
+  // 6 sequential cache populators — each fills different fields of the
+  // same `param_1 + 0x650 + i*0xd0` record array:
+  FUN_710066e548(param_1);    // ← our SeedBitfieldRead's caller
+  FUN_710066e964(param_1);
+  FUN_710066e36c(param_1);
+  FUN_710066ed90(param_1);
+  FUN_710066e134(param_1);
+  FUN_710066e6c0(param_1);
+
+  // Per-record sentinel resets at +0x9:
+  *(undefined *)(param_1 + 0x659) = 0;     // record 0 (+0x650 + 0x9)
+  *(undefined *)(param_1 + 0x729) = 0;     // record 1 (+0x650 + 0xd0 + 0x9)
+  *(undefined *)(param_1 + 0x7f9) = 0;     // record 2
+  *(undefined *)(param_1 + 0x8c9) = 0;     // record 3
+
+  // Input-mapping switch: Key A or Key B set
+  if (*(char *)(param_1 + 0xa7e) == '\0') { ... Key_A ... }
+  else                                     { ... Key_B + Key_A ... }
+}
+```
+
+This is a **whole-cache rebuild**, not a single-field update.  Run on
+world-map re-entry, save load, and any cache-invalidation event.  The
+`+0x30` "status enum" we tentatively called the gate input is actually
+**the world-map icon enum** — values 0..11 are character portraits
+(see Container E above), value `0xc` is the "completed" stamp.
+
+**The cache is rendering, not gating.**  The corrected mental model:
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ World-map UI render path (NOT the gate):                            │
+│                                                                     │
+│   persistent storage (gmd container D + container E)                │
+│         │                                                           │
+│         ▼                                                           │
+│   FUN_710066deec [cache rebuild orchestrator]                       │
+│         │  calls 6 populators including                             │
+│         │  FUN_710066e548 → reads 0x60458608 (cleared) + 0x580b7eb4 │
+│         ▼  (last-char) into +0x30                                   │
+│   cache at param_1 + 0x650 (208 B/record per course)                │
+│         │                                                           │
+│         ▼                                                           │
+│   world-map renderer (draws character icon or "cleared" stamp)      │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+The Wonder Seed gate is **a separate code path** that we haven't yet
+observed.  Iteration 7's static analysis already implied this:
+
+> ZERO popcount-shaped functions iterate over `0x60458608` bits.
+
+If the gate doesn't popcount the per-course bitfield, it must consult
+an already-aggregated **per-world Wonder Seed COUNT** stored under a
+hash we haven't identified.
+
+#### Where the gate input lives — narrowed hypothesis
+
+Iteration 7's third critical finding:
+
+> Per-world record tables `0x71029f0b34`/`0x71029f0f94`/`0x71029f13f4`
+> are runtime-populated (all zeros statically); the per-world hash at
+> `+0x68` of each record is unreadable without runtime observation.
+
+These per-world record tables hold a **per-world hash at `+0x68`**.
+Those are almost certainly the per-world subtotal hashes — one hash
+per AP bucket (W1, W2, W3, W4, W5, W6, Petal Isles, Special), each
+keying a container-A counter that the game increments at seed
+acquisition and decrements / checks at gate-decision time.
+
+### Next observability move — choose ONE
+
+**Option α (precise, low-spam): Dump per-world record tables at
+runtime.**  Add a one-shot dumper called from
+`NerveActivateOnce::Callback` after `markSaveLoaded` (or from the next
+fire of `SeedBitfieldRead`).  Walk each of the 3 base tables and dump
+`record[+0x68]` for the first ~16 entries.  Returns the per-world
+hash list directly.  Once we have those hashes, hook
+`FUN_710012ae94` (container-A reader) filtered on hash IN that list +
+log `(caller_pc, hash, value)`.  Caller PC during a gate attempt
+identifies the gate function unambiguously.
+
+Estimated cost: ~30 min to write the dumper + filter; ~5 min in-game
+to capture.
+
+**Option β (broad, more spam, no static work): Container-A reader
+sampling.**  Hook `FUN_710012ae94` (NSO `+0x12ae94`, container-A
+counter reader) with the same caller-PC capture pattern as
+`SeedBitfieldRead`.  No hash filter; capture a budget of ~200 calls
+across boot + 2 minutes of gameplay including a gate attempt.  The
+caller PCs that fire ONLY around gate attempts are the gate-readers;
+the static hash they query is the per-world subtotal hash.
+
+Estimated cost: ~15 min to write; needs careful in-game timing to
+bracket the gate attempt; risk of log flood.
+
+**Option γ (orthogonal): Hook `FUN_7100884040` (Lock/Unlock string
+carrier).**  Iteration 0b identified this as the only function in the
+binary that touches BOTH `'Lock'` and `'Unlock'` strings (`+0x4c` and
+`+0x74` from entry).  It's not in the cmp-shape walker's top 30, so
+it never decompiles as a gate via the static-pattern heuristic — but
+if it's the gate's UI-result display function, hooking it tells us
+WHEN gate decisions happen.  Add `caller_pc` capture too.  Two
+possibilities:
+- Hook fires → its caller is the gate function (1-hop trace).
+- Hook never fires → not the gate result display; rule out.
+
+Estimated cost: ~10 min to write + deploy.  Smallest blast radius if
+it doesn't work.
+
+**Recommended: Option α.**  The per-world record tables are an
+already-known data structure with a known address; the dump is
+unambiguous and the resulting per-world hash list collapses the rest
+of the problem.  Option β is the fallback if α's hashes don't appear
+on container-A reads near gate attempts.  Option γ is a cheap
+parallel experiment but probably less informative.
+
+### Updated falsified candidates
+
+Add to the table:
+
+| Candidate fn | Status | Falsifier |
+|---|---|---|
+| `FUN_710066e548` as gate-reader | ❌ ruled out (now confirmed) | World-map UI cache populator: writes `+0x30` icon enum (character index or `0xc` "cleared stamp"), not a gate input |
+| `FUN_710066deec` as gate | ❌ ruled out | Cache-rebuild orchestrator; calls 6 populators + clears sentinels |
+| `+0x30` of `param_1 + 0x650 + i*0xd0` records as gate input | ❌ ruled out | UI icon enum, not status (0..11 = character portrait, 0xc = cleared stamp) |
+| `param_1 + 0x650` cache | ⚠️ render-state, NOT gate-state | Multiple writers populate it for world-map rendering |
+
+## 2026-05-26 — observability run #3 (per-world table dump + container-A reader)
+
+Two additions landed:
+
+1. **Per-world record table dumper** (`probe::dumpPerWorldTables()`) —
+   reads 256 bytes from each of the 3 base addresses iteration 7
+   flagged: NSO `+0x29f0b34` / `+0x29f0f94` / `+0x29f13f4`.  One-shot,
+   triggered from the first `SeedBitfieldRead` fire at save-load.
+2. **`ContainerAReader` hook** on `FUN_710012ae94` @ NSO `+0x12ae94`
+   (container-A counter reader, ~66 xrefs).  Per-hash budget = 5;
+   caller-PC capture via `__builtin_return_address(0)`.  **Hook
+   installed without crash** — the `cbz w2` in the prologue WAS
+   relocator-handled correctly by exlaunch (contra the
+   PlayerHpStructLatch inline-hook precedent at `+0x2743BC`, which
+   was a different code path).
+
+### Test session (Ryujinx_1.3.3_2026-05-26_09-34-58.log)
+
+5:50 of gameplay; the player loaded a save (W2 with 4 Wonder Seeds),
+played + died + cleared a W2 course (+1 Wonder Seed → 5 W2 seeds),
+opened a W2 gate requiring 5 seeds, transitioned to W3 (Fluffy-Fluff
+Peaks, 0 seeds), bought 1 Wonder Seed from a Poplin house, and
+**twice tried to enter a level needing more than 1 seed — was denied
+in the UI**.
+
+### Reversal #1: iteration 7's "per-world record tables" interpretation is wrong
+
+The 3 addresses are NOT per-world record tables.  Runtime dump shows:
+
+**Table 0** @ NSO `+0x29f0b34`: first 0x70 bytes zero, then a dense
+array of u32 hashes starting at `+0x70`:
+```
++0x070: 0235d948 6303c6d1 d8163612 eb41ddd5
++0x080: a6140d7c 6f9dfc59 e7773731 406f7425
++0x090: f3d3849c a4dbcac9 b465ad47 6d1b5c25   ← known: badge UI bitmap
++0x0a0: cea26ca1 48e0dec7 72128f1d f1c0ef95
++0x0b0: 4f262e62 6d2e5a9f 7ae70f64 43318285
++0x0c0: 55815859 64fe8cc4 fc951a99 6af4303e   ← known: W1 Royal Seed @ +0xc0
++0x0d0: 05015b41 df9a528a 5db62877 2c51d948
++0x0e0: 03722209 e1f4956f 48c27a6f 2309a645
++0x0f0: 46721422 b161b8ab 57af904b 7b90402e   ← known: 0x46721422 = D-writer
+```
+
+The mix of known container-C bitfield keys (`0x6d1b5c25`), known
+container-B bool keys (`0x55815859`), and known container-D
+per-course bitfield keys (`0x46721422`, `0xb161b8ab`) means this is
+**not a per-world index**.  It's a **flat schema/registry table** of
+all hash-keyed save-data fields in some indexing order.
+
+**Table 1** @ NSO `+0x29f0f94`: all zeros (256 bytes scanned).
+
+**Table 2** @ NSO `+0x29f13f4`: zeros for first `+0x70`, then a header
+`00000000 ffffffff 00000002 00000000` followed by small ints (0..8):
+```
++0x080: 00000001 00000004 00000002 00000003
++0x090: 00000002 00000002 00000008 00000008
++0x0a0: 00000008 00000000 00000001 00000001
++0x0b0: 00000002 00000001 00000001 00000001
++0x0c0..0x0f0: many 00000001s
+```
+
+The 0..8 values are likely **type/size discriminators** parallel to
+table 0's hash array (entry N's type at table-2 +0x80 + N*4).  So
+tables 0 and 2 together form a **field schema**: hash → type.
+Iteration 7's "hash at +0x68 of each record" claim was a
+misreading — the +0x68 figure must have come from a different code
+path that loads ONE entry into a context struct.
+
+**Implication**: there's no per-world subtotal hash list to extract
+from these tables.  The persistent per-world seed count must be
+stored elsewhere — either computed on-the-fly from the per-course
+bitfield `0x60458608`, or kept in a different container we haven't
+mapped yet.
+
+### Discovery #1: the 5-hash "current world" mirror
+
+By cross-referencing `gmd.A_writer` fires against the gameplay
+timeline (course-clears, world transitions, Poplin purchases), we
+identified **a 5-hash group that ALL update synchronously** with the
+current world's Wonder Seed count:
+
+```
+0x21f89ab1
+0x8c20ccb7   ← CLAUDE.md claimed "lifetime counter" — that was WRONG
+0xeeff353b
+0x390eb960
+0xa0e5f253
+```
+
+Event log:
+
+| Timestamp | Event | All 5 hashes write |
+|---|---|---|
+| 00:00:31.373 | save-load deserializer populates current world (W2) | value=4 (player had 4 W2 seeds at save) |
+| 00:03:00.287 | W2 course clear → +1 seed | 4 → 5 |
+| 00:03:30.022 | W2→W3 transition (write phase 1) | 5 → 0 |
+| 00:04:35.338 | W3 world-map fully loaded | 0 (still) |
+| 00:04:58.372 | Poplin house W3 Wonder Seed purchase | 0 → 1 |
+
+**Interpretation**: these are not 5 different counters — they're the
+same "currently-viewed world's seed count" value mirrored under 5
+hash keys (probably for different sub-systems: UI, gate-check,
+PlayReport `wonder_seed` field, save flush, ?).  The CLAUDE.md note
+that `0x8c20ccb7` is "lifetime, recomputed at save" was empirically
+falsified: this value RESETS to 0 on every world transition.
+
+### Discovery #2: per-world persistent storage is NOT in container A
+
+When the player transitions OUT of W2 (3:30), the W2 count (5) is
+**discarded**, not stored in a parallel "W2 counter" hash slot.  We
+observed no writes to any container-A hash like "W2_seed_count = 5"
+before the transition.  Same on W3 entry — only zero-fill.
+
+This means **the persistent per-world Wonder Seed count is computed
+on-the-fly at world entry, not stored**.  The most likely source:
+counting set bits in the per-course Wonder Seed bitfield `0x60458608`
+filtered to courses belonging to the current world.
+
+Implication for the gate: even if we override the 5-hash "current
+view" slot, the game will recompute it the next time the player
+re-enters that world's map.  So a durable AP override has to either
+(a) write to the per-course bitfield, or (b) hook the recomputation
+function.
+
+### Discovery #3: 4 candidate gate-reader caller PCs
+
+Reads of the 5-hash group surfaced these call sites (`call_at` is the
+exact `bl FUN_710012ae94` instruction):
+
+| Caller (`call_at`) | Hash read | When |
+|---|---|---|
+| `NSO+0x5f45a8` | `0x390eb960` | save-load (×2) |
+| `NSO+0x5ee8c4` | `0x390eb960` | save-load (×3) |
+| `NSO+0x82be90` | `0xeeff353b` | save-load, after course-clear, at W3 transition |
+| `NSO+0x5af348` | `0xeeff353b` | course_in, W3 entry |
+| `NSO+0x89c8d0` ★ | many hashes | **dominant batch reader** — fires on every UI tick; almost certainly NOT the gate |
+
+**Of the four non-batch callers, none captured a fire DURING the W2
+gate-pass event (3:27) or the late-session DENIAL events (5:11+).**
+Reason: per-hash budget was exhausted (5 fires) by save-load reads
+before the gate decisions ran.
+
+### Discovery #4: ContainerAReader cbz-prologue trampoline DID work
+
+The hook installed cleanly and ran for 5:50 of gameplay without
+triggering any guest abort.  This is a positive data point for future
+trampoline hooks on functions with `cbz/cbnz/tbz/tbnz` in the
+prologue — exlaunch's relocator handles them correctly when invoked
+via `HOOK_DEFINE_TRAMPOLINE::InstallAtOffset` (function entry).  The
+prior failure at `+0x2743BC` was specifically an INLINE hook
+(`HOOK_DEFINE_INLINE`) mid-function, a different code path.
+
+### Numbers
+
+| Channel | Output |
+|---|---|
+| `installing ...` lines | 18 |
+| `pwr table=N off=...` lines | 51 (16 rows × 3 tables + 3 headers) |
+| `A_reader` fires | 147 |
+| Unique `(hash, caller_pc)` pairs in A_reader | ~60 |
+| `gmd.A_writer` fires | ~90 |
+| `gmd.D_writer` fires | ~6 (course-clear writes to per-course bitfields) |
+| `WorldUnlockCheck(...)` fires | **0** (still never fires — `FUN_7100935ce0` confirmed irrelevant for the 3rd time) |
+| `SeedBitfieldRead(hash=0x60458608, ...)` fires | 1 (boot-time only, as expected) |
+
+### Verdict
+
+We have STRONG evidence that:
+- The Wonder Seed gate consults the per-current-world count (one of
+  the 5 mirror hashes), NOT the per-course bitfield directly.
+- The actual gate-reader function is among `{+0x5f45a8, +0x5ee8c4,
+  +0x82be90, +0x5af348}` or another caller we missed due to budget.
+
+We do NOT yet have:
+- The exact gate-reader function for the threshold compare.
+- Confirmation that overriding the 5-hash group is sufficient to
+  unlock gates (vs. needing to write the per-course bitfield).
+
+### Concrete next session work
+
+**Iteration #4 — budget tuning, then re-run the same protocol:**
+
+Replace `s_reader_hash[]/s_reader_count[]` (per-hash budget) with
+`s_reader_pairs[]` (per-`(hash, caller_pc)`-pair budget) and BLOCKLIST
+the dominant batch caller `caller_ret=0x89c8d4` entirely.  Each
+distinct call-site to each hash then gets its own 5-fire quota,
+which guarantees the gate-decision reads (whichever caller they
+come from) will be captured even after save-load uses many slots.
+
+Pseudocode:
+
+```cpp
+struct ReaderPairSlot {
+    std::atomic<uint64_t> key{0};   // (hash << 32) | (caller_pc & 0xFFFFFFFF)
+    std::atomic<uint32_t> count{0};
+};
+static ReaderPairSlot s_reader_pairs[256];   // 256 slots × 12 B = 3 KB
+
+bool readerBudgetTake(uint32_t hash, uintptr_t caller_pc) {
+    if (hash == 0) return false;
+    // Blocklist: skip the dominant batch reader (~95% of fires).
+    constexpr uintptr_t kBatchReaderCallSite = 0x89c8d0;
+    if (caller_pc == kBatchReaderCallSite) return false;
+    uint64_t key = (static_cast<uint64_t>(hash) << 32)
+                 | (static_cast<uint32_t>(caller_pc));
+    // linear-scan CAS-claim or hit-count
+    ...
+}
+```
+
+Then re-run the same test protocol with one critical addition: when
+trying to enter the gated W3 level, **wait ~5 seconds** between
+denial attempts so the per-frame UI-batch reads don't crowd out the
+gate-attempt reads.
+
+Expected result: the gate-attempt reads of `0xeeff353b` /
+`0x390eb960` / `0x21f89ab1` etc. surface with **a NEW caller PC**
+(not `0x82be90` / `0x5af348` / etc., which we already know).  That
+new caller is the gate function.
+
+Alternative if iteration #4 surfaces nothing: hook the FUNCTION that
+contains the gate caller PC trace.  Iteration 3's "8-call orphan
+dispatch site" at `0x7100480ff8..0x710048104c` (the `FUN_7100935ce0`
+callers) is still a candidate IF it's reached via a path we haven't
+exercised.  Try fast-travel cursor input.
+
+### Updated falsified candidates
+
+| Candidate fn / hypothesis | Status | Falsifier |
+|---|---|---|
+| `0x8c20ccb7` is "lifetime Wonder Seed counter" (CLAUDE.md) | ❌ ruled out | Resets to 0 on W2→W3 transition; tracks current-world count |
+| 3 tables at NSO `+0x29f0b34..+0x29f13f4` are "per-world record tables with hash at +0x68" (iteration 7) | ❌ ruled out | Tables are flat schema/registry (hash array + parallel type array); not per-world indexed |
+| Persistent per-world Wonder Seed count is stored in container A | ❌ ruled out | No writes to "W2_count = 5" before W3 transition; only "current view" slot reset |
+
+## 2026-05-26 — 🎯 GATE FUNCTION FOUND — observability run #4
+
+After iteration #3 hit budget exhaustion, iteration #4 switched to a
+per-`(hash, caller_pc)`-pair budget and blocklisted the dominant
+batch caller at `NSO+0x89c8d0`.  The user ran a focused 30-second
+test: load save, two gate-denial attempts spaced 3 seconds apart in
+W3 with only 1 Wonder Seed.
+
+### The match: `call_at=NSO+0x1787b8c` fires exactly twice
+
+```
+00:00:38.735  A_reader hash=0x390eb960 value=1  saveLoaded=1  call_at=NSO+0x1787b8c
+   ─ ~7s gap ─
+00:00:45.908  A_reader hash=0x390eb960 value=1  saveLoaded=1  call_at=NSO+0x1787b8c
+```
+
+Two reads, ~7 seconds apart, both returning the W3 current-world seed
+count of 1.  Matches the user's "try → wait 3s → try → wait 3s →
+quit" protocol exactly.  All other readers of the same hash fired
+either at boot/save-load or in tight UI-refresh bursts.
+
+### The gate function: `FUN_71001787b40` @ NSO `+0x1787b40`
+
+Disassembled directly from `main.nso` via [scripts/dump_prologue.py](../scripts/dump_prologue.py):
+
+```asm
++0x1787b40: sub  sp, sp, #0x40                  ; prologue (trampoline-safe)
++0x1787b44: stp  x29, x30, [sp, #0x20]
++0x1787b48: stp  x20, x19, [sp, #0x30]
++0x1787b4c: add  x29, sp, #0x20
++0x1787b50: ldr  x8,  [x0, #0x20]
++0x1787b54: mov  x19, x0                        ; x19 = self (the gate object)
++0x1787b58: sub  x0, x29, #8
++0x1787b5c: and  x8, x8, #-4
++0x1787b60: ldr  w1, [x8]
++0x1787b64: bl   #0x5372d0                      ; some sub-eval (course/gate id?)
++0x1787b68: ldr  x8, [x19, #0x28]
++0x1787b6c: mov  w2, #0xb960                    ; w2 = 0x390eb960 — the per-current-world
++0x1787b70: movk w2, #0x390e, lsl #16           ;   Wonder Seed count hash
++0x1787b74: add  x1, sp, #0xc
++0x1787b78: and  x8, x8, #-4
++0x1787b7c: ldr  w8, [x8]
++0x1787b80: stp  wzr, w8, [sp, #0xc]
++0x1787b84: adrp x8, #0x363f000
++0x1787b88: ldr  x0, [x8, #0xf0]                ; x0 = gmd::sInstance @ +0x363F0F0
++0x1787b8c: bl   FUN_710012ae94                 ; READ count: A_reader(gmd, &out, 0x390eb960)
++0x1787b90: sub  x0, x29, #8
++0x1787b94: bl   #0x3b30a0
++0x1787b98: cbz  x0, #0x1787bc4                 ; bail to "no threshold available" path
++0x1787b9c: ldr  w20, [sp, #0xc]                ; w20 = count
++0x1787ba0: bl   FUN_71001787bd8                ; GET threshold
++0x1787ba4: cmp  w20, w0                        ; cmp count, threshold
++0x1787ba8: cset w1, ge                         ; w1 = (count >= threshold) ? 1 : 0
++0x1787bac: add  x0, x19, #0x30                 ; x0 = &self[+0x30]
++0x1787bb0: bl   FUN_710032aea4                 ; SET gate-passed flag
++0x1787bb4: ldp  x20, x19, [sp, #0x30]
++0x1787bb8: ldp  x29, x30, [sp, #0x20]
++0x1787bbc: add  sp, sp, #0x40
++0x1787bc0: ret
+```
+
+**Behavior**: takes `x0` = gate object pointer, computes
+`count_in_current_world >= threshold_for_this_gate`, stores the
+boolean result into `self[+0x30]` (via the setter `FUN_710032aea4`).
+
+**Companion functions**:
+- **`FUN_71001787bd8`** — threshold getter.  Reads `*(self+0x39)` flag
+  byte; fast path returns `*(self+0x34)` directly; slow path follows
+  pointer chain `*(self+0x10) → *(self+0x18) → *(x8+0xc)` (likely a
+  child container of thresholds).
+- **`FUN_710032aea4`** — flag setter; stores the bool into the gate
+  object's state struct.
+- **`FUN_71001787b04`** — direct caller of `FUN_71001787b40`; does
+  post-evaluation bitfield update on `*(gate+0x18)`.
+
+**Prologue trampoline-safe** (verified): `sub sp` + `stp` + `stp` +
+`add x29` + `ldr` — no PC-relative ops in the first 5 instructions.
+
+### Implementation paths for AP override
+
+Three viable approaches, ordered by cleanness:
+
+**(A) Override the threshold** — hook `FUN_71001787bd8`, intercept
+the return value, return 0 when AP says the player should pass this
+gate.  Pros: tiny diff, single function-pointer override, natural
+game-state recompute happens correctly.  Cons: need to identify
+WHICH gate is being queried (from the `self` pointer) to decide
+whether AP wants this one to pass.
+
+**(B) Override the count read** — hook `FUN_710012ae94` filtered on
+`caller_pc == NSO+0x1787b90` (just this one call site).  Substitute
+the AP-granted per-world seed count for the queried world.  Pros:
+single-purpose narrow override; we already hook this function.
+Cons: same gate-identity problem as (A); also the natural count
+gets used for UI display elsewhere — we don't want to override THAT.
+
+**(C) Override the predicate result** — hook `FUN_71001787b40` itself,
+call Orig() to let it compute naturally, then write `true` into
+`self[+0x30]` (via the same setter or direct memory write) if AP
+wants the gate to pass.  Pros: single hook, doesn't perturb counts
+elsewhere.  Cons: need to identify gate from `self`; flag-offset
+within `+0x30` substruct still needs decompiling.
+
+**Recommended: (A) threshold override.**  Hook `FUN_71001787bd8`,
+inspect `self` to identify the gate, return AP's threshold (0 if
+pass, original if not).  The lowest-impact change with the highest
+signal-to-correctness.
+
+### Gate identity — open question
+
+`FUN_71001787b40` takes `x0` = a gate-state struct.  To override per
+AP, we need to know which gate is being queried.  Options:
+
+1. **Stable pointer**: each gate has a unique struct pointer at a
+   known location.  Hook Orig() and snapshot `x0` for each fire;
+   correlate with which gate the user is approaching.
+2. **Identifier field**: read `*(self + N)` for some N — likely a
+   gate-id, course-id, or world-id field.  Inspection from the
+   decompile of FUN_71001787b04 (the caller) or
+   FUN_71001787b40's `bl #0x5372d0` early call would reveal this.
+3. **Caller dispatch**: the call site at `+0x1787b14` is the only
+   caller of FUN_71001787b40 we've observed.  Look at FUN_71001787b04's
+   callers to find per-gate dispatch logic.
+
+### Next session work (final stretch)
+
+1. **Decompile `FUN_71001787b40` + caller chain `FUN_71001787b04` →
+   its callers**.  Identify the gate-identity field in `self`.
+2. **Test the 5-hash override hypothesis**: if AP writes 5 to all 5
+   per-current-world hashes (`0x21f89ab1, 0x8c20ccb7, 0xeeff353b,
+   0x390eb960, 0xa0e5f253`) just before the user approaches a W3
+   gate needing 5 seeds, does the gate pass?  This is the cheapest
+   first AP override path — write per-world counts to the current
+   view slot and let the natural game logic handle it.
+3. **OR** if step 2 doesn't work (because the recompute on world
+   re-entry undoes it), implement the threshold-override hook on
+   `FUN_71001787bd8`.
+
+### Closeout for observability hooks
+
+`WorldUnlockCheck` — confirmed irrelevant across 4 runs, 0 fires.
+**Remove it.**
+
+`SeedBitfieldRead` — fires once at save-load to populate the
+world-map UI render cache; never on the gate path.  **Remove it**
+once the gate-override implementation is committed.
+
+`ContainerAReader` — the key hook that surfaced the gate function.
+**Keep installed** during gate-override development as a sanity
+signal; retire before shipping.
+
+`probe::dumpPerWorldTables` — one-shot debug aid that did NOT yield
+the per-world hash list (tables turned out to be schema/registry,
+not per-world records).  Useful negative finding; **remove**.
+
+## 2026-05-26 — ✅ HYPOTHESIS CONFIRMED — 5-hash override unlocks gates
+
+Iteration #5 landed `probe::pushWonderSeedOverride(uint32_t value)` —
+writes `value` to all 5 per-current-world Wonder Seed count hashes via
+the existing container-A counter writer at NSO `+0x0049F648`.  Wired
+into `NerveActivateOnce::Callback` on a ~120-fire tick (~2 s under
+normal gameplay), gated on `probe::isSaveLoaded()`.
+
+**User test (2026-05-26)**: same save state from iteration #4 (W3 with
+1 actual Wonder Seed; a gate in W3 was previously denying entry).
+Build deployed; player loaded the save and walked to the same gate.
+
+**Result**:
+- Wonder Seed counter UI showed **99** (the override value).
+- The gate that previously denied entry **opened**.
+- Level entry succeeded.
+
+This closes the gate-question.  The Wonder Seed gate predicate
+`FUN_71001787b40` reads container-A hash `0x390eb960` for the count;
+overriding that hash (and its 4 mirrors) is sufficient to satisfy any
+seed-gated path in the game.
+
+### Production path for AP integration
+
+Drive `probe::pushWonderSeedOverride(per_world_count)` from the bridge
+on every Switch `HelloMsg` + every AP `ReceivedItems` for any Wonder
+Seed item + a periodic ~2 s tick.  The bridge tracks
+`per_world_count[8]` derived from AP `items_received` filtered to
+Wonder Seed items per bucket (W1-W6, Petal Isles, Special).
+
+When the player switches worlds on the map, the natural deserializer
+writes the new world's count from per-course bitfield computation.
+Our tick then overwrites with AP's count for the current world.
+Brief flicker possible on world transitions (~2 s window) but the
+override re-asserts on the next tick.
+
+### Required additional plumbing
+
+1. **Current-world tracking.**  The override has to use the
+   *currently-viewed* world's AP count, not all-worlds-combined.
+   The current world index is in container-A hash `0x9f5ead3c`
+   (observed empirically: W2→3 transition at run 09-34-58 04:35.272
+   wrote it from 2 to 3).  Bridge can subscribe to writes of this
+   hash (we already log them) or the Switch can hash-route the
+   override at write time.
+2. **Wire schema.**  New `WonderSeedOverride { current_world: u8,
+   count: u32 }` message OR generalize: just send the 8-bucket
+   per-world array and let the Switch pick the right one based on
+   `0x9f5ead3c`.
+3. **Wonder Seed AP items** (W1..W6 Wonder Seed, Petal Isles Wonder
+   Seed, Special World Wonder Seed) need to be added to
+   `apworld/smbw_archipelago/data/items.json` and Items.py if not
+   already; the bridge counts them per bucket.
+
+### Iteration #5 status
+
+Smoke test code as-shipped writes a hard-coded `99` to all 5 hashes
+unconditionally.  This is GOOD for verifying the hypothesis but
+should NOT be merged to production — the value needs to be
+AP-derived per-world.
+
+**Next session work** (M3 implementation):
+- Replace the hard-coded `pushWonderSeedOverride(99)` in
+  `NerveActivateOnce::Callback` with a bridge-driven call that uses
+  the AP-derived count for the current world.
+- Add the per-world current count message type on the wire.
+- Wire `pushWonderSeedOverride` to fire on `HelloMsg` and on
+  per-world-count updates (when AP grants a Wonder Seed item for a
+  world).
+- The 2 s tick is the safety net for world-map navigation.
+- Add tests for the new wire message; live-validate end-to-end with
+  AP sending W1-only seeds and confirming W1 gates open but W2 gates
+  stay closed.
+
+### Decommissioning the observability hooks
+
+Now that we have a working gate override, the following hooks can be
+retired (in the same PR or a follow-up):
+
+- `WorldUnlockCheck` (NSO `+0x935ce0`) — confirmed not the gate, 0
+  fires across 4 runs.
+- `SeedBitfieldRead` (NSO `+0x124134`, filtered on `0x60458608`) —
+  used for the iteration #2 caller-PC capture; mission complete.
+- `ContainerAReader` (NSO `+0x12ae94`) — used for the iteration #3-4
+  caller-PC bucket; mission complete.  Keeps fires logged via the
+  existing `gmd.A_writer` trampoline if needed for debugging.
+- `probe::dumpPerWorldTables` — call site in SeedBitfieldRead's first
+  fire.  Negative result.
+- `probe::readerBudgetTake` slot arrays — only used by ContainerAReader.
+
+The `GmdContainerAWriter` trampoline at NSO `+0x49F648` MUST stay —
+that's the writer our override uses + the save-loaded gate signal.
