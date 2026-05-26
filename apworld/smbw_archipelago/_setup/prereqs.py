@@ -118,7 +118,7 @@ def repo_root() -> Path:
 def primary_worktree_root(start: Path | None = None) -> Path:
     """Resolve the *primary* worktree's repo root.
 
-    Submodules (``vendor/Archipelago/`` and ``switch-mod/``) only get
+    Submodules (``vendor/Archipelago/`` and ``switch-mod/lib/*``) only get
     checked out into the primary clone, not into auxiliary ``git
     worktree`` checkouts.  The apworld junction therefore must be
     created in the primary's ``vendor/Archipelago/custom_worlds/``
@@ -681,7 +681,7 @@ def check_switch_dev() -> PrereqResult:
 
 
 # ---------------------------------------------------------------------------
-# Submodules — vendor/Archipelago + switch-mod
+# Submodules — vendor/Archipelago + switch-mod/lib/{imgui,NintendoSDK,sead}
 # ---------------------------------------------------------------------------
 
 def check_archipelago_submodule() -> PrereqResult:
@@ -711,25 +711,27 @@ def check_archipelago_submodule() -> PrereqResult:
 
 
 def check_switch_mod_submodule() -> PrereqResult:
-    """switch-mod submodule initialized.
+    """switch-mod's nested third-party libs (imgui / NintendoSDK / sead) initialized.
 
-    Sentinel: `switch-mod/CMakeLists.txt`. Without it, the build phase
-    has nothing to configure.
+    switch-mod itself lives inline in this repo; only its three vendored
+    libs under `switch-mod/lib/` still come from `git submodule`. Sentinel:
+    `switch-mod/lib/imgui/imgui.h` — without imgui (and the other two),
+    the build phase fails at configure/link time.
     """
-    sentinel = repo_root() / "switch-mod" / "CMakeLists.txt"
+    sentinel = repo_root() / "switch-mod" / "lib" / "imgui" / "imgui.h"
     if sentinel.is_file():
         return PrereqResult(
-            "switch_mod_submodule", "switch-mod submodule", True,
-            f"present ({sentinel.parent})",
+            "switch_mod_submodule", "switch-mod vendored libs", True,
+            f"present ({sentinel.parent.parent})",
             auto_installable=True,
         )
     return PrereqResult(
-        "switch_mod_submodule", "switch-mod submodule", False,
+        "switch_mod_submodule", "switch-mod vendored libs", False,
         f"missing {sentinel}",
         INSTALL_URLS["switch_mod_submodule"],
         note=(
             "Run from the repo root:\n"
-            "    git submodule update --init --recursive switch-mod\n"
+            "    git submodule update --init --recursive switch-mod/lib\n"
             "Or click Auto-install."
         ),
         auto_installable=True,

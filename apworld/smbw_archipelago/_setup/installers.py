@@ -15,7 +15,7 @@ Coverage:
   - switch-dev pacman group: invoke `pacman -S --noconfirm switch-dev`
     via devkitPro's bundled MSYS2 once devkitPro is present.
   - Git submodule init: `git submodule update --init --recursive` for
-    `vendor/Archipelago` and `switch-mod`.
+    `vendor/Archipelago` and `switch-mod/lib/{imgui,NintendoSDK,sead}`.
   - pip install of Archipelago's `requirements.txt` into the resolved
     Python 3.11+.
 
@@ -554,11 +554,10 @@ def install_switch_dev(on_line: ProgressFn | None = None) -> InstallResult:
 # ---------------------------------------------------------------------------
 
 def _git_submodule_update(
-    submodule_path: str,
-    *,
+    *submodule_paths: str,
     on_line: ProgressFn | None = None,
 ) -> InstallResult:
-    """`git submodule update --init --recursive -- <path>` from repo root."""
+    """`git submodule update --init --recursive -- <path>...` from repo root."""
     git = shutil.which("git")
     if git is None:
         msg = "git not found on PATH; install git first"
@@ -567,7 +566,7 @@ def _git_submodule_update(
         return InstallResult(False, 127, msg, msg)
     repo = repo_root()
     return _stream_subprocess(
-        [git, "submodule", "update", "--init", "--recursive", "--", submodule_path],
+        [git, "submodule", "update", "--init", "--recursive", "--", *submodule_paths],
         on_line=on_line,
         cwd=repo,
         timeout=600.0,
@@ -579,7 +578,15 @@ def install_archipelago_submodule(on_line: ProgressFn | None = None) -> InstallR
 
 
 def install_switch_mod_submodule(on_line: ProgressFn | None = None) -> InstallResult:
-    return _git_submodule_update("switch-mod", on_line=on_line)
+    # switch-mod itself was promoted from submodule to plain subdirectory of
+    # this repo. Only its nested third-party libs (imgui / NintendoSDK / sead)
+    # still need `git submodule update --init` to be checked out.
+    return _git_submodule_update(
+        "switch-mod/lib/imgui",
+        "switch-mod/lib/NintendoSDK",
+        "switch-mod/lib/sead",
+        on_line=on_line,
+    )
 
 
 # ---------------------------------------------------------------------------

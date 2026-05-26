@@ -1,0 +1,171 @@
+// Glue between game-thread hook callbacks and the LAN client's SPSC rings.
+//
+// All `enqueue*` functions push onto the outbound ring; they are safe to
+// call from any thread (the ring is lock-free).
+//
+// `drainInbound()` pops from the inbound ring and applies each grant.
+// It MUST run on the game thread because probe::setBadgeBitfieldAbsolute
+// is a direct memory write to the live `gmd` container with no
+// synchronization (see CLAUDE.md "M3.2 badge-grant" section).
+//
+// Wired into main.cpp's NerveActivateOnce::Callback and
+// SetCourseClearFlagExecute::Callback at the top of each.
+
+#pragma once
+
+#include <cstddef>
+#include <cstdint>
+
+#include "ApProtocol.hpp"
+
+namespace smbwap::ap {
+
+// M3.3b bool-typed hash keys.  Container-A writer (FUN_710049F648) is
+// typed and silently no-ops on these slots (live-falsified 2026-05-25
+// with hash 0x55815859); they must route through the container-B bool
+// writer (FUN_710049EA24) via probe::grantContainerBBool instead.
+// Shared between drainInbound() dispatch and the M3.3b boot smoke
+// test in NerveActivateOnce::Callback.
+inline constexpr std::uint32_t kBoolHashes[] = {
+    0x55815859,  // GRAND_SEED_WORLD1
+    0x49ABBA86,  // GRAND_SEED_WORLD2
+    0xB550D8D6,  // GRAND_SEED_WORLD3
+    0x1DCF7F6E,  // GRAND_SEED_WORLD4
+    0x0D5A3E00,  // GRAND_SEED_WORLD5
+    0xD4660D2B,  // GRAND_SEED_WORLD6
+    0x5D3EC9B4,  // COMPLETE_GAME
+    0x89F1CC52,  // INTRO_CUTSCENE_COMPLETED
+};
+
+constexpr bool isBoolHash(std::uint32_t h) {
+    for (auto x : kBoolHashes) if (x == h) return true;
+    return false;
+}
+
+// Push a Nerve fire onto the outbound ring.  Safe to call from any
+// thread including the worker.  Returns false if the ring is full
+// (event is dropped, caller may log).
+bool enqueueNerveFire(NerveKind kind, std::uint32_t seq);
+
+// M2.3 -- push an in-game badge-acquisition event onto the outbound
+// ring.  Called from probe::setBadgeBitfieldAbsolute for each bit that
+// was set in the live state but not in the AP-authoritative mask
+// (== a Poplin shop / badge house / badge medley / badge challenge
+// pickup the bridge should report as a LocationCheck).  `seq` is
+// auto-assigned from a private per-message-kind counter so log
+// correlation stays simple even if Nerve fires and badge acquisitions
+// interleave.
+bool enqueueBadgeAcquired(std::uint32_t internal_id);
+
+// Push a PlayReport capture onto the outbound ring.  `room` is a
+// null-terminated event-id string; `payload` is the already-serialized
+// CBOR-ish payload bytes captured by the IPC SaveReport hook.  Truncates
+// to kPayloadCap with a log line.
+bool enqueuePlayReport(const char* room,
+                       const void* payload, std::size_t payload_len);
+
+// Game-thread-only.  Pops every queued inbound message and applies it.
+// Called from the top of NerveActivateOnce::Callback and
+// SetCourseClearFlagExecute::Callback.
+void drainInbound();
+
+// Read the AP-authoritative Wonder Seed count for world bucket `bucket`
+// (0 = W1, 1 = W2, ..., 5 = W6, 6 = Petal Isles, 7 = Special).  Returns
+// 0 if the bucket is out of range or no SetWonderSeedCountsMsg has
+// arrived yet.  Source of truth is a static atomic array updated by
+// drainInbound; safe to call from any thread (but in practice called
+// from the game-thread NerveActivateOnce tick that drives
+// probe::pushWonderSeedOverride).
+std::uint32_t getWonderSeedCount(std::uint32_t bucket);
+
+}  // namespace smbwap::ap
+
+// Forward declarations for the grant primitives that live in main.cpp's
+// probe namespace.  All have external linkage so ApFrameBridge.cpp can
+// resolve them at link time.
+namespace probe {
+// AP-authoritative badge sync.  Overwrites the entire container-C owned-
+// badge bitfield (hash 0x105df820) to the absolute value `bits`.  Bit N
+// = owned badge with internal_id N.  Replaces the M3.2 per-bit
+// grantBadgeBit primitive (deleted).
+bool setBadgeBitfieldAbsolute(std::uint64_t bits);
+
+// M3.3 -- container-A counter writer.  Calls FUN_710049F648 via
+// function pointer with the live gmd singleton.  Used for counters
+// (flower_coin, regular_coin); typed and silently no-ops on bool
+// slots, so the GrantHashKeyed dispatch routes bool hashes through
+// grantContainerBBool instead.
+bool grantContainerACounter(std::uint32_t hash, std::uint32_t value);
+
+// Saturating add/sub on a container-A counter.  Reads the current value
+// via FUN_710012AE94 (NSO +0x0012AE94, signature
+// `(gmd, uint32_t* out, uint32_t hash)`) and writes `saturating(cur +
+// delta)` back via FUN_710049F648.  Delta is signed: positive grants
+// (e.g. +10 per "10 Coin" item received), negative refunds (e.g. -10
+// per TEN_COIN check fired by an in-game pickup).  Saturates at 0 on
+// underflow; writer truncates per-slot internally (u8/u16).
+bool incrementContainerACounter(std::uint32_t hash, std::int32_t delta);
+
+// M3.3b -- container-B bool writer.  Calls FUN_710049EA24 (the
+// high-level wrapper, NSO +0x0049EA24) which gates on the gmd+0x68
+// init/lock and delegates to FUN_7101F263FC(gmd+8, value & 1, hash)
+// -- the deferred-write bool setter for the gmd+8 substruct.  Used
+// for Royal Seeds, COMPLETE_GAME, INTRO_CUTSCENE_COMPLETED.  The
+// existing GmdBoolWriter trampoline at NSO +0x01F263FC will log
+// every call for free observability.
+bool grantContainerBBool(std::uint32_t hash, std::uint32_t value);
+
+// M3.3 -- container-D (per-course bitfield) absolute writer.  Calls
+// FUN_7101F2B354 (NSO +0x01F2B354, signature
+// `(gmd, value, hash, course_index)`).  Used for per-course CourseClear /
+// GoalSeed / WonderSeed bitfields where each bit corresponds to one exit
+// type.  Bridge holds the canonical mask and pushes absolute sets on
+// ReceivedItems / HelloMsg / periodic tick -- same AP-authoritative
+// pattern as setBadgeBitfieldAbsolute.
+bool setPerCourseBitfieldAbsolute(std::uint32_t hash,
+                                  std::uint32_t course_index,
+                                  std::uint32_t bitmask);
+
+// M3.3 -- container-C single-bit set/clear.  Generic version of
+// setBadgeBitfieldAbsolute's direct-memory-write pattern: walks container-C
+// (gmd+0x80) for the given `hash`, sets/clears bit `bit_index` in the
+// underlying uint32_t[] storage.  Used for the per-course Wonder Phase
+// seed flag (container-C bitfield 0xb9bd745d).  Unlike SetBadgesAbsolute,
+// this toggles ONE bit and never reverts in-game pickups -- the bridge
+// ORs in AP grants on top of player progress by calling once per granted
+// seed.  Returns false if hash unknown or bit_index >= 128.
+bool setContainerCBit(std::uint32_t hash, std::uint32_t bit_index, bool value);
+
+// M3.3 Phase B verification probe.  Dereferences the singleton pointer at
+// NSO+`base_nso_offset`, walks to the SaveDataField at `field_offset`
+// within that struct, and logs the assumed 48-byte SaveDataField header
+// plus the first 81 u32s at data_ptr.  Read-only; no game-state mutation.
+// `base_nso_offset` lets us test multiple candidate singletons without
+// rebuilds (0x3632e88 = sub-singleton, 0x363f0f0 = gmd::sInstance).
+bool dumpSaveField(std::uint32_t base_nso_offset, std::uint32_t field_offset);
+
+// M3.8 -- inbound DeathLink apply.  Writes 0 to the latched live_base +
+// 0x1C (HP byte) and sets the synthetic_death_this_frame loop-guard so
+// the outbound DEATH_DETECTED echo gets suppressed in main.cpp's nerve
+// callback.  Returns false if live_base hasn't been latched yet (the
+// inline LiveBaseLatch hook on a cheat-anchor writer captures it).
+bool synthKill();
+
+// M4.5 save-loaded gate.  drainInbound checks this before applying any
+// grant -- pre-save-select the gmd singleton points at title-screen
+// data (or is null), and our grants would land in the wrong container
+// and be wiped on save load.  Set on first observed call to the
+// GmdContainerAWriter or GmdBoolWriter trampolines (game's save
+// deserializer is the first caller; our own grant code only runs
+// after this gate is open, so the first observed write is always
+// game-initiated).
+bool isSaveLoaded();
+
+// Iteration #5 (2026-05-26) — Wonder Seed gate override smoke test.
+// Writes `value` to all 5 per-current-world Wonder Seed count hashes
+// (0x21f89ab1, 0x8c20ccb7, 0xeeff353b, 0x390eb960, 0xa0e5f253) via the
+// container-A counter writer.  Called periodically from NerveActivateOnce
+// to keep gates passable as long as the override is active.  See the
+// definition in main.cpp for the hypothesis under test.
+void pushWonderSeedOverride(std::uint32_t value);
+}

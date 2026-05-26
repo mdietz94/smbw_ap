@@ -488,7 +488,7 @@ C:\Users\maxwe\Documents\smwonder_archipelago\
 ```
 
 Original wondar (upstream): https://github.com/fruityloops1/wondar
-Our fork: https://github.com/mdietz94/wondar (uncommitted local changes on top)
+Our fork: https://github.com/mdietz94/wondar (historical — kept for reference; live source now lives inline at `switch-mod/`)
 The plan document the project started from: `C:\Users\maxwe\.claude\plans\rustling-strolling-marble.md`
 
 ## Build + deploy (the daily dev loop)
@@ -790,7 +790,7 @@ See `milestones.md` for the full M2+ plan.
 
 ## State of the codebase
 
-`switch-mod/` is a fork of `mdietz94/wondar` (its own git repo). Local diffs from upstream now living on top:
+`switch-mod/` was originally a fork of `mdietz94/wondar` (its own git repo); it has been absorbed into this repo as plain tracked files so the Switch subsdk releases together with the apworld. Local diffs from the upstream fruityloops1/wondar baseline:
 
 - `CMakeLists.txt`: `-fpermissive` (libstdc++15 `std::construct_at` const fix from smo_archipelago); symlink-shim block to materialize broken POSIX symlinks on Windows checkouts.
 - `src/program/main.cpp`: hooks added — `NerveActivateOnce`, `SetCourseClearFlagExecute` (M1); `PlayReportCtor`, `PlayReportSetEventId`, `PrepoIpcSaveReport`, `PrepoIpcSaveReportWithUser` (M2.4). Crashy hooks left as definitions only, install lines commented out with explanation (PlayReport::Save{,Uid&}, all PlayReport::Add overloads, Struct::Add overloads). `nvnImGui` install disabled; wondar's hardcoded `RwPages` SDK patch at `+0x399790` disabled.
@@ -798,6 +798,6 @@ See `milestones.md` for the full M2+ plan.
 - `src/program/util/TargetActorProbe.hpp`/`TargetActorProbe.cpp` (new): legacy actor-vtable runtime-discovery probe, currently a stub.
 - `src/program/pe/DbgGui/Windows/ActorBrowser.cpp`: lightly modified to call into the probe stub.
 
-The outer repo (`smwonder_archipelago/`) is a separate git repo holding `docs/`, `manual_smbwonder_zim/`, and `CLAUDE.md`. `switch-mod/` is excluded via outer `.gitignore` for now — it's tracked by its own repo and may be promoted to a submodule once pushed.
+This outer repo (`smwonder_archipelago/`) now also holds the `switch-mod/` tree directly. Only the upstream third-party libs under `switch-mod/lib/{imgui,NintendoSDK,sead}` remain as git submodules; everything else is tracked here as plain files.
 
 Decide before upstreaming: the symlink-shim and `-fpermissive` fixes are general Windows-build-fixes worth a PR to wondar; the prepo hooks are SMBW-specific and stay private.

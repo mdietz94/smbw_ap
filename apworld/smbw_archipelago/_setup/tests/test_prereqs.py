@@ -152,8 +152,12 @@ def test_check_archipelago_submodule_missing(monkeypatch: pytest.MonkeyPatch,
 
 def test_check_switch_mod_submodule_present(monkeypatch: pytest.MonkeyPatch,
                                              tmp_path: Path) -> None:
-    (tmp_path / "switch-mod").mkdir(parents=True)
-    (tmp_path / "switch-mod" / "CMakeLists.txt").write_text("", encoding="utf-8")
+    # switch-mod itself is inlined in the repo; the check now keys on
+    # one of the nested vendored libs (imgui) being checked out.
+    (tmp_path / "switch-mod" / "lib" / "imgui").mkdir(parents=True)
+    (tmp_path / "switch-mod" / "lib" / "imgui" / "imgui.h").write_text(
+        "", encoding="utf-8"
+    )
     monkeypatch.setattr(P, "repo_root", lambda: tmp_path)
     r = P.check_switch_mod_submodule()
     assert r.ok is True

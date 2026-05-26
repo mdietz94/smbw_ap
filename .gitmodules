@@ -1,7 +1,13 @@
-[submodule "switch-mod"]
-	path = switch-mod
-	url = git@github.com:mdietz94/wondar.git
-	branch = main
 [submodule "vendor/Archipelago"]
 	path = vendor/Archipelago
 	url = https://github.com/ArchipelagoMW/Archipelago.git
+[submodule "switch-mod/lib/imgui"]
+	path = switch-mod/lib/imgui
+	url = https://github.com/ocornut/imgui
+	branch = docking
+[submodule "switch-mod/lib/NintendoSDK"]
+	path = switch-mod/lib/NintendoSDK
+	url = https://github.com/fruityloops1/nnheaders
+[submodule "switch-mod/lib/sead"]
+	path = switch-mod/lib/sead
+	url = https://github.com/open-ead/sead
