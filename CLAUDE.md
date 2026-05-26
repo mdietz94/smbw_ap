@@ -58,7 +58,9 @@ The outer repo `.gitignore`s `switch-mod/` because switch-mod is itself a git re
 
 The Kivy AP client is launched via Archipelago's Launcher.  For dev,
 expose the apworld via a junction under `vendor/Archipelago/custom_worlds/`
-(one-time setup; see `scripts/install_smbw_apworld.ps1`).  Then:
+(one-time setup: `python scripts/install_smbw_apworld.py`, or run
+`/setup` from inside SMBW Client which does this as one of its phases).
+Then:
 
 ```pwsh
 python vendor/Archipelago/Launcher.py

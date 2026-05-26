@@ -1,0 +1,206 @@
+"""Tests for the prereq detectors.
+
+Each detector shells out via `prereqs._run`. We monkeypatch that one
+function to script the return value, so tests don't depend on the host
+machine having (or lacking) the actual tools.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from apworld.smbw_archipelago._setup import prereqs as P
+
+
+@pytest.fixture
+def patch_run(monkeypatch: pytest.MonkeyPatch):
+    """Patch prereqs._run / _safe_run with a scriptable fake.
+
+    Yields the responses dict; mutate it before each detector call.
+    Tuples of (returncode, stdout, stderr) keyed by argv[0]. A None
+    entry means "raise FileNotFoundError" (simulates missing executable).
+    """
+    responses: dict[str, Any] = {}
+
+    def fake_safe_run(cmd: list[str]) -> tuple[int, str, str] | None:
+        key = cmd[0]
+        if key not in responses:
+            return None
+        val = responses[key]
+        if val is None:
+            return None
+        return val
+
+    monkeypatch.setattr(P, "_safe_run", fake_safe_run)
+    return responses
+
+
+def test_check_git_success(patch_run: dict[str, Any]) -> None:
+    patch_run["git"] = (0, "git version 2.43.0", "")
+    r = P.check_git()
+    assert r.ok is True
+    assert "git version" in r.detail
+
+
+def test_check_git_missing(patch_run: dict[str, Any]) -> None:
+    patch_run["git"] = None
+    r = P.check_git()
+    assert r.ok is False
+    assert "not found" in r.detail
+    assert r.auto_installable is True
+
+
+def test_check_cmake_rejects_too_old(patch_run: dict[str, Any]) -> None:
+    patch_run["cmake"] = (0, "cmake version 3.10.0\n", "")
+    # Disable default-path probe in test mode.
+    P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
+    r = P.check_cmake()
+    assert r.ok is False
+    assert "too old" in r.detail or "not found" in r.detail
+
+
+def test_check_cmake_accepts_recent(patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_run["cmake"] = (0, "cmake version 3.30.5\n", "")
+    P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
+    # Pretend `which cmake` returns a non-msys2 path so the bare-name
+    # fallback isn't rejected.
+    monkeypatch.setattr(P.shutil, "which", lambda _x: "C:/Program Files/CMake/bin/cmake.exe")
+    r = P.check_cmake()
+    assert r.ok is True
+    assert "3.30.5" in r.detail
+
+
+def test_check_cmake_rejects_msys2_bare_name(patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    """devkitPro's MSYS2 cmake mangles drive-letter paths. Even when
+    version-good, the bare-name PATH fallback must reject it."""
+    patch_run["cmake"] = (0, "cmake version 3.30.5\n", "")
+    P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
+    monkeypatch.setattr(P.shutil, "which", lambda _x: "C:/devkitPro/msys2/usr/bin/cmake.exe")
+    r = P.check_cmake()
+    assert r.ok is False
+    assert "msys2" in r.detail.lower()
+
+
+def test_check_ninja_success(patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    patch_run["ninja"] = (0, "1.11.1\n", "")
+    monkeypatch.setattr(P, "_winget_ninja_paths", lambda: [])
+    monkeypatch.setattr(P.shutil, "which", lambda _x: "C:/some/path/ninja.exe")
+    r = P.check_ninja()
+    assert r.ok is True
+    assert "1.11.1" in r.detail
+
+
+def test_check_python311_uses_sys_executable(monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any]) -> None:
+    """When the wizard runs under 3.11+, sys.executable is the natural
+    first probe and should win."""
+    # Pretend sys.executable returns a 3.12.0 from its --version call.
+    patch_run[sys.executable] = (0, "Python 3.12.0\n", "")
+    # And `-c "import sys; print(sys.executable)"` returns the same path.
+    monkeypatch.setattr(P.Path, "is_file", lambda self: True)
+    r = P.check_python311()
+    assert r.ok is True
+    assert "3.12.0" in r.detail
+
+
+def test_check_devkitpro_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("DEVKITPRO", raising=False)
+    monkeypatch.setattr(P, "_devkitpro_default_root", lambda: None)
+    r = P.check_devkitpro()
+    assert r.ok is False
+    assert "not found" in r.detail
+
+
+def test_check_devkitpro_finds_via_env(monkeypatch: pytest.MonkeyPatch,
+                                        tmp_path: Path,
+                                        patch_run: dict[str, Any]) -> None:
+    """Synthesize a devkitPro tree and verify the detector picks it up."""
+    root = tmp_path / "devkitPro"
+    gcc_path = root / "devkitA64" / "bin" / "aarch64-none-elf-gcc.exe"
+    gcc_path.parent.mkdir(parents=True)
+    gcc_path.write_text("", encoding="utf-8")
+    monkeypatch.setenv("DEVKITPRO", str(root))
+    patch_run[str(gcc_path)] = (0, "gcc (devkitA64) 14.2.0\n", "")
+    monkeypatch.setattr(P, "_devkitpro_default_root", lambda: None)
+    r = P.check_devkitpro()
+    assert r.ok is True
+    assert "devkitA64" in r.detail or "gcc" in r.detail.lower()
+
+
+def test_check_archipelago_submodule_present(monkeypatch: pytest.MonkeyPatch,
+                                              tmp_path: Path) -> None:
+    """Verify the file-probe-based check fires correctly."""
+    repo = tmp_path / "fake-repo"
+    (repo / "vendor" / "Archipelago").mkdir(parents=True)
+    (repo / "vendor" / "Archipelago" / "CommonClient.py").write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "repo_root", lambda: repo)
+    r = P.check_archipelago_submodule()
+    assert r.ok is True
+
+
+def test_check_archipelago_submodule_missing(monkeypatch: pytest.MonkeyPatch,
+                                              tmp_path: Path) -> None:
+    monkeypatch.setattr(P, "repo_root", lambda: tmp_path)
+    r = P.check_archipelago_submodule()
+    assert r.ok is False
+    assert "missing" in r.detail
+
+
+def test_check_switch_mod_submodule_present(monkeypatch: pytest.MonkeyPatch,
+                                             tmp_path: Path) -> None:
+    (tmp_path / "switch-mod").mkdir(parents=True)
+    (tmp_path / "switch-mod" / "CMakeLists.txt").write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "repo_root", lambda: tmp_path)
+    r = P.check_switch_mod_submodule()
+    assert r.ok is True
+
+
+def test_check_ryujinx_warn_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Ryujinx missing is warn-only — won't fail the pipeline."""
+    monkeypatch.setattr(P, "ryujinx_default_root", lambda: tmp_path / "nonexistent")
+    r = P.check_ryujinx()
+    assert r.warn_only is True
+
+
+def test_all_ok_ignores_warn_only() -> None:
+    """check_ryujinx is the only warn-only row; an unset Ryujinx must not
+    propagate ok=False through all_ok."""
+    results = [
+        P.PrereqResult("git", "Git", True, "ok"),
+        P.PrereqResult("ryujinx", "Ryujinx", False, "missing", warn_only=True),
+    ]
+    assert P.all_ok(results) is True
+
+
+def test_missing_auto_installable_filters_correctly() -> None:
+    results = [
+        P.PrereqResult("git", "Git", False, "", auto_installable=True),
+        P.PrereqResult("dev_mode", "Dev Mode", False, "", auto_installable=False),
+        P.PrereqResult("cmake", "CMake", True, "", auto_installable=True),
+        P.PrereqResult("ryujinx", "Ryujinx", False, "", warn_only=True),
+    ]
+    keys = P.missing_auto_installable(results)
+    assert keys == ["git"]
+
+
+def test_check_all_returns_ordered_results() -> None:
+    """check_all wraps the per-detector calls in a fixed display order;
+    a smoke test that the function returns a non-empty list with all
+    expected keys is enough."""
+    results = P.check_all()
+    keys = {r.key for r in results}
+    assert "dev_mode" in keys
+    assert "git" in keys
+    assert "cmake" in keys
+    assert "ninja" in keys
+    assert "python311" in keys
+    assert "devkitpro" in keys
+    assert "switch_dev" in keys
+    assert "archipelago_submodule" in keys
+    assert "switch_mod_submodule" in keys
+    assert "archipelago_deps" in keys
+    assert "ryujinx" in keys

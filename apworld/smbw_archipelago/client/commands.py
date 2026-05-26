@@ -66,6 +66,34 @@ def _parse_bit_spec(spec: str) -> set[int] | None:
 class SMBWCommandProcessor(ClientCommandProcessor):
     """Adds SMBW-specific commands to the standard AP /commands."""
 
+    def _cmd_setup(self) -> bool:
+        """Launch the setup wizard in a separate window.
+
+        Walks the user through: probe (devkitPro, CMake, Ninja, git,
+        Archipelago deps, ...) → auto-install missing pieces → create
+        the apworld junction → build switch-mod → deploy subsdk9 to
+        Ryujinx. The Kivy SMBW Client stays open while the wizard runs
+        as a sibling subprocess.
+
+        Re-run any time toolchain / submodules / build need refreshing.
+        """
+        try:
+            from worlds.LauncherComponents import launch_subprocess
+            # The wizard entry point lives at apworld level so the
+            # subprocess pickling path can resolve it by qualified name.
+            try:
+                from .. import _run_setup_wizard  # type: ignore[attr-defined]
+            except ImportError:
+                # When apworld is loaded as a top-level package (test
+                # / conftest sys.path tweaks), the relative import
+                # bounces. Fall back to the absolute form.
+                from smbw_archipelago import _run_setup_wizard  # type: ignore
+            launch_subprocess(_run_setup_wizard, name="SMBW Setup Wizard")
+            self.output("-> launching setup wizard in a separate window")
+        except Exception as e:
+            self.output(f"ERROR: could not launch setup wizard: {type(e).__name__}: {e}")
+        return True
+
     def _cmd_smbw_status(self) -> bool:
         """Print bridge + Switch + AP connection summary."""
         ctx = self.ctx

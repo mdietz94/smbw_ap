@@ -19,7 +19,8 @@ End-to-end smoke test for the M4 bidirectional MVP.  Validates:
 - **Archipelago**: the vendored checkout at `vendor/Archipelago/` (git submodule).
   Expose this repo's apworld via a junction at
   `vendor/Archipelago/custom_worlds/smbw_archipelago` →
-  `apworld/smbw_archipelago` (see `scripts/install_smbw_apworld.ps1`).
+  `apworld/smbw_archipelago` (run `python scripts/install_smbw_apworld.py`,
+  or use the `/setup` wizard's Junction phase).
 - **A generated test seed**: one slot named e.g. `MarioTest` for game `SMBWonder`,
   with **1 Spring Feet Badge in starting inventory** so the AP server has one
   to send immediately.
