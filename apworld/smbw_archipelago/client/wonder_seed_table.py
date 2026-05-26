@@ -49,13 +49,23 @@ live "current world index") to a bucket index; the bridge ships the
 8-tuple via ``SetWonderSeedCountsMsg``.
 
 **Per-world routing in the Switch**: container-A hash ``0x9f5ead3c``
-holds the current world index.  Observed values: ``W2 = 2``, ``W3 =
-3`` (from the 09-34-58 run log).  The natural assumption -- W1=1,
-W4=4, W5=5, W6=6, Petal Isles=7, Special=8 -- is encoded in the
-Switch dispatcher (``main.cpp`` NerveActivateOnce tick).  Petal
-Isles / Special indices are tentative; if they turn out to be
-different values, fix the Switch-side map without touching this
-table.
+holds the current world index.  Live-observed ordering (corrected
+2026-05-26 after seeing W2 grants land in Petal Isles and W3 grants
+land in W2):
+
+  world_val 1 = W1 Pipe-Rock Plateau          -> bucket 0
+  world_val 2 = Petal Isles (the 2nd region)  -> bucket 6
+  world_val 3 = W2 Fluff-Puff Peaks           -> bucket 1
+  world_val 4 = W3 Shining Falls              -> bucket 2
+  world_val 5 = W4 Sunbaked Desert            -> bucket 3
+  world_val 6 = W5 Fungi Mines                -> bucket 4
+  world_val 7 = W6 Deep Magma Bog             -> bucket 5
+  world_val 8 = Special World                 -> bucket 7
+
+The remap lives in ``main.cpp`` (``kWorldValToBucket``).  Earlier
+notes that said ``W2 = 2`` / ``W3 = 3`` were misreadings -- the
+player was actually in Petal Isles and W2 respectively at the time
+of those observations.
 """
 
 from __future__ import annotations

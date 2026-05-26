@@ -66,14 +66,15 @@
 > the natural world-transition recompute both get clobbered back to AP's
 > view within ~2 s.  Idempotent absolute-overwrite, no double-counting.
 >
-> **Per-world bucket convention** (encoded both in
-> ``wonder_seed_table.py`` and the Switch's ``world_val -> bucket``
-> map): W1=1→0, W2=2→1, ..., W6=6→5, Petal Isles=7→6, Special=8→7.
-> The W2 and W3 values are observed live; W1/W4-W6 follow the natural
-> 1-indexed sequence; Petal Isles and Special at 7/8 are **tentative**
-> -- if the live values turn out to be something else, fix the map in
-> [main.cpp](../switch-mod/src/program/main.cpp) without touching the
-> bridge-side table.
+> **Per-world bucket convention** (encoded in the Switch's
+> ``kWorldValToBucket`` map in ``main.cpp``; bridge bucket layout is
+> in ``wonder_seed_table.py``).  Corrected 2026-05-26 after a live
+> bug where W2 grants landed in Petal Isles and W3 grants landed in
+> W2: the in-game world index is
+> ``1=W1, 2=Petal Isles, 3=W2, 4=W3, 5=W4, 6=W5, 7=W6, 8=Special``
+> (Petal Isles is the 2nd region, not the 7th).  AP bucket layout is
+> unchanged: ``W1..W6 = 0..5, Petal Isles = 6, Special = 7``; the
+> Switch table now does the explicit remap.
 >
 > **Scope caveat — gate override only, not per-course storage**:
 > ``pushWonderSeedOverride`` makes gates pass for the *current world*
