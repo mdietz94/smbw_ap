@@ -7,14 +7,15 @@ that item/location IDs remain in a stable, non-colliding pool.
 """
 from .Data import game_table
 
-game_name = "SMBWonder"
+game_name = "Super Mario Bros Wonder"
 filler_item_name = game_table["filler_item_name"] if "filler_item_name" in game_table else "Filler"
 starting_items = game_table["starting_items"] if "starting_items" in game_table else None
 
-# Derive a stable id pool offset from the game name characters.  Identical
-# algorithm to the Manual template so IDs remain unchanged from the previous
-# Manual_SMBWonder_Zim world (existing data files / save state stay valid).
-_id_seed = game_table["game"]
+# Hardcoded to "SMBWonder" so the starting_index (and therefore every item /
+# location ID) is invariant under display-name changes.  data/game.json still
+# carries "game": "SMBWonder" for backwards compat with the Manual template,
+# but the user-visible name is set above.
+_id_seed = "SMBWonder"
 starting_index = (ord(_id_seed[:1]) * 100000000) + \
     (ord(_id_seed[1:2]) * 70000000) + \
     (ord(_id_seed[-1:]) * 10000000)
