@@ -188,4 +188,12 @@ bool isSaveLoaded();
 // to keep gates passable as long as the override is active.  See the
 // definition in main.cpp for the hypothesis under test.
 void pushWonderSeedOverride(std::uint32_t value);
+
+// Active push for the player's current world.  Reads the current-world
+// index from container-A hash 0x9f5ead3c, maps to AP bucket, and writes
+// that bucket's cached AP count (from g_wonder_seed_counts) to all 5
+// mirror hashes.  Called from drainInbound on every SetWonderSeedCounts
+// so AP grants take effect immediately, without waiting for the game to
+// re-write the mirror hashes on the next area transition.
+void pushWonderSeedOverrideCurrentWorld();
 }
