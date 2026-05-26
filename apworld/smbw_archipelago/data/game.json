@@ -3,12 +3,17 @@
   "game": "SMBWonder",
   "creator": "Zim",
   "filler_item_name": "Standee",
+  "death_link": true,
   "starting_items": [
     {
       "item_categories": [
         "Character"
-      ],
-      "random":  1
+      ]
+    },
+    {
+      "item_categories": [
+        "Power-Up"
+      ]
     }
   ]
 }
