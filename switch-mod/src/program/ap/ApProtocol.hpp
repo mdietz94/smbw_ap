@@ -226,6 +226,26 @@ struct WireDumpSaveField {
     std::uint32_t field_offset = 0;
 };
 
+// AP-authoritative Royal Seed sync (2026-05-26).  Same idempotent
+// absolute-overwrite pattern as WireSetBadgesAbsolute: the bridge holds
+// the canonical 6-bit mask of which Royal Seeds AP has granted (bit
+// 0 = W1, bit 1 = W2, ..., bit 5 = W6) and pushes it on every
+// ReceivedItems / HelloMsg / periodic ~2 s tick.  The Switch dispatch
+// in ApFrameBridge.cpp loops the 6 container-B bool hashes (see
+// kRoyalSeedHashes; same order as bridge/royal_seed_table.py
+// ROYAL_SEED_HASHES) and calls probe::grantContainerBBool(hash,
+// (mask >> bit) & 1) for each.  This BOTH grants AP-granted seeds and
+// clears any seed the player obtained in-game without AP releasing the
+// matching item (palace clear that ran ahead of AP).
+//
+// Range is [0, 2**6) -- only the 6 documented Royal Seed bits.  The
+// completion bools COMPLETE_GAME (0x5D3EC9B4) and INTRO_CUTSCENE_-
+// COMPLETED (0x89F1CC52) are deliberately out of scope -- not AP
+// items, player keeps them once earned.
+struct WireSetRoyalSeedsAbsolute {
+    std::uint8_t mask = 0;
+};
+
 // AP-authoritative Wonder Seed gate override.  Carries an 8-element
 // array of cumulative Wonder Seed counts received from AP, indexed by
 // world bucket (W1=0..W6=5, Petal Isles=6, Special=7).  The Switch
@@ -287,6 +307,7 @@ enum class InboundKind : std::uint8_t {
     SetContainerCBit = 9,
     DumpSaveField = 10,
     SetWonderSeedCounts = 11,
+    SetRoyalSeedsAbsolute = 12,
 };
 
 struct InboundMsg {
@@ -303,6 +324,7 @@ struct InboundMsg {
         WireSetContainerCBit set_container_c_bit;
         WireDumpSaveField dump_save_field;
         WireSetWonderSeedCounts set_wonder_seed_counts;
+        WireSetRoyalSeedsAbsolute set_royal_seeds_absolute;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

@@ -27,6 +27,7 @@ from ..wire import (
     PongMsg,
     ProtocolError,
     SetBadgesAbsoluteMsg,
+    SetRoyalSeedsAbsoluteMsg,
     decode,
     encode,
 )
@@ -103,6 +104,22 @@ class TestRoundTrip(unittest.TestCase):
     def test_set_badges_absolute_full_u63(self):
         # Switch parses as int64; one below INT64_MAX is the safe upper.
         self._round_trip(SetBadgesAbsoluteMsg(bits=(1 << 63) - 1))
+
+    def test_set_royal_seeds_absolute_zero(self):
+        self._round_trip(SetRoyalSeedsAbsoluteMsg(mask=0))
+
+    def test_set_royal_seeds_absolute_single_bit(self):
+        # bit 0 = W1 Royal Seed.
+        self._round_trip(SetRoyalSeedsAbsoluteMsg(mask=1 << 0))
+
+    def test_set_royal_seeds_absolute_multiple_bits(self):
+        # W1 + W3 + W6 -- the mid-multiworld pattern.
+        self._round_trip(
+            SetRoyalSeedsAbsoluteMsg(mask=(1 << 0) | (1 << 2) | (1 << 5)))
+
+    def test_set_royal_seeds_absolute_full_mask(self):
+        # All 6 seeds granted.
+        self._round_trip(SetRoyalSeedsAbsoluteMsg(mask=0x3F))
 
     def test_grant_hash_keyed_royal_seed_w1(self):
         self._round_trip(GrantHashKeyedMsg(hash=0x55815859, value=1))
@@ -264,6 +281,12 @@ class TestEncodedShape(unittest.TestCase):
         self.assertEqual(
             line, b'{"t":"set_badges_absolute","bits":16}\n')
 
+    def test_set_royal_seeds_absolute_serializes_minimally(self):
+        line = encode(SetRoyalSeedsAbsoluteMsg(mask=(1 << 0) | (1 << 2)))
+        # bit0 | bit2 == 5.
+        self.assertEqual(
+            line, b'{"t":"set_royal_seeds_absolute","mask":5}\n')
+
     def test_grant_hash_keyed_serializes_minimally(self):
         line = encode(GrantHashKeyedMsg(hash=0x55815859, value=1))
         # Python's json.dumps emits ints as decimal -- the Switch
@@ -413,6 +436,30 @@ class TestDecodeErrors(unittest.TestCase):
         big = (1 << 64)
         with self.assertRaises(ProtocolError) as cm:
             decode(f'{{"t":"set_badges_absolute","bits":{big}}}\n'.encode())
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_set_royal_seeds_absolute_missing_mask(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"set_royal_seeds_absolute"}\n')
+        self.assertIn("mask", str(cm.exception))
+
+    def test_set_royal_seeds_absolute_non_int_mask(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"set_royal_seeds_absolute","mask":"0x3"}\n')
+
+    def test_set_royal_seeds_absolute_bool_mask(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"set_royal_seeds_absolute","mask":true}\n')
+
+    def test_set_royal_seeds_absolute_negative_mask(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"set_royal_seeds_absolute","mask":-1}\n')
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_set_royal_seeds_absolute_mask_above_6_bits(self):
+        # 64 is one past 2**6; rejected (only 6 Royal Seed bits valid).
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"set_royal_seeds_absolute","mask":64}\n')
         self.assertIn("out of range", str(cm.exception))
 
     def test_grant_hash_keyed_missing_hash(self):

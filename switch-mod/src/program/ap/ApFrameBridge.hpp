@@ -42,6 +42,26 @@ constexpr bool isBoolHash(std::uint32_t h) {
     return false;
 }
 
+// Royal Seed hashes in mask-bit order: index N is the bit-N position
+// in WireSetRoyalSeedsAbsolute::mask.  Bit 0 = W1, ..., bit 5 = W6.
+// This ordering is part of the wire contract -- it MUST match
+// ``ROYAL_SEED_HASHES`` in
+// apworld/smbw_archipelago/client/royal_seed_table.py.
+//
+// Subset of kBoolHashes: COMPLETE_GAME / INTRO_CUTSCENE_COMPLETED are
+// deliberately omitted because they aren't AP items and the player
+// should keep them once earned.
+inline constexpr std::uint32_t kRoyalSeedHashes[] = {
+    0x55815859,  // bit 0 -- W1 Royal Seed
+    0x49ABBA86,  // bit 1 -- W2 Royal Seed
+    0xB550D8D6,  // bit 2 -- W3 Royal Seed
+    0x1DCF7F6E,  // bit 3 -- W4 Royal Seed
+    0x0D5A3E00,  // bit 4 -- W5 Royal Seed
+    0xD4660D2B,  // bit 5 -- W6 Royal Seed
+};
+inline constexpr std::size_t kRoyalSeedCount =
+    sizeof(kRoyalSeedHashes) / sizeof(kRoyalSeedHashes[0]);
+
 // Push a Nerve fire onto the outbound ring.  Safe to call from any
 // thread including the worker.  Returns false if the ring is full
 // (event is dropped, caller may log).

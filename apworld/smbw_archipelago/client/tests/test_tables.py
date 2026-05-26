@@ -24,8 +24,12 @@ from ..coin_table import _COIN_ITEMS, grant_for_item, is_coin_item
 from ..location_table import _TABLE, _TEN_COIN_TABLE, lookup_name
 from ..protocol import CheckEmitted, CheckKind
 from ..royal_seed_table import (
+    ALL_MASK,
+    ROYAL_SEED_HASHES,
     ROYAL_SEED_VALUE,
+    WORLD_COUNT as ROYAL_SEED_WORLD_COUNT,
     _ROYAL_SEEDS,
+    bit_for_item,
     hash_for_item,
     is_royal_seed_item,
 )
@@ -303,6 +307,29 @@ class TestRoyalSeedTable(unittest.TestCase):
     def test_royal_seed_value_is_one(self):
         # u8 bool slot -- truncated by FUN_710049F648; 1 == True.
         self.assertEqual(ROYAL_SEED_VALUE, 1)
+
+    def test_bit_for_item_per_world(self):
+        # Bit positions are part of the wire contract with the Switch
+        # dispatch: bit N here MUST match kRoyalSeedHashes[N] in
+        # switch-mod/src/program/ap/ApFrameBridge.hpp.
+        for i in range(1, 7):
+            self.assertEqual(bit_for_item(f"W{i} Royal Seed"), i - 1)
+
+    def test_bit_for_unknown_item_is_none(self):
+        self.assertIsNone(bit_for_item("Made-up Seed"))
+        self.assertIsNone(bit_for_item("Spring Feet Badge"))
+
+    def test_world_count_is_six(self):
+        self.assertEqual(ROYAL_SEED_WORLD_COUNT, 6)
+
+    def test_all_mask_covers_six_bits(self):
+        self.assertEqual(ALL_MASK, 0x3F)
+
+    def test_royal_seed_hashes_ordered_by_bit(self):
+        # ROYAL_SEED_HASHES[N] is the hash for the N-th-bit world.
+        self.assertEqual(len(ROYAL_SEED_HASHES), 6)
+        self.assertEqual(ROYAL_SEED_HASHES[0], 0x55815859)  # W1
+        self.assertEqual(ROYAL_SEED_HASHES[5], 0xD4660D2B)  # W6
 
 
 class TestCoinTable(unittest.TestCase):

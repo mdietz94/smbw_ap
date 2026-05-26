@@ -419,33 +419,19 @@ class SMBWCommandProcessor(ClientCommandProcessor):
         return True
 
     def _cmd_replay_seeds(self) -> bool:
-        """Replay every Royal Seed grant to the Switch from the current
-        items_received set.  Useful for testing after a save-reload."""
+        """Push the current absolute Royal Seed mask to the Switch.
+        Useful for forcing a sync without waiting for the next 2 s tick
+        (e.g. after a save-reload during testing)."""
         ctx = self.ctx
         lan = getattr(ctx, "lan_server", None)
         if lan is None:
             self.output("ERROR: lan_server not wired")
             return True
-        from . import royal_seed_table
-        sent = 0
-        for it in ctx.items_received:
-            item_id = getattr(it, "item", None)
-            if item_id is None and isinstance(it, dict):
-                item_id = it.get("item")
-            if item_id is None:
-                continue
-            try:
-                item_name = ctx.item_names.lookup_in_game(int(item_id))
-            except Exception:
-                continue
-            if not royal_seed_table.is_royal_seed_item(item_name):
-                continue
-            h = royal_seed_table.hash_for_item(item_name)
-            if h is None:
-                continue
-            lan.send_grant_hash_keyed(h, royal_seed_table.ROYAL_SEED_VALUE)
-            sent += 1
-        self.output(f"-> replayed {sent} Royal Seed grants")
+        mask = ctx._recompute_royal_seed_mask()
+        lan.send_set_royal_seeds_absolute(mask)
+        self.output(
+            f"-> set_royal_seeds_absolute mask=0x{mask:02x} "
+            f"({bin(mask).count('1')} seed(s))")
         return True
 
     def _cmd_grant_hash(self, hash_spec: str = "", value_spec: str = "") -> bool:

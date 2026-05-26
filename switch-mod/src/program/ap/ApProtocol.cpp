@@ -369,6 +369,35 @@ bool parseIncrementHashKeyed(util::json::Reader& r, WireIncrementHashKeyed& out)
     return saw_hash && saw_delta;
 }
 
+bool parseSetRoyalSeedsAbsolute(util::json::Reader& r,
+                                WireSetRoyalSeedsAbsolute& out) {
+    // Cursor positioned just after "t":"set_royal_seeds_absolute".  One
+    // required field: "mask" -> u8 in [0, 64) (only the 6 Royal Seed
+    // bits valid).  Bridge already validates the range; we mirror the
+    // check here so a buggy bridge can't slip a wider value in.
+    std::string_view key;
+    bool saw_mask = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "mask")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0 || v > 0x3F) return false;
+            out.mask = static_cast<std::uint8_t>(v);
+            saw_mask = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_mask;
+}
+
 bool parseSetWonderSeedCounts(util::json::Reader& r,
                               WireSetWonderSeedCounts& out) {
     // Cursor positioned just after "t":"set_wonder_seed_counts".  One
@@ -537,6 +566,10 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::SetWonderSeedCounts;
         out.set_wonder_seed_counts = WireSetWonderSeedCounts{};
         if (!parseSetWonderSeedCounts(r, out.set_wonder_seed_counts)) return false;
+    } else if (std::strcmp(t_val, "set_royal_seeds_absolute") == 0) {
+        out.kind = InboundKind::SetRoyalSeedsAbsolute;
+        out.set_royal_seeds_absolute = WireSetRoyalSeedsAbsolute{};
+        if (!parseSetRoyalSeedsAbsolute(r, out.set_royal_seeds_absolute)) return false;
     } else if (std::strcmp(t_val, "kill") == 0) {
         out.kind = InboundKind::Kill;
         out.kill = WireKill{};

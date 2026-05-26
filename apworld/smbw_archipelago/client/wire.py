@@ -4,8 +4,10 @@ Pure stdlib, asyncio-agnostic.  Modeled on
 smo_archipelago/apworld/smo_archipelago/client/protocol.py, but adapted
 to SMBW's event model: the Switch ships Nerve fires (M1) and raw
 PlayReport payload bytes (M2.4) up, and receives SetBadgesAbsolute
-(M4 follow-up #2; AP-authoritative badge sync) and GrantHashKeyed
-(M3.3) commands down.
+(M4 follow-up #2; AP-authoritative badge sync), SetRoyalSeedsAbsolute
+(2026-05-26; AP-authoritative Royal Seed sync), SetWonderSeedCounts
+(AP-authoritative gate override), and GrantHashKeyed / IncrementHash-
+Keyed (debug + 10-coin paths) commands down.
 
 Frame format: one JSON object per line, terminated by `b"\\n"`, capped
 at ``MAX_LINE_BYTES`` bytes per line.  The discriminator field is
@@ -381,6 +383,64 @@ class GrantHashKeyedMsg:
 
 
 @dataclass(frozen=True)
+class SetRoyalSeedsAbsoluteMsg:
+    """Bridge -> Switch.  AP-authoritative Royal Seed sync.
+
+    ``mask`` is the absolute 6-bit set of Royal Seeds AP has granted:
+    bit 0 = W1, bit 1 = W2, ..., bit 5 = W6.  The Switch loops the 6
+    container-B bool hashes (see ``ROYAL_SEED_HASHES`` in
+    ``royal_seed_table.py`` for the canonical order, mirrored on the
+    Switch side as ``kRoyalSeedHashes`` in ``ApFrameBridge.cpp``) and
+    calls ``probe::grantContainerBBool(hash, (mask >> bit) & 1)`` for
+    each one.  Idempotent absolute-overwrite: setting AP-granted seeds
+    AND clearing any seed the player obtained in-game without AP
+    (palace clear before AP released the matching item).
+
+    Sent by the bridge on the same triggers as
+    :class:`SetBadgesAbsoluteMsg`:
+      1. Every AP ``ReceivedItems`` -- recompute mask + send.
+      2. Every Switch ``HelloMsg`` (replay-on-reconnect) so the
+         container-B bools survive save/reload and Switch reboots
+         without depending on the in-game save flush.
+      3. The periodic ~2 s tick -- reverts any in-game palace-clear
+         pickup that ran ahead of AP within seconds.
+
+    Replaces the M4.5 per-seed additive ``GrantHashKeyedMsg`` replay,
+    which could set AP-granted seeds but never clear seeds the player
+    obtained in-game.  Container-B bools ``COMPLETE_GAME`` and
+    ``INTRO_CUTSCENE_COMPLETED`` are deliberately NOT in scope -- those
+    aren't AP items and the player should keep them once earned.
+
+    Range is ``[0, 2**6)`` -- only the 6 documented Royal Seed bits;
+    higher bits are rejected by the decoder.
+    """
+
+    T = "set_royal_seeds_absolute"
+
+    # Matches royal_seed_table.WORLD_COUNT; duplicated here so the
+    # wire layer doesn't depend on the table module.
+    WORLD_COUNT: int = 6
+
+    mask: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "mask": self.mask}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetRoyalSeedsAbsoluteMsg:
+        raw = d.get("mask")
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            raise ProtocolError(
+                f"set_royal_seeds_absolute.mask must be int, got {raw!r}")
+        limit = 1 << cls.WORLD_COUNT
+        if not (0 <= raw < limit):
+            raise ProtocolError(
+                f"set_royal_seeds_absolute.mask out of range "
+                f"[0, {limit}): {raw}")
+        return cls(mask=raw)
+
+
+@dataclass(frozen=True)
 class SetWonderSeedCountsMsg:
     """Bridge -> Switch.  AP-authoritative Wonder Seed gate override.
 
@@ -658,6 +718,7 @@ WireMsg = (
     | BadgeAcquiredWireMsg
     | PlayReportWireMsg
     | SetBadgesAbsoluteMsg
+    | SetRoyalSeedsAbsoluteMsg
     | GrantHashKeyedMsg
     | IncrementHashKeyedMsg
     | SetWonderSeedCountsMsg
@@ -678,6 +739,7 @@ _FROM_WIRE: dict[str, Any] = {
     BadgeAcquiredWireMsg.T: BadgeAcquiredWireMsg.from_wire,
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
+    SetRoyalSeedsAbsoluteMsg.T: SetRoyalSeedsAbsoluteMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,
     SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,
