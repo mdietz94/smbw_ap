@@ -1,0 +1,784 @@
+SMBW Archipelago: dump_gate_candidates_v6.py
+  (Wonder Seed gate-check RE — iteration 7 — last static shot)
+  Hunting 4 target hashes
+  Output: C:\Users\maxwe\Documents\smwonder_archipelago\.claude\worktrees\funny-lehmann-06e394\scripts\ghidra\dump_v6_output.txt
+
+################################################################
+####  HASH 0x60458608  --  *** Per-course Wonder Seed bitfield (THE candidate)
+################################################################
+  Found 2 immediate-load site(s)
+  Unique enclosing functions: 2
+
+  -- All hits --
+    710066e598   movk w22,#0x6045, LSL #16   [pair w/ 710066e594: mov w22,#0x8608]   FUN_710066e548+0x50 @ 710066e548
+    7101c41fc4   movk w20,#0x6045, LSL #16   [pair w/ 7101c41fc0: mov w20,#0x8608]   FUN_7101c41f20+0xa4 @ 7101c41f20
+
+  -- Decompiles of enclosing functions --
+
+  ============= FUN_7101c41f20 @ 7101c41f20 =============
+  Body size: 288 bytes
+  Hit sites in this fn:
+    7101c41fc4   movk w20,#0x6045, LSL #16
+
+  Decompile:
+    
+    void FUN_7101c41f20(long param_1,int *param_2)
+    
+    {
+      long lVar1;
+      int *piVar2;
+      ulong uVar3;
+      long lVar4;
+      
+      if (*(int *)(param_1 + 0xa38) == 5) {
+        if (*(int *)(param_1 + 0x298) < 1) {
+          piVar2 = &DAT_71029f25cc;
+        }
+        else {
+          piVar2 = **(int ***)(param_1 + 0x2a0);
+        }
+        if (*param_2 == *piVar2) {
+          *(undefined *)(param_1 + 0xa7c) = 1;
+        }
+        else {
+          if (*(int *)(param_1 + 0x298) < 2) {
+            piVar2 = &DAT_71029f25cc;
+          }
+          else {
+            piVar2 = *(int **)(*(long *)(param_1 + 0x2a0) + 8);
+          }
+          if (*param_2 == *piVar2) {
+            DAT_710361fa54 = 0;
+            if (0 < *(int *)(param_1 + 0xa78)) {
+              uVar3 = 0;
+              lVar4 = param_1 + 0x650;
+              do {
+                lVar1 = lVar4;
+                if (3 < uVar3) {
+                  lVar1 = param_1 + 0x650;
+                }
+                FUN_710096e25c(lVar1);
+                FUN_710049ea24(_ZN3gmd11GameDataMgr9sInstanceE,*(undefined *)(lVar1 + 0xc),0x60458608,
+                               *(undefined4 *)(lVar1 + 0x10));
+                uVar3 = uVar3 + 1;
+                lVar4 = lVar4 + 0xd0;
+              } while ((long)uVar3 < (long)*(int *)(param_1 + 0xa78));
+            }
+            FUN_71009355a4();
+            return;
+          }
+        }
+      }
+      return;
+    }
+    
+
+  ============= FUN_710066e548 @ 710066e548 (ALREADY RULED OUT) =============
+  Body size: 376 bytes
+  Hit sites in this fn:
+    710066e598   movk w22,#0x6045, LSL #16
+
+  Decompile:
+    
+    void FUN_710066e548(long param_1)
+    
+    {
+      uint uVar1;
+      long lVar2;
+      byte bVar3;
+      int iVar4;
+      ulong uVar5;
+      long lVar6;
+      uint uVar7;
+      ulong uVar8;
+      int iStack_68;
+      char acStack_64 [4];
+      
+      iVar4 = FUN_71001e4ae0();
+      *(int *)(param_1 + 0xa78) = iVar4;
+      if (iVar4 < 1) {
+        uVar8 = 0;
+      }
+      else {
+        uVar8 = 0;
+        lVar6 = param_1 + 0x650;
+        do {
+          bVar3 = *(byte *)(param_1 + 0xa28);
+          uVar7 = (uint)uVar8;
+          lVar2 = lVar6;
+          if (3 < uVar8) {
+            lVar2 = param_1 + 0x650;
+          }
+          *(uint *)(lVar2 + 0x10) = uVar7;
+          *(long *)(lVar2 + 0x38) = param_1;
+          uVar1 = 1 << (ulong)(uVar7 & 0x1f) & (uint)bVar3;
+          *(bool *)(lVar2 + 0xb) = uVar1 != 0;
+          if (*(char *)(lVar2 + 0x20) != '\0') {
+            *(undefined2 *)(lVar2 + 0x20) = 0x100;
+          }
+          acStack_64[0] = '\0';
+          if (uVar1 == 0) {
+            FUN_7100124134(_ZN3gmd11GameDataMgr9sInstanceE,acStack_64,0x60458608,uVar8 & 0xffffffff);
+            *(bool *)(lVar2 + 0xc) = acStack_64[0] != '\0';
+            if (acStack_64[0] == '\0') goto LAB_710066e638;
+            if (*(int *)(lVar2 + 0x30) != 0xc) {
+              *(undefined4 *)(lVar2 + 0x30) = 0xc;
+              goto LAB_710066e610;
+            }
+          }
+          else {
+            *(undefined *)(lVar2 + 0xc) = 0;
+    LAB_710066e638:
+            iStack_68 = 0;
+            uVar5 = FUN_710064f4f0(0x580b7eb4,uVar8 & 0xffffffff,&iStack_68);
+            if (((uVar5 & 1) != 0) && (*(int *)(lVar2 + 0x30) != iStack_68)) {
+              *(int *)(lVar2 + 0x30) = iStack_68;
+    LAB_710066e610:
+              *(undefined *)(lVar2 + 0x34) = 1;
+            }
+          }
+          *(uint *)(lVar2 + 0x50) = uVar7;
+          uVar8 = uVar8 + 1;
+          lVar6 = lVar6 + 0xd0;
+          *(undefined *)(lVar2 + 8) = 1;
+        } while ((long)uVar8 < (long)*(int *)(param_1 + 0xa78));
+        if ((uVar8 & 0xfffffffc) != 0) {
+          return;
+        }
+      }
+      lVar6 = uVar8 * 0xd0;
+      do {
+        *(undefined *)(param_1 + 0x658 + lVar6) = 0;
+        lVar6 = lVar6 + 0xd0;
+      } while (lVar6 != 0x340);
+      return;
+    }
+    
+
+################################################################
+####  HASH 0x580b7eb4  --  Adjacent hash seen in FUN_710066e548 (course-state)
+################################################################
+  Found 3 immediate-load site(s)
+  Unique enclosing functions: 3
+
+  -- All hits --
+    710066e58c   movk w21,#0x580b, LSL #16   [pair w/ 710066e588: mov w21,#0x7eb4]   FUN_710066e548+0x44 @ 710066e548
+    7100743ea0   movk w2,#0x580b, LSL #16   [pair w/ 7100743e9c: mov w2,#0x7eb4]   FUN_7100743d10+0x190 @ 7100743d10
+    710096e328   movk w21,#0x580b, LSL #16   [pair w/ 710096e324: mov w21,#0x7eb4]   FUN_710096e25c+0xcc @ 710096e25c
+
+  -- Decompiles of enclosing functions --
+
+  ============= FUN_7100743d10 @ 7100743d10 =============
+  Body size: 1028 bytes
+  Hit sites in this fn:
+    7100743ea0   movk w2,#0x580b, LSL #16
+
+  Decompile:
+    
+    bool FUN_7100743d10(int param_1)
+    
+    {
+      undefined8 uVar1;
+      int iVar2;
+      int iVar3;
+      uint uVar4;
+      undefined4 uVar5;
+      ulong uVar6;
+      long lVar7;
+      undefined **ppuStack_100;
+      undefined1 *puStack_f8;
+      undefined8 uStack_f0;
+      undefined8 uStack_e8;
+      undefined4 uStack_e0;
+      undefined8 uStack_d8;
+      long lStack_d0;
+      undefined4 uStack_c8;
+      ushort uStack_c4;
+      byte bStack_c2;
+      int iStack_bc;
+      char *pcStack_b8;
+      undefined8 *puStack_b0;
+      undefined8 *puStack_a8;
+      char *pcStack_a0;
+      undefined8 *puStack_98;
+      undefined8 *puStack_90;
+      char *pcStack_88;
+      undefined8 *puStack_80;
+      undefined8 *puStack_78;
+      char *pcStack_70;
+      undefined8 *puStack_68;
+      undefined8 *puStack_60;
+      char *pcStack_58;
+      undefined8 *puStack_50;
+      undefined8 *puStack_48;
+      char acStack_3c [4];
+      undefined8 uStack_38;
+      undefined8 uStack_30;
+      undefined4 uStack_28;
+      undefined uStack_24;
+      
+      uVar1 = DAT_7103615f30;
+      if (param_1 != 3) {
+        return false;
+      }
+      uStack_28 = 0;
+      uStack_24 = 0;
+      uStack_38 = _ZN3gmd11GameDataMgr9sInstanceE;
+      uStack_30 = 0;
+      if (DAT_710362e1b0 == (char *)0x0) {
+        lVar7 = 0;
+      }
+      else {
+        lVar7 = (long)*(char *)(*(long *)(*(long *)(DAT_710362e1b0 + 0x10) + (long)*DAT_710362e1b0 * 8)
+                               + 0xe8);
+      }
+      uVar6 = FUN_71005c1a18(_ZN3gmd11GameDataMgr9sInstanceE,&uStack_30,0x33bf655f,lVar7);
+      if ((uVar6 & 1) == 0) {
+        return false;
+      }
+      pcStack_b8 = acStack_3c;
+      puStack_a8 = &uStack_38;
+      acStack_3c[0] = '\0';
+      puStack_b0 = &uStack_30;
+      pcStack_a0 = pcStack_b8;
+      puStack_98 = &uStack_30;
+      puStack_90 = puStack_a8;
+      pcStack_88 = pcStack_b8;
+      puStack_80 = &uStack_30;
+      puStack_78 = puStack_a8;
+      pcStack_70 = pcStack_b8;
+      puStack_68 = &uStack_30;
+      puStack_60 = puStack_a8;
+      pcStack_58 = pcStack_b8;
+      puStack_50 = &uStack_30;
+      puStack_48 = puStack_a8;
+      FUN_7100651cb8(&pcStack_58,uVar1);
+      iStack_bc = 0;
+      uVar6 = FUN_71000ed07c(uStack_38,&iStack_bc,0xcfcb1868);
+      if ((uVar6 & 1) == 0) goto LAB_7100743e98;
+      FUN_710063bab8(&pcStack_70,iStack_bc,&DAT_71029ef74c);
+      iVar2 = iStack_bc;
+      iVar3 = FUN_710000e3e0(s_Invalid_71034d82f8);
+      if (iVar3 == iVar2) {
+    LAB_7100743e00:
+        uVar5 = 0;
+      }
+      else {
+        iVar3 = FUN_710000e3e0(s_Savanna_71034d8301);
+        if (iVar3 == iVar2) {
+          uVar5 = 1;
+        }
+        else {
+          iVar3 = FUN_710000e3e0(&DAT_71034d830a);
+          if (iVar3 == iVar2) {
+    LAB_7100744050:
+            uVar5 = 2;
+          }
+          else {
+            iVar3 = FUN_710000e3e0(&DAT_71034d8310);
+            if (iVar3 == iVar2) {
+              uVar5 = 3;
+            }
+            else {
+              iVar3 = FUN_710000e3e0(&DAT_71034d8316);
+              if (iVar3 == iVar2) {
+                uVar5 = 4;
+              }
+              else {
+                iVar3 = FUN_710000e3e0(&DAT_71034d831a);
+                if (iVar3 == iVar2) {
+                  uVar5 = 5;
+                }
+                else {
+                  iVar3 = FUN_710000e3e0(&DAT_71034d8322);
+                  if (iVar3 == iVar2) {
+                    uVar5 = 6;
+                  }
+                  else {
+                    iVar3 = FUN_710000e3e0(s_Nettai_71034d8327);
+                    if (iVar3 == iVar2) {
+                      uVar5 = 7;
+                    }
+                    else {
+                      iVar3 = FUN_710000e3e0(s_Castle_71034d832f);
+                      if (iVar3 == iVar2) goto LAB_7100744050;
+                      iVar3 = FUN_710000e3e0(s_Himitu_71034d8337);
+                      if (iVar3 != iVar2) goto LAB_7100743e00;
+                      uVar5 = 9;
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+      uStack_e0 = 0;
+      uStack_f0 = 0;
+      uStack_e8 = 0;
+      uStack_d8 = 0;
+      uStack_c8 = 0xffffffff;
+      uStack_c4 = 0;
+      bStack_c2 = 0;
+      lStack_d0 = 0xffffffff;
+      ppuStack_100 = &PTR_FUN_71034f0a00;
+      puStack_f8 = &DAT_7102a408ac;
+      uVar4 = FUN_71000d3830();
+      lStack_d0 = (ulong)uVar4 << 0x20;
+      uStack_c4 = uStack_c4 | 0x101;
+      bStack_c2 = bStack_c2 | 1;
+      uStack_c8 = uVar5;
+      lVar7 = FUN_71000d33e0(&ppuStack_100);
+      uVar4 = FUN_710055f330(*(undefined4 *)(lVar7 + 0x6c));
+      FUN_7100665074(&pcStack_b8,~uVar4 & 1,&DAT_71029ef750);
+      FUN_7100342b04(&ppuStack_100);
+    LAB_7100743e98:
+      ppuStack_100 = (undefined **)((ulong)ppuStack_100 & 0xffffffff00000000);
+      uVar6 = FUN_7100154a40(uStack_38,&ppuStack_100,0x580b7eb4,0);
+      if ((uVar6 & 1) != 0) {
+        FUN_710063bab8(&pcStack_70,(ulong)ppuStack_100 & 0xffffffff,&DAT_71029ef754);
+      }
+      ppuStack_100 = (undefined **)((ulong)ppuStack_100 & 0xffffffff00000000);
+      uVar6 = FUN_71003703e4(uStack_38,&ppuStack_100,0x7940dc77,0);
+      if ((uVar6 & 1) != 0) {
+        FUN_7100639ae4(&pcStack_88,(ulong)ppuStack_100 & 0xffffffff,&DAT_71029ef758);
+      }
+      ppuStack_100 = (undefined **)((ulong)ppuStack_100 & 0xffffffff00000000);
+      uVar6 = FUN_7100154a40(uStack_38,&ppuStack_100,0xcfba9bf8,0);
+      if ((uVar6 & 1) != 0) {
+        FUN_710063bab8(&pcStack_70,(ulong)ppuStack_100 & 0xffffffff,&DAT_71029ef75c);
+      }
+      ppuStack_100 = (undefined **)((ulong)ppuStack_100 & 0xffffffff00000000);
+      uVar6 = FUN_71005e2528(uStack_38,&ppuStack_100,0xb47087e6);
+      if ((uVar6 & 1) != 0) {
+        FUN_7100639ae4(&pcStack_88,(ulong)ppuStack_100 & 0xffffffff,&DAT_71029ef760);
+      }
+      ppuStack_100 = (undefined **)((ulong)ppuStack_100 & 0xffffffff00000000);
+      uVar6 = FUN_71005e2528(uStack_38,&ppuStack_100,0xeeff353b);
+      if ((uVar6 & 1) != 0) {
+        FUN_7100639ae4(&pcStack_88,(ulong)ppuStack_100 & 0xffffffff,&DAT_71029ef764);
+      }
+      ppuStack_100 = (undefined **)((ulong)ppuStack_100 & 0xffffffffffffff00);
+      uVar6 = FUN_71009b4400(uStack_38,&ppuStack_100,0x89f1cc52);
+      if ((uVar6 & 1) != 0) {
+        FUN_7100665074(&pcStack_b8,(ulong)ppuStack_100 & 0xff,&DAT_71029ef768);
+      }
+      uVar5 = FUN_7100597904();
+      FUN_71006654fc(&pcStack_a0,uVar5,&DAT_71029ef76c);
+      uVar5 = FUN_710064d460();
+      FUN_71006654fc(&pcStack_a0,uVar5,&DAT_71029ef770);
+      return acStack_3c[0] != '\0';
+    }
+    
+
+  ============= FUN_710096e25c @ 710096e25c =============
+  Body size: 420 bytes
+  Hit sites in this fn:
+    710096e328   movk w21,#0x580b, LSL #16
+
+  Decompile:
+    
+    void FUN_710096e25c(long param_1)
+    
+    {
+      uint uVar1;
+      undefined4 uVar2;
+      long lVar3;
+      undefined4 uVar4;
+      undefined1 *puVar5;
+      ulong uVar6;
+      
+      if (*(char *)(param_1 + 8) != '\0') {
+        uVar1 = *(uint *)(param_1 + 0x30);
+        if (uVar1 != 0xc) {
+          if (uVar1 < 0xc) {
+            puVar5 = (&PTR_s_Mario_71034efad8)[uVar1];
+          }
+          else {
+            puVar5 = &DAT_7102a408a8;
+          }
+          uVar2 = *(undefined4 *)(param_1 + 0x10);
+          uVar4 = FUN_710000e3e0(puVar5);
+          lVar3 = _ZN3gmd11GameDataMgr9sInstanceE;
+          uVar6 = FUN_7100387a84(_ZN3gmd11GameDataMgr9sInstanceE + 0x2a8,uVar4,0x6c05cce3,uVar2);
+          if ((uVar6 & 1) == 0) {
+            FUN_7101f27f14(lVar3 + 0x248,uVar4,0x6c05cce3);
+          }
+          if (uVar1 < 0xc) {
+            uVar2 = *(undefined4 *)(param_1 + 0x10);
+            puVar5 = (&PTR_s_Mario_71034efad8)[uVar1];
+            uVar4 = FUN_710000e3e0(puVar5);
+            lVar3 = _ZN3gmd11GameDataMgr9sInstanceE;
+            uVar6 = FUN_7100387a84(_ZN3gmd11GameDataMgr9sInstanceE + 0x2a8,uVar4,0x71e6f035,uVar2);
+            if ((uVar6 & 1) == 0) {
+              FUN_7101f27f14(lVar3 + 0x248,uVar4,0x71e6f035);
+            }
+          }
+          else {
+            uVar2 = *(undefined4 *)(param_1 + 0x10);
+            puVar5 = &DAT_7102a408a8;
+            uVar4 = FUN_710000e3e0(&DAT_7102a408a8);
+            FUN_71006ad0e0(_ZN3gmd11GameDataMgr9sInstanceE,uVar4,0x71e6f035,uVar2);
+          }
+          uVar2 = *(undefined4 *)(param_1 + 0x10);
+          uVar4 = FUN_710000e3e0(puVar5);
+          lVar3 = _ZN3gmd11GameDataMgr9sInstanceE;
+          uVar6 = FUN_7100387a84(_ZN3gmd11GameDataMgr9sInstanceE + 0x2a8,uVar4,0x580b7eb4,uVar2);
+          if ((uVar6 & 1) == 0) {
+            FUN_7101f27f14(lVar3 + 0x248,uVar4,0x580b7eb4);
+          }
+          if (*(char *)(param_1 + 0x10) < '\x01') {
+            DAT_710361fa54 = DAT_710361fa54 | (ushort)(1 << (ulong)(uVar1 & 0x1f));
+          }
+        }
+      }
+      return;
+    }
+    
+
+  ============= FUN_710066e548 @ 710066e548 (ALREADY RULED OUT) =============
+  Body size: 376 bytes
+  Hit sites in this fn:
+    710066e58c   movk w21,#0x580b, LSL #16
+
+  Decompile:
+    
+    void FUN_710066e548(long param_1)
+    
+    {
+      uint uVar1;
+      long lVar2;
+      byte bVar3;
+      int iVar4;
+      ulong uVar5;
+      long lVar6;
+      uint uVar7;
+      ulong uVar8;
+      int iStack_68;
+      char acStack_64 [4];
+      
+      iVar4 = FUN_71001e4ae0();
+      *(int *)(param_1 + 0xa78) = iVar4;
+      if (iVar4 < 1) {
+        uVar8 = 0;
+      }
+      else {
+        uVar8 = 0;
+        lVar6 = param_1 + 0x650;
+        do {
+          bVar3 = *(byte *)(param_1 + 0xa28);
+          uVar7 = (uint)uVar8;
+          lVar2 = lVar6;
+          if (3 < uVar8) {
+            lVar2 = param_1 + 0x650;
+          }
+          *(uint *)(lVar2 + 0x10) = uVar7;
+          *(long *)(lVar2 + 0x38) = param_1;
+          uVar1 = 1 << (ulong)(uVar7 & 0x1f) & (uint)bVar3;
+          *(bool *)(lVar2 + 0xb) = uVar1 != 0;
+          if (*(char *)(lVar2 + 0x20) != '\0') {
+            *(undefined2 *)(lVar2 + 0x20) = 0x100;
+          }
+          acStack_64[0] = '\0';
+          if (uVar1 == 0) {
+            FUN_7100124134(_ZN3gmd11GameDataMgr9sInstanceE,acStack_64,0x60458608,uVar8 & 0xffffffff);
+            *(bool *)(lVar2 + 0xc) = acStack_64[0] != '\0';
+            if (acStack_64[0] == '\0') goto LAB_710066e638;
+            if (*(int *)(lVar2 + 0x30) != 0xc) {
+              *(undefined4 *)(lVar2 + 0x30) = 0xc;
+              goto LAB_710066e610;
+            }
+          }
+          else {
+            *(undefined *)(lVar2 + 0xc) = 0;
+    LAB_710066e638:
+            iStack_68 = 0;
+            uVar5 = FUN_710064f4f0(0x580b7eb4,uVar8 & 0xffffffff,&iStack_68);
+            if (((uVar5 & 1) != 0) && (*(int *)(lVar2 + 0x30) != iStack_68)) {
+              *(int *)(lVar2 + 0x30) = iStack_68;
+    LAB_710066e610:
+              *(undefined *)(lVar2 + 0x34) = 1;
+            }
+          }
+          *(uint *)(lVar2 + 0x50) = uVar7;
+          uVar8 = uVar8 + 1;
+          lVar6 = lVar6 + 0xd0;
+          *(undefined *)(lVar2 + 8) = 1;
+        } while ((long)uVar8 < (long)*(int *)(param_1 + 0xa78));
+        if ((uVar8 & 0xfffffffc) != 0) {
+          return;
+        }
+      }
+      lVar6 = uVar8 * 0xd0;
+      do {
+        *(undefined *)(param_1 + 0x658 + lVar6) = 0;
+        lVar6 = lVar6 + 0xd0;
+      } while (lVar6 != 0x340);
+      return;
+    }
+    
+
+################################################################
+####  HASH 0x105df820  --  badge_owned bitfield (reference)
+################################################################
+  Found 4 immediate-load site(s)
+  Unique enclosing functions: 4
+
+  -- All hits --
+    7100649a14   movk w20,#0x105d, LSL #16   [pair w/ 7100649a10: mov w20,#0xf820]   FUN_71006499f0+0x24 @ 71006499f0
+    7100689b50   movk w2,#0x105d, LSL #16   [pair w/ 7100689b4c: mov w2,#0xf820]   FUN_7100689b20+0x30 @ 7100689b20
+    71006b0178   movk w20,#0x105d, LSL #16   [pair w/ 71006b0174: mov w20,#0xf820]   FUN_71006b0140+0x38 @ 71006b0140
+    7101b5b89c   movk w2,#0x105d, LSL #16   [pair w/ 7101b5b898: mov w2,#0xf820]   FUN_7101b5b870+0x2c @ 7101b5b870
+
+  -- Decompiles of enclosing functions --
+
+  ============= FUN_71006499f0 @ 71006499f0 =============
+  Body size: 212 bytes
+  Hit sites in this fn:
+    7100649a14   movk w20,#0x105d, LSL #16
+
+  Decompile:
+    
+    undefined8 FUN_71006499f0(void)
+    
+    {
+      ulong uVar1;
+      long lVar2;
+      int iVar3;
+      int aiStack_48 [2];
+      char acStack_28 [4];
+      char acStack_24 [4];
+      
+      iVar3 = -1;
+      do {
+        lVar2 = _ZN3gmd11GameDataMgr9sInstanceE;
+        if (iVar3 == -1) {
+          iVar3 = 0;
+        }
+        else {
+          if (((_ZN3gmd11GameDataMgr9sInstanceE != 0) &&
+              (((aiStack_48[0] = iVar3,
+                uVar1 = FUN_7100124134(_ZN3gmd11GameDataMgr9sInstanceE,acStack_24,0x105df820,iVar3),
+                (uVar1 & 1) != 0 && (acStack_24[0] != '\0')) ||
+               ((uVar1 = FUN_7100124134(lVar2,acStack_28,0xe48a1168,iVar3), (uVar1 & 1) != 0 &&
+                (acStack_28[0] != '\0')))))) && (lVar2 = FUN_7100154320(aiStack_48), lVar2 != 0)) {
+            return 1;
+          }
+          if (0x3a < iVar3) {
+            return 0;
+          }
+          iVar3 = iVar3 + 1;
+        }
+        if (iVar3 == 0x3b) {
+          return 0;
+        }
+      } while( true );
+    }
+    
+
+  ============= FUN_7100689b20 @ 7100689b20 =============
+  Body size: 204 bytes
+  Hit sites in this fn:
+    7100689b50   movk w2,#0x105d, LSL #16
+
+  Decompile:
+    
+    byte FUN_7100689b20(int *param_1,ulong param_2)
+    
+    {
+      long lVar1;
+      byte bVar2;
+      ulong uVar3;
+      char acStack_28 [4];
+      char acStack_24 [4];
+      
+      lVar1 = _ZN3gmd11GameDataMgr9sInstanceE;
+      if (*param_1 == -1) {
+        return 1;
+      }
+      if (_ZN3gmd11GameDataMgr9sInstanceE == 0) {
+        bVar2 = 0;
+      }
+      else if ((param_2 & 1) == 0) {
+        uVar3 = FUN_7100124134(_ZN3gmd11GameDataMgr9sInstanceE,acStack_24);
+        if (((uVar3 & 1) != 0) && (acStack_24[0] != '\0')) {
+          return 1;
+        }
+        bVar2 = FUN_7100124134(lVar1,acStack_28,0xe48a1168,*param_1);
+      }
+      else {
+        uVar3 = FUN_71001242d4(_ZN3gmd11GameDataMgr9sInstanceE,acStack_24,0x105df820);
+        if (((uVar3 & 1) != 0) && (acStack_24[0] != '\0')) {
+          return 1;
+        }
+        bVar2 = FUN_71001242d4(lVar1,acStack_28,0xe48a1168,*param_1);
+      }
+      return bVar2 & acStack_28[0] != '\0';
+    }
+    
+
+  ============= FUN_71006b0140 @ 71006b0140 =============
+  Body size: 556 bytes
+  Hit sites in this fn:
+    71006b0178   movk w20,#0x105d, LSL #16
+
+  Decompile:
+    
+    byte FUN_71006b0140(uint *param_1)
+    
+    {
+      uint *puVar1;
+      uint uVar2;
+      uint uVar3;
+      uint uVar4;
+      uint uVar5;
+      long lVar6;
+      byte bVar7;
+      int iVar8;
+      ulong uVar9;
+      uint uVar10;
+      long lVar11;
+      byte abStack_28 [4];
+      byte abStack_24 [4];
+      
+      lVar6 = _ZN3gmd11GameDataMgr9sInstanceE;
+      uVar10 = *param_1;
+      if (uVar10 == 0xffffffff) {
+    LAB_71006b035c:
+        bVar7 = 1;
+      }
+      else {
+        if (_ZN3gmd11GameDataMgr9sInstanceE == 0) {
+          return 0;
+        }
+        lVar11 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x80);
+        if ((lVar11 != 0) && (uVar3 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x8c), uVar3 != 0)) {
+          uVar4 = 0;
+          if (uVar3 != 0) {
+            uVar4 = 0x105df820 / uVar3;
+          }
+          uVar4 = 0x105df820 - uVar4 * uVar3;
+          uVar5 = uVar4;
+          do {
+            iVar8 = *(int *)(lVar11 + (-(ulong)(uVar5 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar5 << 3)
+                            );
+            if (iVar8 == 0x105df820) {
+              if (-1 < (int)uVar10) {
+                puVar1 = (uint *)(lVar11 + (long)(int)uVar5 * 8 + 4);
+                uVar3 = *puVar1;
+                if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x70) <= uVar3) {
+                  uVar3 = 0;
+                }
+                iVar8 = (**(code **)(*(long *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x78) +
+                                              (long)(int)uVar3 * 0x40) + 0x20))();
+                if ((int)uVar10 < iVar8) {
+                  uVar3 = *puVar1;
+                  if (*(uint *)(lVar6 + 0x70) <= uVar3) {
+                    uVar3 = 0;
+                  }
+                  uVar10 = *(uint *)(*(long *)(*(long *)(lVar6 + 0x78) + (long)(int)uVar3 * 0x40 + 0x28)
+                                    + ((ulong)(uVar10 >> 3) & 0x1ffffffc)) >> (ulong)(uVar10 & 0x1f) & 1
+                  ;
+                  goto LAB_71006b0234;
+                }
+              }
+              break;
+            }
+            if (iVar8 == 0) break;
+            uVar2 = 0;
+            if ((int)(uVar5 + 1) < (int)uVar3) {
+              uVar2 = uVar5 + 1;
+            }
+            uVar5 = uVar2;
+          } while (uVar2 != uVar4);
+        }
+        uVar9 = FUN_7100124250(lVar6 + 8,abStack_24,0x105df820);
+        if ((uVar9 & 1) != 0) {
+          uVar10 = (uint)abStack_24[0];
+    LAB_71006b0234:
+          if (uVar10 != 0) goto LAB_71006b035c;
+        }
+        lVar11 = *(long *)(lVar6 + 0x80);
+        if ((lVar11 != 0) && (uVar10 = *(uint *)(lVar6 + 0x8c), uVar10 != 0)) {
+          uVar3 = 0;
+          if (uVar10 != 0) {
+            uVar3 = 0xe48a1168 / uVar10;
+          }
+          uVar4 = *param_1;
+          uVar3 = 0xe48a1168 - uVar3 * uVar10;
+          uVar5 = uVar3;
+          do {
+            iVar8 = *(int *)(lVar11 + (-(ulong)(uVar5 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar5 << 3)
+                            );
+            if (iVar8 == -0x1b75ee98) {
+              if (-1 < (int)uVar4) {
+                puVar1 = (uint *)(lVar11 + (long)(int)uVar5 * 8 + 4);
+                uVar10 = *puVar1;
+                if (*(uint *)(lVar6 + 0x70) <= uVar10) {
+                  uVar10 = 0;
+                }
+                iVar8 = (**(code **)(*(long *)(*(long *)(lVar6 + 0x78) + (long)(int)uVar10 * 0x40) +
+                                    0x20))();
+                if ((int)uVar4 < iVar8) {
+                  uVar10 = *puVar1;
+                  bVar7 = 1;
+                  if (*(uint *)(lVar6 + 0x70) <= uVar10) {
+                    uVar10 = 0;
+                  }
+                  abStack_28[0] =
+                       (byte)(*(uint *)(*(long *)(*(long *)(lVar6 + 0x78) + (long)(int)uVar10 * 0x40 +
+                                                 0x28) + ((ulong)(uVar4 >> 3) & 0x1ffffffc)) >>
+                             (ulong)(uVar4 & 0x1f)) & 1;
+                  goto LAB_71006b0308;
+                }
+              }
+              break;
+            }
+            if (iVar8 == 0) break;
+            uVar2 = 0;
+            if ((int)(uVar5 + 1) < (int)uVar10) {
+              uVar2 = uVar5 + 1;
+            }
+            uVar5 = uVar2;
+          } while (uVar2 != uVar3);
+        }
+        bVar7 = FUN_7100124250(lVar6 + 8,abStack_28,0xe48a1168);
+    LAB_71006b0308:
+        bVar7 = bVar7 & abStack_28[0] != 0;
+      }
+      return bVar7;
+    }
+    
+
+  ============= FUN_7101b5b870 @ 7101b5b870 =============
+  Body size: 88 bytes
+  Hit sites in this fn:
+    7101b5b89c   movk w2,#0x105d, LSL #16
+
+  Decompile:
+    
+    ulong FUN_7101b5b870(int param_1)
+    
+    {
+      ulong uVar1;
+      char acStack_14 [4];
+      
+      if (param_1 != -1) {
+        acStack_14[0] = '\0';
+        uVar1 = _ZN3gmd11GameDataMgr9sInstanceE;
+        if (_ZN3gmd11GameDataMgr9sInstanceE != 0) {
+          FUN_7100124134(_ZN3gmd11GameDataMgr9sInstanceE,acStack_14,0x105df820,param_1);
+          uVar1 = (ulong)(acStack_14[0] != '\0');
+        }
+        return uVar1;
+      }
+      return 1;
+    }
+    
+
+################################################################
+####  HASH 0x6d1b5c25  --  badge UI-slot bitmap (reference)
+################################################################
+  Found 0 immediate-load site(s)
+
+Done.
