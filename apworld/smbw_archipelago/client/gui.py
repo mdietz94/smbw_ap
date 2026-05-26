@@ -11,12 +11,19 @@ Subclasses CommonClient's GameManager, which provides:
   - "Hints" tab (built-in)
   - bottom bar: command prompt for slash-commands
 
-We add:
-  - log tab "SMBW" tailing logger ``"SMBW"`` (lan_server, processor,
-    context all log under that name)
-  - custom tab "SMBW Status" with at-a-glance bridge state: Switch
-    connection, current course, emitted checks count, deaths, badge
-    mask, and the last few items received
+We add ONE custom tab ("SMBW") split 50/50 horizontally:
+  * left  -- at-a-glance bridge state (Switch connection, current
+             course, emitted checks count, deaths, badge mask, recent
+             items received)
+  * right -- UILog tailing logger ``"SMBW"`` (lan_server, processor,
+             context all log under that name)
+
+Why a single combined tab instead of two:
+  Mirrors smo_archipelago's Odyssey tab.  Keeps state and diagnostics
+  in one eye-line while debugging, and -- because the SMBW logger is
+  NOT listed in ``logging_pairs`` -- kvui doesn't synthesize an "All"
+  tab that would otherwise interleave verbose bridge logs with the
+  AP/Client output.
 
 Polling: 1.5 s for the status panel.  Human-speed state changes
 (course-clear, badge grant) read fine at that cadence and leave plenty
@@ -29,7 +36,7 @@ import typing
 
 # kvui MUST be imported before any kivy.* module -- kvui asserts
 # `"kivy" not in sys.modules` at module top for frozen-build compat.
-from kvui import GameManager  # type: ignore
+from kvui import GameManager, UILog  # type: ignore
 
 from kivy.clock import Clock  # type: ignore
 from kivy.uix.boxlayout import BoxLayout  # type: ignore
@@ -44,24 +51,47 @@ _REFRESH_INTERVAL_SEC = 1.5
 
 
 class SMBWManager(GameManager):
-    """Custom GameManager: adds the SMBW logger tab + SMBW Status tab."""
+    """Custom GameManager: one "SMBW" tab combining status + log tail."""
 
     base_title = "Archipelago SMBW Client"
 
-    # `logging_pairs` is consumed by GameManager.build() to auto-create
-    # one tab per (logger_name, display_name).  Anything that calls
-    # logging.getLogger("SMBW") routes into the SMBW tab.
+    # Single entry on purpose.  kvui's GameManager.build() only
+    # synthesizes the leftmost "All" tab when ``len(logging_pairs) > 1``;
+    # keeping just the Client/Archipelago pair here suppresses that tab
+    # so SMBW-logger output stays out of the AP-protocol log view.  The
+    # "SMBW" logger is rendered manually in the right half of the SMBW
+    # tab via UILog (see ``build``).
     logging_pairs = [
         ("Client", "Archipelago"),
-        ("SMBW", "SMBW"),
     ]
 
     ctx: "SMBWContext"
 
+    def __init__(self, ctx: "SMBWContext"):
+        super().__init__(ctx)
+        self._smbw_log: UILog | None = None
+
     def build(self):
         container = super().build()
+        # SMBW tab: horizontal 50/50 split.
+        #   Left  -- at-a-glance bridge state (Switch / AP connection,
+        #            course, checks, deaths, badge mask, recent items).
+        #   Right -- UILog tailing logger "SMBW".  Constructing UILog
+        #            attaches a LogtoUI handler to the passed logger, so
+        #            records auto-tail here without needing logging_pairs
+        #            (which would also pull them into a synthesized "All"
+        #            tab next to the Client/Archipelago output).
+        smbw_split = BoxLayout(orientation="horizontal", spacing=4)
+
         status_panel = self._build_status_panel()
-        self.add_client_tab("SMBW Status", status_panel)
+        status_panel.size_hint_x = 0.5
+        smbw_split.add_widget(status_panel)
+
+        self._smbw_log = UILog(logging.getLogger("SMBW"))
+        self._smbw_log.size_hint_x = 0.5
+        smbw_split.add_widget(self._smbw_log)
+
+        self.add_client_tab("SMBW", smbw_split)
         Clock.schedule_interval(self._refresh_status, _REFRESH_INTERVAL_SEC)
         return container
 

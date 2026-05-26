@@ -3,10 +3,11 @@
 Ported from the headless `bridge/ap_client.py`.  Key changes:
   - game name updated to first-class "SMBWonder" (no longer Manual_-prefixed).
   - `make_gui()` returns the Kivy `SMBWManager` subclass so Archipelago
-    Launcher spawns a Kivy window with our custom Status + log tabs.
+    Launcher spawns a Kivy window with our custom SMBW tab (status on
+    the left, log tail on the right).
   - All "SMBW" log lines (lan_server, processor, this module) route
-    through the `SMBW` logger which `SMBWManager.logging_pairs`
-    surfaces as a dedicated tab.
+    through the `SMBW` logger, which `SMBWManager` tails in the right
+    half of the SMBW tab.
 
 Inbound (AP -> Switch):
   - Badges: maintain a canonical badge mask derived from
