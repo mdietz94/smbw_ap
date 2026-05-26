@@ -217,10 +217,15 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[CheckE
 def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[CheckEmitted]:
     """course_result fires on every successful flagpole/boss clear,
     INCLUDING palace WINs which also fire a concurrent koopajr_result.
+    It ALSO fires when the player aborts mid-course via the pause-menu
+    "quit" -- discriminated by the ``course_result`` field (1 = cleared,
+    3 = quit-from-pause-menu observed live 2026-05-26 on Robbird Cove).
 
     M2.5 classification logic (empirically derived from the 2026-05-20
     corpus):
 
+        course_result != 1                 → not a clear (quit / abort);
+                                             emit nothing
         world_mother_seed == True          → palace clear (defer to
                                              koopajr_result; emit nothing
                                              here to avoid double-firing)
@@ -246,6 +251,20 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
     stage_info = fields.get("stage_info")
     if not isinstance(stage_info, dict):
         log.warning("course_result missing stage_info; ignoring")
+        return []
+
+    result_code = fields.get("course_result")
+    if result_code != 1:
+        # The player quit / aborted mid-course (or some other non-clear
+        # outcome).  Without this guard, the default goal_id=0 +
+        # touch_goal_top_result=False fields would misclassify the quit
+        # as a Normal Exit and fire the corresponding AP location.  Live
+        # repro 2026-05-26: a 1-second Robbird Cove pause-menu quit
+        # emitted course_result=3, which previously sent the W2 Wonder
+        # Seed back to its slot.
+        log.info(
+            "course_result=%r at stage_key=%d (not a clear); suppressing",
+            result_code, stage_info["stage_key"])
         return []
 
     if fields.get("world_mother_seed"):
