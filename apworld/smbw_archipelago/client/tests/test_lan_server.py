@@ -332,14 +332,15 @@ class TestPlayReportDispatch(_AsyncTestCase):
             await asyncio.sleep(0.02)
 
             # COURSE_RESULT is from a top-of-flag clear per the
-            # processor's classifier (CourseResult test corpus); accept
-            # either NORMAL_EXIT or TOP_OF_FLAG since the field-level
-            # contract is owned by tests in test_processor.py.  What we
-            # care about here is *something* fired.
-            self.assertEqual(len(self.h.emitted), 1)
-            self.assertIn(
-                self.h.emitted[0].kind,
-                (CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG))
+            # processor's classifier (CourseResult test corpus); a
+            # top-of-flag clear emits BOTH NORMAL_EXIT and TOP_OF_FLAG
+            # (top-of-flag is a strict superset of normal exit).  The
+            # field-level contract is owned by tests in
+            # test_processor.py; here we just check that the wire path
+            # delivers both kinds to the handler.
+            kinds = {c.kind for c in self.h.emitted}
+            self.assertEqual(
+                kinds, {CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG})
         finally:
             await client.close()
 

@@ -122,15 +122,20 @@ class TestWonderSeedAttribution(unittest.TestCase):
 class TestCourseResultClassification(unittest.TestCase):
 
     def test_w1_1_top_of_flag(self):
+        """Top of Flag is a strict superset of Normal Exit, so both
+        check kinds fire on the same course_result."""
         state = BridgeState()
         emitted = process_event(
             state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
-        self.assertEqual(len(emitted), 1)
-        self.assertEqual(emitted[0].kind, CheckKind.TOP_OF_FLAG)
-        self.assertEqual(emitted[0].stage_key, W1_1_STAGE_KEY)
-        self.assertEqual(emitted[0].metadata["goal_id"], 0)
-        self.assertTrue(emitted[0].metadata["touch_goal_top"])
-        self.assertTrue(emitted[0].metadata["got_finish_seed"])
+        self.assertEqual(len(emitted), 2)
+        self.assertEqual(
+            [c.kind for c in emitted],
+            [CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG])
+        for c in emitted:
+            self.assertEqual(c.stage_key, W1_1_STAGE_KEY)
+            self.assertEqual(c.metadata["goal_id"], 0)
+            self.assertTrue(c.metadata["touch_goal_top"])
+            self.assertTrue(c.metadata["got_finish_seed"])
 
     def test_w1_2_secret_exit(self):
         state = BridgeState()
@@ -147,7 +152,9 @@ class TestCourseResultClassification(unittest.TestCase):
             state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
         second = process_event(
             state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
-        self.assertEqual(len(first), 1)
+        # Top-of-flag clear emits both NORMAL_EXIT and TOP_OF_FLAG; a
+        # replay of the same payload must dedup both.
+        self.assertEqual(len(first), 2)
         self.assertEqual(second, [])
 
     def test_palace_companion_course_result_suppressed(self):
@@ -216,12 +223,13 @@ class TestRealisticPlaythroughFlows(unittest.TestCase):
         process_event(state, PlayReportMsg(
             room="course_result", payload=COURSE_RESULT))
 
-        # Expected outcome: WONDER_SEED + TOP_OF_FLAG, both attributed
-        # to W1-1.
+        # Expected outcome: WONDER_SEED + TOP_OF_FLAG + NORMAL_EXIT,
+        # all attributed to W1-1 (Top of Flag is a strict superset of
+        # Normal Exit so both clear checks fire).
         self.assertTrue(state.has_emitted(CheckKind.WONDER_SEED, W1_1_STAGE_KEY))
         self.assertTrue(state.has_emitted(CheckKind.TOP_OF_FLAG, W1_1_STAGE_KEY))
-        self.assertFalse(state.has_emitted(CheckKind.NORMAL_EXIT, W1_1_STAGE_KEY))
-        self.assertEqual(state.count_emitted(), 2)
+        self.assertTrue(state.has_emitted(CheckKind.NORMAL_EXIT, W1_1_STAGE_KEY))
+        self.assertEqual(state.count_emitted(), 3)
 
     def test_w1_2_secret_exit_with_wonder_seed(self):
         """Player enters W1-2, grabs Wonder Phase seed, takes the
@@ -540,7 +548,8 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
         emitted = process_event(
             state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
         self.assertEqual(
-            [c.kind for c in emitted], [CheckKind.TOP_OF_FLAG])
+            [c.kind for c in emitted],
+            [CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG])
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
 
     def test_w1_2_secret_exit_emits_no_ten_coin(self):
