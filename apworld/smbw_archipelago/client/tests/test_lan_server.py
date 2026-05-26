@@ -533,6 +533,7 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await asyncio.sleep(0.02)
             self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
@@ -551,8 +552,9 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
         client = await _FakeSwitch.connect(self.h.port)
         try:
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
-            await client.recv()
-            await client.recv()
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute
+            await client.recv()  # post-hello SetWonderSeedCounts
 
             await asyncio.sleep(0.02)
             self.h.server.send_increment_hash_keyed(0xF4EE6827, -10)
@@ -566,6 +568,85 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
     async def test_send_increment_hash_keyed_with_no_client_drops(self):
         # No client connected; warn-and-drop, not raise.
         self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
+
+    async def test_send_increment_hash_keyed_coalesces_same_hash(self):
+        # Regression: when AP delivers 10 "10 Coin" items in a single
+        # ReceivedItems batch, the bridge used to ship 10 separate
+        # IncrementHashKeyedMsg(+10) messages.  The Switch-side RMW
+        # reads the persistent counter (not the dirty buffer the
+        # writer pushes to), so each +10 read the same ``cur`` and
+        # clobbered the last -- only the final +10 survived.  Now the
+        # bridge coalesces per-hash and emits exactly ONE
+        # IncrementHashKeyedMsg(+100) so the Switch performs a single
+        # RMW that lands the whole batch.
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute
+            await client.recv()  # post-hello SetWonderSeedCounts
+
+            # Synchronous burst -- no awaits between calls, so all 10
+            # deltas land in _pending_increments before the writer
+            # loop runs its next iteration.
+            for _ in range(10):
+                self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.IncrementHashKeyedMsg)
+            self.assertEqual(received.hash, 0xF4EE6827)
+            self.assertEqual(received.delta, 100)
+            # The redundant sentinels from the same burst must not
+            # produce phantom IncrementHashKeyedMsg(delta=0)s.
+            with self.assertRaises(asyncio.TimeoutError):
+                await client.recv(timeout=0.15)
+        finally:
+            await client.close()
+
+    async def test_send_increment_hash_keyed_coalesces_mixed_signs(self):
+        # +10 then -10 in the same coalesce window cancels to zero.
+        # Zero-delta drains are suppressed (the Switch would just
+        # RMW-no-op anyway), so nothing reaches the wire.
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()
+            await client.recv()
+            await client.recv()
+
+            self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
+            self.h.server.send_increment_hash_keyed(0xF4EE6827, -10)
+
+            with self.assertRaises(asyncio.TimeoutError):
+                await client.recv(timeout=0.15)
+        finally:
+            await client.close()
+
+    async def test_send_increment_hash_keyed_different_hashes_dont_merge(self):
+        # Different hashes get one outbound message each -- coalesce
+        # is per-hash, not global.  (We don't currently have a second
+        # container-A counter wired up, but the contract holds.)
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()
+            await client.recv()
+            await client.recv()
+
+            self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
+            self.h.server.send_increment_hash_keyed(0x17F0BB21, 5)
+            self.h.server.send_increment_hash_keyed(0xF4EE6827, 20)
+
+            seen: dict[int, int] = {}
+            for _ in range(2):
+                got = await client.recv()
+                self.assertIsInstance(got, wire.IncrementHashKeyedMsg)
+                seen[got.hash] = got.delta
+            self.assertEqual(seen, {0xF4EE6827: 30, 0x17F0BB21: 5})
+            with self.assertRaises(asyncio.TimeoutError):
+                await client.recv(timeout=0.15)
+        finally:
+            await client.close()
 
 
 # ---------------------------------------------------------------------------

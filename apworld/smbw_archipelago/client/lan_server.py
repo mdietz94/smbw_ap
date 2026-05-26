@@ -126,16 +126,46 @@ RoyalSeedGrantsProvider = Callable[[], list[tuple[int, int]]]
 WonderSeedCountsProvider = Callable[[], list[int]]
 
 
+class _DrainIncrementsSentinel:
+    """Internal sentinel posted by :meth:`LanServer.send_increment_hash_keyed`
+    to wake the writer loop.  When the writer pops one of these, it
+    drains :attr:`LanServer._pending_increments` (the per-hash coalesce
+    buffer) and emits one :class:`wire.IncrementHashKeyedMsg` per
+    non-zero accumulated delta.
+
+    Why coalesce: the Switch-side primitive
+    ``probe::incrementContainerACounter`` is RMW against the *persistent*
+    container value -- the writer queues to a dirty buffer at
+    ``gmd+0xf8`` that the reader does not observe before the next save
+    flush.  If the bridge sends N rapid increments back-to-back, each
+    RMW reads the same persistent ``cur`` and writes ``cur + delta``,
+    with each new write clobbering the previous dirty-buffer entry --
+    only the last delta survives.  Folding N pending deltas into a
+    single outbound ``+sum(deltas)`` makes the Switch perform exactly
+    one RMW, so the entire batch lands.
+
+    Duplicate sentinels are harmless: the second sentinel from a given
+    burst finds the dict already empty and is a no-op."""
+    __slots__ = ()
+
+
+_DRAIN_INCREMENTS: _DrainIncrementsSentinel = _DrainIncrementsSentinel()
+
+
 # Union of bridge-to-Switch message types the writer loop can drain.
 # Adding a new inbound variant (e.g. ``GrantPowerUpMsg`` in M5) means:
 # define it in ``wire.py``, add a typed ``send_*`` method below, append
 # to this alias, and add a log-line branch in ``_writer_loop``.
+# ``_DrainIncrementsSentinel`` is an internal marker -- see its
+# docstring; the writer translates it into one outbound
+# IncrementHashKeyedMsg per pending hash.
 GrantMsg = (
     wire.SetBadgesAbsoluteMsg
     | wire.GrantHashKeyedMsg
     | wire.IncrementHashKeyedMsg
     | wire.SetWonderSeedCountsMsg
     | wire.KillMsg
+    | _DrainIncrementsSentinel
 )
 
 
@@ -183,6 +213,14 @@ class LanServer:
         self._writer_task: asyncio.Task[None] | None = None
         self._badge_sync_task: asyncio.Task[None] | None = None
         self._client_lock = asyncio.Lock()
+
+        # Per-hash coalesce buffer for ``send_increment_hash_keyed``;
+        # see :class:`_DrainIncrementsSentinel` for the why.  Lives on
+        # the LanServer (not the per-session record) because the public
+        # ``send_*`` methods are called by SMBWContext without knowing
+        # whether a session is active right now -- the dict is reset on
+        # every session install/drop so deltas never cross sessions.
+        self._pending_increments: dict[int, int] = {}
 
     # ---- Lifecycle ----------------------------------------------------
 
@@ -327,6 +365,18 @@ class LanServer:
         total" rather than "set to N" -- first user is the "10 Coin"
         item routing 10 to the ``flower_coin`` (purple coin) counter.
 
+        **Coalesces per hash before sending.**  The Switch-side
+        primitive RMWs against the persistent counter, but its write
+        queues to a dirty buffer the reader doesn't observe before the
+        next save flush -- so multiple ``+10``s in quick succession
+        would each read the same persistent ``cur`` and clobber each
+        other (only the last delta survives).  Instead we accumulate
+        deltas in ``_pending_increments[hash]`` and post a single
+        :data:`_DRAIN_INCREMENTS` sentinel; the writer loop drains the
+        dict atomically and emits one outbound message per non-zero
+        hash.  See :class:`_DrainIncrementsSentinel` for the full
+        rationale.
+
         Save-survival caveat (same as ``send_grant_hash_keyed`` for
         counters): the Switch primitive writes to a deferred-write
         dirty buffer at ``gmd+0xf8`` flushed on next save.  A load-
@@ -335,23 +385,37 @@ class LanServer:
         replay would double-count.  For filler this is acceptable; for
         progression-critical counters we'd need per-AP-item-index
         dedup persisted across reconnects."""
-        msg = wire.IncrementHashKeyedMsg(hash=hash_, delta=delta)
         if self._send_queue is None:
             log.warning(
                 "send_increment_hash_keyed(hash=0x%08x, delta=%d): no "
                 "Switch client connected; dropping",
                 hash_, delta)
             return
+        # Coalesce: a synchronous Python dict update + put_nowait pair
+        # is atomic from the event loop's POV (no awaits), so a burst
+        # of synchronous send_increment_hash_keyed calls all land in
+        # the dict before the writer loop ever sees the first sentinel.
+        prev = self._pending_increments.get(hash_, 0)
+        new_total = prev + delta
+        self._pending_increments[hash_] = new_total
         try:
-            self._send_queue.put_nowait(msg)
+            self._send_queue.put_nowait(_DRAIN_INCREMENTS)
             log.debug(
-                "send_increment_hash_keyed: enqueued hash=0x%08x delta=%d",
-                hash_, delta)
+                "send_increment_hash_keyed: accumulated hash=0x%08x "
+                "delta=%d (pending total %d)",
+                hash_, delta, new_total)
         except asyncio.QueueFull:
-            log.error(
-                "send_increment_hash_keyed(hash=0x%08x, delta=%d): outbound "
-                "queue full; dropping",
-                hash_, delta)
+            # The dict update already landed and an earlier sentinel
+            # is presumably still queued (or the queue is saturated by
+            # other messages and will be drained imminently).  Either
+            # way the next sentinel that the writer pops will pick up
+            # our newly-added delta -- no message is lost.
+            log.debug(
+                "send_increment_hash_keyed(hash=0x%08x, delta=%d): "
+                "outbound queue full but sentinel for this hash is "
+                "still pending -- delta folded into the existing "
+                "pending entry (new total %d)",
+                hash_, delta, new_total)
 
     def send_grant_hash_keyed(self, hash_: int, value: int) -> None:
         """Enqueue a GrantHashKeyed (container-A counter or container-B
@@ -562,6 +626,11 @@ class LanServer:
 
             self._client_writer = writer
             self._send_queue = asyncio.Queue()
+            # Fresh coalesce buffer per session.  Any deltas pending
+            # from a previous session (if a sentinel raced with the
+            # client drop) are stale -- the Switch has restarted and
+            # would have no context for them.
+            self._pending_increments = {}
             self._writer_task = asyncio.create_task(
                 self._writer_loop(writer, self._send_queue),
                 name="lan-writer",
@@ -602,6 +671,10 @@ class LanServer:
             self._client_writer = None
 
         self._send_queue = None
+        # Pending coalesced increment deltas are tied to the session;
+        # the Switch is gone, drop them so a future reconnect starts
+        # from a clean slate (matches the per-session queue drop above).
+        self._pending_increments = {}
 
     # ---- Badge sync ---------------------------------------------------
 
@@ -719,6 +792,45 @@ class LanServer:
         try:
             while True:
                 msg = await queue.get()
+                if isinstance(msg, _DrainIncrementsSentinel):
+                    # Atomic extract-and-replace.  Reassigning before
+                    # iteration means a concurrent
+                    # send_increment_hash_keyed call (which can run
+                    # during our ``await writer.drain()`` below)
+                    # accumulates into a fresh dict and posts its own
+                    # sentinel -- the next iteration picks it up.
+                    pending = self._pending_increments
+                    self._pending_increments = {}
+                    if not pending:
+                        # A redundant sentinel from an earlier burst
+                        # we already drained.  No-op.
+                        continue
+                    for h, delta in pending.items():
+                        if delta == 0:
+                            # Pure cancellation (e.g. +10 grant then
+                            # -10 refund in the same coalesce window).
+                            # Skip so we don't bother the Switch with
+                            # a no-op RMW.
+                            log.debug(
+                                "writer_loop: skipping zero-delta drain "
+                                "for hash=0x%08x", h)
+                            continue
+                        real = wire.IncrementHashKeyedMsg(
+                            hash=h, delta=delta)
+                        try:
+                            writer.write(wire.encode(real))
+                            await writer.drain()
+                            log.info(
+                                "-> increment_hash_keyed hash=0x%08x "
+                                "delta=%d (coalesced)",
+                                real.hash, real.delta)
+                        except (ConnectionResetError, BrokenPipeError) as e:
+                            log.warning(
+                                "writer_loop: send failed (%s); dropping "
+                                "coalesced IncrementHashKeyedMsg",
+                                e)
+                            return
+                    continue
                 try:
                     writer.write(wire.encode(msg))
                     await writer.drain()
