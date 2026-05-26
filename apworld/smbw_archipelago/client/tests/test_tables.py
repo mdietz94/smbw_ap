@@ -21,7 +21,13 @@ from ..badge_table import (
     unmapped_item_names,
 )
 from ..coin_table import _COIN_ITEMS, grant_for_item, is_coin_item
-from ..location_table import _TABLE, _TEN_COIN_TABLE, lookup_name
+from ..location_table import (
+    _SHOP_SEED_TABLE,
+    _SHOP_SEED_WILDCARD_TABLE,
+    _TABLE,
+    _TEN_COIN_TABLE,
+    lookup_name,
+)
 from ..protocol import CheckEmitted, CheckKind
 from ..royal_seed_table import (
     ALL_MASK,
@@ -223,6 +229,127 @@ class TestLocationTable(unittest.TestCase):
             kind=CheckKind.TEN_COIN,
             stage_key=99999999,
             metadata={"coin_index": 0})
+        self.assertIsNone(lookup_name(check))
+
+    def test_every_shop_seed_name_exists_in_locations_json(self):
+        loc_names = _load_names(_LOCATIONS_JSON)
+        missing = [n for n in _SHOP_SEED_TABLE.values() if n not in loc_names]
+        self.assertEqual(
+            missing, [],
+            f"shop_seed locations not found in locations.json: {missing}")
+
+    def test_every_shop_seed_wildcard_name_exists_in_locations_json(self):
+        loc_names = _load_names(_LOCATIONS_JSON)
+        missing = [
+            n for n in _SHOP_SEED_WILDCARD_TABLE.values()
+            if n not in loc_names]
+        self.assertEqual(
+            missing, [],
+            f"shop_seed wildcard locations not found in locations.json: {missing}")
+
+    def test_lookup_shop_seed_pi_west_via_wildcard(self):
+        # PI East is exact at (2, 4, 0); any OTHER npc_id in PI must be
+        # West by elimination (houses don't fire general_shop_result).
+        # Try a few hypothetical npc_ids that aren't 4.
+        for fake_npc in [1, 2, 3, 5, 99]:
+            check = CheckEmitted(
+                kind=CheckKind.SHOP_SEED,
+                stage_key=(2 << 16) | fake_npc,
+                metadata={"world_no": 2, "npc_id": fake_npc, "item_value": 0})
+            self.assertEqual(
+                lookup_name(check),
+                "PI: Poplin Shop (West) - Wonder Seed",
+                f"wildcard didn't match for npc_id={fake_npc}")
+
+    def test_lookup_shop_seed_pi_east_exact_wins_over_wildcard(self):
+        # Exact (2, 4, 0) → East, NOT the PI West wildcard.  Wildcard
+        # is only consulted on exact-table miss.
+        check = CheckEmitted(
+            kind=CheckKind.SHOP_SEED,
+            stage_key=(2 << 16) | 4,
+            metadata={"world_no": 2, "npc_id": 4, "item_value": 0})
+        self.assertEqual(
+            lookup_name(check),
+            "PI: Poplin Shop (East) - Wonder Seed")
+
+    def test_lookup_shop_seed_w5_via_wildcard(self):
+        # W5 has exactly one shop in the apworld (its 2 Houses don't
+        # fire general_shop_result), so any general_shop_result in
+        # PR world_no=6 is the W5 Poplin Shop regardless of npc_id.
+        check = CheckEmitted(
+            kind=CheckKind.SHOP_SEED,
+            stage_key=(6 << 16) | 42,
+            metadata={"world_no": 6, "npc_id": 42, "item_value": 0})
+        self.assertEqual(
+            lookup_name(check),
+            "W5: Poplin Shop - Wonder Seed")
+
+    def test_lookup_shop_seed_w6_via_wildcard(self):
+        check = CheckEmitted(
+            kind=CheckKind.SHOP_SEED,
+            stage_key=(7 << 16) | 1,
+            metadata={"world_no": 7, "npc_id": 1, "item_value": 0})
+        self.assertEqual(
+            lookup_name(check),
+            "W6: Poplin Shop - Wonder Seed")
+
+    def test_lookup_shop_seed_w1_poplin(self):
+        # W1 Poplin Shop: PR world_no=1, npc_id=2, slot=0.
+        check = CheckEmitted(
+            kind=CheckKind.SHOP_SEED,
+            stage_key=(1 << 16) | 2,
+            metadata={"world_no": 1, "npc_id": 2, "item_value": 0})
+        self.assertEqual(
+            lookup_name(check),
+            "W1: Poplin Shop - Wonder Seed")
+
+    def test_lookup_shop_seed_w2_poplin_bottom(self):
+        # W2 Poplin Shop (Bottom): the apworld's "W2" label is PR
+        # world_no=3 because Petal Isles takes the world_no=2 slot
+        # in the PlayReport numbering.  npc_id=4 captured 2026-05-25.
+        check = CheckEmitted(
+            kind=CheckKind.SHOP_SEED,
+            stage_key=(3 << 16) | 4,
+            metadata={"world_no": 3, "npc_id": 4, "item_value": 0})
+        self.assertEqual(
+            lookup_name(check),
+            "W2: Poplin Shop (Bottom) - Wonder Seed")
+
+    def test_lookup_shop_seed_w4_secret_triple(self):
+        # W4 Poplin Shop (Secret): same (world_no=5, npc_id=5) for all
+        # three priced seeds; item_value 0/1/2 maps to the 30/100/200
+        # AP locations in shop-shelf order.
+        for slot, expected in enumerate([
+            "W4: Poplin Shop (Secret) - Wonder Seed (30 Coins)",
+            "W4: Poplin Shop (Secret) - Wonder Seed (100 Coins)",
+            "W4: Poplin Shop (Secret) - Wonder Seed (200 Coins)",
+        ]):
+            check = CheckEmitted(
+                kind=CheckKind.SHOP_SEED,
+                stage_key=(5 << 16) | 5,
+                metadata={"world_no": 5, "npc_id": 5, "item_value": slot})
+            self.assertEqual(lookup_name(check), expected)
+
+    def test_lookup_shop_seed_w2_poplin_top(self):
+        # W2 Poplin Shop (Top): same world_no=3 as the Bottom shop,
+        # distinct npc_id=3 (note: lower npc_id than the Bottom shop's
+        # 4 — the npc_id ordering is arbitrary, not Top/Bottom-aligned).
+        check = CheckEmitted(
+            kind=CheckKind.SHOP_SEED,
+            stage_key=(3 << 16) | 3,
+            metadata={"world_no": 3, "npc_id": 3, "item_value": 0})
+        self.assertEqual(
+            lookup_name(check),
+            "W2: Poplin Shop (Top) - Wonder Seed")
+
+    def test_lookup_shop_seed_unmapped_returns_none(self):
+        # A world_no with no exact OR wildcard entry returns None.
+        # (Worlds 1, 3, 4 are fully exact-mapped; 2, 6, 7 have
+        # wildcards.  World 9 is fictional → miss both lookups.)
+        check = CheckEmitted(
+            kind=CheckKind.SHOP_SEED,
+            stage_key=(9 << 16) | 99,
+            metadata={"world_no": 9, "npc_id": 99, "item_value": 0})
         self.assertIsNone(lookup_name(check))
 
     def test_lookup_ten_coin_palace_stage_returns_none(self):

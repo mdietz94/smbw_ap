@@ -201,10 +201,18 @@ def _handle_play_report(state: BridgeState, event: PlayReportMsg) -> list[CheckE
         return _handle_course_result(state, fields)
     if room == "koopajr_result":
         return _handle_koopajr_result(state, fields)
+    if room == "general_shop_result":
+        return _handle_general_shop_result(state, fields)
     if room == "world_result":
         # The transition report; we COULD use next_stage_info to
         # pre-populate current_course but the subsequent course_in
         # already does that authoritatively.  Skip for now.
+        return []
+    if room == "panel_game_result":
+        # Standee shop purchases (Poplin Standee).  Distinct schema with
+        # result_array / get_id / get_count / panel_type_count — NOT an
+        # AP check family.  Explicitly suppress to keep the warning log
+        # from firing on every standee buy.
         return []
     # Other rooms (world_activity, bootup_time, erepo_*, game_option) are
     # boring telemetry from the bridge's perspective.
@@ -372,6 +380,120 @@ def _emit_ten_coin_checks(
                 log.info("course_result → ten_coin #%d at stage_key=%d",
                          idx + 1, stage_key)
                 emitted.append(check)
+    return emitted
+
+
+# item_kind values observed in general_shop_result.item_info_array
+# (corpus 2026-05-25, captured across W1 / PI / W2 / W3 / W4 shops):
+#
+#   0 = badge       (item_value = badge internal_id, e.g. 8=Fast Dash,
+#                    55=Coin Reward).  NOT emitted here — the Switch-side
+#                    ``probe::setBadgeBitfieldAbsolute`` already does
+#                    read-diff-then-write (main.cpp ~L1142:
+#                    "M2.3 -- diff-on-overwrite") so any badge bit set
+#                    in-game produces a BadgeAcquiredMsg on the next
+#                    ~2 s tick.  That's the canonical path for the
+#                    "<Badge> Obtained" AP location family; emitting
+#                    the same check here would be redundant.
+#   1 = Wonder Seed (item_value = per-shop slot index; 0 for single-seed
+#                    shops, 0/1/2 for the W4 Secret 3-slot shop in
+#                    cheapest-first shelf order).  Fires SHOP_SEED.
+#   2 = consumable  (1-up; item_value = count).  Not an AP location family;
+#                    silently dropped.
+_SHOP_ITEM_KIND_WONDER_SEED: int = 1
+
+
+def _shop_key(world_no: int, npc_id: int) -> int:
+    """Pack a Poplin Shop's identity into a single int for use as the
+    SHOP_SEED ``CheckEmitted.stage_key``.  Reversible: high 16 bits are
+    world_no, low 16 bits are npc_id."""
+    return (int(world_no) << 16) | int(npc_id)
+
+
+def _handle_general_shop_result(
+    state: BridgeState, fields: dict[str, Any],
+) -> list[CheckEmitted]:
+    """Poplin Shop purchase — fires once per buy at the moment of purchase.
+
+    Schema (from the W1 Poplin Shop corpus, 2026-05-25):
+
+        stage_info.world_no  → which world the shop sits on
+        npc_id               → which Poplin NPC inside that world (the
+                                shop identity is the (world_no, npc_id) pair)
+        item_info_array      → list of {item_kind, item_value} structs;
+                                typically length-1 since the player buys
+                                one item at a time
+
+    item_kind discriminates within a single transaction:
+        ==1 (Wonder Seed) → SHOP_SEED check.  Shop identity is
+            (world_no, npc_id); slot within the shop is item_value
+            (0 for single-seed shops; 0/1/2 for the W4 Secret triple in
+            cheapest-first shelf order).  Dedup sub_key is shop_slot
+            so a multi-slot shop's seeds dedup independently.
+        ==0 (badge) and ==2 (consumable) → silently dropped.  Badges
+            are covered by the Switch-side bitfield-diff path
+            (BadgeAcquiredMsg via probe::setBadgeBitfieldAbsolute);
+            consumables aren't an AP location family.
+
+    item_info_array can carry multiple items per transaction (a multi-buy
+    where the player nets two seeds in one purchase, for example).
+    Each item is processed independently against the rules above.
+    """
+    stage_info = fields.get("stage_info")
+    if not isinstance(stage_info, dict):
+        log.warning("general_shop_result missing stage_info; ignoring")
+        return []
+    world_no = int(stage_info.get("world_no", 0))
+    npc_id_obj = fields.get("npc_id")
+    if not isinstance(npc_id_obj, int):
+        log.warning("general_shop_result missing npc_id; ignoring")
+        return []
+    npc_id = int(npc_id_obj)
+
+    items = fields.get("item_info_array")
+    if not isinstance(items, list):
+        log.warning(
+            "general_shop_result @ (world=%d, npc=%d) missing item_info_array",
+            world_no, npc_id)
+        return []
+
+    emitted: list[CheckEmitted] = []
+    shop_key = _shop_key(world_no, npc_id)
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        kind = item.get("item_kind")
+        value = item.get("item_value")
+        ivalue = int(value) if isinstance(value, int) else 0
+
+        if kind != _SHOP_ITEM_KIND_WONDER_SEED:
+            # item_kind=0 (badge) — covered by the Switch-side
+            # bitfield-diff path, see module-level comment.
+            # item_kind=2 (consumable) — not an AP family.
+            # Any other kind — log and drop until we have data.
+            log.debug(
+                "general_shop_result: dropping kind=%r value=%r "
+                "at (world=%d, npc=%d)", kind, value, world_no, npc_id)
+            continue
+        check = CheckEmitted(
+            kind=CheckKind.SHOP_SEED,
+            stage_key=shop_key,
+            metadata={
+                "world_no": world_no,
+                "npc_id": npc_id,
+                "item_value": ivalue,
+                "shop_slot": ivalue,
+            },
+        )
+        if state.emit_check(check):
+            log.info(
+                "general_shop_result → shop_seed at (world=%d, npc=%d, slot=%d)",
+                world_no, npc_id, ivalue)
+            emitted.append(check)
+        else:
+            log.debug(
+                "general_shop_result dup at (world=%d, npc=%d, slot=%d); dropped",
+                world_no, npc_id, ivalue)
     return emitted
 
 

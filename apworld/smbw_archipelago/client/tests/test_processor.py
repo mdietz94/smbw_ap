@@ -463,6 +463,214 @@ class TestIgnoredRooms(unittest.TestCase):
             room="world_result", payload=WORLD_RESULT_W1_TO_W2))
         self.assertEqual(emitted, [])
 
+    def test_panel_game_result_is_a_noop(self):
+        """Standee shop purchases fire panel_game_result with a
+        distinct schema; the processor must explicitly suppress them
+        so they don't trip the unknown-room warning."""
+        state = BridgeState()
+        # Minimal panel_game_result — exact schema doesn't matter; the
+        # contract is "no emits, no warnings".
+        emitted = process_event(state, PlayReportMsg(
+            room="panel_game_result",
+            payload=bytes.fromhex(
+                "de 00 01"
+                "ac 72 65 73 75 6c 74 5f 61 72 72 61 79 90".replace(" ", ""))))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+
+# ---------------------------------------------------------------------------
+# Poplin Shop purchases — general_shop_result PlayReport.  Only item_kind=1
+# (Wonder Seed) produces a SHOP_SEED check; badge / consumable buys are
+# dropped silently.  Dedup key includes the shop_slot (item_value) so the
+# W4 Secret 3-slot shop's three priced seeds dedup independently.
+
+class TestPoplinShopPurchase(unittest.TestCase):
+    @staticmethod
+    def _shop_payload(world_no_hex: str, npc_id_hex: str,
+                       item_kind_hex: str, item_value_bytes: str) -> bytes:
+        """Synthesize a general_shop_result payload mirroring the W1
+        Poplin Shop capture shape, parametrized on the four discriminators."""
+        hexstr = (
+            "de 00 07"
+            "ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23"
+            "62 38 31 33 65 36 37 35 2d 65 62 32 35 34 63 38 61 2d"
+            "61 33 65 30 64 30 35 32 2d 64 66 31 61 66 61 64 30"
+            "a9 70 6c 61 79 5f 6d 6f 64 65 01"
+            "af 74 6f 74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65"
+            "d7 00 00 00 00 00 00 00 00 4c"
+            "aa 73 74 61 67 65 5f 69 6e 66 6f"
+            "83 a9 73 74 61 67 65 5f 6b 65 79 d3 00 00 00 00 d4 a6 26 5d"
+            "aa 77 6f 72 6c 64 5f 6b 69 6e 64 00"
+            f"a8 77 6f 72 6c 64 5f 6e 6f {world_no_hex}"
+            f"a6 6e 70 63 5f 69 64 {npc_id_hex}"
+            "af 69 74 65 6d 5f 69 6e 66 6f 5f 61 72 72 61 79"
+            "91 82"
+            f"a9 69 74 65 6d 5f 6b 69 6e 64 {item_kind_hex}"
+            f"aa 69 74 65 6d 5f 76 61 6c 75 65 {item_value_bytes}"
+            "b1 73 79 73 74 65 6d 5f 72 65 70 6f 72 74 5f 74 61 67"
+            "ce 81 a7 03 b8")
+        return bytes.fromhex(hexstr.replace(" ", ""))
+
+    def test_wonder_seed_buy_emits_shop_seed(self):
+        from .test_play_report import GENERAL_SHOP_RESULT_W1_SEED
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="general_shop_result",
+            payload=GENERAL_SHOP_RESULT_W1_SEED))
+
+        self.assertEqual(len(emitted), 1)
+        check = emitted[0]
+        self.assertIsInstance(check, CheckEmitted)
+        self.assertEqual(check.kind, CheckKind.SHOP_SEED)
+        # stage_key encoding: (world_no << 16) | npc_id = (1<<16) | 2 = 0x10002.
+        self.assertEqual(check.stage_key, (1 << 16) | 2)
+        self.assertEqual(check.metadata["world_no"], 1)
+        self.assertEqual(check.metadata["npc_id"], 2)
+        self.assertEqual(check.metadata["item_value"], 0)
+        self.assertEqual(check.metadata["shop_slot"], 0)
+
+    def test_wonder_seed_buy_is_deduped(self):
+        from .test_play_report import GENERAL_SHOP_RESULT_W1_SEED
+        state = BridgeState()
+        first = process_event(state, PlayReportMsg(
+            room="general_shop_result",
+            payload=GENERAL_SHOP_RESULT_W1_SEED))
+        second = process_event(state, PlayReportMsg(
+            room="general_shop_result",
+            payload=GENERAL_SHOP_RESULT_W1_SEED))
+        self.assertEqual(len(first), 1)
+        self.assertEqual(second, [])
+        self.assertEqual(state.count_emitted(CheckKind.SHOP_SEED), 1)
+
+    def test_badge_buy_is_silent(self):
+        """A Coin Reward badge buy fires general_shop_result with
+        item_kind=0, item_value=55, but the processor drops it: the
+        Switch-side ``probe::setBadgeBitfieldAbsolute`` already does
+        read-diff-then-write (main.cpp 'M2.3 diff-on-overwrite') and
+        emits BadgeAcquiredMsg on the next tick, so emitting the same
+        check from the PlayReport would be redundant.  This test pins
+        that single-source-of-truth choice."""
+        payload = self._shop_payload(
+            world_no_hex="01", npc_id_hex="02",
+            item_kind_hex="00", item_value_bytes="cc 37")  # item_value=55
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="general_shop_result", payload=payload))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+    def test_consumable_buy_is_silent(self):
+        """1-up buy: item_kind=2, item_value=1.  Not an AP check family."""
+        payload = self._shop_payload(
+            world_no_hex="01", npc_id_hex="02",
+            item_kind_hex="02", item_value_bytes="01")
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="general_shop_result", payload=payload))
+        self.assertEqual(emitted, [])
+
+    def test_multi_item_buy_emits_one_check_per_seed(self):
+        """A single shop transaction can include multiple items at
+        once -- item_info_array is length-N, not always 1.  Two seeds
+        bought in the same transaction must produce two distinct
+        SHOP_SEED checks (different shop_slot sub_keys, so dedup
+        doesn't collapse them)."""
+        # Synthesize a payload with item_info_array opener 0x92 (array of 2):
+        # two seed structs back-to-back at item_values 0 and 1.
+        hexstr = (
+            "de 00 07"
+            "ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23"
+            "62 38 31 33 65 36 37 35 2d 65 62 32 35 34 63 38 61 2d"
+            "61 33 65 30 64 30 35 32 2d 64 66 31 61 66 61 64 30"
+            "a9 70 6c 61 79 5f 6d 6f 64 65 01"
+            "af 74 6f 74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65"
+            "d7 00 00 00 00 00 00 00 00 4c"
+            "aa 73 74 61 67 65 5f 69 6e 66 6f"
+            "83 a9 73 74 61 67 65 5f 6b 65 79 d3 00 00 00 00 d4 a6 26 5d"
+            "aa 77 6f 72 6c 64 5f 6b 69 6e 64 00"
+            "a8 77 6f 72 6c 64 5f 6e 6f 05"
+            "a6 6e 70 63 5f 69 64 05"
+            "af 69 74 65 6d 5f 69 6e 66 6f 5f 61 72 72 61 79"
+            "92"  # array of 2
+            "82 a9 69 74 65 6d 5f 6b 69 6e 64 01 aa 69 74 65 6d 5f 76 61 6c 75 65 00"
+            "82 a9 69 74 65 6d 5f 6b 69 6e 64 01 aa 69 74 65 6d 5f 76 61 6c 75 65 01"
+            "b1 73 79 73 74 65 6d 5f 72 65 70 6f 72 74 5f 74 61 67"
+            "ce 81 a7 03 b8")
+        payload = bytes.fromhex(hexstr.replace(" ", ""))
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="general_shop_result", payload=payload))
+        # Two distinct shop_slots → two distinct checks.
+        self.assertEqual(len(emitted), 2)
+        slots = sorted(c.metadata["shop_slot"] for c in emitted)
+        self.assertEqual(slots, [0, 1])
+        self.assertEqual(state.count_emitted(CheckKind.SHOP_SEED), 2)
+
+    def test_mixed_seed_and_badge_buy_emits_only_seed_check(self):
+        """A multi-item transaction can mix kinds (e.g. seed + badge).
+        Only the seed (SHOP_SEED) fires from this path; the badge is
+        dropped because the Switch-side bitfield-diff detector is the
+        single source of truth for BADGE_ACQUIRED."""
+        hexstr = (
+            "de 00 07"
+            "ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23"
+            "62 38 31 33 65 36 37 35 2d 65 62 32 35 34 63 38 61 2d"
+            "61 33 65 30 64 30 35 32 2d 64 66 31 61 66 61 64 30"
+            "a9 70 6c 61 79 5f 6d 6f 64 65 01"
+            "af 74 6f 74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65"
+            "d7 00 00 00 00 00 00 00 00 4c"
+            "aa 73 74 61 67 65 5f 69 6e 66 6f"
+            "83 a9 73 74 61 67 65 5f 6b 65 79 d3 00 00 00 00 d4 a6 26 5d"
+            "aa 77 6f 72 6c 64 5f 6b 69 6e 64 00"
+            "a8 77 6f 72 6c 64 5f 6e 6f 01"
+            "a6 6e 70 63 5f 69 64 02"
+            "af 69 74 65 6d 5f 69 6e 66 6f 5f 61 72 72 61 79"
+            "92"  # array of 2
+            "82 a9 69 74 65 6d 5f 6b 69 6e 64 01 aa 69 74 65 6d 5f 76 61 6c 75 65 00"
+            "82 a9 69 74 65 6d 5f 6b 69 6e 64 00 aa 69 74 65 6d 5f 76 61 6c 75 65 cc 37"
+            "b1 73 79 73 74 65 6d 5f 72 65 70 6f 72 74 5f 74 61 67"
+            "ce 81 a7 03 b8")
+        payload = bytes.fromhex(hexstr.replace(" ", ""))
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="general_shop_result", payload=payload))
+        # Seed → SHOP_SEED check; badge → dropped (Switch-side bitfield
+        # diff is the single source of truth for BADGE_ACQUIRED).
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].kind, CheckKind.SHOP_SEED)
+        self.assertEqual(emitted[0].metadata["item_value"], 0)
+
+    def test_w4_secret_three_slots_dedup_independently(self):
+        """The W4 Poplin Shop (Secret) sells 3 Wonder Seeds at the same
+        (world_no, npc_id); they share the SHOP_SEED stage_key but
+        must NOT dedup against each other.  Distinguished by item_value
+        (passed through as ``shop_slot``).
+
+        npc_id=0x05 is a placeholder — W4 Secret's real npc_id is
+        TBD until captured; this test only exercises the dedup logic,
+        not the real shop identity."""
+        state = BridgeState()
+        e0 = process_event(state, PlayReportMsg(
+            room="general_shop_result",
+            payload=self._shop_payload("04", "05", "01", "00")))
+        e1 = process_event(state, PlayReportMsg(
+            room="general_shop_result",
+            payload=self._shop_payload("04", "05", "01", "01")))
+        e2 = process_event(state, PlayReportMsg(
+            room="general_shop_result",
+            payload=self._shop_payload("04", "05", "01", "02")))
+        # Replay slot 0 — dedup must catch it.
+        e_dup = process_event(state, PlayReportMsg(
+            room="general_shop_result",
+            payload=self._shop_payload("04", "05", "01", "00")))
+
+        self.assertEqual(len(e0), 1)
+        self.assertEqual(len(e1), 1)
+        self.assertEqual(len(e2), 1)
+        self.assertEqual(e_dup, [])
+        self.assertEqual(state.count_emitted(CheckKind.SHOP_SEED), 3)
+
 
 # ---------------------------------------------------------------------------
 # DeathLink (M3.8 — outbound: emit DeathReported per DEATH_DETECTED so the

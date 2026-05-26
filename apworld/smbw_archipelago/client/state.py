@@ -60,9 +60,9 @@ class BridgeState:
         # check.
         self.emitted_checks: list[CheckEmitted] = []
         # Dedup key is (kind, stage_key, sub_key).  `sub_key` is 0 for
-        # everything except TEN_COIN, where it's the 0/1/2 coin index
-        # so that a single course can dedup its three coin checks
-        # independently.
+        # everything except TEN_COIN (0/1/2 coin index) and SHOP_SEED
+        # (PlayReport item_value, distinguishing slots within a single
+        # multi-slot shop) — see emit_check for the selection.
         self._emitted_keys: set[tuple[str, int, int]] = set()
 
         # M3.8 DeathLink groundwork — incremented on every detected
@@ -93,8 +93,13 @@ class BridgeState:
         TOP_OF_FLAG / NORMAL_EXIT / etc. check.  For TEN_COIN the
         sub_key is the per-course coin index (0/1/2) from
         ``metadata["coin_index"]`` so the 3 distinct 10-coin checks
-        dedup independently."""
-        sub_key = int(check.metadata.get("coin_index", 0))
+        dedup independently.  For SHOP_SEED the sub_key is the
+        PlayReport's ``metadata["shop_slot"]`` so the W4 Secret shop's
+        3 priced slots dedup independently within the same shop key."""
+        sub_key = int(
+            check.metadata.get("coin_index")
+            if "coin_index" in check.metadata
+            else check.metadata.get("shop_slot", 0))
         key = (check.kind.value, check.stage_key, sub_key)
         with self._lock:
             if key in self._emitted_keys:
@@ -130,7 +135,8 @@ class BridgeState:
         coin_index: int = 0,
     ) -> bool:
         """Cheap dedup-status read, mostly for tests.  Pass ``coin_index``
-        for TEN_COIN; defaults to 0 for all other kinds."""
+        for TEN_COIN or SHOP_SEED (where it stores the shop_slot); defaults
+        to 0 for all other kinds."""
         with self._lock:
             return (kind.value, stage_key, coin_index) in self._emitted_keys
 

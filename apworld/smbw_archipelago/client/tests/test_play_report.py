@@ -1380,6 +1380,85 @@ class TestW1ToW2WorldTransition(unittest.TestCase):
         self.assertEqual(r.fields["last_ctrl_by_stcik"], False)
 
 
+# general_shop_result — Poplin Shop purchase report.  Fires once per
+# buy at the moment of purchase, NOT on shop entry.  The same room is
+# used for badge / Wonder Seed / consumable purchases; item_kind in
+# item_info_array discriminates.
+#
+# Schema (captured 2026-05-25 at the W1 Poplin Shop, npc_id=2, buying
+# one Wonder Seed at item_value=0):
+#   stage_info.{stage_key, world_kind, world_no}  — overworld stage,
+#       NOT a per-shop stage_key (3567658589 is the W1 overworld stage,
+#       same as WORLD_ACTIVITY's stage_info above)
+#   npc_id                — shop identity within the world (2 = W1 Poplin)
+#   item_info_array[]     — list of {item_kind, item_value}
+#                            item_kind: 0=badge, 1=Wonder Seed, 2=consumable
+#                            item_value: badge internal_id / per-shop slot /
+#                                        count, depending on item_kind
+#
+# Three captures characterized item_kind in the corpus pass:
+#   (item_kind=0, item_value=55) → Coin Reward badge buy at W1 Poplin
+#   (item_kind=2, item_value=1)  → 1-up buy at W1 Poplin
+#   (item_kind=1, item_value=0)  → Wonder Seed buy at W1 Poplin (THIS fixture)
+GENERAL_SHOP_RESULT_W1_SEED = _hex(
+    "de 00 07"
+    "ab 73 61 76 65 64 61 74 61 5f 69 64"
+    "d9 23"
+    "62 38 31 33 65 36 37 35 2d 65 62 32 35 34 63 38 61 2d"
+    "61 33 65 30 64 30 35 32 2d 64 66 31 61 66 61 64 30"
+    "a9 70 6c 61 79 5f 6d 6f 64 65 01"
+    "af 74 6f 74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65"
+    "d7 00 00 00 00 00 00 00 00 4c"
+    "aa 73 74 61 67 65 5f 69 6e 66 6f"
+    "83"
+    "a9 73 74 61 67 65 5f 6b 65 79 d3 00 00 00 00 d4 a6 26 5d"
+    "aa 77 6f 72 6c 64 5f 6b 69 6e 64 00"
+    "a8 77 6f 72 6c 64 5f 6e 6f 01"
+    "a6 6e 70 63 5f 69 64 02"
+    "af 69 74 65 6d 5f 69 6e 66 6f 5f 61 72 72 61 79"
+    "91 82"
+    "a9 69 74 65 6d 5f 6b 69 6e 64 01"
+    "aa 69 74 65 6d 5f 76 61 6c 75 65 00"
+    "b1 73 79 73 74 65 6d 5f 72 65 70 6f 72 74 5f 74 61 67"
+    "ce 81 a7 03 b8"
+)
+
+
+class TestGeneralShopResultPayload(unittest.TestCase):
+    """Poplin Shop purchase — the W1 Wonder Seed buy at npc_id=2.
+
+    Confirms the corpus shape the bridge processor depends on:
+    nested item_info_array, npc_id as a top-level field, and the
+    overworld stage_key (shops are not their own course)."""
+
+    def test_decodes_clean(self):
+        r = decode_play_report(GENERAL_SHOP_RESULT_W1_SEED)
+        self.assertEqual(r.entry_count, 7)
+        self.assertEqual(r.decoded_count, 7)
+        self.assertIsNone(r.error)
+
+    def test_stage_info_is_w1_overworld(self):
+        # stage_key 3567658589 is the W1 overworld (matches WORLD_ACTIVITY),
+        # NOT a per-shop key — confirms shops piggy-back on the world tile.
+        r = decode_play_report(GENERAL_SHOP_RESULT_W1_SEED)
+        self.assertEqual(r.fields["stage_info"], {
+            "stage_key": 3567658589,
+            "world_kind": 0,
+            "world_no": 1,
+        })
+
+    def test_npc_id_identifies_shop(self):
+        r = decode_play_report(GENERAL_SHOP_RESULT_W1_SEED)
+        self.assertEqual(r.fields["npc_id"], 2)
+
+    def test_item_info_array_wonder_seed(self):
+        # item_kind=1 → Wonder Seed; item_value=0 → first/only slot at
+        # this shop (W1 Poplin sells exactly one seed).
+        r = decode_play_report(GENERAL_SHOP_RESULT_W1_SEED)
+        self.assertEqual(r.fields["item_info_array"],
+                         [{"item_kind": 1, "item_value": 0}])
+
+
 # ---------------------------------------------------------------------------
 # Error-reporting tests.
 
