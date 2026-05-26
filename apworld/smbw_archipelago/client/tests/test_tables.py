@@ -20,6 +20,7 @@ from ..badge_table import (
     next_unmapped_bit,
     unmapped_item_names,
 )
+from ..coin_table import _COIN_ITEMS, grant_for_item, is_coin_item
 from ..location_table import _TABLE, _TEN_COIN_TABLE, lookup_name
 from ..protocol import CheckEmitted, CheckKind
 from ..royal_seed_table import (
@@ -302,6 +303,38 @@ class TestRoyalSeedTable(unittest.TestCase):
     def test_royal_seed_value_is_one(self):
         # u8 bool slot -- truncated by FUN_710049F648; 1 == True.
         self.assertEqual(ROYAL_SEED_VALUE, 1)
+
+
+class TestCoinTable(unittest.TestCase):
+
+    def test_every_coin_item_name_exists_in_items_json(self):
+        item_names = _load_names(_ITEMS_JSON)
+        missing = [n for n, _, _ in _COIN_ITEMS if n not in item_names]
+        self.assertEqual(
+            missing, [], f"coin items not found in items.json: {missing}")
+
+    def test_ten_coin_maps_to_flower_coin_hash(self):
+        # MemetendoYT-verified flower_coin hash; canonical reference.
+        self.assertEqual(grant_for_item("10 Coin"), (0xF4EE6827, 10))
+
+    def test_is_coin_item(self):
+        self.assertTrue(is_coin_item("10 Coin"))
+        self.assertFalse(is_coin_item("Spring Feet Badge"))
+        self.assertFalse(is_coin_item("W1 Royal Seed"))
+
+    def test_unknown_item_returns_none(self):
+        self.assertIsNone(grant_for_item("Imaginary Coin"))
+
+    def test_no_overlap_with_badge_or_royal_seed_tables(self):
+        # Routing in _handle_received_items is an if/elif chain that
+        # assumes the three categories are disjoint.  If a badge or
+        # royal seed name ever collides with a coin name, routing would
+        # silently misclassify the coin item.
+        badge_names = {n for n, _, _ in _BADGES}
+        seed_names = {n for n, _, _ in _ROYAL_SEEDS}
+        coin_names = {n for n, _, _ in _COIN_ITEMS}
+        self.assertEqual(coin_names & badge_names, set())
+        self.assertEqual(coin_names & seed_names, set())
 
 
 if __name__ == "__main__":

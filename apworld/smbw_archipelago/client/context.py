@@ -32,6 +32,7 @@ from CommonClient import CommonContext  # type: ignore
 from NetUtils import ClientStatus  # type: ignore
 
 from . import badge_table
+from . import coin_table
 from . import royal_seed_table
 from .commands import SMBWCommandProcessor
 from .location_table import lookup_name
@@ -295,6 +296,22 @@ class SMBWContext(CommonContext):
                     continue
                 self.lan_server.send_grant_hash_keyed(
                     hash_, royal_seed_table.ROYAL_SEED_VALUE)
+            elif coin_table.is_coin_item(item_name):
+                grant = coin_table.grant_for_item(item_name)
+                if grant is None:
+                    log.warning(
+                        "coin_table inconsistency: "
+                        "is_coin_item(%r)=True but no grant", item_name)
+                    continue
+                hash_, delta = grant
+                log.info(
+                    "item received: %r (id=%s) -> increment_hash_keyed "
+                    "hash=0x%08x delta=%d",
+                    item_name, item_id, hash_, delta)
+                if self.lan_server is None:
+                    log.debug("no lan_server bound; cannot forward grant")
+                    continue
+                self.lan_server.send_increment_hash_keyed(hash_, delta)
             else:
                 log.info(
                     "received unhandled item %r (id=%s); ignoring "
@@ -416,6 +433,25 @@ class SMBWContext(CommonContext):
                       name, loc_id)
             return
         self._sent_loc_ids.add(loc_id)
+        # TEN_COIN refund: the game already added 10 to the player's
+        # flower_coin counter when the block was hit; AP is the sole
+        # authority over what each 10-coin block actually grants, so
+        # we subtract 10 here.  If the inbound item happens to be a
+        # "10 Coin" routed back to this slot, the inbound +10 cancels
+        # this -10 for a net +10 (player sees the same UX as vanilla);
+        # if AP scattered the item to another slot, the refund stands
+        # and the player gets the actual item rather than free coins.
+        # Paired with the dedup above so we refund at most once per
+        # in-game pickup per session.
+        if check.kind == CheckKind.TEN_COIN:
+            grant = coin_table.grant_for_item("10 Coin")
+            if grant is not None and self.lan_server is not None:
+                hash_, delta = grant
+                log.info(
+                    "TEN_COIN check fired -> increment_hash_keyed "
+                    "hash=0x%08x delta=%d (refund in-game pickup)",
+                    hash_, -delta)
+                self.lan_server.send_increment_hash_keyed(hash_, -delta)
         try:
             await self.send_msgs([
                 {"cmd": "LocationChecks", "locations": [loc_id]},

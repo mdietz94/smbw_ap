@@ -442,6 +442,54 @@ class TestGrantHashKeyedOutbound(_AsyncTestCase):
 
 
 # ---------------------------------------------------------------------------
+# Outbound IncrementHashKeyed (10-coin grant + refund).
+
+class TestIncrementHashKeyedOutbound(_AsyncTestCase):
+
+    async def test_send_increment_hash_keyed_positive_reaches_client(self):
+        # The "10 Coin" inbound path: bridge ships +10 per item to the
+        # Switch, which RMWs the flower_coin counter.
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute replay
+
+            await asyncio.sleep(0.02)
+            self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.IncrementHashKeyedMsg)
+            self.assertEqual(received.hash, 0xF4EE6827)
+            self.assertEqual(received.delta, 10)
+        finally:
+            await client.close()
+
+    async def test_send_increment_hash_keyed_negative_reaches_client(self):
+        # The TEN_COIN refund path: bridge sees an in-game 10-coin
+        # pickup as a CheckEmitted, ships -10 to undo the game's
+        # automatic add so AP stays authoritative.
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()
+            await client.recv()
+
+            await asyncio.sleep(0.02)
+            self.h.server.send_increment_hash_keyed(0xF4EE6827, -10)
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.IncrementHashKeyedMsg)
+            self.assertEqual(received.delta, -10)
+        finally:
+            await client.close()
+
+    async def test_send_increment_hash_keyed_with_no_client_drops(self):
+        # No client connected; warn-and-drop, not raise.
+        self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
+
+
+# ---------------------------------------------------------------------------
 # Outbound Kill (M3.8 DeathLink incoming half).
 
 class TestKillOutbound(_AsyncTestCase):
