@@ -1969,68 +1969,6 @@ HOOK_DEFINE_TRAMPOLINE(PlayerTickLatch) {
 
 void PlayerTickLatch::Callback(long param_1, long param_2)
 {
-    // Periodic AP-authoritative Wonder Seed push.  Runs on the main
-    // game thread (per-frame), throttled to once per 2 s.  Gated by:
-    //   * isSaveLoaded() -- gmd singleton populated + container-A
-    //     readable.
-    //   * Outside scene-transition window -- same 3 s gate as the
-    //     GmdContainerAWriter interceptor.  Calling getfn / setfn
-    //     against container-A during transition-time bucket mutations
-    //     races with FUN_710049F750's secondary-container insert
-    //     path (live-reproduced crash 2026-05-26).
-    // Complements the GmdContainerAWriter interceptor: the interceptor
-    // catches the game's own writes to the 5 mirror hashes (which
-    // empirically happen only on transitions); this push covers
-    // standing-still play where the game never writes them and the
-    // bridge's SetWonderSeedCounts updates otherwise sit idle in
-    // g_wonder_seed_counts.
-    if (probe::isSaveLoaded()) {
-        const auto now_tick = svcGetSystemTick();
-        const auto last_trans = probe::g_last_scene_transition_tick.load(
-            std::memory_order_relaxed);
-        const bool in_transition_window = last_trans != 0
-            && (now_tick - last_trans) < probe::kSceneTransitionGateTicks;
-        if (!in_transition_window) {
-            static std::atomic<std::uint64_t> s_last_ws_push_tick{0};
-            const auto last_push = s_last_ws_push_tick.load(
-                std::memory_order_relaxed);
-            constexpr std::uint64_t kWsPushIntervalTicks =
-                2ULL * 19'200'000ULL;  // 2 s @ 19.2 MHz tick rate.
-            if (now_tick - last_push >= kWsPushIntervalTicks) {
-                s_last_ws_push_tick.store(now_tick, std::memory_order_relaxed);
-                long gmd = probe::gmdSingleton();
-                if (gmd != 0) {
-                    const uintptr_t base = exl::util::modules::GetTargetStart();
-                    using GmdGetFn = void (*)(long, std::uint32_t*, std::uint32_t);
-                    auto getfn = reinterpret_cast<GmdGetFn>(base + 0x0012AE94);
-                    std::uint32_t world_val = 0;
-                    getfn(gmd, &world_val, 0x9f5ead3c);
-                    // Same in-game world index -> AP bucket remap as
-                    // the GmdContainerAWriter interceptor (Petal Isles
-                    // = 2nd region, not 7th).
-                    static constexpr std::int8_t kWorldValToBucket[9] = {
-                        -1, 0, 6, 1, 2, 3, 4, 5, 7,
-                    };
-                    if (world_val >= 1 && world_val <= 8) {
-                        const std::uint32_t bucket =
-                            static_cast<std::uint32_t>(
-                                kWorldValToBucket[world_val]);
-                        const std::uint32_t ap_count =
-                            smbwap::ap::getWonderSeedCount(bucket);
-                        static std::atomic<std::uint32_t> push_log_budget{8};
-                        if (push_log_budget.fetch_sub(1) > 0) {
-                            SMBWAP_LOG_INFO(
-                                "WS periodic push: world_val=%u bucket=%u "
-                                "ap_count=%u",
-                                world_val, bucket, ap_count);
-                        }
-                        probe::pushWonderSeedOverride(ap_count);
-                    }
-                }
-            }
-        }
-    }
-
     // Once-only latch -- this function is called every frame so the
     // first non-null walk captures, subsequent calls are an atomic
     // load + branch.
@@ -2078,96 +2016,10 @@ void GmdContainerAWriter::Callback(long gmd, uint32_t value, uint32_t hash)
     // signal.
     probe::markSaveLoaded("gmd.A_writer");
 
-    // AP-authoritative Wonder Seed gate override (interceptor pattern).
-    //
-    // The game's natural code recomputes the 5 per-current-world Wonder Seed
-    // count mirror hashes from per-course bitfields every ~2 s during normal
-    // play (and immediately on world transition).  The previous strategy of
-    // periodically calling pushWonderSeedOverride() from NerveActivateOnce
-    // lost a tug-of-war against this recompute because NerveActivateOnce
-    // fires on Nerve state transitions only (~once per 20 s), not every
-    // frame as originally assumed.
-    //
-    // Instead, intercept the writes themselves.  When the game (or anyone
-    // else) tries to write a value to one of the 5 mirror hashes, substitute
-    // the AP-authoritative count for the current world before passing to
-    // Orig.  This wins by construction: every write to these hashes ends up
-    // as the AP value, regardless of who wrote it or when.
-    static constexpr uint32_t kWsMirrorHashes[5] = {
-        0x21f89ab1u, 0x8c20ccb7u, 0xeeff353bu, 0x390eb960u, 0xa0e5f253u,
-    };
-    bool is_ws_mirror = false;
-    for (uint32_t h : kWsMirrorHashes) {
-        if (h == hash) { is_ws_mirror = true; break; }
-    }
-    // Scene-transition gate: skip the WS override during transitions
-    // (death, course/area entry+exit, world-map travel, palace,
-    // Poplin shop entry).  Calling getfn from inside the container-A
-    // writer's frame races with the game's transition-time bucket
-    // mutations and aborts inside FUN_710049F750 (secondary-container
-    // insert path).  Throttled log so we can verify the gate fires
-    // without flooding.
-    bool in_transition_window = false;
-    if (is_ws_mirror) {
-        const auto last_trans = probe::g_last_scene_transition_tick.load(
-            std::memory_order_relaxed);
-        if (last_trans != 0) {
-            const auto now_tick = svcGetSystemTick();
-            if (now_tick - last_trans < probe::kSceneTransitionGateTicks) {
-                in_transition_window = true;
-                static std::atomic<uint32_t> gate_log_budget{32};
-                if (gate_log_budget.fetch_sub(1) > 0) {
-                    SMBWAP_LOG_INFO(
-                        "WS override gated (scene transition %llu ticks ago) "
-                        "hash=0x%08x value=%u",
-                        static_cast<unsigned long long>(now_tick - last_trans),
-                        hash, value);
-                }
-            }
-        }
-    }
-
-    if (is_ws_mirror && gmd != 0 && probe::isSaveLoaded() && !in_transition_window) {
-        const uintptr_t base = exl::util::modules::GetTargetStart();
-        using GmdGetFn = void (*)(long, uint32_t*, uint32_t);
-        auto getfn = reinterpret_cast<GmdGetFn>(base + 0x0012AE94);
-        uint32_t world_val = 0;
-        getfn(gmd, &world_val, 0x9f5ead3c);
-        // In-game world index ordering (observed live 2026-05-26 after the
-        // initial W2=2/W3=3 reading was traced back to Petal Isles being the
-        // 2nd region, not W2):
-        //   1=W1, 2=Petal Isles, 3=W2, 4=W3, 5=W4, 6=W5, 7=W6, 8=Special.
-        // AP bucket convention (wire.SetWonderSeedCounts):
-        //   0=W1, 1=W2, 2=W3, 3=W4, 4=W5, 5=W6, 6=Petal Isles, 7=Special.
-        // Hence the explicit remap below rather than a bare world_val-1.
-        static constexpr int8_t kWorldValToBucket[9] = {
-            -1,  // 0: unused (world_val is 1-indexed)
-             0,  // 1: W1
-             6,  // 2: Petal Isles
-             1,  // 3: W2
-             2,  // 4: W3
-             3,  // 5: W4
-             4,  // 6: W5
-             5,  // 7: W6
-             7,  // 8: Special World
-        };
-        if (world_val >= 1 && world_val <= 8) {
-            const uint32_t bucket =
-                static_cast<uint32_t>(kWorldValToBucket[world_val]);
-            const uint32_t ap_count =
-                smbwap::ap::getWonderSeedCount(bucket);
-            if (value != ap_count) {
-                static std::atomic<uint32_t> log_budget{32};
-                if (log_budget.fetch_sub(1) > 0) {
-                    SMBWAP_LOG_INFO(
-                        "WS override: hash=0x%08x world=%u bucket=%u "
-                        "game_value=%u -> ap_count=%u",
-                        hash, world_val, bucket, value, ap_count);
-                }
-                value = ap_count;
-            }
-        }
-    }
+    // Wonder Seed substitution moved to the READER side (ContainerAReader)
+    // to bypass the per-world UI cache invalidation gating.  The trampoline
+    // remains installed here purely for markSaveLoaded + container-C diff
+    // logging.
 
     SMBWAP_LOG_INFO("gmd.A_writer hash=0x%08x value=%u gmd=%p",
                     hash, value, reinterpret_cast<void*>(gmd));
@@ -2443,6 +2295,57 @@ uint64_t ContainerAReader::Callback(long gmd, uint32_t* out_value,
 {
     const void* caller_ret = __builtin_return_address(0);
     uint64_t result = Orig(gmd, out_value, hash);
+
+    // AP-authoritative Wonder Seed substitution at the READER.
+    //
+    // The previous write-side interceptor (in GmdContainerAWriter) had a
+    // cache-staleness problem: the in-game Wonder Seed count UI derives its
+    // displayed total from a per-world cache that is only invalidated on
+    // scene transitions, so write-side overrides applied mid-scene didn't
+    // surface until the next course in/out.  Substituting at the reader
+    // bypasses the cache entirely -- the cache itself, the gate predicate
+    // at FUN_71001787b40, and every other consumer all see the AP value
+    // directly.
+    //
+    // Gated on isSaveLoaded() && !isInSceneTransitionWindow() so we don't
+    // race the game's transition-time bucket mutations (same hazard as the
+    // write-side interceptor it replaces).  Recursive Orig() call to fetch
+    // the world index bypasses our trampoline so it's recursion-safe.
+    static constexpr uint32_t kWsMirrorHashes[5] = {
+        0x21f89ab1u, 0x8c20ccb7u, 0xeeff353bu, 0x390eb960u, 0xa0e5f253u,
+    };
+    if (out_value != nullptr && gmd != 0 && probe::isSaveLoaded()
+        && !probe::isInSceneTransitionWindow()) {
+        bool is_ws_mirror = false;
+        for (uint32_t h : kWsMirrorHashes) {
+            if (h == hash) { is_ws_mirror = true; break; }
+        }
+        if (is_ws_mirror) {
+            uint32_t world_val = 0;
+            Orig(gmd, &world_val, 0x9f5ead3c);
+            static constexpr int8_t kWorldValToBucket[9] = {
+                -1, 0, 6, 1, 2, 3, 4, 5, 7,
+            };
+            if (world_val >= 1 && world_val <= 8) {
+                const uint32_t bucket =
+                    static_cast<uint32_t>(kWorldValToBucket[world_val]);
+                const uint32_t ap_count =
+                    smbwap::ap::getWonderSeedCount(bucket);
+                const uint32_t game_value = *out_value;
+                if (game_value != ap_count) {
+                    static std::atomic<uint32_t> sub_log_budget{32};
+                    if (sub_log_budget.fetch_sub(1) > 0) {
+                        SMBWAP_LOG_INFO(
+                            "WS read substitute hash=0x%08x world=%u "
+                            "bucket=%u game_value=%u -> ap_count=%u",
+                            hash, world_val, bucket, game_value, ap_count);
+                    }
+                    *out_value = ap_count;
+                }
+            }
+        }
+    }
+
     const uintptr_t base = exl::util::modules::GetTargetStart();
     const uintptr_t caller_abs = reinterpret_cast<uintptr_t>(caller_ret);
     const uintptr_t caller_nso =
