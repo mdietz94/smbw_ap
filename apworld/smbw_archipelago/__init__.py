@@ -11,10 +11,15 @@ Client" Component with Archipelago Launcher so the user can spawn it
 with a button click.
 """
 import logging
+from pathlib import Path
 from typing import Optional
 
 from worlds.generic.Rules import forbid_items_for_player
-from worlds.LauncherComponents import Component, components, Type, launch as launch_component
+from worlds.LauncherComponents import (
+    Component, SuffixIdentifier, components, Type,
+    launch as launch_component,
+    launch_subprocess,
+)
 
 from .Data import item_table, location_table, category_table
 from .Game import game_name, filler_item_name, starting_items
@@ -32,6 +37,8 @@ from .Helpers import is_item_enabled, get_option_value
 from BaseClasses import ItemClassification, Item
 from Options import PerGameCommonOptions
 from worlds.AutoWorld import World
+
+from ._setup.launcher_errors import visible_errors as _visible_errors
 
 from .hooks.World import \
     before_create_regions, after_create_regions, \
@@ -314,6 +321,28 @@ class SMBWonderWorld(World):
 
         return slot_data
 
+    def generate_output(self, output_directory: str):
+        # `.smbwap` is the only per-player artifact this apworld ships. It's
+        # the entry point the Launcher routes to launch_smbw_client when
+        # double-clicked, expanding `slot_name` (and optionally
+        # `server_address` / `password`) into SMBW Client CLI overrides so
+        # the Connect bar lands pre-filled. See _setup/smbwap_file.py for
+        # the on-disk schema.
+        #
+        # server_address is intentionally empty: the generator doesn't
+        # know where the user will host (local, archipelago.gg, a
+        # friend's box, ...). SMBW Client prompts via the GUI Connect
+        # bar when it's empty; the user can manually edit the file
+        # post-gen for a perpetual default.
+        base = self.multiworld.get_out_file_name_base(self.player)
+        from ._setup.smbwap_file import SmbwapFile
+        smbwap = SmbwapFile(
+            slot_name=self.multiworld.get_player_name(self.player),
+            seed_name=str(getattr(self.multiworld, "seed_name", "") or ""),
+            server_address="",
+        )
+        smbwap.write(Path(output_directory) / f"{base}.smbwap")
+
     def write_spoiler(self, spoiler_handle):
         before_write_spoiler(self, self.multiworld, spoiler_handle)
 
@@ -376,13 +405,71 @@ class SMBWonderWorld(World):
 # Launcher Component registration
 ###
 
+@_visible_errors("SMBW Client launcher")
 def launch_smbw_client(*launch_args: str) -> None:
-    """Archipelago Launcher click handler — spawns the SMBW Client."""
+    """Archipelago Launcher click handler — spawns the SMBW Client.
+
+    Triggered by double-clicking a `.smbwap` file (the Component's
+    `SuffixIdentifier('.smbwap')` registers the extension globally) or by
+    clicking the "SMBW Client" button directly. Always launches SMBW
+    Client; when a `.smbwap` is provided its slot_name / server_address /
+    password are expanded into CLI overrides so the Connect bar lands
+    pre-filled.
+
+    The setup wizard (toolchain install, junction, build + deploy) is
+    NOT auto-triggered here. Users invoke it via the `/setup` slash
+    command inside SMBW Client — that path covers both first-time setup
+    and re-runs (toolchain update, apworld update, switching deploy
+    targets).
+    """
+    smbwap_path = next((a for a in launch_args if a.endswith(".smbwap")), None)
+    final_args: list[str] = list(launch_args)
+    if smbwap_path:
+        try:
+            from ._setup.smbwap_file import parse_smbwap, smbwap_to_launch_args
+            s = parse_smbwap(Path(smbwap_path))
+            # Drop the .smbwap arg itself (SMBW Client's argparser
+            # doesn't know about it) and prepend the expanded credentials.
+            final_args = [a for a in final_args if not a.endswith(".smbwap")]
+            final_args = smbwap_to_launch_args(s) + final_args
+        except Exception as e:
+            # Don't block the launch — surface the failure so the user
+            # (and we, if they report) can see why their .smbwap didn't
+            # pre-fill, then let SMBW Client open with the Connect bar
+            # blank. logging.warning alone would vanish into a void
+            # since the Launcher has no console attached on
+            # file-association invocations.
+            from ._setup.launcher_errors import show_launch_warning
+            show_launch_warning(
+                f".smbwap could not be parsed ({Path(smbwap_path).name}) — "
+                "SMBW Client will open without pre-fill; enter your slot "
+                "name manually in the Connect bar.",
+                e,
+            )
+            final_args = [a for a in final_args if not a.endswith(".smbwap")]
+
     from .client.main import launch
-    launch_component(launch, name="SMBW Client", args=launch_args)
+    launch_component(launch, name="SMBW Client", args=tuple(final_args))
+
+
+@_visible_errors("Setup wizard")
+def _run_setup_wizard() -> None:
+    """Module-level subprocess entry: open the setup wizard.
+
+    Invoked by the `/setup` slash command in SMBW Client (which goes
+    through `launch_subprocess` so SMBW Client stays open while the
+    wizard runs in its own window). The wizard handles first-time
+    setup and re-runs alike — toolchain bumps, apworld updates,
+    switching deploy targets."""
+    from ._setup.wizard import run_setup_wizard
+    run_setup_wizard()
 
 
 def add_client_to_launcher() -> None:
+    """Register the "SMBW Client" Component with the Archipelago Launcher.
+
+    Idempotent: re-importing this module (e.g. AP's apworld autodiscover
+    can call us more than once across reloads) won't create duplicates."""
     for c in components:
         if c.display_name == "SMBW Client":
             return
@@ -390,6 +477,7 @@ def add_client_to_launcher() -> None:
         "SMBW Client",
         func=launch_smbw_client,
         component_type=Type.CLIENT,
+        file_identifier=SuffixIdentifier('.smbwap'),
         game_name=game_name,
     ))
 

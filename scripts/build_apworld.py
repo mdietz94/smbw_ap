@@ -2,7 +2,7 @@
 
 Output: build/smbw_archipelago.apworld (gitignored).  Users drop it
 into ~/.archipelago/custom_worlds/ to install.  Skipped on dev machines
-that use the junction set up by scripts/install_smbw_apworld.ps1.
+that use the junction set up by scripts/install_smbw_apworld.py.
 """
 from __future__ import annotations
 
