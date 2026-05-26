@@ -2298,50 +2298,55 @@ uint64_t ContainerAReader::Callback(long gmd, uint32_t* out_value,
 
     // AP-authoritative Wonder Seed substitution at the READER.
     //
-    // The previous write-side interceptor (in GmdContainerAWriter) had a
-    // cache-staleness problem: the in-game Wonder Seed count UI derives its
-    // displayed total from a per-world cache that is only invalidated on
-    // scene transitions, so write-side overrides applied mid-scene didn't
-    // surface until the next course in/out.  Substituting at the reader
-    // bypasses the cache entirely -- the cache itself, the gate predicate
-    // at FUN_71001787b40, and every other consumer all see the AP value
-    // directly.
+    // BISECT-B 2026-05-26: narrowed from all-5-mirror-hashes to ONLY the
+    // gate hash 0x390eb960.  Bisect-A confirmed that the *out_value
+    // mutation is necessary for the observed crash (disabling the write
+    // while keeping the trampoline + recursive Orig was stable across 7
+    // course in/out cycles, vs. the full build crashing after 2).  The
+    // 5 hashes have 8+ distinct caller PCs in the crash log; the gate
+    // hash (0x390eb960) is the only one with a non-UI semantic — it's
+    // read by the gate predicate at FUN_71001787b40.  The other 4 are
+    // UI mirrors whose consumers are the most plausible crash trigger
+    // (UI math with hardcoded per-world max).  Substituting only the
+    // gate hash:
+    //   * preserves the gate-unlock goal of this whole change
+    //   * leaves the UI count display stale (still a stale-cache issue
+    //     to solve, but it doesn't crash)
+    //   * reduces blast radius to the gate predicate's call sites only
+    // If this build is stable, we've identified the bad consumer(s)
+    // are among the 4 UI-mirror hashes.  If it crashes too, the trigger
+    // is one of the 5 gate-hash consumers (NSO+0x5f45a8, 0x5ee8c4,
+    // 0x794068, 0x129874, 0x21fb40 — small enough surface to decompile).
     //
     // Gated on isSaveLoaded() && !isInSceneTransitionWindow() so we don't
-    // race the game's transition-time bucket mutations (same hazard as the
-    // write-side interceptor it replaces).  Recursive Orig() call to fetch
-    // the world index bypasses our trampoline so it's recursion-safe.
-    static constexpr uint32_t kWsMirrorHashes[5] = {
-        0x21f89ab1u, 0x8c20ccb7u, 0xeeff353bu, 0x390eb960u, 0xa0e5f253u,
-    };
-    if (out_value != nullptr && gmd != 0 && probe::isSaveLoaded()
+    // race the game's transition-time bucket mutations.  Recursive Orig()
+    // call to fetch the world index bypasses our trampoline so it's
+    // recursion-safe.
+    static constexpr uint32_t kGateHash = 0x390eb960u;
+    if (out_value != nullptr && gmd != 0 && hash == kGateHash
+        && probe::isSaveLoaded()
         && !probe::isInSceneTransitionWindow()) {
-        bool is_ws_mirror = false;
-        for (uint32_t h : kWsMirrorHashes) {
-            if (h == hash) { is_ws_mirror = true; break; }
-        }
-        if (is_ws_mirror) {
-            uint32_t world_val = 0;
-            Orig(gmd, &world_val, 0x9f5ead3c);
-            static constexpr int8_t kWorldValToBucket[9] = {
-                -1, 0, 6, 1, 2, 3, 4, 5, 7,
-            };
-            if (world_val >= 1 && world_val <= 8) {
-                const uint32_t bucket =
-                    static_cast<uint32_t>(kWorldValToBucket[world_val]);
-                const uint32_t ap_count =
-                    smbwap::ap::getWonderSeedCount(bucket);
-                const uint32_t game_value = *out_value;
-                if (game_value != ap_count) {
-                    static std::atomic<uint32_t> sub_log_budget{32};
-                    if (sub_log_budget.fetch_sub(1) > 0) {
-                        SMBWAP_LOG_INFO(
-                            "WS read substitute hash=0x%08x world=%u "
-                            "bucket=%u game_value=%u -> ap_count=%u",
-                            hash, world_val, bucket, game_value, ap_count);
-                    }
-                    *out_value = ap_count;
+        uint32_t world_val = 0;
+        Orig(gmd, &world_val, 0x9f5ead3c);
+        static constexpr int8_t kWorldValToBucket[9] = {
+            -1, 0, 6, 1, 2, 3, 4, 5, 7,
+        };
+        if (world_val >= 1 && world_val <= 8) {
+            const uint32_t bucket =
+                static_cast<uint32_t>(kWorldValToBucket[world_val]);
+            const uint32_t ap_count =
+                smbwap::ap::getWonderSeedCount(bucket);
+            const uint32_t game_value = *out_value;
+            if (game_value != ap_count) {
+                static std::atomic<uint32_t> sub_log_budget{32};
+                if (sub_log_budget.fetch_sub(1) > 0) {
+                    SMBWAP_LOG_INFO(
+                        "WS read substitute (BISECT-B gate-only) "
+                        "hash=0x%08x world=%u bucket=%u "
+                        "game_value=%u -> ap_count=%u",
+                        hash, world_val, bucket, game_value, ap_count);
                 }
+                *out_value = ap_count;
             }
         }
     }
