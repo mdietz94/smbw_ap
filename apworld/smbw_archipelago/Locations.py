@@ -46,4 +46,4 @@ location_name_to_id = {name: id for id, name in location_id_to_name.items()}
 
 
 class SMBWonderLocation(Location):
-    game = "SMBWonder"
+    game = "Super Mario Bros Wonder"

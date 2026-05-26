@@ -44,7 +44,7 @@ log = logging.getLogger("SMBW")
 
 # Must match the new SMBWonderWorld's `game` slug (see
 # apworld/smbw_archipelago/Game.py).
-GAME_NAME = "SMBWonder"
+GAME_NAME = "Super Mario Bros Wonder"
 
 
 class SMBWContext(CommonContext):

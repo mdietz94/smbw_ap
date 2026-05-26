@@ -63,7 +63,7 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
         # fully-populated package via custom_worlds discovery.
         import CommonClient  # type: ignore
         CommonClient.network_data_package["games"].setdefault(
-            "SMBWonder", {"checksum": "", "item_name_to_id": {}, "location_name_to_id": {}})
+            "Super Mario Bros Wonder", {"checksum": "", "item_name_to_id": {}, "location_name_to_id": {}})
 
         self.state = BridgeState()
         self.ctx = SMBWContext(
