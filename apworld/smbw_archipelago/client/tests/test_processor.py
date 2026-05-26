@@ -26,6 +26,7 @@ from ..protocol import (
 from ..state import BridgeState, CurrentCourse
 from .test_play_report import (
     COURSE_RESULT,
+    COURSE_RESULT_QUIT,
     KOOPAJR_RESULT_LOSS,
     KOOPAJR_RESULT_WIN,
     PALACE_COURSE_RESULT,
@@ -40,6 +41,7 @@ from .test_play_report import (
 # Real stage_keys from the corpus, used in assertions.
 W1_1_STAGE_KEY = 2937190396      # Welcome to the Flower Kingdom
 W1_2_STAGE_KEY = 232160011       # Piranha Plants on Parade
+ROBBIRD_COVE_STAGE_KEY = 979253884  # W2 Robbird Cove (course_no 2)
 PIPEROCK_PALACE_STAGE_KEY = 2308078743
 
 
@@ -166,6 +168,22 @@ class TestCourseResultClassification(unittest.TestCase):
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=PALACE_COURSE_RESULT))
         self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+    def test_pause_menu_quit_suppressed(self):
+        """In-course pause-menu quit emits a course_result PlayReport
+        with course_result=3 and default goal_id=0 / touch_goal_top=False.
+        Pre-fix the bridge classified that as NORMAL_EXIT and shipped
+        an AP check (see Robbird Cove quit, 2026-05-26).  Must emit
+        nothing now."""
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="course_result", payload=COURSE_RESULT_QUIT))
+        self.assertEqual(emitted, [])
+        self.assertFalse(state.has_emitted(
+            CheckKind.NORMAL_EXIT, ROBBIRD_COVE_STAGE_KEY))
+        self.assertFalse(state.has_emitted(
+            CheckKind.TOP_OF_FLAG, ROBBIRD_COVE_STAGE_KEY))
         self.assertEqual(state.count_emitted(), 0)
 
 

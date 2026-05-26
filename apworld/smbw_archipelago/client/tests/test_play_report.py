@@ -518,6 +518,144 @@ class TestCourseResultPayload(unittest.TestCase):
         self.assertEqual(r.fields["total_get_finish_seed_count"], 1)
 
 
+# course_result for an in-course pause-menu QUIT on W2 Robbird Cove (1573
+# bytes, 57 fields).  Captured live 2026-05-26 (Ryujinx log
+# Ryujinx_1.3.3_2026-05-26_12-09-24, 00:01:09.898).  Same shape as a
+# normal clear, but the new ``course_result`` field has value 3 instead
+# of 1 — the discriminator the bridge must check before classifying the
+# exit type.  Before this fixture was added the processor only inspected
+# ``goal_id`` (0 by default) and ``touch_goal_top_result`` (False by
+# default), so a quit was misrouted to NORMAL_EXIT and shipped a real AP
+# location check.
+COURSE_RESULT_QUIT = _hex(
+    "de 00 39 ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 62 38 31 33 65"
+    "36 37 35 2d 65 62 32 35 34 63 38 61 2d 61 33 65 30 64 30 35 32 2d"
+    "64 66 31 61 66 61 64 30 a9 70 6c 61 79 5f 6d 6f 64 65 01 af 74 6f"
+    "74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 d7 00 00 00 00 00 00 00 00"
+    "67 aa 73 74 61 67 65 5f 69 6e 66 6f 84 a9 73 74 61 67 65 5f 6b 65"
+    "79 d2 3a 5e 3a 7c aa 77 6f 72 6c 64 5f 6b 69 6e 64 00",
+    "a8 77 6f 72 6c 64 5f 6e 6f 02 a9 63 6f 75 72 73 65 5f 6e 6f 02 ad"
+    "63 6f 75 72 73 65 5f 69 6e 5f 75 74 63 d7 00 00 00 00 00 6a 15 c4"
+    "99 b3 74 6f 74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 5f 73 65 63 01"
+    "b5 63 75 72 72 65 6e 74 5f 70 6c 61 79 5f 74 69 6d 65 5f 73 65 63"
+    "01 ad 63 6f 75 72 73 65 5f 72 65 73 75 6c 74 03 b0 68 61 6e 61 5f"
+    "72 61 63 65 5f 72 65 73 75 6c 74 00 a7 67 6f 61 6c 5f",
+    "69 64 00 b6 72 65 6d 6f 74 65 5f 65 6e 63 6f 75 6e 74 65 72 5f 63"
+    "6f 75 6e 74 00 b5 67 68 6f 73 74 5f 65 6e 63 6f 75 6e 74 65 72 5f"
+    "63 6f 75 6e 74 00 af 67 65 74 5f 79 65 6c 6c 6f 77 5f 63 6f 69 6e"
+    "00 ae 67 65 74 5f 6c 75 63 6b 79 5f 63 6f 69 6e 00 b5 79 65 6c 6c"
+    "6f 77 5f 63 6f 69 6e 5f 63 6f 75 72 73 65 5f 69 6e 25 b6 79 65 6c"
+    "6c 6f 77 5f 63 6f 69 6e 5f 63 6f 75 72 73 65 5f 6f 75",
+    "74 25 b5 66 6c 6f 77 65 72 5f 63 6f 69 6e 5f 63 6f 75 72 73 65 5f"
+    "69 6e cc 9e b6 66 6c 6f 77 65 72 5f 63 6f 69 6e 5f 63 6f 75 72 73"
+    "65 5f 6f 75 74 cc 9e b9 62 69 67 5f 66 6c 6f 77 65 72 5f 63 6f 69"
+    "6e 5f 63 6f 75 72 73 65 5f 69 6e 93 c2 c2 c2 ba 62 69 67 5f 66 6c"
+    "6f 77 65 72 5f 63 6f 69 6e 5f 63 6f 75 72 73 65 5f 6f 75 74 93 c2"
+    "c2 c2 b1 61 72 65 6e 61 5f 73 63 6f 72 65 5f 65 6e 74",
+    "65 72 ce ff ff ff ff b2 61 72 65 6e 61 5f 73 63 6f 72 65 5f 72 65"
+    "73 75 6c 74 ce ff ff ff ff b4 74 6f 75 63 68 5f 67 6f 61 6c 5f 74"
+    "6f 70 5f 65 6e 74 65 72 c2 b5 74 6f 75 63 68 5f 67 6f 61 6c 5f 74"
+    "6f 70 5f 72 65 73 75 6c 74 c2 b0 6e 65 77 5f 66 6c 6f 77 65 72 5f"
+    "63 6f 75 6e 74 00 b0 67 65 74 5f 66 6c 6f 77 65 72 5f 63 6f 75 6e"
+    "74 01 b3 77 6f 72 6c 64 5f 77 6f 6e 64 65 72 5f 66 6c",
+    "6f 77 65 72 05 b1 77 6f 72 6c 64 5f 6d 6f 74 68 65 72 5f 73 65 65"
+    "64 c2 b1 6c 61 73 74 5f 70 75 74 5f 70 61 6e 65 6c 5f 69 64 ff a9"
+    "73 74 61 72 74 5f 6d 6d 70 00 aa 72 65 73 75 6c 74 5f 6d 6d 70 00"
+    "b2 66 72 69 65 6e 64 5f 72 61 63 65 5f 6d 65 6d 62 65 72 00 b2 66"
+    "72 69 65 6e 64 5f 72 61 63 65 5f 72 65 73 75 6c 74 00 b1 72 6f 6f"
+    "6d 5f 6d 65 6d 62 65 72 5f 65 6e 74 65 72 00 af 72 6f",
+    "6f 6d 5f 6d 65 6d 62 65 72 5f 6d 61 78 00 b2 6c 61 73 74 5f 63 74"
+    "72 6c 5f 62 79 5f 73 74 63 69 6b c2 a6 72 65 73 63 75 65 8a b4 72"
+    "65 73 63 75 65 5f 72 65 6d 6f 74 65 5f 64 69 72 65 63 74 00 b1 72"
+    "65 73 63 75 65 5f 72 65 6d 6f 74 65 5f 6b 6b 73 00 b5 72 65 73 63"
+    "75 65 64 5f 72 65 6d 6f 74 65 5f 64 69 72 65 63 74 00 b2 72 65 73"
+    "63 75 65 64 5f 72 65 6d 6f 74 65 5f 6b 6b 73 00 b5 72",
+    "65 73 63 75 65 64 5f 72 65 6d 6f 74 65 5f 75 6b 5f 6b 6b 73 00 b4"
+    "72 65 73 63 75 65 64 5f 67 68 6f 73 74 5f 64 69 72 65 63 74 00 b4"
+    "72 65 73 63 75 65 64 5f 6c 6f 63 61 6c 5f 64 69 72 65 63 74 00 b1"
+    "72 65 73 63 75 65 64 5f 6c 6f 63 61 6c 5f 6b 6b 73 00 b0 72 65 73"
+    "63 75 65 64 5f 73 65 6c 66 5f 6b 6b 73 00 ad 73 65 74 5f 6c 6f 63"
+    "61 6c 5f 6b 6b 73 00 a8 69 74 65 6d 5f 62 6c 6e 85 a8",
+    "73 65 74 5f 6c 62 6c 6e 00 ad 67 65 74 5f 73 65 6c 66 5f 6c 62 6c"
+    "6e 00 ae 67 65 74 5f 6f 74 68 65 72 5f 6c 62 6c 6e 00 a8 67 65 74"
+    "5f 72 62 6c 6e 00 af 67 65 74 5f 6c 62 6c 6e 5f 62 79 5f 72 6d 74"
+    "00 a5 65 6d 6f 74 65 84 a6 70 69 63 74 5f 30 00 a6 70 69 63 74 5f"
+    "31 00 a6 70 69 63 74 5f 32 00 a6 70 69 63 74 5f 33 00 aa 63 74 72"
+    "6c 5f 67 75 69 64 65 85 aa 6f 70 65 6e 5f 63 6f 75 6e",
+    "74 00 a9 6c 61 73 74 5f 70 61 67 65 ff ac 70 61 67 65 5f 66 72 61"
+    "6d 65 5f 30 00 ac 70 61 67 65 5f 66 72 61 6d 65 5f 31 00 ac 70 61"
+    "67 65 5f 66 72 61 6d 65 5f 32 00 af 63 68 61 6c 6c 65 6e 67 65 5f"
+    "63 6f 75 6e 74 01 b2 74 6f 74 61 6c 5f 77 6f 6e 64 65 72 5f 63 6f"
+    "75 6e 74 00 b0 6d 61 78 5f 77 6f 6e 64 65 72 5f 63 6f 75 6e 74 00"
+    "bb 74 6f 74 61 6c 5f 67 65 74 5f 66 69 6e 69 73 68 5f",
+    "73 65 65 64 5f 63 6f 75 6e 74 00 a8 6e 65 74 5f 6d 6f 64 65 c2 ae"
+    "62 61 64 67 65 5f 69 64 5f 61 72 72 61 79 91 31 b5 70 6c 61 79 65"
+    "72 5f 72 65 73 74 5f 63 6f 75 72 73 65 5f 69 6e 04 b6 70 6c 61 79"
+    "65 72 5f 72 65 73 74 5f 63 6f 75 72 73 65 5f 6f 75 74 04 af 74 6f"
+    "74 61 6c 5f 31 75 70 5f 63 6f 75 6e 74 00 b0 6c 6f 63 61 6c 5f 70"
+    "6c 61 79 65 72 5f 6e 75 6d 01 b0 63 74 72 6c 5f 73 74",
+    "79 6c 65 5f 61 72 72 61 79 94 00 05 05 05 b0 63 68 61 72 61 5f 74"
+    "79 70 65 5f 61 72 72 61 79 91 05 b7 73 65 6c 66 5f 73 68 61 62 6f"
+    "6e 5f 63 6f 75 6e 74 5f 61 72 72 61 79 94 00 00 00 00 b7 6d 69 73"
+    "73 5f 73 68 61 62 6f 6e 5f 63 6f 75 6e 74 5f 61 72 72 61 79 94 00"
+    "00 00 00 b0 64 65 61 64 5f 63 6f 75 6e 74 5f 61 72 72 61 79 94 00"
+    "00 00 00 b7 64 69 72 65 63 74 5f 64 65 61 64 5f 63 6f",
+    "75 6e 74 5f 61 72 72 61 79 94 00 00 00 00 b1 73 79 73 74 65 6d 5f"
+    "72 65 70 6f 72 74 5f 74 61 67 ce 81 a7 03 b8",
+)
+
+
+class TestCourseResultQuitPayload(unittest.TestCase):
+    """The course_result emitted when the player aborts a course via the
+    in-game pause menu.  Same room name as a clear, same field set, but
+    the ``course_result`` field is 3 instead of 1 — the bridge must
+    check it before classifying the exit type, otherwise the default
+    ``goal_id == 0`` + ``touch_goal_top_result == False`` would route
+    the quit to NORMAL_EXIT and ship a real LocationCheck."""
+
+    def test_decodes_clean(self):
+        self.assertEqual(len(COURSE_RESULT_QUIT), 1573)
+        r = decode_play_report(COURSE_RESULT_QUIT)
+        self.assertEqual(r.entry_count, 57)
+        self.assertEqual(r.decoded_count, 57)
+        self.assertIsNone(r.error)
+
+    def test_stage_info_identifies_robbird_cove(self):
+        # W2 Robbird Cove: stage_key 979253884, world_no 2, course_no 2.
+        # 979253884 = 0x3A5E3A7C — fits positive s32, hence 0xD2 encoding.
+        r = decode_play_report(COURSE_RESULT_QUIT)
+        self.assertEqual(r.fields["stage_info"], {
+            "stage_key": 979253884,
+            "world_kind": 0,
+            "world_no": 2,
+            "course_no": 2,
+        })
+
+    def test_course_result_field_indicates_quit(self):
+        # 3 = pause-menu quit (vs 1 = cleared).  This is THE discriminator
+        # the bridge processor must read before emitting any exit-type
+        # AP check.
+        r = decode_play_report(COURSE_RESULT_QUIT)
+        self.assertEqual(r.fields["course_result"], 3)
+
+    def test_misleading_default_clear_fields(self):
+        # All the fields the M2.5 processor previously used to classify
+        # the exit type are at their "Normal Exit" defaults.  Without the
+        # course_result==1 guard the bridge would fire NORMAL_EXIT here.
+        r = decode_play_report(COURSE_RESULT_QUIT)
+        self.assertEqual(r.fields["goal_id"], 0)
+        self.assertEqual(r.fields["touch_goal_top_enter"], False)
+        self.assertEqual(r.fields["touch_goal_top_result"], False)
+        self.assertEqual(r.fields["world_mother_seed"], False)
+        self.assertEqual(r.fields["total_get_finish_seed_count"], 0)
+
+    def test_short_play_time(self):
+        # Sanity: the player spent 1 second in the course before quitting.
+        r = decode_play_report(COURSE_RESULT_QUIT)
+        self.assertEqual(r.fields["total_play_time_sec"], 1)
+        self.assertEqual(r.fields["current_play_time_sec"], 1)
+
+
 # course_in for W1-2 Piranha Plants on Parade (351 bytes, 15 fields).
 # Captured on entering the course.  Importantly exercises the 0xD2 (signed
 # s32) opcode for stage_info.stage_key — different from the W1-1 fixtures
