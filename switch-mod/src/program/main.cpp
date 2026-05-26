@@ -1513,6 +1513,48 @@ void pushWonderSeedOverride(uint32_t value)
     }
 }
 
+// Active push variant: looks up the player's current world via container-A
+// hash 0x9f5ead3c, picks the matching AP bucket, and writes that bucket's
+// AP-known count to all 5 mirror hashes.  This is the proactive companion
+// to the GmdContainerAWriter interceptor below — the interceptor only fires
+// when the game itself writes, but the game does not appear to recompute
+// the mirror hashes mid-area (only on world / area transitions), so AP
+// grants received during gameplay would otherwise sit in g_wonder_seed_counts
+// and not reach the gate predicate until the next transition.
+//
+// Called from drainInbound on every SetWonderSeedCounts (i.e. HelloMsg
+// replay, ReceivedItems, and the bridge's 2 s periodic tick).  No-ops
+// pre-save-load (the world hash isn't readable yet).
+void pushWonderSeedOverrideCurrentWorld()
+{
+    long gmd = gmdSingleton();
+    if (gmd == 0) return;
+    if (!isSaveLoaded()) return;
+    const uintptr_t base = exl::util::modules::GetTargetStart();
+    using GmdGetFn = void (*)(long, uint32_t*, uint32_t);
+    auto getfn = reinterpret_cast<GmdGetFn>(base + 0x0012AE94);
+    uint32_t world_val = 0;
+    getfn(gmd, &world_val, 0x9f5ead3c);
+    // Same in-game world index → AP bucket mapping as the
+    // GmdContainerAWriter interceptor.  Keep in sync if either ever changes.
+    static constexpr int8_t kWorldValToBucket[9] = {
+        -1,  // 0: unused
+         0,  // 1: W1
+         6,  // 2: Petal Isles
+         1,  // 3: W2
+         2,  // 4: W3
+         3,  // 5: W4
+         4,  // 6: W5
+         5,  // 7: W6
+         7,  // 8: Special World
+    };
+    if (world_val < 1 || world_val > 8) return;
+    const uint32_t bucket =
+        static_cast<uint32_t>(kWorldValToBucket[world_val]);
+    const uint32_t ap_count = smbwap::ap::getWonderSeedCount(bucket);
+    pushWonderSeedOverride(ap_count);
+}
+
 // ----------------------------------------------------------------------------
 // Container-A counter SATURATING add/sub primitive.
 //

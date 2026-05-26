@@ -225,10 +225,15 @@ void drainInbound() {
             }
             case InboundKind::SetWonderSeedCounts: {
                 // AP-authoritative per-world Wonder Seed gate override.
-                // Cache the 8 counts; the NerveActivateOnce tick in
-                // main.cpp reads container-A hash 0x9f5ead3c (current
-                // world index), picks the matching bucket, and calls
-                // probe::pushWonderSeedOverride(counts[bucket]).
+                // Cache the 8 counts, then actively push the current
+                // world's bucket value to all 5 mirror hashes.  The
+                // GmdContainerAWriter interceptor in main.cpp catches
+                // game-initiated writes to those hashes, but the game
+                // only writes them on world/area transitions -- so AP
+                // grants received mid-area wouldn't reach the gate
+                // predicate until the next transition.  This proactive
+                // push closes that gap on every HelloMsg replay,
+                // ReceivedItems, and the bridge's 2 s periodic tick.
                 for (std::uint32_t i = 0; i < kWorldCount; ++i) {
                     g_wonder_seed_counts[i].store(
                         msg.set_wonder_seed_counts.counts[i],
@@ -245,6 +250,7 @@ void drainInbound() {
                     msg.set_wonder_seed_counts.counts[5],
                     msg.set_wonder_seed_counts.counts[6],
                     msg.set_wonder_seed_counts.counts[7]);
+                probe::pushWonderSeedOverrideCurrentWorld();
                 break;
             }
             case InboundKind::Kill: {
