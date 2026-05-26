@@ -229,6 +229,11 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
         goal_id == 1                       → Secret Exit
         goal_id == 2                       → Fake Exit (guessed)
 
+    A Top of Flag clear is a strict superset of a Normal Exit, so when
+    ``goal_id == 0`` and ``touch_goal_top`` we emit BOTH TOP_OF_FLAG
+    and NORMAL_EXIT — the apworld has separate AP locations for each
+    and players should get credit for both on the same clear.
+
     M2.2 10-coin layer (added 2026-05-25): after the exit-type emit,
     diff ``big_flower_coin_course_in`` against ``_out`` and emit one
     TEN_COIN per newly-True index.  Suppressed on palace courses (the
@@ -254,17 +259,19 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
     goal_id = fields.get("goal_id", 0)
     top = bool(fields.get("touch_goal_top_result", False))
     if goal_id == 0:
-        kind = CheckKind.TOP_OF_FLAG if top else CheckKind.NORMAL_EXIT
+        kinds = [CheckKind.NORMAL_EXIT]
+        if top:
+            kinds.append(CheckKind.TOP_OF_FLAG)
     elif goal_id == 1:
-        kind = CheckKind.SECRET_EXIT
+        kinds = [CheckKind.SECRET_EXIT]
     elif goal_id == 2:
-        kind = CheckKind.FAKE_EXIT
+        kinds = [CheckKind.FAKE_EXIT]
     else:
         log.warning("course_result unknown goal_id=%r at stage_key=%d",
                     goal_id, stage_info["stage_key"])
-        kind = None
+        kinds = []
 
-    if kind is not None:
+    for kind in kinds:
         clear = CheckEmitted(
             kind=kind,
             stage_key=stage_info["stage_key"],
