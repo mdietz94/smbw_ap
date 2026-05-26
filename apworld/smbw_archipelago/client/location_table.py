@@ -532,6 +532,116 @@ def _populate_badge_entries() -> None:
 _populate_badge_entries()
 
 
+# (world_no, npc_id, item_value) -> AP location name for SHOP_SEED checks.
+#
+# Schema (from the W1, W2, "W4 Secret" Poplin Shop captures 2026-05-25):
+#   - The shop's identity is the (world_no, npc_id) pair carried by every
+#     general_shop_result PlayReport.
+#   - item_value is 0 for single-seed shops; multi-slot shops (only the
+#     W4 Secret today) use item_value to distinguish their seeds.
+#
+# ★ AP world prefix → PlayReport world_no offset rule.  The apworld's
+# location names use "W1:" / "PI:" / "W2:" / ... as progression labels.
+# These do NOT match PlayReport ``world_no`` 1:1 — Petal Isles takes the
+# PlayReport ``world_no=2`` slot between W1 and W2 (mirrors the SMBW
+# engine's container-A 0x9f5ead3c world numbering — see CLAUDE.md
+# "World index ordering" + switch-mod's kWorldValToBucket).  Mapping:
+#
+#     AP "W1"  → PlayReport world_no=1
+#     AP "PI"  → PlayReport world_no=2
+#     AP "W2"  → PlayReport world_no=3
+#     AP "W3"  → PlayReport world_no=4
+#     AP "W4"  → PlayReport world_no=5
+#     AP "W5"  → PlayReport world_no=6
+#     AP "W6"  → PlayReport world_no=7
+#     AP "Special" → TBD
+#
+# Always use the PlayReport's world_no (from the bridge log's
+# "general_shop_result → shop_seed at (world=X, npc=Y, slot=Z)" line)
+# as the dict key; do NOT derive it from the AP prefix.
+#
+# Locations marked TODO have the apworld AP name pre-filled but no
+# (world_no, npc_id) yet; lookup_name will return None and the bridge
+# logs a debug line until the entry is filled in.
+_SHOP_SEED_TABLE: Final[dict[tuple[int, int, int], str]] = {
+    # W1 Poplin Shop — captured 2026-05-25
+    # (AP "W1" → PR world_no=1, npc_id=2; W1 overworld stage 3567658589)
+    (1, 2, 0): "W1: Poplin Shop - Wonder Seed",
+
+    # W2 Poplin Shop (Bottom) — captured 2026-05-25
+    # (AP "W2" → PR world_no=3, npc_id=4; W2 overworld stage 956270015)
+    (3, 4, 0): "W2: Poplin Shop (Bottom) - Wonder Seed",
+
+    # W2 Poplin Shop (Top) — captured 2026-05-25 (same world_no as Bottom,
+    # distinct npc_id=3; note npc_ids are arbitrary per-world indices and
+    # do NOT correspond to a Top/Bottom ordering.)
+    (3, 3, 0): "W2: Poplin Shop (Top) - Wonder Seed",
+
+    # W3 Poplin Shop — captured 2026-05-25
+    # (AP "W3" → PR world_no=4, npc_id=7; W3 overworld stage 2810861941)
+    (4, 7, 0): "W3: Poplin Shop - Wonder Seed",
+
+    # PI Poplin Shop (East) — captured 2026-05-25
+    # (AP "PI" → PR world_no=2, npc_id=4; PI overworld stage 3108913375,
+    # matches WORLD_RESULT_W1_TO_W2's next_stage_info.stage_key.)
+    (2, 4, 0): "PI: Poplin Shop (East) - Wonder Seed",
+
+    # W4 Poplin Shop (Bottom) — the regular (non-Secret) W4 shop.
+    # Captured 2026-05-25: AP "W4" → PR world_no=5, npc_id=9.  Shares
+    # the W4 overworld stage_key=4206506864 with the W4 Secret shop
+    # (npc_id=5), distinguished by npc_id.
+    (5, 9, 0): "W4: Poplin Shop (Bottom) - Wonder Seed",
+
+    # W4 Poplin Shop (Secret) — 3 priced seeds at npc_id=5, captured
+    # 2026-05-25 in shop-shelf order (the SMBW convention is
+    # cheapest-first left-to-right):
+    #   item_value=0 = leftmost shelf  → 30 Coins
+    #   item_value=1 = middle shelf    → 100 Coins
+    #   item_value=2 = rightmost shelf → 200 Coins
+    # The 3 entries share the SHOP_SEED stage_key (5<<16)|5; dedup is
+    # via state.emit_check's shop_slot sub_key so each priced seed
+    # records its AP credit independently.
+    (5, 5, 0): "W4: Poplin Shop (Secret) - Wonder Seed (30 Coins)",
+    (5, 5, 1): "W4: Poplin Shop (Secret) - Wonder Seed (100 Coins)",
+    (5, 5, 2): "W4: Poplin Shop (Secret) - Wonder Seed (200 Coins)",
+
+    # NOTE on Poplin's Houses (PI Angler, W3 Master, W4 Sunbaked Desert,
+    # W5 Loyal, W5 Tumble): houses are guaranteed NOT to use
+    # general_shop_result (player confirmation 2026-05-25), so they're
+    # not in this table.  When their room name + discriminator are
+    # known, add a separate handler + table.  Strategy:
+    #   - One W5 House visit reveals the room format and one of the two
+    #     W5 houses' npc_id; the other W5 house follows by elimination.
+    #   - PI/W3/W4 each have a single house in the apworld, so any
+    #     house-event in those PR world_no values uniquely identifies
+    #     them with no further captures.
+}
+
+
+# Wildcard fallback for SHOP_SEED: matches (world_no, item_value) when
+# the exact (world_no, npc_id, item_value) key is NOT in
+# _SHOP_SEED_TABLE.  Used for worlds where elimination uniquely
+# identifies the AP location:
+#
+#   - PI (world_no=2): East is exact-mapped at (2, 4, 0).  The apworld
+#     has exactly two PI Poplin Shops (East + West); since houses don't
+#     fire general_shop_result, any other npc_id in PI is West.
+#   - W5 (world_no=6): the apworld has exactly one W5 Poplin Shop; the
+#     two W5 Houses are out via room-type filter.
+#   - W6 (world_no=7): the apworld has exactly one W6 Poplin Shop;
+#     no houses in W6.
+#
+# Order of lookup in ``lookup_name``: exact table first, then this
+# wildcard table — so the W4 Secret triple's (5, 5, 0/1/2) entries
+# still win over any W4 wildcard if one were ever added, and PI East's
+# (2, 4, 0) wins over the PI West wildcard at (2, 0).
+_SHOP_SEED_WILDCARD_TABLE: Final[dict[tuple[int, int], str]] = {
+    (2, 0): "PI: Poplin Shop (West) - Wonder Seed",
+    (6, 0): "W5: Poplin Shop - Wonder Seed",
+    (7, 0): "W6: Poplin Shop - Wonder Seed",
+}
+
+
 # (stage_key, coin_index) -> AP location name for TEN_COIN checks.
 # Each non-palace course has three "10 Coin" AP locations named
 # #1/#2/#3.  The PlayReport ``big_flower_coin_course_in/out`` arrays
@@ -855,6 +965,25 @@ def lookup_name(check: CheckEmitted) -> str | None:
             log.debug(
                 "location_table: no AP location for ten_coin stage_key=%d index=%d",
                 check.stage_key, idx)
+        return name
+
+    if check.kind == CheckKind.SHOP_SEED:
+        world_no = int(check.metadata.get("world_no", 0))
+        npc_id = int(check.metadata.get("npc_id", 0))
+        item_value = int(check.metadata.get("item_value", 0))
+        # Exact match wins.
+        name = _SHOP_SEED_TABLE.get((world_no, npc_id, item_value))
+        if name is not None:
+            return name
+        # Wildcard fallback for worlds where elimination uniquely
+        # identifies the AP location (PI West, W5 Poplin, W6 Poplin).
+        name = _SHOP_SEED_WILDCARD_TABLE.get((world_no, item_value))
+        if name is None:
+            log.debug(
+                "location_table: no AP location for shop_seed "
+                "(world=%d, npc=%d, item_value=%d) — add an entry to "
+                "_SHOP_SEED_TABLE or _SHOP_SEED_WILDCARD_TABLE in "
+                "location_table.py", world_no, npc_id, item_value)
         return name
 
     name = _TABLE.get((check.kind, check.stage_key))

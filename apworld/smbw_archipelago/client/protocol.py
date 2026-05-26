@@ -107,6 +107,20 @@ class CheckKind(str, Enum):
     BADGE_ACQUIRED = "badge_acquired"    # 24 AP checks (M2.3) — stage_key
                                          # holds the badge bit position
                                          # (== SMBW internal_id).
+    SHOP_SEED = "shop_seed"              # ≤18 AP checks (Poplin Shops +
+                                         # Poplin Houses).  stage_key encodes
+                                         # the shop identity as
+                                         # ``(world_no << 16) | npc_id``;
+                                         # CheckEmitted.metadata["shop_slot"]
+                                         # is the PlayReport's ``item_value``
+                                         # so a multi-slot shop (W4 Secret's
+                                         # 3 seeds) dedups its slots
+                                         # independently.  Fired from the
+                                         # ``general_shop_result`` PlayReport
+                                         # only when ``item_kind == 1``
+                                         # (Wonder Seed).  See location_table
+                                         # for the (world_no, npc_id,
+                                         # item_value) -> name map.
 
 
 @dataclass(frozen=True)
