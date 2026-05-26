@@ -1,0 +1,523 @@
+SMBW Archipelago: dump_gate_candidates_v4.py
+  (Wonder Seed gate-check RE — iteration 5)
+  Targets: 5 functions + 4 data tables
+  Output: C:\Users\maxwe\Documents\smwonder_archipelago\.claude\worktrees\funny-lehmann-06e394\scripts\ghidra\dump_v4_output.txt
+
+================================================================
+=== FUNCTION 0x710066deec  --  *** sole caller of FUN_710066e548 (per-course Wonder Seed bit iter)
+================================================================
+  Function: FUN_710066deec @ 710066deec
+  Signature: undefined FUN_710066deec(void)
+  Body size: 196 bytes
+
+  -- Prologue (first 8 insns) --
+    710066deec   fd 7b be a9           stp x29,x30,[sp, #-0x20]!
+    710066def0   f3 0b 00 f9           str x19,[sp, #0x10]
+    710066def4   fd 03 00 91           mov x29,sp
+    710066def8   f3 03 00 aa           mov x19,x0
+    710066defc   00 18 40 f9           ldr x0,[x0, #0x30]
+    710066df00   2c 00 00 94           bl 0x710066dfb0
+    710066df04   68 c2 42 b9           ldr w8,[x19, #0x2c0]
+    710066df08   1f 05 00 71           cmp w8,#0x1
+
+  -- Direct callers --
+  Total refs: 1
+    [data][DATA]  data ref @ 0x71034d09f0
+
+  -- Decompile --
+    
+    void FUN_710066deec(long param_1)
+    
+    {
+      undefined **ppuVar1;
+      undefined **ppuVar2;
+      undefined8 *puVar3;
+      
+      FUN_710066dfb0(*(undefined8 *)(param_1 + 0x30));
+      if (*(int *)(param_1 + 0x2c0) < 1) {
+        puVar3 = &DAT_7103630f78;
+      }
+      else {
+        puVar3 = (undefined8 *)**(undefined8 **)(param_1 + 0x2c8);
+      }
+      *(undefined *)(puVar3 + 5) = 0;
+      FUN_710066e548(param_1);
+      FUN_710066e964(param_1);
+      FUN_710066e36c(param_1);
+      FUN_710066ed90(param_1);
+      FUN_710066e134(param_1);
+      FUN_710066e6c0(param_1);
+      *(undefined2 *)(param_1 + 0xa82) = 0;
+      *(undefined *)(param_1 + 0x659) = 0;
+      *(undefined *)(param_1 + 0x729) = 0;
+      *(undefined *)(param_1 + 0x7f9) = 0;
+      *(undefined *)(param_1 + 0x8c9) = 0;
+      if (*(char *)(param_1 + 0xa7e) == '\0') {
+        ppuVar2 = &PTR_DAT_71034d0c60;
+        ppuVar1 = &PTR_s_Key_A_71034d0c48;
+      }
+      else {
+        ppuVar1 = &PTR_s_Key_B_71034d0c30;
+        ppuVar2 = &PTR_s_Key_A_71034d0c48;
+      }
+      FUN_710066e010(ppuVar1,ppuVar2,&PTR_DAT_71034d0c60);
+      return;
+    }
+    
+
+================================================================
+=== FUNCTION 0x7101c46acc  --  *** called by 8-world dispatch handlers in FUN_7100480fd8
+================================================================
+  Function: FUN_7101c46acc @ 7101c46acc
+  Signature: undefined FUN_7101c46acc(void)
+  Body size: 76 bytes
+
+  -- Prologue (first 8 insns) --
+    7101c46acc   08 24 40 29           ldp w8,w9,[x0]
+    7101c46ad0   1f 01 09 6b           cmp w8,w9
+    7101c46ad4   0a 02 00 54           b.ge 0x7101c46b14
+    7101c46ad8   08 08 40 f9           ldr x8,[x0, #0x10]
+    7101c46adc   68 00 00 b4           cbz x8,0x7101c46ae8
+    7101c46ae0   09 01 40 f9           ldr x9,[x8]
+    7101c46ae4   09 08 00 f9           str x9,[x0, #0x10]
+    7101c46ae8   29 00 40 b9           ldr w9,[x1]
+
+  -- Direct callers --
+  Total refs: 8
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+
+  -- Decompile --
+    
+    void FUN_7101c46acc(int *param_1,undefined4 *param_2)
+    
+    {
+      undefined8 *puVar1;
+      
+      if (*param_1 < param_1[1]) {
+        puVar1 = *(undefined8 **)(param_1 + 4);
+        if (puVar1 != (undefined8 *)0x0) {
+          *(undefined8 *)(param_1 + 4) = *puVar1;
+        }
+        *(undefined4 *)puVar1 = *param_2;
+        if (*param_1 < param_1[1]) {
+          *(undefined8 **)(*(long *)(param_1 + 2) + (long)*param_1 * 8) = puVar1;
+          *param_1 = *param_1 + 1;
+        }
+      }
+      return;
+    }
+    
+
+================================================================
+=== FUNCTION 0x71000d3ca4  --  called at head of FUN_7100480fd8 (gets a uint at [x0])
+================================================================
+  Function: FUN_71000d3ca4 @ 71000d3ca4
+  Signature: undefined FUN_71000d3ca4(void)
+  Body size: 84 bytes
+
+  -- Prologue (first 8 insns) --
+    71000d3ca4   fd 7b be a9           stp x29,x30,[sp, #-0x20]!
+    71000d3ca8   f4 4f 01 a9           stp x20,x19,[sp, #0x10]
+    71000d3cac   fd 03 00 91           mov x29,sp
+    71000d3cb0   08 f0 46 39           ldrb w8,[x0, #0x1bc]
+    71000d3cb4   f3 03 00 aa           mov x19,x0
+    71000d3cb8   a8 00 00 36           tbz w8,#0x0,0x71000d3ccc
+    71000d3cbc   60 d2 06 91           add x0,x19,#0x1b4
+    71000d3cc0   f4 4f 41 a9           ldp x20,x19,[sp, #0x10]
+
+  -- Direct callers --
+  Total refs: 50
+    [fn][UNCONDITIONAL_CALL]  FUN_710012e640 @ 710012e640
+    [fn][UNCONDITIONAL_CALL]  FUN_71000d3ca4 @ 71000d3ca4
+    [fn][UNCONDITIONAL_CALL]  FUN_71002f1230 @ 71002f1230
+    [fn][UNCONDITIONAL_CALL]  FUN_71000d399c @ 71000d399c
+    [fn][UNCONDITIONAL_CALL]  FUN_71005872d0 @ 71005872d0
+    [fn][UNCONDITIONAL_CALL]  FUN_7100481d20 @ 7100481d20
+    [fn][UNCONDITIONAL_CALL]  FUN_7100487b0c @ 7100487b0c
+    [fn][UNCONDITIONAL_CALL]  FUN_7100487b0c @ 7100487b0c
+    [fn][UNCONDITIONAL_CALL]  FUN_7100483fcc @ 7100483fcc
+    [fn][UNCONDITIONAL_CALL]  FUN_7100484ac4 @ 7100484ac4
+    [fn][UNCONDITIONAL_CALL]  FUN_7100485260 @ 7100485260
+    [fn][UNCONDITIONAL_CALL]  FUN_7100487750 @ 7100487750
+    [fn][UNCONDITIONAL_CALL]  FUN_710048a560 @ 710048a560
+    [fn][UNCONDITIONAL_CALL]  FUN_71004b1700 @ 71004b1700
+    [fn][UNCONDITIONAL_CALL]  FUN_71004b1700 @ 71004b1700
+    [fn][UNCONDITIONAL_CALL]  FUN_7100486b5c @ 7100486b5c
+    [fn][UNCONDITIONAL_CALL]  FUN_710092d41c @ 710092d41c
+    [fn][UNCONDITIONAL_CALL]  FUN_710055f484 @ 710055f484
+    [fn][UNCONDITIONAL_CALL]  FUN_710055f0a0 @ 710055f0a0
+    [fn][UNCONDITIONAL_CALL]  FUN_71005af438 @ 71005af438
+    [fn][UNCONDITIONAL_CALL]  FUN_7100562530 @ 7100562530
+    [fn][UNCONDITIONAL_CALL]  FUN_71006c0cf0 @ 71006c0cf0
+    [fn][UNCONDITIONAL_CALL]  FUN_7100711fb0 @ 7100711fb0
+    [fn][UNCONDITIONAL_CALL]  FUN_710048ae4c @ 710048ae4c
+    [fn][UNCONDITIONAL_CALL]  FUN_71004e2154 @ 71004e2154
+    [fn][UNCONDITIONAL_CALL]  FUN_7100934cf0 @ 7100934cf0
+    [fn][UNCONDITIONAL_CALL]  FUN_7100483c94 @ 7100483c94
+    [fn][UNCONDITIONAL_CALL]  FUN_7100483c94 @ 7100483c94
+    [fn][UNCONDITIONAL_CALL]  FUN_7101b32f20 @ 7101b32f20
+    [fn][UNCONDITIONAL_CALL]  FUN_710179980c @ 710179980c
+    ... (20 more not shown)
+
+  -- Decompile --
+    
+    long FUN_71000d3ca4(long param_1)
+    
+    {
+      long lVar1;
+      long lVar2;
+      long lVar3;
+      
+      if ((*(byte *)(param_1 + 0x1bc) & 1) == 0) {
+        lVar2 = FUN_71000d3e88(param_1 + 0x10);
+        lVar3 = lVar2;
+        if (lVar2 != 0) {
+          lVar3 = FUN_71000d3ca4(lVar2);
+        }
+        lVar1 = param_1 + 0x1b4;
+        if (lVar2 != 0) {
+          lVar1 = lVar3;
+        }
+      }
+      else {
+        lVar1 = param_1 + 0x1b4;
+      }
+      return lVar1;
+    }
+    
+
+================================================================
+=== FUNCTION 0x71000d3c50  --  called at head of FUN_7100480fd8 (gets a uint at [x0])
+================================================================
+  Function: FUN_71000d3c50 @ 71000d3c50
+  Signature: undefined FUN_71000d3c50(void)
+  Body size: 84 bytes
+
+  -- Prologue (first 8 insns) --
+    71000d3c50   fd 7b be a9           stp x29,x30,[sp, #-0x20]!
+    71000d3c54   f4 4f 01 a9           stp x20,x19,[sp, #0x10]
+    71000d3c58   fd 03 00 91           mov x29,sp
+    71000d3c5c   08 f4 46 39           ldrb w8,[x0, #0x1bd]
+    71000d3c60   f3 03 00 aa           mov x19,x0
+    71000d3c64   a8 00 00 36           tbz w8,#0x0,0x71000d3c78
+    71000d3c68   60 e2 06 91           add x0,x19,#0x1b8
+    71000d3c6c   f4 4f 41 a9           ldp x20,x19,[sp, #0x10]
+
+  -- Direct callers --
+  Total refs: 68
+    [fn][UNCONDITIONAL_CALL]  FUN_710012e640 @ 710012e640
+    [fn][UNCONDITIONAL_CALL]  FUN_71000d3c50 @ 71000d3c50
+    [fn][UNCONDITIONAL_CALL]  FUN_71002f1230 @ 71002f1230
+    [fn][UNCONDITIONAL_CALL]  FUN_71000d399c @ 71000d399c
+    [fn][UNCONDITIONAL_CALL]  FUN_71005872d0 @ 71005872d0
+    [fn][UNCONDITIONAL_CALL]  FUN_710045684c @ 710045684c
+    [fn][UNCONDITIONAL_CALL]  FUN_7100481d20 @ 7100481d20
+    [fn][UNCONDITIONAL_CALL]  FUN_7100487b0c @ 7100487b0c
+    [fn][UNCONDITIONAL_CALL]  FUN_7100487b0c @ 7100487b0c
+    [fn][UNCONDITIONAL_CALL]  FUN_7100483fcc @ 7100483fcc
+    [fn][UNCONDITIONAL_CALL]  FUN_7100484ac4 @ 7100484ac4
+    [fn][UNCONDITIONAL_CALL]  FUN_7100485260 @ 7100485260
+    [fn][UNCONDITIONAL_CALL]  FUN_7100487750 @ 7100487750
+    [fn][UNCONDITIONAL_CALL]  FUN_710048a560 @ 710048a560
+    [fn][UNCONDITIONAL_CALL]  FUN_71004b1700 @ 71004b1700
+    [fn][UNCONDITIONAL_CALL]  FUN_71004b1700 @ 71004b1700
+    [fn][UNCONDITIONAL_CALL]  FUN_7100486b5c @ 7100486b5c
+    [fn][UNCONDITIONAL_CALL]  FUN_710092d41c @ 710092d41c
+    [fn][UNCONDITIONAL_CALL]  FUN_710055f484 @ 710055f484
+    [fn][UNCONDITIONAL_CALL]  FUN_710055f0a0 @ 710055f0a0
+    [fn][UNCONDITIONAL_CALL]  FUN_71005af438 @ 71005af438
+    [fn][UNCONDITIONAL_CALL]  FUN_71005af438 @ 71005af438
+    [fn][UNCONDITIONAL_CALL]  FUN_7100586124 @ 7100586124
+    [fn][UNCONDITIONAL_CALL]  FUN_7100562530 @ 7100562530
+    [fn][UNCONDITIONAL_CALL]  FUN_7101c373dc @ 7101c373dc
+    [fn][UNCONDITIONAL_CALL]  FUN_71006c0cf0 @ 71006c0cf0
+    [fn][UNCONDITIONAL_CALL]  FUN_7100711fb0 @ 7100711fb0
+    [fn][UNCONDITIONAL_CALL]  FUN_710048ae4c @ 710048ae4c
+    [fn][UNCONDITIONAL_CALL]  FUN_71004e2154 @ 71004e2154
+    [fn][UNCONDITIONAL_CALL]  FUN_71008fb96c @ 71008fb96c
+    ... (38 more not shown)
+
+  -- Decompile --
+    
+    long FUN_71000d3c50(long param_1)
+    
+    {
+      long lVar1;
+      long lVar2;
+      long lVar3;
+      
+      if ((*(byte *)(param_1 + 0x1bd) & 1) == 0) {
+        lVar2 = FUN_71000d3e88(param_1 + 0x10);
+        lVar3 = lVar2;
+        if (lVar2 != 0) {
+          lVar3 = FUN_71000d3c50(lVar2);
+        }
+        lVar1 = param_1 + 0x1b8;
+        if (lVar2 != 0) {
+          lVar1 = lVar3;
+        }
+      }
+      else {
+        lVar1 = param_1 + 0x1b8;
+      }
+      return lVar1;
+    }
+    
+
+================================================================
+=== FUNCTION 0x710096f234  --  aggregator called with arg `2` after 8-world dispatch
+================================================================
+  Function: FUN_710096f234 @ 710096f234
+  Signature: undefined FUN_710096f234(void)
+  Body size: 200 bytes
+
+  -- Prologue (first 8 insns) --
+    710096f234   ff c3 01 d1           sub sp,sp,#0x70
+    710096f238   fd 7b 04 a9           stp x29,x30,[sp, #0x40]
+    710096f23c   f5 2b 00 f9           str x21,[sp, #0x50]
+    710096f240   f4 4f 06 a9           stp x20,x19,[sp, #0x60]
+    710096f244   fd 03 01 91           add x29,sp,#0x40
+    710096f248   61 04 00 34           cbz w1,0x710096f2d4
+    710096f24c   88 06 01 b0           adrp x8,0x7102a40000
+    710096f250   08 b1 22 91           add x8,x8,#0x8ac
+
+  -- Direct callers --
+  Total refs: 1
+    [fn][UNCONDITIONAL_CALL]  FUN_7100480fd8 @ 7100480fd8
+
+  -- Decompile --
+    
+    uint FUN_710096f234(undefined4 *param_1,int param_2)
+    
+    {
+      char cVar1;
+      bool bVar2;
+      long lVar3;
+      uint uVar4;
+      undefined **ppuStack_70;
+      undefined1 *puStack_68;
+      undefined8 uStack_60;
+      undefined8 uStack_58;
+      undefined4 uStack_50;
+      long lStack_48;
+      undefined4 uStack_40;
+      undefined4 uStack_3c;
+      int iStack_38;
+      undefined uStack_34;
+      undefined2 uStack_33;
+      
+      if (param_2 == 0) {
+        uVar4 = 0;
+      }
+      else {
+        uStack_58 = 0;
+        puStack_68 = &DAT_7102a408ac;
+        uStack_60 = 0;
+        uStack_50 = 0;
+        lStack_48 = 0;
+        ppuStack_70 = &PTR_FUN_71034f0a00;
+        uStack_3c = *param_1;
+        uStack_34 = 1;
+        uStack_33 = 0x101;
+        uStack_40 = 0;
+        iStack_38 = param_2;
+        uVar4 = FUN_7100488d80(&ppuStack_70);
+        lVar3 = lStack_48;
+        ppuStack_70 = &PTR_LAB_710350f340;
+        if (lStack_48 != 0) {
+          do {
+            if (lVar3 != lStack_48) goto LAB_710096f2b4;
+            cVar1 = '\x01';
+            bVar2 = (bool)ExclusiveMonitorPass(&lStack_48,0x10);
+            if (bVar2) {
+              lStack_48 = 0;
+              cVar1 = ExclusiveMonitorsStatus();
+            }
+          } while (cVar1 != '\0');
+          FUN_7101dcc870();
+        }
+    LAB_710096f2b4:
+        FUN_710000e2ac(&uStack_60);
+      }
+      return uVar4 & 1;
+    }
+    
+
+================================================================
+=== DATA TABLE 0x71029f2410  (64 bytes)  --  per-world handler arg table (8 x 4-byte entries)
+================================================================
+  +0x0000:  00 00 00 00 01 00 00 00 03 00 00 00 04 00 00 00   |................|
+  +0x0010:  05 00 00 00 06 00 00 00 07 00 00 00 02 00 00 00   |................|
+  +0x0020:  09 00 00 00 00 00 00 00 0a 00 00 00 0b 00 00 00   |................|
+  +0x0030:  0c 00 00 00 0d 00 00 00 0e 00 00 00 0f 00 00 00   |................|
+
+  -- 32-bit LE values --
+    +0x0000: 0x00000000  (0)
+    +0x0004: 0x00000001  (1)
+    +0x0008: 0x00000003  (3)
+    +0x000c: 0x00000004  (4)
+    +0x0010: 0x00000005  (5)
+    +0x0014: 0x00000006  (6)
+    +0x0018: 0x00000007  (7)
+    +0x001c: 0x00000002  (2)
+    +0x0020: 0x00000009  (9)
+    +0x0024: 0x00000000  (0)
+    +0x0028: 0x0000000a  (10)
+    +0x002c: 0x0000000b  (11)
+    +0x0030: 0x0000000c  (12)
+    +0x0034: 0x0000000d  (13)
+    +0x0038: 0x0000000e  (14)
+    +0x003c: 0x0000000f  (15)
+
+================================================================
+=== DATA TABLE 0x71029f0b34  (128 bytes)  --  per-world record table A (first record, 0x70 bytes; hash at +0x68)
+================================================================
+  +0x0000:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0010:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0020:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0030:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0040:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0050:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0060:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0070:  48 d9 35 02 d1 c6 03 63 12 36 16 d8 d5 dd 41 eb   |H.5....c.6....A.|
+
+  -- 32-bit LE values --
+    +0x0000: 0x00000000  (0)
+    +0x0004: 0x00000000  (0)
+    +0x0008: 0x00000000  (0)
+    +0x000c: 0x00000000  (0)
+    +0x0010: 0x00000000  (0)
+    +0x0014: 0x00000000  (0)
+    +0x0018: 0x00000000  (0)
+    +0x001c: 0x00000000  (0)
+    +0x0020: 0x00000000  (0)
+    +0x0024: 0x00000000  (0)
+    +0x0028: 0x00000000  (0)
+    +0x002c: 0x00000000  (0)
+    +0x0030: 0x00000000  (0)
+    +0x0034: 0x00000000  (0)
+    +0x0038: 0x00000000  (0)
+    +0x003c: 0x00000000  (0)
+    +0x0040: 0x00000000  (0)
+    +0x0044: 0x00000000  (0)
+    +0x0048: 0x00000000  (0)
+    +0x004c: 0x00000000  (0)
+    +0x0050: 0x00000000  (0)
+    +0x0054: 0x00000000  (0)
+    +0x0058: 0x00000000  (0)
+    +0x005c: 0x00000000  (0)
+    +0x0060: 0x00000000  (0)
+    +0x0064: 0x00000000  (0)
+    +0x0068: 0x00000000  (0)
+    +0x006c: 0x00000000  (0)
+    +0x0070: 0x0235d948  (37083464)
+    +0x0074: 0x6303c6d1  (1661191889)
+    +0x0078: 0xd8163612  (3625334290)
+    +0x007c: 0xeb41ddd5  (3946962389)
+
+  -- HASH AT +0x68: 0x00000000 --
+
+================================================================
+=== DATA TABLE 0x71029f0f94  (128 bytes)  --  per-world record table B (first record, 0x70 bytes; hash at +0x68)
+================================================================
+  +0x0000:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0010:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0020:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0030:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0040:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0050:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0060:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0070:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+
+  -- 32-bit LE values --
+    +0x0000: 0x00000000  (0)
+    +0x0004: 0x00000000  (0)
+    +0x0008: 0x00000000  (0)
+    +0x000c: 0x00000000  (0)
+    +0x0010: 0x00000000  (0)
+    +0x0014: 0x00000000  (0)
+    +0x0018: 0x00000000  (0)
+    +0x001c: 0x00000000  (0)
+    +0x0020: 0x00000000  (0)
+    +0x0024: 0x00000000  (0)
+    +0x0028: 0x00000000  (0)
+    +0x002c: 0x00000000  (0)
+    +0x0030: 0x00000000  (0)
+    +0x0034: 0x00000000  (0)
+    +0x0038: 0x00000000  (0)
+    +0x003c: 0x00000000  (0)
+    +0x0040: 0x00000000  (0)
+    +0x0044: 0x00000000  (0)
+    +0x0048: 0x00000000  (0)
+    +0x004c: 0x00000000  (0)
+    +0x0050: 0x00000000  (0)
+    +0x0054: 0x00000000  (0)
+    +0x0058: 0x00000000  (0)
+    +0x005c: 0x00000000  (0)
+    +0x0060: 0x00000000  (0)
+    +0x0064: 0x00000000  (0)
+    +0x0068: 0x00000000  (0)
+    +0x006c: 0x00000000  (0)
+    +0x0070: 0x00000000  (0)
+    +0x0074: 0x00000000  (0)
+    +0x0078: 0x00000000  (0)
+    +0x007c: 0x00000000  (0)
+
+  -- HASH AT +0x68: 0x00000000 --
+
+================================================================
+=== DATA TABLE 0x71029f13f4  (128 bytes)  --  per-world record table fallback (DAT_71029f13f4)
+================================================================
+  +0x0000:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0010:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0020:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0030:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0040:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0050:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0060:  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   |................|
+  +0x0070:  00 00 00 00 ff ff ff ff 02 00 00 00 00 00 00 00   |................|
+
+  -- 32-bit LE values --
+    +0x0000: 0x00000000  (0)
+    +0x0004: 0x00000000  (0)
+    +0x0008: 0x00000000  (0)
+    +0x000c: 0x00000000  (0)
+    +0x0010: 0x00000000  (0)
+    +0x0014: 0x00000000  (0)
+    +0x0018: 0x00000000  (0)
+    +0x001c: 0x00000000  (0)
+    +0x0020: 0x00000000  (0)
+    +0x0024: 0x00000000  (0)
+    +0x0028: 0x00000000  (0)
+    +0x002c: 0x00000000  (0)
+    +0x0030: 0x00000000  (0)
+    +0x0034: 0x00000000  (0)
+    +0x0038: 0x00000000  (0)
+    +0x003c: 0x00000000  (0)
+    +0x0040: 0x00000000  (0)
+    +0x0044: 0x00000000  (0)
+    +0x0048: 0x00000000  (0)
+    +0x004c: 0x00000000  (0)
+    +0x0050: 0x00000000  (0)
+    +0x0054: 0x00000000  (0)
+    +0x0058: 0x00000000  (0)
+    +0x005c: 0x00000000  (0)
+    +0x0060: 0x00000000  (0)
+    +0x0064: 0x00000000  (0)
+    +0x0068: 0x00000000  (0)
+    +0x006c: 0x00000000  (0)
+    +0x0070: 0x00000000  (0)
+    +0x0074: 0xffffffff  (4294967295)
+    +0x0078: 0x00000002  (2)
+    +0x007c: 0x00000000  (0)
+
+  -- HASH AT +0x68: 0x00000000 --
+
+Done.

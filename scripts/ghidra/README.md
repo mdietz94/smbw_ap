@@ -51,6 +51,45 @@ Run in this order:
 
 Plan + rationale: see [`~/.claude/plans/i-would-like-to-resilient-pancake.md`] (M3.3) and `docs/static-analysis-findings.md` (M3.2 badge sprint).
 
+### Wonder Seed gate-check RE (2026-05-26) — find what gates world/palace/boss entry
+
+The user's pivot: instead of overwriting the visible Wonder Seed counter
+(which is recomputed from per-acquisition flag arrays at runtime), find
+the in-game function(s) that check "do you have enough Wonder Seeds to
+enter X?" and (in a future session) patch them to consult the
+AP-granted per-world count. Display stays vanilla; only gating
+decisions become AP-authoritative.
+
+Plan: `~/.claude/plans/we-have-had-a-calm-eclipse.md`. Strategy is
+cheap-first cascading toward expensive: cheat-DB anchors → reader-cmp
+walker → corroborator passes → (fallback) Cheat Engine read-watch.
+Scripts below are the static-analysis half.
+
+Run in this order:
+
+| # | Script | Purpose | Phase |
+|---|---|---|---|
+| 1 | `find_gate_strings.py` | **Phase 0b** string sweep. Searches `.rodata` for gate-related UI / debug terms (`"Wonder Seed"`, `"Locked"`, `"Required"`, world names, palace names). Ranks xref'd strings by callsite count; highlights functions that touch multiple seed-like strings (string-adjacency evidence per plan Section-4 test #2). | Wonder Seed gate |
+| 2 | `walk_reader_compare_sites.py` ★ | **Phase 2 workhorse.** Walks every xref to the known GameDataMgr READERS (`FUN_710012AE94`, `FUN_71003838AC`, `FUN_7100124134`, etc.). At each call site: (a) backward-reconstructs the hash constant (reused logic from `walk_hash_writer_xrefs.py`), (b) forward-scans up to 24 insns for a `cmp`/`subs`/`cbz`/`cbnz` against a Wonder Seed threshold from `regions.json` ({2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 14, 15, 16, 25}). Scores call sites by gate-shape and ranks unique enclosing functions globally — top 30 are the gate-check candidates. | Wonder Seed gate |
+| 3 | `playreport_field_backtrace_seed.py` | **Phase 3 corroborator.** Backtraces the value-load idiom (`ldr Wn, [Xm, #imm]`) for seed-related PlayReport fields (`total_get_finish_seed_count`, `wonder_seed`, `world_mother_seed`, `world_wonder_flower`), then Phase 2 of the script scans the whole binary for OTHER consumers of the same load pattern. Filters out the PlayReport-builder chain (`FUN_7101a5d93c` family); remaining hits are GATE-CANDIDATE readers — functions that touch the same backing storage but aren't telemetry. | Wonder Seed gate |
+
+How the three combine: a function that appears at the top of #2's
+ranked list **and** is xref'd by #1's seed-like string list **and**
+shows up as a GATE-CANDIDATE in #3 is a high-confidence hit (≥3 of
+plan Section-4 evidence criteria).
+
+Companion Phase-1 manual pass (no new script needed): decompile the
+HamletDuFromage Fast-Travel cheat anchors at NSO `+0x48A528`,
+`+0x5D9F58`, `+0x935E10`, and `+0x48A818` (Top-of-Flag), walk
+upstream 2-3 levels, and record what they short-circuit. Anchors are
+catalogued in `docs/static-analysis-findings.md` lines ~217-230.
+
+Output artifact: the runner appends a dated `## YYYY-MM-DD — Wonder
+Seed gate-check RE` section to `docs/static-analysis-findings.md`
+following the schema scaffolded in this commit. The implementation
+session uses that artifact (plus `CLAUDE.md`) to write the hook
+without re-running Ghidra.
+
 ### Companion Python tool (host-side)
 
 [`scripts/brute_badge_field_hashes.py`](../brute_badge_field_hashes.py) —

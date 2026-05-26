@@ -1,0 +1,184 @@
+SMBW Archipelago: dump_gate_candidates_v5.py
+  (Wonder Seed gate-check RE — iteration 6)
+  Parts: A (GateOpen functions) + B (Nerve name-getter search)
+  Output: C:\Users\maxwe\Documents\smwonder_archipelago\.claude\worktrees\funny-lehmann-06e394\scripts\ghidra\dump_v5_output.txt
+
+################################################################
+####  PART A: GateOpen string xref'ers  ########################
+################################################################
+
+================================================================
+=== FUNCTION 0x7101abd140  --  *** GateOpen string xref'er
+================================================================
+  Function: FUN_7101abd140 @ 7101abd140
+  Signature: undefined FUN_7101abd140(void)
+  Body size: 532 bytes
+
+  -- Direct callers --
+  Total refs: 1
+    [vtable][DATA]  VTABLE @ 0x7103475df0
+
+  -- Decompile --
+    
+    void FUN_7101abd140(long param_1,long *param_2)
+    
+    {
+      long lVar1;
+      long lVar2;
+      char *pcStack_148;
+      undefined *puStack_140;
+      int iStack_138;
+      undefined auStack_134 [255];
+      undefined uStack_35;
+      
+      (**(code **)(*param_2 + 0x30))(param_2);
+      lVar2 = param_1;
+      do {
+        lVar1 = lVar2;
+        if (*(char *)(lVar1 + 0x10) != '\0') break;
+        lVar2 = *(long *)(lVar1 + 0x50);
+      } while (*(long *)(lVar1 + 0x50) != 0);
+      uStack_35 = 0;
+      iStack_138 = 0x100;
+      auStack_134[0] = 0;
+      puStack_140 = auStack_134;
+      FUN_71001560b0(&puStack_140,*(undefined8 *)(lVar1 + 8),0xffffffff);
+      pcStack_148 = s_Normal_7103487e58;
+      puStack_140[(long)iStack_138 + -1] = 0;
+      (**(code **)(*param_2 + 0x40))(param_2,&pcStack_148,&puStack_140);
+      lVar2 = param_1;
+      do {
+        lVar1 = lVar2;
+        if (*(char *)(lVar1 + 0x20) != '\0') break;
+        lVar2 = *(long *)(lVar1 + 0x50);
+      } while (*(long *)(lVar1 + 0x50) != 0);
+      uStack_35 = 0;
+      iStack_138 = 0x100;
+      auStack_134[0] = 0;
+      puStack_140 = auStack_134;
+      FUN_71001560b0(&puStack_140,*(undefined8 *)(lVar1 + 0x18),0xffffffff);
+      pcStack_148 = s_BadgeShop_7103487e60;
+      puStack_140[(long)iStack_138 + -1] = 0;
+      (**(code **)(*param_2 + 0x40))(param_2,&pcStack_148,&puStack_140);
+      lVar2 = param_1;
+      do {
+        lVar1 = lVar2;
+        if (*(char *)(lVar1 + 0x30) != '\0') break;
+        lVar2 = *(long *)(lVar1 + 0x50);
+      } while (*(long *)(lVar1 + 0x50) != 0);
+      uStack_35 = 0;
+      iStack_138 = 0x100;
+      auStack_134[0] = 0;
+      puStack_140 = auStack_134;
+      FUN_71001560b0(&puStack_140,*(undefined8 *)(lVar1 + 0x28),0xffffffff);
+      pcStack_148 = s_GateOpen_7103487e6b;
+      puStack_140[(long)iStack_138 + -1] = 0;
+      (**(code **)(*param_2 + 0x40))(param_2,&pcStack_148,&puStack_140);
+      do {
+        lVar2 = param_1;
+        if (*(char *)(lVar2 + 0x40) != '\0') break;
+        param_1 = *(long *)(lVar2 + 0x50);
+      } while (*(long *)(lVar2 + 0x50) != 0);
+      uStack_35 = 0;
+      iStack_138 = 0x100;
+      auStack_134[0] = 0;
+      puStack_140 = auStack_134;
+      FUN_71001560b0(&puStack_140,*(undefined8 *)(lVar2 + 0x38),0xffffffff);
+      pcStack_148 = s_Network_7103487e75;
+      puStack_140[(long)iStack_138 + -1] = 0;
+      (**(code **)(*param_2 + 0x40))(param_2,&pcStack_148,&puStack_140);
+      (**(code **)(*param_2 + 0x38))(param_2);
+      return;
+    }
+    
+
+================================================================
+=== FUNCTION 0x7101abd3c8  --  *** GateOpen string xref'er
+================================================================
+  Function: FUN_7101abd3c8 @ 7101abd3c8
+  Signature: undefined FUN_7101abd3c8(void)
+  Body size: 280 bytes
+
+  -- Direct callers --
+  Total refs: 2
+    [fn][UNCONDITIONAL_CALL]  FUN_7101abd35c @ 7101abd35c
+    [orphan][UNCONDITIONAL_CALL]  orphan code @ 0x7101b309a4  bl 0x7101abd3c8
+
+  -- Decompile --
+    
+    undefined8 FUN_7101abd3c8(undefined4 *param_1,char *param_2)
+    
+    {
+      undefined4 uVar1;
+      long lVar2;
+      char *pcVar3;
+      long lVar4;
+      
+      if (param_2 == s_Normal_7103487e58) {
+    LAB_7101abd4b8:
+        uVar1 = 0;
+      }
+      else {
+        lVar4 = 0;
+        lVar2 = 0x400001;
+        do {
+          if (param_2[lVar4] != s_Normal_7103487e58[lVar4]) break;
+          if (param_2[lVar4] == '\0') goto LAB_7101abd4b8;
+          lVar4 = lVar4 + 1;
+        } while (lVar4 != 0x400001);
+        if (param_2 == s_BadgeShop_7103487e60) {
+    LAB_7101abd4c8:
+          uVar1 = 1;
+        }
+        else {
+          lVar4 = 0;
+          do {
+            if (param_2[lVar4] != s_BadgeShop_7103487e60[lVar4]) break;
+            if (param_2[lVar4] == '\0') goto LAB_7101abd4c8;
+            lVar4 = lVar4 + 1;
+          } while (lVar4 != 0x400001);
+          if (param_2 == s_GateOpen_7103487e6b) {
+    LAB_7101abd4d0:
+            uVar1 = 2;
+          }
+          else {
+            lVar4 = 0;
+            do {
+              if (param_2[lVar4] != s_GateOpen_7103487e6b[lVar4]) break;
+              if (param_2[lVar4] == '\0') goto LAB_7101abd4d0;
+              lVar4 = lVar4 + 1;
+            } while (lVar4 != 0x400001);
+            if (param_2 != s_Network_7103487e75) {
+              pcVar3 = s_Network_7103487e75;
+              while( true ) {
+                if (*param_2 != *pcVar3) {
+                  return 0;
+                }
+                if (*param_2 == '\0') break;
+                lVar2 = lVar2 + -1;
+                pcVar3 = pcVar3 + 1;
+                param_2 = param_2 + 1;
+                if (lVar2 == 0) {
+                  return 0;
+                }
+              }
+            }
+            uVar1 = 3;
+          }
+        }
+      }
+      *param_1 = uVar1;
+      return 1;
+    }
+    
+
+################################################################
+####  PART B: Nerve search via string-getter pattern  ##########
+################################################################
+  Strategy: scan .rodata for gate-relevant strings, find xref
+  sites in small adrp+add+ret functions (Nerve name getters),
+  then trace BACK to vtable callers.  Vtable hits = Nerves.
+
+  No name-getter-shaped functions matched any term.
+
+Done.

@@ -192,9 +192,24 @@ Outgoing checks (M2) are only half the integration. AP also sends *items* to the
 | M3.3b Royal Seed grant | 7 (new section) | ✅ shipped 2026-05-25 — `probe::grantContainerBBool` calls `FUN_710049EA24` (NSO +0x0049EA24); save-diff confirmed 6 byte flips, W1+INTRO idempotent (already set) |
 | M3.8 DeathLink trigger | 1 (bidirectional event) | TBD — companion to M3.8 detection |
 
-M3.1 (power-ups), M3.4 (characters), M3.5 (Wonder Flower suppression), M3.6 (button suppression), M3.7 (goal hook) are deferred until the MVP set ships.
+M3.1 (power-ups) and M3.4 (characters) are **deferred to M7** — the
+AP server precollects all 4 power-ups and all 12 characters as
+starting items (see [apworld/smbw_archipelago/data/game.json](../apworld/smbw_archipelago/data/game.json)),
+so no Switch-side grant primitive is needed for MVP.  M3.5 (Wonder
+Flower suppression) and M3.6 (button suppression) are deferred until
+the MVP set ships.  M3.7 (goal hook) shipped 2026-05-25.
 
-### M3.1 — power-up grant (4 items: Elephant, Fire, Bubble, Drill) — DEFERRED
+### M3.1 — power-up grant (4 items: Elephant, Fire, Bubble, Drill) — DEFERRED TO M7
+
+**Status (2026-05-25)** — deferred indefinitely.  The AP server now
+precollects all 4 Power-Up items via `starting_items` in
+[apworld/smbw_archipelago/data/game.json](../apworld/smbw_archipelago/data/game.json),
+so the player begins every seed already owning Elephant / Fire / Bubble
+/ Drill.  Rules that reference these items as required are satisfied
+trivially from the precollect set, and no AP item ever needs to be
+applied at runtime.  Revisit under **M7 (UX polish)** if/when we want
+true AP-driven power-up shuffling — the RE notes below remain valid
+when that work resumes.
 
 The HamletDuFromage cheat DB gave us:
 
@@ -202,7 +217,7 @@ The HamletDuFromage cheat DB gave us:
 - NSO `+0x020128F4` is the power-up state field
 - Values: `2=Fire, 3=Elephant, 5=Small, 6=Drill, 8=Tall, 9=Pink/Bubble` (cross-confirmed with wondar's partly-RE'd `ItemGetType` enum in `include/game/actor/component/ItemGetRef.h`: `Super=1, Elephant=3, Drill=6, Bubble=9`)
 
-**Approach**: rather than poke memory raw, find the *apply-powerup* function the engine calls when the player picks one up. Hook it once for read (confirm signature, find arg ordering), then call it from our code with the AP-granted type. This ensures animations, sound effects, and any side-effects (e.g., size box change) run correctly.
+**Approach (when revisited)**: rather than poke memory raw, find the *apply-powerup* function the engine calls when the player picks one up. Hook it once for read (confirm signature, find arg ordering), then call it from our code with the AP-granted type. This ensures animations, sound effects, and any side-effects (e.g., size box change) run correctly.
 
 The event Nerve `vt_off=0x33fd870` fires on damage *and* power-up pickup (we observed this in M1 testing). Worth peeking that Nerve's vtable to see if it's a `RequestEventApplyPowerUp` family member.
 
@@ -273,9 +288,19 @@ The 6 GRAND_SEED_WORLD{1..6} hashes (verified by MemetendoYT) live in the same p
 
 **Dispatch**: [ApFrameBridge.cpp](../switch-mod/src/program/ap/ApFrameBridge.cpp) `drainInbound()` branches on `isBoolHash(h)` (defined in `ApFrameBridge.hpp` with the 8-hash whitelist) — bool hashes route to `grantContainerBBool`, counters stay on `grantContainerACounter`.  Bridge cleanup landed: `royal_seed_table.py` `source` flipped to `"live"`, docstring updated; `ap_client._handle_received_items` WARN replaced with INFO.
 
-### M3.4 — character roster unlock (12 items) — DEFERRED
+### M3.4 — character roster unlock (12 items) — DEFERRED TO M7
 
-Save data bitfield for which characters are available in file-select. Find via memory diff (unlock a new character via gameplay, diff save state before/after).
+**Status (2026-05-25)** — deferred indefinitely.  The AP server now
+precollects all 12 Character items via `starting_items` in
+[apworld/smbw_archipelago/data/game.json](../apworld/smbw_archipelago/data/game.json)
+(the previous `random: 1` block, which picked one starting character
+and shuffled the other 11 into the AP item pool, was replaced with an
+unrestricted `item_categories: ["Character"]` block).  The player
+begins every seed with the full roster unlocked, no AP grant ever
+needs to happen, and no Switch-side RE is required.  Revisit under
+**M7 (UX polish)** if/when we want true AP-driven character shuffling.
+
+When revisited: save data has a bitfield for which characters are available in file-select. Find via memory diff (unlock a new character via gameplay, diff save state before/after).
 
 ### M3.5 — Wonder Flower / Wonder Effect suppression (opt-in)
 
@@ -450,7 +475,7 @@ Move from Ryujinx-only to also working on a real modded Switch under Atmosphere 
 - Restore the RSTB (Resource Size Table) update if we ever do romfs replacement.
 - Validate `svcOutputDebugString` is non-fatal on retail Switch (it routes to `lm` service; binlog visibility is "spotty" per SMO doc comment — not a problem for production, just for our diagnostic visibility).
 
-## M7 — UX polish
+## M7 — UX polish + deferred AP-grant items
 
 Lowest priority but customer-facing. Mirror SMO's Cappy-speech-bubble pattern for AP notifications:
 
@@ -459,6 +484,51 @@ Lowest priority but customer-facing. Mirror SMO's Cappy-speech-bubble pattern fo
 - "Disconnected from Archipelago" + replay-from-buffer when the LAN drops mid-session.
 
 wondar's existing ImGui overlay is currently disabled (it crashed on this NSO build). Path forward: either re-enable with caution (find what specifically crashed and fix), or build a native-UI toast system using the game's own message rendering (more work but bug-free).
+
+### Deferred from M3 (2026-05-25)
+
+The MVP ships with these items precollected by the AP server rather
+than granted live by the Switch mod.  Bringing them back into the AP
+item pool is M7-tier scope because each needs Switch-side RE +
+primitive wiring + an absolute-overwrite sync (per M4.5 / M4
+follow-up #2 pattern):
+
+- **M3.1 — power-up grants (4 items: Elephant, Fire, Bubble, Drill)**.
+  RE notes live in the M3.1 section above.  Hook target candidate:
+  the apply-powerup function reachable via `vt_off=0x33fd870`.
+- **M3.4 — character roster unlock (12 items)**.  Save-data bitfield;
+  find via memory diff (unlock a character via gameplay, diff save
+  state before/after).  Once located, granting probably mirrors the
+  M3.2 badge bitfield pattern (container-C absolute overwrite on
+  every `ReceivedItems` / `HelloMsg` / periodic tick).
+
+Until then, [apworld/smbw_archipelago/data/game.json](../apworld/smbw_archipelago/data/game.json)
+`starting_items` precollects all 4 Power-Ups and all 12 Characters —
+removing them from the multiworld item pool and satisfying any
+location rules that reference them trivially.
+
+### Hidden + locked-off options (2026-05-26)
+
+Three yaml options are auto-generated from `categories.json` but the
+Switch mod can't enforce them yet, so they're locked to off and hidden
+from yaml templates via `_LockedOffToggle` (`Visibility.none` + value
+coerced to 0 on any input) in [apworld/smbw_archipelago/Options.py](../apworld/smbw_archipelago/Options.py).
+Items in the matching categories therefore stay out of the pool
+(`Helpers.is_category_enabled` returns False when the gating option is
+0).  Re-enable each by removing it from `_DEFERRED_OPTIONS` once the
+Switch-side enforcement lands:
+
+- **`button_shuffle`** → unlocks with **M3.6** (player-input
+  suppression hook on the `PlayerControlRef` component).  Items: Y
+  Button, ZL Button/Down, R Button, Up.
+- **`wonder_flower_rando`** → unlocks with **M3.5** (Wonder Flower
+  spawn/touch suppression).  Items: Wonder Flower (1).
+- **`wonder_effect_rando`** → unlocks with **M3.5** (Wonder Effect
+  start suppression).  Items: 18× `Wonder Effect - *`.
+
+Stale yamls that pre-date the lockdown and explicitly set these to
+`true` still parse — `_LockedOffToggle.from_any` discards the value
+and writes 0.
 
 ## Risk register
 

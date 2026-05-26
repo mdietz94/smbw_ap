@@ -133,6 +133,7 @@ WonderSeedCountsProvider = Callable[[], list[int]]
 GrantMsg = (
     wire.SetBadgesAbsoluteMsg
     | wire.GrantHashKeyedMsg
+    | wire.IncrementHashKeyedMsg
     | wire.SetWonderSeedCountsMsg
     | wire.KillMsg
 )
@@ -316,6 +317,41 @@ class LanServer:
                 "send_set_wonder_seed_counts(counts=%s): outbound queue "
                 "full; dropping",
                 counts)
+
+    def send_increment_hash_keyed(self, hash_: int, delta: int) -> None:
+        """Enqueue an IncrementHashKeyed (container-A counter RMW) to the
+        active Switch client.
+
+        Same drop semantics as :meth:`send_set_badges_absolute`.  Used
+        for AP filler items whose semantic is "add N to the running
+        total" rather than "set to N" -- first user is the "10 Coin"
+        item routing 10 to the ``flower_coin`` (purple coin) counter.
+
+        Save-survival caveat (same as ``send_grant_hash_keyed`` for
+        counters): the Switch primitive writes to a deferred-write
+        dirty buffer at ``gmd+0xf8`` flushed on next save.  A load-
+        before-flush silently drops the increment.  Unlike Royal Seeds,
+        we do NOT replay container-A counter increments on HelloMsg --
+        replay would double-count.  For filler this is acceptable; for
+        progression-critical counters we'd need per-AP-item-index
+        dedup persisted across reconnects."""
+        msg = wire.IncrementHashKeyedMsg(hash=hash_, delta=delta)
+        if self._send_queue is None:
+            log.warning(
+                "send_increment_hash_keyed(hash=0x%08x, delta=%d): no "
+                "Switch client connected; dropping",
+                hash_, delta)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug(
+                "send_increment_hash_keyed: enqueued hash=0x%08x delta=%d",
+                hash_, delta)
+        except asyncio.QueueFull:
+            log.error(
+                "send_increment_hash_keyed(hash=0x%08x, delta=%d): outbound "
+                "queue full; dropping",
+                hash_, delta)
 
     def send_grant_hash_keyed(self, hash_: int, value: int) -> None:
         """Enqueue a GrantHashKeyed (container-A counter or container-B
@@ -687,11 +723,18 @@ class LanServer:
                     writer.write(wire.encode(msg))
                     await writer.drain()
                     if isinstance(msg, wire.SetBadgesAbsoluteMsg):
-                        log.info("-> set_badges_absolute bits=0x%x", msg.bits)
+                        # Suppress the empty-mask periodic-tick spam; only
+                        # log when there's an actual badge state to push.
+                        if msg.bits:
+                            log.info("-> set_badges_absolute bits=0x%x", msg.bits)
                     elif isinstance(msg, wire.GrantHashKeyedMsg):
                         log.info(
                             "-> grant_hash_keyed hash=0x%08x value=%d",
                             msg.hash, msg.value)
+                    elif isinstance(msg, wire.IncrementHashKeyedMsg):
+                        log.info(
+                            "-> increment_hash_keyed hash=0x%08x delta=%d",
+                            msg.hash, msg.delta)
                     elif isinstance(msg, wire.SetWonderSeedCountsMsg):
                         log.info(
                             "-> set_wonder_seed_counts counts=%s",

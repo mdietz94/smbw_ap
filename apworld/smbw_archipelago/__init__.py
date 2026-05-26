@@ -300,6 +300,16 @@ class SMBWonderWorld(World):
                 continue
             slot_data[option_key] = get_option_value(self.multiworld, self.player, option_key)
 
+        # Resolve the integer `goal` option to its location name so the
+        # client doesn't have to mirror victory_names ordering.  The
+        # location's address has already been wiped (see create_regions),
+        # so the bridge uses this name to recognize when an outgoing
+        # CheckEmitted is the player's chosen goal and convert it into a
+        # StatusUpdate(CLIENT_GOAL).
+        goal_idx = get_option_value(self.multiworld, self.player, 'goal')
+        if isinstance(goal_idx, int) and 0 <= goal_idx < len(victory_names):
+            slot_data["goal_location_name"] = victory_names[goal_idx]
+
         slot_data = after_fill_slot_data(slot_data, self, self.multiworld, self.player)
 
         return slot_data

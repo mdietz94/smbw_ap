@@ -373,14 +373,15 @@ class TestPlayReportDispatch(_AsyncTestCase):
             await asyncio.sleep(0.02)
 
             # COURSE_RESULT is from a top-of-flag clear per the
-            # processor's classifier (CourseResult test corpus); accept
-            # either NORMAL_EXIT or TOP_OF_FLAG since the field-level
-            # contract is owned by tests in test_processor.py.  What we
-            # care about here is *something* fired.
-            self.assertEqual(len(self.h.emitted), 1)
-            self.assertIn(
-                self.h.emitted[0].kind,
-                (CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG))
+            # processor's classifier (CourseResult test corpus); a
+            # top-of-flag clear emits BOTH NORMAL_EXIT and TOP_OF_FLAG
+            # (top-of-flag is a strict superset of normal exit).  The
+            # field-level contract is owned by tests in
+            # test_processor.py; here we just check that the wire path
+            # delivers both kinds to the handler.
+            kinds = {c.kind for c in self.h.emitted}
+            self.assertEqual(
+                kinds, {CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG})
         finally:
             await client.close()
 
@@ -517,6 +518,54 @@ class TestGrantHashKeyedOutbound(_AsyncTestCase):
     async def test_send_grant_hash_keyed_with_no_client_drops(self):
         # No client connected; warn-and-drop, not raise.
         self.h.server.send_grant_hash_keyed(0xF4EE6827, 99)
+
+
+# ---------------------------------------------------------------------------
+# Outbound IncrementHashKeyed (10-coin grant + refund).
+
+class TestIncrementHashKeyedOutbound(_AsyncTestCase):
+
+    async def test_send_increment_hash_keyed_positive_reaches_client(self):
+        # The "10 Coin" inbound path: bridge ships +10 per item to the
+        # Switch, which RMWs the flower_coin counter.
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute replay
+
+            await asyncio.sleep(0.02)
+            self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.IncrementHashKeyedMsg)
+            self.assertEqual(received.hash, 0xF4EE6827)
+            self.assertEqual(received.delta, 10)
+        finally:
+            await client.close()
+
+    async def test_send_increment_hash_keyed_negative_reaches_client(self):
+        # The TEN_COIN refund path: bridge sees an in-game 10-coin
+        # pickup as a CheckEmitted, ships -10 to undo the game's
+        # automatic add so AP stays authoritative.
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+            await client.recv()
+            await client.recv()
+
+            await asyncio.sleep(0.02)
+            self.h.server.send_increment_hash_keyed(0xF4EE6827, -10)
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.IncrementHashKeyedMsg)
+            self.assertEqual(received.delta, -10)
+        finally:
+            await client.close()
+
+    async def test_send_increment_hash_keyed_with_no_client_drops(self):
+        # No client connected; warn-and-drop, not raise.
+        self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
 
 
 # ---------------------------------------------------------------------------
