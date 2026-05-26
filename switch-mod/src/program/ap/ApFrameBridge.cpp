@@ -199,6 +199,30 @@ void drainInbound() {
                     h, c, b, ok ? "true" : "false");
                 break;
             }
+            case InboundKind::SetRoyalSeedsAbsolute: {
+                // AP-authoritative Royal Seed sync (2026-05-26).  Loop
+                // the 6 container-B bool hashes in mask-bit order and
+                // grant/clear each per the mask.  The container-B bool
+                // writer FUN_710049EA24 accepts value=0 just fine, so
+                // a 0 bit cleanly reverts an in-game palace clear that
+                // ran ahead of AP releasing the matching seed item.
+                const auto mask = msg.set_royal_seeds_absolute.mask;
+                std::uint32_t granted = 0;
+                for (std::size_t i = 0; i < kRoyalSeedCount; ++i) {
+                    const std::uint32_t bit_v = (mask >> i) & 1u;
+                    if (probe::grantContainerBBool(kRoyalSeedHashes[i],
+                                                   bit_v)) {
+                        if (bit_v) ++granted;
+                    }
+                }
+                SMBWAP_LOG_INFO(
+                    "[grant] drained SetRoyalSeedsAbsolute(mask=0x%02x) -> "
+                    "%u/%u seed(s) granted (others cleared)",
+                    static_cast<unsigned>(mask),
+                    granted,
+                    static_cast<unsigned>(kRoyalSeedCount));
+                break;
+            }
             case InboundKind::SetWonderSeedCounts: {
                 // AP-authoritative per-world Wonder Seed gate override.
                 // Cache the 8 counts; the NerveActivateOnce tick in

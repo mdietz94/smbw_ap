@@ -522,6 +522,20 @@ void ApClient::handleLine(char* line, std::size_t len) {
                     msg.set_container_c_bit.bit_index);
             }
             return;
+        case InboundKind::SetRoyalSeedsAbsolute:
+            SMBWAP_LOG_INFO(
+                "[grant] received SetRoyalSeedsAbsolute(mask=0x%02x), enqueued",
+                static_cast<unsigned>(msg.set_royal_seeds_absolute.mask));
+            // Forward to game thread; drainInbound loops the 6 Royal
+            // Seed hashes and grants/clears each per bit via
+            // probe::grantContainerBBool.
+            if (!inboundRing().push(msg)) {
+                SMBWAP_LOG_WARN(
+                    "[ring] inbound full; dropping SetRoyalSeedsAbsolute"
+                    "(mask=0x%02x)",
+                    static_cast<unsigned>(msg.set_royal_seeds_absolute.mask));
+            }
+            return;
         case InboundKind::SetWonderSeedCounts:
             SMBWAP_LOG_INFO(
                 "[grant] received SetWonderSeedCounts counts="

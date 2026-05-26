@@ -14,7 +14,12 @@ Inbound (AP -> Switch):
     :attr:`items_received`.  On every ``ReceivedItems``, recompute the
     mask and push it to the Switch as a ``SetBadgesAbsolute`` (the LAN
     server also re-pushes on HelloMsg and on a ~2 s tick).
-  - Royal Seeds: per-item ``GrantHashKeyed`` (container-A path).
+  - Royal Seeds: same idempotent absolute-overwrite pattern -- a 6-bit
+    mask of which seeds AP has granted, pushed as
+    ``SetRoyalSeedsAbsolute`` on every ReceivedItems + HelloMsg +
+    periodic tick.  The Switch loops the 6 container-B bool hashes and
+    grants/clears each per the mask, so an in-game palace clear that
+    runs ahead of AP gets reverted within seconds.
   - Items neither table recognizes are logged + dropped.
 
 Outbound (Switch -> AP):
@@ -322,16 +327,21 @@ class SMBWContext(CommonContext):
             counts[idx] += 1
         return counts
 
-    def _collect_royal_seed_grants(self) -> list[tuple[int, int]]:
-        """Walk :attr:`items_received` and return ``[(hash, value), ...]``
-        for every Royal Seed AP item.  Deduplicated by hash (the Switch
-        primitive is idempotent for bool writes, but AP may legitimately
-        list the same item twice in items_received and there's no value
-        in sending the wire message twice).  This is the catch-up batch
-        the LAN server replays on every Switch HelloMsg so seeds survive
-        Switch reconnect and save/reload -- M4.5."""
-        seen: set[int] = set()
-        out: list[tuple[int, int]] = []
+    def _recompute_royal_seed_mask(self) -> int:
+        """Walk :attr:`items_received` and return the absolute 6-bit
+        Royal Seed mask -- one bit per world (bit 0 = W1, ..., bit 5 =
+        W6).  Idempotent and side-effect-free.  Items the table doesn't
+        recognize contribute 0 bits (silent drop), matching the badge
+        path.
+
+        The bridge pushes this as ``SetRoyalSeedsAbsoluteMsg`` on
+        HelloMsg, on every ReceivedItems, and on the periodic 2 s tick.
+        The Switch loops the 6 container-B bool hashes (see
+        ``royal_seed_table.ROYAL_SEED_HASHES`` for the canonical
+        order, mirrored Switch-side) and writes
+        ``(mask >> bit) & 1`` to each -- granting AP-granted seeds and
+        clearing any seed the player obtained in-game without AP."""
+        mask = 0
         for it in self.items_received:
             item_id = getattr(it, "item", None)
             if item_id is None and isinstance(it, dict):
@@ -342,25 +352,28 @@ class SMBWContext(CommonContext):
                 item_name = self.item_names.lookup_in_game(int(item_id))
             except Exception:
                 continue
-            if not royal_seed_table.is_royal_seed_item(item_name):
+            bit = royal_seed_table.bit_for_item(item_name)
+            if bit is None:
                 continue
-            h = royal_seed_table.hash_for_item(item_name)
-            if h is None or h in seen:
-                continue
-            seen.add(h)
-            out.append((h, royal_seed_table.ROYAL_SEED_VALUE))
-        return out
+            mask |= (1 << bit)
+        return mask
 
     async def _handle_received_items(self, args: dict) -> None:
         items = args.get("items", []) or []
 
         new_mask = self._recompute_badge_mask()
         new_seed_counts = self._recompute_wonder_seed_counts()
+        new_royal_seed_mask = self._recompute_royal_seed_mask()
         if self.lan_server is not None:
             log.info(
-                "ReceivedItems: badge mask now 0x%x, wonder_seed counts=%s",
-                new_mask, new_seed_counts)
+                "ReceivedItems: badge mask now 0x%x, royal_seed mask 0x%x, "
+                "wonder_seed counts=%s",
+                new_mask, new_royal_seed_mask, new_seed_counts)
             self.lan_server.send_set_badges_absolute(new_mask)
+            # Idempotent absolute-overwrite: AP is the sole authority
+            # over container-B Royal Seed bools (same pattern as
+            # badges).  Switch loops the 6 hashes per bit.
+            self.lan_server.send_set_royal_seeds_absolute(new_royal_seed_mask)
             # Idempotent absolute-overwrite: AP is the sole authority
             # over the per-world Wonder Seed counts (same pattern as
             # badges).  Switch routes via current-world hash 0x9f5ead3c.
@@ -368,7 +381,8 @@ class SMBWContext(CommonContext):
         else:
             log.debug(
                 "no lan_server bound; not forwarding badge mask 0x%x / "
-                "wonder_seed counts=%s", new_mask, new_seed_counts)
+                "royal_seed mask 0x%x / wonder_seed counts=%s",
+                new_mask, new_royal_seed_mask, new_seed_counts)
 
         for it in items:
             item_id = it.get("item") if isinstance(it, dict) else None
@@ -393,23 +407,11 @@ class SMBWContext(CommonContext):
                     "SetWonderSeedCounts push", item_name, item_id)
                 continue
             if royal_seed_table.is_royal_seed_item(item_name):
-                hash_ = royal_seed_table.hash_for_item(item_name)
-                if hash_ is None:
-                    log.warning(
-                        "royal_seed_table inconsistency: "
-                        "is_royal_seed_item(%r)=True but no hash", item_name)
-                    continue
-                log.info(
-                    "item received: %r (id=%s) -> grant_hash_keyed "
-                    "hash=0x%08x value=%d",
-                    item_name, item_id, hash_,
-                    royal_seed_table.ROYAL_SEED_VALUE)
-                if self.lan_server is None:
-                    log.debug("no lan_server bound; cannot forward grant")
-                    continue
-                self.lan_server.send_grant_hash_keyed(
-                    hash_, royal_seed_table.ROYAL_SEED_VALUE)
-            elif coin_table.is_coin_item(item_name):
+                log.debug(
+                    "royal seed item received: %r (id=%s) -- covered by "
+                    "SetRoyalSeedsAbsolute push", item_name, item_id)
+                continue
+            if coin_table.is_coin_item(item_name):
                 grant = coin_table.grant_for_item(item_name)
                 if grant is None:
                     log.warning(

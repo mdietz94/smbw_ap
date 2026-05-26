@@ -76,10 +76,13 @@ class _ServerHarness:
         # Mutable mask the tests can mutate live; the lambda the LAN
         # server holds re-reads each invocation.
         self.badge_mask = badge_mask
-        # Mutable Royal Seed grants list -- mirrors badge_mask shape.
-        # Each entry is (hash, value); the LAN server enqueues one
-        # GrantHashKeyedMsg per entry on every HelloMsg.
-        self.royal_seed_grants: list[tuple[int, int]] = []
+        # Mutable Royal Seed mask -- mirrors badge_mask shape.  Bit N
+        # is the AP-granted state for the (N+1)th-world Royal Seed.
+        # Pushed as SetRoyalSeedsAbsoluteMsg on HelloMsg + every 2 s
+        # tick + every ReceivedItems.  Always pushed even when zero
+        # (idempotent absolute-overwrite -- AP is the sole authority
+        # over the container-B Royal Seed bools).
+        self.royal_seed_mask: int = 0
         # Mutable per-world Wonder Seed counts -- pushed as
         # SetWonderSeedCountsMsg on every HelloMsg + every 2 s tick +
         # every ReceivedItems.  Always pushed, even when all zeros
@@ -104,7 +107,7 @@ class _ServerHarness:
             on_death_reported=self._on_death_reported,
             on_goal_completed=self._on_goal_completed,
             badge_mask_provider=lambda: self.badge_mask,
-            royal_seed_grants_provider=lambda: list(self.royal_seed_grants),
+            royal_seed_mask_provider=lambda: self.royal_seed_mask,
             wonder_seed_counts_provider=lambda: list(self.wonder_seed_counts),
         )
         # asyncio.start_server binds when you pass port=0 -> ephemeral; we
@@ -145,16 +148,16 @@ class TestHelloHandshake(_AsyncTestCase):
             self.assertTrue(ack.ok)
             self.assertEqual(ack.wire_ver, wire.WIRE_VERSION)
             self.assertNotEqual(ack.bridge_ver, "")
-            # Replay-on-HelloMsg: bridge should also push the current
-            # AP-known badge mask right after the ack.  Default mask=0
-            # in the harness, so we expect bits=0.
+            # Replay-on-HelloMsg: three idempotent absolute-overwrite
+            # messages.  Default state in the harness is all-zero, but
+            # they're ALWAYS pushed so AP is the sole authority over
+            # each surface.
             sync = await client.recv()
             self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
             self.assertEqual(sync.bits, 0)
-            # ...followed by the per-world Wonder Seed counts (all 0
-            # by default in the harness).  Idempotent absolute-
-            # overwrite: ALWAYS pushed even when zero, so AP is the
-            # sole authority over Wonder Seed gating.
+            rs = await client.recv()
+            self.assertIsInstance(rs, wire.SetRoyalSeedsAbsoluteMsg)
+            self.assertEqual(rs.mask, 0)
             wsc = await client.recv()
             self.assertIsInstance(wsc, wire.SetWonderSeedCountsMsg)
             self.assertEqual(list(wsc.counts), [0] * 8)
@@ -171,6 +174,7 @@ class TestHelloHandshake(_AsyncTestCase):
             sync = await client.recv()
             self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
             self.assertEqual(sync.bits, (1 << 4) | (1 << 9))
+            await client.recv()  # SetRoyalSeedsAbsolute (mask=0)
             await client.recv()  # SetWonderSeedCounts (all 0)
         finally:
             await client.close()
@@ -188,43 +192,37 @@ class TestHelloHandshake(_AsyncTestCase):
                 mod_ver="t", game_ver="t", pid=0))
             await client.recv()  # ack
             await client.recv()  # SetBadgesAbsolute
+            await client.recv()  # SetRoyalSeedsAbsolute
             wsc = await client.recv()
             self.assertIsInstance(wsc, wire.SetWonderSeedCountsMsg)
             self.assertEqual(list(wsc.counts), [3, 0, 5, 0, 0, 0, 0, 0])
         finally:
             await client.close()
 
-    async def test_hello_replays_royal_seed_grants(self):
-        # M4.5: every Royal Seed in items_received gets re-emitted as
-        # GrantHashKeyed on every HelloMsg, so seeds survive Switch
-        # reconnect and save/reload.
-        self.h.royal_seed_grants = [
-            (0x55815859, 1),  # W1 Royal Seed
-            (0xB550D8D6, 1),  # W3 Royal Seed
-        ]
+    async def test_hello_replays_royal_seed_mask(self):
+        # AP-authoritative absolute-overwrite mirror of the badge mask:
+        # every HelloMsg pushes the current AP-known 6-bit Royal Seed
+        # mask so the Switch's container-B bools snap to AP's view.
+        # W1 + W3 granted == bits 0 and 2.
+        self.h.royal_seed_mask = (1 << 0) | (1 << 2)
         client = await _FakeSwitch.connect(self.h.port)
         try:
             await client.send(wire.HelloMsg(
                 mod_ver="t", game_ver="t", pid=0))
             await client.recv()  # ack
             await client.recv()  # SetBadgesAbsolute (mask=0)
-            m1 = await client.recv()
-            m2 = await client.recv()
-            wsc = await client.recv()  # SetWonderSeedCounts (all 0)
-            self.assertIsInstance(m1, wire.GrantHashKeyedMsg)
-            self.assertIsInstance(m2, wire.GrantHashKeyedMsg)
+            rs = await client.recv()
+            self.assertIsInstance(rs, wire.SetRoyalSeedsAbsoluteMsg)
+            self.assertEqual(rs.mask, (1 << 0) | (1 << 2))
+            wsc = await client.recv()
             self.assertIsInstance(wsc, wire.SetWonderSeedCountsMsg)
-            self.assertEqual(
-                {(m1.hash, m1.value), (m2.hash, m2.value)},
-                {(0x55815859, 1), (0xB550D8D6, 1)})
-            self.assertEqual(list(wsc.counts), [0] * 8)
         finally:
             await client.close()
 
-    async def test_hello_empty_royal_seeds_emits_only_idempotent_pushes(self):
-        # Fresh-connect path: no seeds received yet -> badge sync +
-        # wonder-seed counts both pushed (idempotent, even when zero),
-        # but no Royal Seed GrantHashKeyeds.  After those two messages,
+    async def test_hello_empty_state_emits_only_idempotent_pushes(self):
+        # Fresh-connect path: nothing received yet -> badge sync,
+        # royal seed mask, and wonder-seed counts all pushed
+        # (idempotent, even when zero).  After those three messages,
         # the queue should be empty.
         client = await _FakeSwitch.connect(self.h.port)
         try:
@@ -233,6 +231,9 @@ class TestHelloHandshake(_AsyncTestCase):
             await client.recv()  # ack
             sync = await client.recv()
             self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
+            rs = await client.recv()
+            self.assertIsInstance(rs, wire.SetRoyalSeedsAbsoluteMsg)
+            self.assertEqual(rs.mask, 0)
             wsc = await client.recv()
             self.assertIsInstance(wsc, wire.SetWonderSeedCountsMsg)
             self.assertEqual(list(wsc.counts), [0] * 8)
@@ -391,6 +392,7 @@ class TestPlayReportDispatch(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute replay
             await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await client.send(wire.PlayReportWireMsg(
@@ -413,6 +415,7 @@ class TestSetBadgesAbsoluteOutbound(_AsyncTestCase):
         await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
         await client.recv()  # ack
         await client.recv()  # replay SetBadgesAbsolute (bits=0)
+        await client.recv()  # replay SetRoyalSeedsAbsolute (mask=0)
         await client.recv()  # replay SetWonderSeedCounts (all 0)
         await asyncio.sleep(0.02)  # let writer task settle
 
@@ -433,6 +436,18 @@ class TestSetBadgesAbsoluteOutbound(_AsyncTestCase):
         self.h.server.send_set_badges_absolute(bits=0xF)
         # If we got here, success.
 
+    async def _await_message_with(self, client: _FakeSwitch, predicate,
+                                   timeout_s: float = 1.0):
+        """Keep receiving until ``predicate(msg)`` is true.  Used to skip
+        past stale periodic-tick stragglers that landed in the queue
+        before a mid-test state change."""
+        deadline = asyncio.get_event_loop().time() + timeout_s
+        while True:
+            remaining = max(0.05, deadline - asyncio.get_event_loop().time())
+            msg = await client.recv(timeout=remaining)
+            if predicate(msg):
+                return msg
+
     async def test_periodic_tick_pushes_provider_mask(self):
         # Drop the tick interval so the test doesn't have to wait 2 s.
         # Resolve the lan_server module via the already-imported LanServer
@@ -446,17 +461,40 @@ class TestSetBadgesAbsoluteOutbound(_AsyncTestCase):
             client = await _FakeSwitch.connect(self.h.port)
             try:
                 await self._drain_hello_replay(client)
-                # Update the live mask mid-flight; the next tick must
-                # send the new value.
+                # Update the live mask mid-flight; a tick may have
+                # already fired during the replay drain, so skip past
+                # any stale SetBadgesAbsolute with the old bits.
                 self.h.badge_mask = (1 << 4) | (1 << 9)
-                # First tick should arrive within ~150 ms.
-                sync = await client.recv(timeout=0.5)
-                self.assertIsInstance(sync, wire.SetBadgesAbsoluteMsg)
+                sync = await self._await_message_with(
+                    client,
+                    lambda m: isinstance(m, wire.SetBadgesAbsoluteMsg)
+                              and m.bits == (1 << 4) | (1 << 9))
                 self.assertEqual(sync.bits, (1 << 4) | (1 << 9))
-                # Same tick also pushes the per-world wonder seed
-                # counts (idempotent absolute-overwrite mirror).
-                wsc = await client.recv(timeout=0.5)
-                self.assertIsInstance(wsc, wire.SetWonderSeedCountsMsg)
+            finally:
+                await client.close()
+        finally:
+            ls_mod.BADGE_SYNC_INTERVAL_SEC = original
+
+    async def test_periodic_tick_pushes_royal_seed_mask(self):
+        # Idempotent absolute-overwrite mirror of badges: every tick
+        # pushes the current AP-known 6-bit Royal Seed mask to the
+        # Switch, so an in-game palace clear that ran ahead of AP gets
+        # reverted within ~2 s.
+        import sys
+        ls_mod = sys.modules[LanServer.__module__]
+        original = ls_mod.BADGE_SYNC_INTERVAL_SEC
+        ls_mod.BADGE_SYNC_INTERVAL_SEC = 0.05
+        try:
+            self.h.royal_seed_mask = 1 << 0
+            client = await _FakeSwitch.connect(self.h.port)
+            try:
+                await self._drain_hello_replay(client)
+                self.h.royal_seed_mask = (1 << 0) | (1 << 2)
+                rs = await self._await_message_with(
+                    client,
+                    lambda m: isinstance(m, wire.SetRoyalSeedsAbsoluteMsg)
+                              and m.mask == (1 << 0) | (1 << 2))
+                self.assertEqual(rs.mask, (1 << 0) | (1 << 2))
             finally:
                 await client.close()
         finally:
@@ -478,20 +516,57 @@ class TestSetBadgesAbsoluteOutbound(_AsyncTestCase):
             client = await _FakeSwitch.connect(self.h.port)
             try:
                 await self._drain_hello_replay(client)
-                # Update the live counts mid-flight; the next tick must
-                # send the new array.
-                self.h.wonder_seed_counts = [3, 0, 12, 0, 0, 0, 0, 0]
-                # Tick pushes badge first, then wonder seed counts;
-                # consume the badge and assert on the counts.
-                await client.recv(timeout=0.5)  # SetBadgesAbsolute
-                wsc = await client.recv(timeout=0.5)
-                self.assertIsInstance(wsc, wire.SetWonderSeedCountsMsg)
-                self.assertEqual(
-                    list(wsc.counts), [3, 0, 12, 0, 0, 0, 0, 0])
+                expected = [3, 0, 12, 0, 0, 0, 0, 0]
+                self.h.wonder_seed_counts = expected
+                wsc = await self._await_message_with(
+                    client,
+                    lambda m: isinstance(m, wire.SetWonderSeedCountsMsg)
+                              and list(m.counts) == expected)
+                self.assertEqual(list(wsc.counts), expected)
             finally:
                 await client.close()
         finally:
             ls_mod.BADGE_SYNC_INTERVAL_SEC = original
+
+
+class TestSetRoyalSeedsAbsoluteOutbound(_AsyncTestCase):
+
+    async def _drain_hello_replay(self, client: _FakeSwitch) -> None:
+        await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+        await client.recv()  # ack
+        await client.recv()  # replay SetBadgesAbsolute (bits=0)
+        await client.recv()  # replay SetRoyalSeedsAbsolute (mask=0)
+        await client.recv()  # replay SetWonderSeedCounts (all 0)
+        await asyncio.sleep(0.02)
+
+    async def test_send_set_royal_seeds_absolute_reaches_client(self):
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await self._drain_hello_replay(client)
+            self.h.server.send_set_royal_seeds_absolute(mask=(1 << 0) | (1 << 5))
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.SetRoyalSeedsAbsoluteMsg)
+            self.assertEqual(received.mask, (1 << 0) | (1 << 5))
+        finally:
+            await client.close()
+
+    async def test_send_set_royal_seeds_absolute_zero_reaches_client(self):
+        # Empty mask is a legitimate state -- it clears any in-game
+        # palace-clear pickup the player has but AP hasn't released.
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await self._drain_hello_replay(client)
+            self.h.server.send_set_royal_seeds_absolute(mask=0)
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.SetRoyalSeedsAbsoluteMsg)
+            self.assertEqual(received.mask, 0)
+        finally:
+            await client.close()
+
+    async def test_send_set_royal_seeds_absolute_with_no_client_drops(self):
+        self.h.server.send_set_royal_seeds_absolute(mask=0x3F)
 
 
 class TestGrantHashKeyedOutbound(_AsyncTestCase):
@@ -502,6 +577,7 @@ class TestGrantHashKeyedOutbound(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute replay
             await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await asyncio.sleep(0.02)
@@ -533,6 +609,7 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute replay
             await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await asyncio.sleep(0.02)
@@ -554,6 +631,7 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute replay
             await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await asyncio.sleep(0.02)
@@ -584,6 +662,7 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute
             await client.recv()  # post-hello SetWonderSeedCounts
 
             # Synchronous burst -- no awaits between calls, so all 10
@@ -610,9 +689,10 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
         client = await _FakeSwitch.connect(self.h.port)
         try:
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
-            await client.recv()
-            await client.recv()
-            await client.recv()
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute
+            await client.recv()  # post-hello SetWonderSeedCounts
 
             self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
             self.h.server.send_increment_hash_keyed(0xF4EE6827, -10)
@@ -629,9 +709,10 @@ class TestIncrementHashKeyedOutbound(_AsyncTestCase):
         client = await _FakeSwitch.connect(self.h.port)
         try:
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
-            await client.recv()
-            await client.recv()
-            await client.recv()
+            await client.recv()  # ack
+            await client.recv()  # post-hello SetBadgesAbsolute
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute
+            await client.recv()  # post-hello SetWonderSeedCounts
 
             self.h.server.send_increment_hash_keyed(0xF4EE6827, 10)
             self.h.server.send_increment_hash_keyed(0x17F0BB21, 5)
@@ -662,6 +743,7 @@ class TestKillOutbound(_AsyncTestCase):
         await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
         await client.recv()  # ack
         await client.recv()  # replay SetBadgesAbsolute (bits=0)
+        await client.recv()  # replay SetRoyalSeedsAbsolute (mask=0)
         await client.recv()  # replay SetWonderSeedCounts (all 0)
         await asyncio.sleep(0.02)
 
@@ -719,6 +801,7 @@ class TestGoalCompletedDispatch(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute replay
             await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await client.send(wire.NerveFireWireMsg(
@@ -742,6 +825,7 @@ class TestGoalCompletedDispatch(_AsyncTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute replay
             await client.recv()  # post-hello SetWonderSeedCounts replay
 
             await client.send(wire.NerveFireWireMsg(
@@ -802,6 +886,7 @@ class TestClientDisplacement(_AsyncTestCase):
         await client_a.send(wire.HelloMsg(mod_ver="a", game_ver="t"))
         await client_a.recv()  # ack
         await client_a.recv()  # post-hello SetBadgesAbsolute replay
+        await client_a.recv()  # post-hello SetRoyalSeedsAbsolute replay
         await client_a.recv()  # post-hello SetWonderSeedCounts replay
         await asyncio.sleep(0.02)
 
@@ -810,6 +895,7 @@ class TestClientDisplacement(_AsyncTestCase):
         await client_b.send(wire.HelloMsg(mod_ver="b", game_ver="t"))
         await client_b.recv()  # ack
         await client_b.recv()  # post-hello SetBadgesAbsolute replay
+        await client_b.recv()  # post-hello SetRoyalSeedsAbsolute replay
         await client_b.recv()  # post-hello SetWonderSeedCounts replay
         await asyncio.sleep(0.05)
 
@@ -851,6 +937,7 @@ class TestStopWithConnectedClient(unittest.IsolatedAsyncioTestCase):
             await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
             await client.recv()  # ack
             await client.recv()  # post-hello SetBadgesAbsolute replay
+            await client.recv()  # post-hello SetRoyalSeedsAbsolute replay
             await client.recv()  # post-hello SetWonderSeedCounts replay
             # Now the Switch handler is parked in reader.readuntil --
             # exactly the state that hung the Kivy close path on 3.12+.
