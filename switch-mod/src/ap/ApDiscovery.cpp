@@ -12,8 +12,8 @@
 #include <cstdio>
 #include <cstring>
 
-#include "../util/Json.hpp"
-#include "../util/Log.hpp"
+#include "util/Json.hpp"
+#include "util/Log.hpp"
 
 #ifndef BRIDGE_HOST_STRING
 #define BRIDGE_HOST_STRING "192.168.1.1"
