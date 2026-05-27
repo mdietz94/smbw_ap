@@ -1,9 +1,11 @@
 #include "ApFrameBridge.hpp"
 
 #include <atomic>
+#include <cstdio>
 #include <cstring>
 
 #include "ApState.hpp"
+#include "probe/Gmd.hpp"
 #include "util/Log.hpp"
 
 namespace smbwap::ap {
@@ -82,6 +84,23 @@ bool enqueuePlayReport(const char* room,
     return ok;
 }
 
+// Format a dedup-suffix string for the coalesced/drained apply-block
+// log lines.  Returns the leading verb ("coalesced" if anything was
+// collapsed within this drain, otherwise "drained") and writes the
+// suffix into `out` ("" or " (collapsed N earlier duplicate(s) within
+// this drain)").  Keeps each apply block to a single SMBWAP_LOG_INFO
+// call instead of an if/else pair.
+static const char* coalesceVerb(char* out, std::size_t out_cap, int skipped) {
+    if (skipped > 0) {
+        std::snprintf(out, out_cap,
+                      " (collapsed %d earlier duplicate%s within this drain)",
+                      skipped, skipped == 1 ? "" : "s");
+        return "coalesced";
+    }
+    if (out_cap > 0) out[0] = '\0';
+    return "drained";
+}
+
 void drainInbound() {
     // M4.5: gate on save-load.  Pre-save-select, the gmd singleton is
     // either null or points to title-screen-scoped data that gets
@@ -140,13 +159,31 @@ void drainInbound() {
     // happened to NOT engage at the relevant moment.  By construction
     // we're past the !isInSceneTransitionWindow() early-return, so any
     // log line here means the gate was not engaged at entry.
+    //
+    // Extended 2026-05-27 with dirty-queue depths.  Each container has a
+    // bounded lock-free ring at substruct+0x30 (cap at +0x28, head+gen
+    // at +0x38).  Overflow tail-calls FUN_7100472CF0 → AbortImpl, hard.
+    // The container-A "insert new entry" ring (substruct gmd+0x128) is
+    // the one that overflowed in the 2026-05-26 level-entry abort and
+    // is most at risk during 5-distinct-hash bursts; the container-B
+    // ring overflowed in the 2026-05-27 9 h SetRoyalSeedsAbsolute audit
+    // (5ca82aa).  Read the three rings here so any crash in the next
+    // few frames has the most recent depth snapshot in the log.  See
+    // [probe/Gmd.hpp](../probe/Gmd.hpp) for layout details.
     const auto pending_at_entry = inboundRing().pendingApprox();
     if (pending_at_entry > 0) {
+        const auto qa  = probe::readQueueA_primary();
+        const auto qas = probe::readQueueA_secondary();
+        const auto qb  = probe::readQueueB();
         SMBWAP_LOG_INFO(
             "[grant] drainInbound RUN: pending=%zu  "
+            "qA=%u/%u(gen=0x%03x) qA2=%u/%u(gen=0x%03x) qB=%u/%u(gen=0x%03x)  "
             "(gate was OPEN at entry; if a crash follows in the next few "
             "frames, this is the bracket that bypassed the scene gate)",
-            pending_at_entry);
+            pending_at_entry,
+            qa.depth(),  qa.cap,  qa.gen(),
+            qas.depth(), qas.cap, qas.gen(),
+            qb.depth(),  qb.cap,  qb.gen());
     }
 
     // Coalesce absolute-overwrite kinds within this drain call.
@@ -323,26 +360,22 @@ void drainInbound() {
     }
     // Apply the latest payload of each deduplicable absolute-overwrite
     // kind.  See the comment above the deferral declarations for the
-    // last-write-wins rationale.
+    // last-write-wins rationale.  Each apply block uses coalesceVerb()
+    // to pick between "coalesced" / "drained" in the log line so the
+    // log-call itself stays single-format.
+
+    char dedup_suffix[80];
 
     if (has_badges) {
         const auto bits = last_badges.set_badges_absolute.bits;
         const bool ok = probe::setBadgeBitfieldAbsolute(bits);
-        if (dedup_badges_skipped > 0) {
-            SMBWAP_LOG_INFO(
-                "[grant] coalesced SetBadgesAbsolute(bits=0x%016llx; "
-                "collapsed %d earlier duplicate%s within this drain) -> "
-                "setBadgeBitfieldAbsolute returned %s",
-                static_cast<unsigned long long>(bits),
-                dedup_badges_skipped, dedup_badges_skipped == 1 ? "" : "s",
-                ok ? "true" : "false");
-        } else {
-            SMBWAP_LOG_INFO(
-                "[grant] drained SetBadgesAbsolute(bits=0x%016llx) -> "
-                "setBadgeBitfieldAbsolute returned %s",
-                static_cast<unsigned long long>(bits),
-                ok ? "true" : "false");
-        }
+        const char* verb = coalesceVerb(
+            dedup_suffix, sizeof(dedup_suffix), dedup_badges_skipped);
+        SMBWAP_LOG_INFO(
+            "[grant] %s SetBadgesAbsolute(bits=0x%016llx)%s -> "
+            "setBadgeBitfieldAbsolute returned %s",
+            verb, static_cast<unsigned long long>(bits), dedup_suffix,
+            ok ? "true" : "false");
     }
 
     if (has_seeds) {
@@ -360,21 +393,13 @@ void drainInbound() {
                 if (bit_v) ++granted;
             }
         }
-        if (dedup_seeds_skipped > 0) {
-            SMBWAP_LOG_INFO(
-                "[grant] coalesced SetRoyalSeedsAbsolute(mask=0x%02x; "
-                "collapsed %d earlier duplicate%s within this drain) -> "
-                "%u/%u seed(s) granted (others cleared)",
-                static_cast<unsigned>(mask),
-                dedup_seeds_skipped, dedup_seeds_skipped == 1 ? "" : "s",
-                granted, static_cast<unsigned>(kRoyalSeedCount));
-        } else {
-            SMBWAP_LOG_INFO(
-                "[grant] drained SetRoyalSeedsAbsolute(mask=0x%02x) -> "
-                "%u/%u seed(s) granted (others cleared)",
-                static_cast<unsigned>(mask),
-                granted, static_cast<unsigned>(kRoyalSeedCount));
-        }
+        const char* verb = coalesceVerb(
+            dedup_suffix, sizeof(dedup_suffix), dedup_seeds_skipped);
+        SMBWAP_LOG_INFO(
+            "[grant] %s SetRoyalSeedsAbsolute(mask=0x%02x)%s -> "
+            "%u/%u seed(s) granted (others cleared)",
+            verb, static_cast<unsigned>(mask), dedup_suffix,
+            granted, static_cast<unsigned>(kRoyalSeedCount));
     }
 
     if (has_wsc) {
@@ -403,33 +428,20 @@ void drainInbound() {
                 last_wsc.set_wonder_seed_counts.counts[i],
                 std::memory_order_relaxed);
         }
-        if (dedup_wsc_skipped > 0) {
-            SMBWAP_LOG_INFO(
-                "[grant] coalesced SetWonderSeedCounts (collapsed %d "
-                "earlier duplicate%s within this drain) counts="
-                "[%u,%u,%u,%u,%u,%u,%u,%u]",
-                dedup_wsc_skipped, dedup_wsc_skipped == 1 ? "" : "s",
-                last_wsc.set_wonder_seed_counts.counts[0],
-                last_wsc.set_wonder_seed_counts.counts[1],
-                last_wsc.set_wonder_seed_counts.counts[2],
-                last_wsc.set_wonder_seed_counts.counts[3],
-                last_wsc.set_wonder_seed_counts.counts[4],
-                last_wsc.set_wonder_seed_counts.counts[5],
-                last_wsc.set_wonder_seed_counts.counts[6],
-                last_wsc.set_wonder_seed_counts.counts[7]);
-        } else {
-            SMBWAP_LOG_INFO(
-                "[grant] drained SetWonderSeedCounts counts="
-                "[%u,%u,%u,%u,%u,%u,%u,%u]",
-                last_wsc.set_wonder_seed_counts.counts[0],
-                last_wsc.set_wonder_seed_counts.counts[1],
-                last_wsc.set_wonder_seed_counts.counts[2],
-                last_wsc.set_wonder_seed_counts.counts[3],
-                last_wsc.set_wonder_seed_counts.counts[4],
-                last_wsc.set_wonder_seed_counts.counts[5],
-                last_wsc.set_wonder_seed_counts.counts[6],
-                last_wsc.set_wonder_seed_counts.counts[7]);
-        }
+        const char* verb = coalesceVerb(
+            dedup_suffix, sizeof(dedup_suffix), dedup_wsc_skipped);
+        SMBWAP_LOG_INFO(
+            "[grant] %s SetWonderSeedCounts%s counts="
+            "[%u,%u,%u,%u,%u,%u,%u,%u]",
+            verb, dedup_suffix,
+            last_wsc.set_wonder_seed_counts.counts[0],
+            last_wsc.set_wonder_seed_counts.counts[1],
+            last_wsc.set_wonder_seed_counts.counts[2],
+            last_wsc.set_wonder_seed_counts.counts[3],
+            last_wsc.set_wonder_seed_counts.counts[4],
+            last_wsc.set_wonder_seed_counts.counts[5],
+            last_wsc.set_wonder_seed_counts.counts[6],
+            last_wsc.set_wonder_seed_counts.counts[7]);
     }
 
     if (drained > 0) {

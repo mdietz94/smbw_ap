@@ -35,6 +35,7 @@
 #include "ap/ApProtocol.hpp"
 #include "probe/DeathLink.hpp"
 #include "probe/Gates.hpp"
+#include "probe/Gmd.hpp"
 #include "util/Log.hpp"
 
 namespace nn::socket {
@@ -57,14 +58,6 @@ HkTrampoline<void, void*> createRootHeapHook = hk::hook::trampoline(
         SMBWAP_LOG_INFO("hook: CreateRootHeap fire (pre)");
         createRootHeapHook.orig(thisPtr);
         SMBWAP_LOG_INFO("hook: CreateRootHeap fire (post)");
-    });
-
-HkTrampoline<void, void*> createFileDeviceMgrHook = hk::hook::trampoline(
-    [](void* thisPtr) -> void {
-        SMBWAP_LOG_INFO("hook: CreateFileDeviceMgr fire (pre)");
-        createFileDeviceMgrHook.orig(thisPtr);
-        SMBWAP_LOG_INFO("hook: CreateFileDeviceMgr fire (post) — draining to SD");
-        smbwap::util::drainPendingToFile();
     });
 
 HkTrampoline<void, void*, const void*> gameFrameworkInitializeHook =
@@ -417,6 +410,35 @@ void enqueuePlayReportFromIpc(const PrepoInArrayChar* room,
     smbwap::ap::enqueuePlayReport(room_buf, pay_ptr, pay_size);
 }
 
+// 2026-05-27 save-event queue-depth correlation.  Bracket Orig() of the
+// prepo IPC save-report hook with a depth snapshot of all three
+// GameDataMgr dirty queues so we can see whether prepo events drain the
+// rings.
+//
+// First-session result (Ryujinx_1.3.3_2026-05-27_17-00-00.log, 6 min of
+// active play): all 18 brackets showed qA=0->0  qA2=0->0  qB=0->0.
+// Prepo IPC events are NOT a drain trigger.  Drain happens via some
+// other code path (probably a per-frame or per-area-transition flusher),
+// running fast enough that depth returns to 0 between RUN samples 30+ s
+// apart.  Downgraded to DEBUG so the bracket is still available if we
+// ever need to look again (e.g. an unknown future code path starts
+// accumulating) but doesn't spam INFO output.
+static void logQueueDepthPrePost(const char* label,
+                                  const probe::QueueDepth& qa_pre,
+                                  const probe::QueueDepth& qas_pre,
+                                  const probe::QueueDepth& qb_pre) {
+    const auto qa_post  = probe::readQueueA_primary();
+    const auto qas_post = probe::readQueueA_secondary();
+    const auto qb_post  = probe::readQueueB();
+    SMBWAP_LOG_DEBUG(
+        "[gmd] %s queue depth pre->post: "
+        "qA=%u->%u/%u  qA2=%u->%u/%u  qB=%u->%u/%u",
+        label,
+        qa_pre.depth(),  qa_post.depth(),  qa_post.cap,
+        qas_pre.depth(), qas_post.depth(), qas_post.cap,
+        qb_pre.depth(),  qb_post.depth(),  qb_post.cap);
+}
+
 HkTrampoline<unsigned, void*, const PrepoInArrayChar*, const PrepoInBuffer*,
              unsigned long>
     prepoIpcSaveReportHook = hk::hook::trampoline(
@@ -435,7 +457,13 @@ HkTrampoline<unsigned, void*, const PrepoInArrayChar*, const PrepoInBuffer*,
             // Forward to the bridge BEFORE Orig so a hypothetical
             // Orig-aborting path still gets the event recorded.
             enqueuePlayReportFromIpc(room, pay_ptr, pay_size);
-            return prepoIpcSaveReportHook.orig(thisPtr, room, payload, flags);
+            const auto qa_pre  = probe::readQueueA_primary();
+            const auto qas_pre = probe::readQueueA_secondary();
+            const auto qb_pre  = probe::readQueueB();
+            const auto ret = prepoIpcSaveReportHook.orig(
+                thisPtr, room, payload, flags);
+            logQueueDepthPrePost("prepo.ipc.save", qa_pre, qas_pre, qb_pre);
+            return ret;
         });
 
 HkTrampoline<unsigned, void*, const void*, const PrepoInArrayChar*,
@@ -456,8 +484,14 @@ HkTrampoline<unsigned, void*, const void*, const PrepoInArrayChar*,
             // Bridge treats either IPC variant identically; the uid is
             // irrelevant for AP routing.
             enqueuePlayReportFromIpc(room, pay_ptr, pay_size);
-            return prepoIpcSaveReportWithUserHook.orig(
+            const auto qa_pre  = probe::readQueueA_primary();
+            const auto qas_pre = probe::readQueueA_secondary();
+            const auto qb_pre  = probe::readQueueB();
+            const auto ret = prepoIpcSaveReportWithUserHook.orig(
                 thisPtr, uid, room, payload, flags);
+            logQueueDepthPrePost("prepo.ipc.save_uid",
+                                  qa_pre, qas_pre, qb_pre);
+            return ret;
         });
 
 // =========================================================================
@@ -568,8 +602,6 @@ extern "C" void hkMain() {
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
                 createRootHeapHook.installAtMainOffset(0x005a66f8));
-    installHook("CreateFileDeviceMgr",     0x005a6110,
-                createFileDeviceMgrHook.installAtMainOffset(0x005a6110));
     installHook("GameFrameworkInitialize", 0x005a5cfc,
                 gameFrameworkInitializeHook.installAtMainOffset(0x005a5cfc));
 
