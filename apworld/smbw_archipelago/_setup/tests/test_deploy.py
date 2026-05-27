@@ -14,10 +14,11 @@ from apworld.smbw_archipelago._setup import deploy as D
 
 
 def _make_build_outputs(tmp_path: Path) -> dict[str, Path]:
-    """Synthesize the two artifacts the build phase produces."""
-    subsdk = tmp_path / "build" / "subsdk9"
-    npdm = tmp_path / "build" / "subsdk9.npdm"
-    subsdk.parent.mkdir(parents=True)
+    """Synthesize the two artifacts LibHakkun's build places in build/exefs/."""
+    exefs = tmp_path / "build" / "exefs"
+    exefs.mkdir(parents=True)
+    subsdk = exefs / "subsdk9"
+    npdm = exefs / "main.npdm"
     subsdk.write_bytes(b"FAKE_SUBSDK9_CONTENT" * 100)
     npdm.write_bytes(b"FAKE_NPDM" * 100)
     return {"subsdk9": subsdk, "main.npdm": npdm}
@@ -29,22 +30,19 @@ def test_ryujinx_layout_includes_title_id_and_mod_name(tmp_path: Path) -> None:
     assert D.RYU_MOD_NAME in str(layout["subsdk9"])
     # Both artifacts go to the same exefs dir.
     assert layout["subsdk9"].parent == layout["main.npdm"].parent
-    # The .npdm is renamed to main.npdm during copy (per CLAUDE.md).
     assert layout["main.npdm"].name == "main.npdm"
 
 
-def test_deploy_to_ryujinx_copies_and_renames(tmp_path: Path) -> None:
+def test_deploy_to_ryujinx_copies_artifacts(tmp_path: Path) -> None:
     outputs = _make_build_outputs(tmp_path)
     ryu_root = tmp_path / "ryujinx"
     ryu_root.mkdir()
     result = D.deploy_to_ryujinx(ryu_root, outputs)
     assert result.ok is True
     assert len(result.files) == 2
-    # Each dest file exists and matches source size.
     for src, dst in result.files:
         assert dst.is_file()
         assert dst.stat().st_size == src.stat().st_size
-    # main.npdm is named correctly (the rename happened).
     exefs = ryu_root / "mods" / "contents" / D.SMBW_TITLE_ID / D.RYU_MOD_NAME / "exefs"
     assert (exefs / "subsdk9").is_file()
     assert (exefs / "main.npdm").is_file()
@@ -64,7 +62,7 @@ def test_deploy_to_ryujinx_surfaces_missing_source(tmp_path: Path) -> None:
     cleaned mid-run), deploy must report it clearly rather than crash."""
     outputs = {
         "subsdk9": tmp_path / "does-not-exist" / "subsdk9",
-        "main.npdm": tmp_path / "does-not-exist" / "subsdk9.npdm",
+        "main.npdm": tmp_path / "does-not-exist" / "main.npdm",
     }
     ryu_root = tmp_path / "ryujinx"
     ryu_root.mkdir()

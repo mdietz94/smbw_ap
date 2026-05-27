@@ -19,8 +19,8 @@ from apworld.smbw_archipelago._setup import build as B
 def test_expected_artifacts_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
     arts = B.expected_artifacts()
-    assert arts["subsdk9"] == tmp_path / "switch-mod" / "build" / "subsdk9"
-    assert arts["main.npdm"] == tmp_path / "switch-mod" / "build" / "subsdk9.npdm"
+    assert arts["subsdk9"] == tmp_path / "switch-mod" / "build" / "exefs" / "subsdk9"
+    assert arts["main.npdm"] == tmp_path / "switch-mod" / "build" / "exefs" / "main.npdm"
 
 
 def test_compose_build_env_prepends_llvm_bin(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -99,8 +99,9 @@ def test_run_build_phase_skips_configure_when_cache_exists(monkeypatch: pytest.M
     def fake_build(**kw: Any) -> B.BuildResult:
         build_calls.append(kw)
         # Materialize artifacts so post-build verification passes.
-        (bd / "subsdk9").write_bytes(b"x")
-        (bd / "subsdk9.npdm").write_bytes(b"y")
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
         return B.BuildResult(True, 0, "")
 
     monkeypatch.setattr(B, "cmake_configure", fake_configure)
@@ -127,8 +128,9 @@ def test_run_build_phase_runs_configure_when_cache_missing(monkeypatch: pytest.M
         return B.BuildResult(True, 0, "")
 
     def fake_build(**kw: Any) -> B.BuildResult:
-        (bd / "subsdk9").write_bytes(b"x")
-        (bd / "subsdk9.npdm").write_bytes(b"y")
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
         return B.BuildResult(True, 0, "")
 
     monkeypatch.setattr(B, "cmake_configure", fake_configure)
@@ -167,8 +169,9 @@ def test_run_build_phase_fails_on_empty_artifacts(monkeypatch: pytest.MonkeyPatc
     (bd / "CMakeCache.txt").write_text("", encoding="utf-8")
 
     def fake_build(**_kw: Any) -> B.BuildResult:
-        (bd / "subsdk9").write_bytes(b"")          # empty
-        (bd / "subsdk9.npdm").write_bytes(b"x")
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"")          # empty
+        (bd / "exefs" / "main.npdm").write_bytes(b"x")
         return B.BuildResult(True, 0, "")
 
     monkeypatch.setattr(B, "cmake_configure", lambda **_k: B.BuildResult(True, 0, ""))
