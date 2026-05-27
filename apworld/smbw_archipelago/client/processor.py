@@ -56,6 +56,72 @@ _HUB_HOUSE_STAGE_KEYS: frozenset[int] = frozenset({
 })
 
 
+# stage_key -> SMBW internal badge id (== container-C owned-bitfield
+# bit position).  When the player clears one of these courses we emit
+# a BADGE_ACQUIRED check in addition to the normal exit-type checks --
+# this is a robustness layer on top of the Switch-side bitfield diff-
+# on-overwrite detector in main.cpp, which we've seen miss pickups in
+# practice.  Internal_ids come from badge_table._BADGES; stage_keys
+# from location_table._STAGE_*.
+#
+# Coverage rationale (sources: mariowiki.com per-badge entries):
+#   - Badge Challenge "I" courses hand the player the badge on first
+#     clear; the "II" courses are harder follow-ups that don't normally
+#     re-grant, but we include them so a player who somehow gets the II
+#     first (or the apworld randomizer routes them oddly) still gets
+#     credit.  Duplicate emits dedup at BridgeState.emit_check.
+#   - Badge House in Pipe-Rock Plateau gives Parachute Cap; the house
+#     fires course_result on completion like a normal course.
+#   - Mountaineering! (Wiggler Race) gives Auto Super Mushroom on win.
+#   - Ninji Jump Party gives Rhythm Jump on clear.
+#   - Upshroom Downshroom: the Sensor badge is handed over mid-course
+#     by the bridge-repair Poplin near the start.  Emit on clear so a
+#     player who entered, got the badge, then completed the course gets
+#     AP credit; replaying the course will re-fire and the AP server
+#     dedups by location-already-checked.
+#   - WONDER? (Special): the Sound Off? badge is handed over by the
+#     talking flower inside this "course" (AP treats it as a Normal
+#     Exit).  Emit on clear.
+_STAGE_TO_BADGE_INTERNAL_ID: dict[int, int] = {
+    # Action badges via Badge Challenge courses.
+    0xDADED63E: 34,  # W1: Wall-Climb Jump I  -> Wall-Climb Jump
+    0x283CE2B9: 34,  # W2: Wall-Climb Jump II -> Wall-Climb Jump
+    0x1922DA45: 19,  # W1: Jet Run I          -> Jet Run
+    0x69B9F9E6: 19,  # W6: Jet Run II         -> Jet Run
+    0x83774434: 0,   # W2: Floating High Jump I  -> Floating High Jump
+    0xB824B96F: 0,   # W6: Floating High Jump II -> Floating High Jump
+    0xF421DB55: 4,   # W2: Spring Feet I  -> Spring Feet
+    0xAE4E8917: 4,   # W6: Spring Feet II -> Spring Feet
+    0x4B4B3D59: 29,  # PI: Dolphin Kick I  -> Dolphin Kick
+    0xB8C524FB: 29,  # PI: Dolphin Kick II -> Dolphin Kick
+    0xABE6B13D: 14,  # PI: Boosting Spin Jump I  -> Boosting Spin Jump
+    0xC8047777: 14,  # W6: Boosting Spin Jump II -> Boosting Spin Jump
+    0xA56D29C2: 39,  # W3: Crouching High Jump I  -> Crouching High Jump
+    0x8CFF55FD: 39,  # W4: Crouching High Jump II -> Crouching High Jump
+    0xC2CCC664: 53,  # W5: Grappling Vine I  -> Grappling Vine
+    0x51FC5E9E: 53,  # W6: Grappling Vine II -> Grappling Vine
+    0x715BCAE8: 38,  # W4: Invisibility I  -> Invisibility
+    0xF065407A: 38,  # W6: Invisibility II -> Invisibility
+
+    # Boost / story badges via non-challenge courses.
+    0x954EB962: 46,  # W1: Mountaineering! (Wiggler Race) -> Auto Super Mushroom
+    0x5524F03C: 47,  # W4: Ninji Jump Party -> Rhythm Jump
+
+    # Parachute Cap -- the Pipe-Rock Plateau Badge House hands the
+    # badge over as the player passes through.
+    0xA3207D45: 35,  # W1: Badge House in Pipe-Rock Plateau -> Parachute Cap
+
+    # Sensor -- handed over mid-course at the start of Upshroom
+    # Downshroom by the bridge-repair Poplin.  Story trigger, not a
+    # true challenge reward, but emit on clear so the AP check fires.
+    0x54A60980: 32,  # W5: Upshroom Downshroom -> Sensor
+
+    # Sound Off? -- the post-game cosmetic, awarded by the talking
+    # flower inside the WONDER? stage.
+    0x2D438F37: 33,  # Special: WONDER? -> Sound Off?
+}
+
+
 # ---------------------------------------------------------------------------
 # Top-level dispatch.
 
@@ -347,7 +413,46 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
             emitted.append(clear)
 
     emitted.extend(_emit_ten_coin_checks(state, stage_info, fields))
+    emitted.extend(_emit_course_clear_badge(state, stage_info))
     return emitted
+
+
+def _emit_course_clear_badge(
+    state: BridgeState,
+    stage_info: dict[str, Any],
+) -> list[CheckEmitted]:
+    """Emit a BADGE_ACQUIRED check if the cleared course is one that
+    awards a badge in-game (badge challenge, badge house, story trigger).
+
+    This is a robustness layer parallel to the Switch-side container-C
+    bitfield diff-on-overwrite detector: in-game badge pickups SHOULD
+    be detected by that path, but it relies on the AP-authoritative
+    overwrite tick firing while the bit is still set live, which races
+    with scene transitions and has been observed to miss in practice.
+    Emitting on course clear is reliable -- the course_result PlayReport
+    is queued by the IPC layer and reaches the bridge regardless of
+    scene state.  Dedup at BridgeState.emit_check means a re-clear of
+    the same course is a no-op rather than a double-fire.
+    """
+    badge_id = _STAGE_TO_BADGE_INTERNAL_ID.get(stage_info["stage_key"])
+    if badge_id is None:
+        return []
+    check = CheckEmitted(
+        kind=CheckKind.BADGE_ACQUIRED,
+        stage_key=badge_id,
+        metadata={
+            "source": "course_clear",
+            "course_stage_key": stage_info["stage_key"],
+            "world_no": stage_info.get("world_no", 0),
+            "course_no": stage_info.get("course_no", 0),
+        },
+    )
+    if state.emit_check(check):
+        log.info(
+            "course_result → badge_acquired internal_id=%d (course stage_key=%d)",
+            badge_id, stage_info["stage_key"])
+        return [check]
+    return []
 
 
 def _emit_ten_coin_checks(
@@ -387,19 +492,24 @@ def _emit_ten_coin_checks(
 # (corpus 2026-05-25, captured across W1 / PI / W2 / W3 / W4 shops):
 #
 #   0 = badge       (item_value = badge internal_id, e.g. 8=Fast Dash,
-#                    55=Coin Reward).  NOT emitted here — the Switch-side
-#                    ``probe::setBadgeBitfieldAbsolute`` already does
-#                    read-diff-then-write (main.cpp ~L1142:
-#                    "M2.3 -- diff-on-overwrite") so any badge bit set
-#                    in-game produces a BadgeAcquiredMsg on the next
-#                    ~2 s tick.  That's the canonical path for the
-#                    "<Badge> Obtained" AP location family; emitting
-#                    the same check here would be redundant.
+#                    55=Coin Reward).  Fires BADGE_ACQUIRED.  This is a
+#                    parallel path to the Switch-side container-C
+#                    bitfield diff-on-overwrite detector in main.cpp
+#                    (``probe::setBadgeBitfieldAbsolute`` "M2.3 -- diff-
+#                    on-overwrite"); both can fire for the same buy and
+#                    BridgeState.emit_check dedups by (kind, stage_key=
+#                    internal_id) so only one AP LocationCheck goes out.
+#                    The shop-result path is more reliable in practice
+#                    because it doesn't race the 2 s overwrite tick or
+#                    the scene-transition gate -- the PlayReport is
+#                    queued by the IPC layer and reaches the bridge
+#                    regardless of scene state.
 #   1 = Wonder Seed (item_value = per-shop slot index; 0 for single-seed
 #                    shops, 0/1/2 for the W4 Secret 3-slot shop in
 #                    cheapest-first shelf order).  Fires SHOP_SEED.
 #   2 = consumable  (1-up; item_value = count).  Not an AP location family;
 #                    silently dropped.
+_SHOP_ITEM_KIND_BADGE: int = 0
 _SHOP_ITEM_KIND_WONDER_SEED: int = 1
 
 
@@ -430,10 +540,12 @@ def _handle_general_shop_result(
             (0 for single-seed shops; 0/1/2 for the W4 Secret triple in
             cheapest-first shelf order).  Dedup sub_key is shop_slot
             so a multi-slot shop's seeds dedup independently.
-        ==0 (badge) and ==2 (consumable) → silently dropped.  Badges
-            are covered by the Switch-side bitfield-diff path
-            (BadgeAcquiredMsg via probe::setBadgeBitfieldAbsolute);
-            consumables aren't an AP location family.
+        ==0 (badge) → BADGE_ACQUIRED check.  item_value is the SMBW
+            internal badge id (== container-C bitfield bit position ==
+            badge_table._BADGES[*][1]).  Parallel to the Switch-side
+            bitfield-diff path; both can fire and the BridgeState
+            dedup by (kind, stage_key=internal_id) collapses them.
+        ==2 (consumable) → silently dropped (not an AP location family).
 
     item_info_array can carry multiple items per transaction (a multi-buy
     where the player nets two seeds in one purchase, for example).
@@ -466,34 +578,53 @@ def _handle_general_shop_result(
         value = item.get("item_value")
         ivalue = int(value) if isinstance(value, int) else 0
 
-        if kind != _SHOP_ITEM_KIND_WONDER_SEED:
-            # item_kind=0 (badge) — covered by the Switch-side
-            # bitfield-diff path, see module-level comment.
-            # item_kind=2 (consumable) — not an AP family.
-            # Any other kind — log and drop until we have data.
-            log.debug(
-                "general_shop_result: dropping kind=%r value=%r "
-                "at (world=%d, npc=%d)", kind, value, world_no, npc_id)
+        if kind == _SHOP_ITEM_KIND_WONDER_SEED:
+            check = CheckEmitted(
+                kind=CheckKind.SHOP_SEED,
+                stage_key=shop_key,
+                metadata={
+                    "world_no": world_no,
+                    "npc_id": npc_id,
+                    "item_value": ivalue,
+                    "shop_slot": ivalue,
+                },
+            )
+            if state.emit_check(check):
+                log.info(
+                    "general_shop_result → shop_seed at (world=%d, npc=%d, slot=%d)",
+                    world_no, npc_id, ivalue)
+                emitted.append(check)
+            else:
+                log.debug(
+                    "general_shop_result dup at (world=%d, npc=%d, slot=%d); dropped",
+                    world_no, npc_id, ivalue)
             continue
-        check = CheckEmitted(
-            kind=CheckKind.SHOP_SEED,
-            stage_key=shop_key,
-            metadata={
-                "world_no": world_no,
-                "npc_id": npc_id,
-                "item_value": ivalue,
-                "shop_slot": ivalue,
-            },
-        )
-        if state.emit_check(check):
-            log.info(
-                "general_shop_result → shop_seed at (world=%d, npc=%d, slot=%d)",
-                world_no, npc_id, ivalue)
-            emitted.append(check)
-        else:
-            log.debug(
-                "general_shop_result dup at (world=%d, npc=%d, slot=%d); dropped",
-                world_no, npc_id, ivalue)
+
+        if kind == _SHOP_ITEM_KIND_BADGE:
+            check = CheckEmitted(
+                kind=CheckKind.BADGE_ACQUIRED,
+                stage_key=ivalue,
+                metadata={
+                    "source": "shop_buy",
+                    "world_no": world_no,
+                    "npc_id": npc_id,
+                },
+            )
+            if state.emit_check(check):
+                log.info(
+                    "general_shop_result → badge_acquired internal_id=%d "
+                    "at (world=%d, npc=%d)", ivalue, world_no, npc_id)
+                emitted.append(check)
+            else:
+                log.debug(
+                    "general_shop_result badge dup internal_id=%d "
+                    "at (world=%d, npc=%d); dropped", ivalue, world_no, npc_id)
+            continue
+
+        # item_kind=2 (consumable) and anything unrecognized.
+        log.debug(
+            "general_shop_result: dropping kind=%r value=%r "
+            "at (world=%d, npc=%d)", kind, value, world_no, npc_id)
     return emitted
 
 
