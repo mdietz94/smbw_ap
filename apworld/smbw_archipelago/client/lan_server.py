@@ -66,6 +66,13 @@ from .state import BridgeState
 
 log = logging.getLogger("SMBW")
 
+_SWITCH_LEVEL_MAP: dict[str, int] = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "warn": logging.WARNING,
+    "error": logging.ERROR,
+}
+
 
 BRIDGE_VERSION = "bridge-m4-dev"
 """Reported back to the Switch in HELLO_ACK.  Bump for observable
@@ -612,6 +619,14 @@ class LanServer:
 
         if isinstance(msg, wire.ErrMsg):
             log.warning("switch %s reports err: %s", peer, msg.reason)
+            return
+
+        if isinstance(msg, wire.LogMsg):
+            log.log(
+                _SWITCH_LEVEL_MAP.get(msg.level, logging.INFO),
+                "[switch] %s",
+                msg.msg,
+            )
             return
 
         # HelloAck / GrantBadge from the Switch shouldn't happen; the

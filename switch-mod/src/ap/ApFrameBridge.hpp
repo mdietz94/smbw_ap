@@ -84,6 +84,13 @@ bool enqueueBadgeAcquired(std::uint32_t internal_id);
 bool enqueuePlayReport(const char* room,
                        const void* payload, std::size_t payload_len);
 
+// Relay a SMBWAP_LOG_* line to the PC bridge.  `level` is one of
+// "debug", "info", "warn", "error"; `msg` is the formatted body
+// WITHOUT the "[smbwap x] " prefix.  Safe to call from any thread.
+// No-ops silently when disconnected or when the ring is full.
+// MUST NOT call SMBWAP_LOG_* internally -- would recurse via util::log().
+void enqueueLog(const char* level, const char* msg);
+
 // Game-thread-only.  Pops every queued inbound message and applies it.
 // Called from the top of NerveActivateOnce::Callback and
 // SetCourseClearFlagExecute::Callback.

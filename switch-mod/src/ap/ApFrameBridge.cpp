@@ -10,6 +10,18 @@
 
 namespace smbwap::ap {
 
+void enqueueLog(const char* level, const char* msg) {
+    // No SMBWAP_LOG_* here -- would recurse through util::log().
+    // Drop silently when not connected so we don't backlog the ring.
+    if (connState().load(std::memory_order_relaxed) == ConnState::Disconnected) return;
+    OutboundEvent ev;
+    ev.kind = OutboundKind::Log;
+    ev.log = WireLog{};
+    copyFixed(ev.log.level, level);
+    copyFixed(ev.log.msg, msg);
+    outboundRing().push(ev);  // silent drop on full -- no log here
+}
+
 // AP-authoritative Wonder Seed per-world counts.  Updated by drainInbound
 // on every SetWonderSeedCountsMsg; read by main.cpp's NerveActivateOnce
 // tick to decide what value to push via probe::pushWonderSeedOverride.

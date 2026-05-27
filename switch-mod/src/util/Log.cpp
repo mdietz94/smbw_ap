@@ -22,6 +22,10 @@
 
 #include <hk/svc/api.h>
 
+// Forward-declare the remote-log relay provided by ApFrameBridge.
+// Defined there; we forward-declare here to avoid a circular include.
+namespace smbwap::ap { void enqueueLog(const char* level, const char* msg); }
+
 // Compile-time threshold for the kernel debug-log sink. 0=Debug, 1=Info, ...
 // Default INFO keeps per-frame DEBUG diagnostics out of normal Ryujinx logs.
 // Rebuild with -DSMBWAP_LOG_SINK_MIN_LEVEL=0 to surface DEBUG when needed.
@@ -42,6 +46,16 @@ const char* prefix(LogLevel lvl) {
         case LogLevel::Error: return "[smbwap err] ";
     }
     return "[smbwap ?] ";
+}
+
+const char* levelWire(LogLevel lvl) {
+    switch (lvl) {
+        case LogLevel::Debug: return "debug";
+        case LogLevel::Info:  return "info";
+        case LogLevel::Warn:  return "warn";
+        case LogLevel::Error: return "error";
+    }
+    return "info";
 }
 
 // ---- always-on ring buffer ----------------------------------------------
@@ -100,6 +114,12 @@ void log(LogLevel lvl, const char* fmt, ...) {
     }
 
     ringAppend(buf, total);
+
+    // Relay to the PC bridge so Switch logs appear in the AP client panel.
+    // Temporarily restore the null terminator (replacing the trailing '\n')
+    // so buf+pfx_len is a valid C-string for enqueueLog's copyFixed.
+    buf[total - 1] = '\0';
+    smbwap::ap::enqueueLog(levelWire(lvl), buf + pfx_len);
 }
 
 char* snapshotRecentLogs(char* out, std::size_t cap, std::size_t* out_len) {

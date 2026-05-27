@@ -25,6 +25,8 @@ inline constexpr std::size_t kMaxLineBytes = 8 * 1024;
 inline constexpr std::size_t kModVerCap   = 32;
 inline constexpr std::size_t kGameVerCap  = 16;
 inline constexpr std::size_t kRoomCap     = 32;     // PlayReport room names ≤ ~20 chars
+inline constexpr std::size_t kLogLevelCap = 8;      // "debug", "info", "warn", "error"
+inline constexpr std::size_t kLogMsgCap   = 480;    // truncates longer messages
 // Live play observed course_result payloads at 1575 bytes (M4 first run,
 // 2026-05-24).  The M2 corpus undersold the upper bound -- bumped to 6 KiB
 // to leave headroom for the M5 ten-coin / palace_result variants we
@@ -86,6 +88,16 @@ struct WirePing {
     std::int64_t ts_ms = 0;
 };
 
+// Switch -> Bridge.  Relay of a SMBWAP_LOG_* line to the PC client so
+// Switch-side diagnostics appear in the AP client's log panel without
+// requiring a Ryujinx log tail.  `level` mirrors the LogLevel names
+// ("debug", "info", "warn", "error"); `msg` is the formatted body
+// without the "[smbwap x] " prefix.  Truncated at kLogMsgCap chars.
+struct WireLog {
+    char level[kLogLevelCap] = {};
+    char msg[kLogMsgCap] = {};
+};
+
 // Tagged union of outbound events -- one element of the outbound SPSC
 // ring.  Fixed-size POD; safe to memcpy across the thread boundary.
 enum class OutboundKind : std::uint8_t {
@@ -95,6 +107,7 @@ enum class OutboundKind : std::uint8_t {
     PlayReport = 3,
     Ping = 4,
     BadgeAcquired = 5,
+    Log = 6,
 };
 
 struct OutboundEvent {
@@ -105,6 +118,7 @@ struct OutboundEvent {
         WirePlayReport play_report;
         WirePing ping;
         WireBadgeAcquired badge_acquired;
+        WireLog log;
     };
     // Default-construct the inactive members; the consumer reads via `kind`.
     OutboundEvent() : kind(OutboundKind::None), hello{} {}
@@ -115,6 +129,7 @@ void encodeNerveFire(util::json::LineBuffer& out, const WireNerveFire& msg);
 void encodeBadgeAcquired(util::json::LineBuffer& out, const WireBadgeAcquired& msg);
 void encodePlayReport(util::json::LineBuffer& out, const WirePlayReport& msg);
 void encodePing(util::json::LineBuffer& out, const WirePing& msg);
+void encodeLog(util::json::LineBuffer& out, const WireLog& msg);
 void encodePong(util::json::LineBuffer& out, std::int64_t ts_ms);
 
 // Dispatch helper: encode whichever variant `ev.kind` selects.  Returns false
