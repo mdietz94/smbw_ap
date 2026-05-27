@@ -178,3 +178,46 @@ def test_stream_subprocess_spawn_failure(monkeypatch: pytest.MonkeyPatch) -> Non
     assert r.ok is False
     assert r.returncode == 127
     assert "failed to spawn" in r.detail
+
+
+def test_git_submodule_update_refuses_when_not_a_clone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Running the wizard from a release / pip install (no ``.git``) must
+    NOT shell out to git -- the user would see a cryptic
+    ``fatal: not a git repository`` instead of an actionable error."""
+    monkeypatch.setattr(I, "repo_root", lambda: tmp_path)   # no .git
+    spawned: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_kw: Any) -> I.InstallResult:
+        spawned.append(cmd)
+        return I.InstallResult(True, 0, "")
+
+    monkeypatch.setattr(I, "_stream_subprocess", fake_stream)
+    lines: list[str] = []
+    r = I._git_submodule_update("vendor/Archipelago", on_line=lines.append)
+    assert r.ok is False
+    assert "not a git clone" in r.detail
+    assert spawned == []   # never reached git
+    assert any("not a git clone" in ln for ln in lines)
+
+
+def test_git_submodule_update_runs_when_in_clone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Counterpart: with a ``.git`` directory present, the installer
+    proceeds to actually invoke git."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(I, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(I.shutil, "which", lambda _n: "/usr/bin/git")
+    spawned: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_kw: Any) -> I.InstallResult:
+        spawned.append(cmd)
+        return I.InstallResult(True, 0, "")
+
+    monkeypatch.setattr(I, "_stream_subprocess", fake_stream)
+    r = I._git_submodule_update("vendor/Archipelago")
+    assert r.ok is True
+    assert len(spawned) == 1
+    assert "submodule" in spawned[0]

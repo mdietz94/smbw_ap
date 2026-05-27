@@ -145,9 +145,56 @@ def test_check_archipelago_submodule_present(monkeypatch: pytest.MonkeyPatch,
 def test_check_archipelago_submodule_missing(monkeypatch: pytest.MonkeyPatch,
                                               tmp_path: Path) -> None:
     monkeypatch.setattr(P, "repo_root", lambda: tmp_path)
+    # No .git, but ALSO force AP to look unimportable so we don't trip
+    # the "satisfied by surrounding install" short-circuit.
+    monkeypatch.setattr(P, "archipelago_importable", lambda: False)
     r = P.check_archipelago_submodule()
     assert r.ok is False
     assert "missing" in r.detail
+
+
+def test_check_archipelago_submodule_short_circuits_on_ap_install(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """When AP is importable AND we're not in a dev clone (no ``.git``),
+    treat the submodule as satisfied -- a user running the wizard from
+    a packaged apworld install doesn't need to clone anything."""
+    monkeypatch.setattr(P, "repo_root", lambda: tmp_path)   # no .git
+    monkeypatch.setattr(P, "archipelago_importable", lambda: True)
+    r = P.check_archipelago_submodule()
+    assert r.ok is True
+    assert "surrounding" in r.detail.lower() or "satisfied" in r.detail.lower()
+
+
+def test_check_archipelago_submodule_does_not_short_circuit_in_dev_clone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """A dev clone with the submodule un-initialized must still report
+    failure even if AP happens to be importable (e.g. from a separate
+    pip install) -- the wizard needs the in-tree vendor/Archipelago for
+    the junction phase."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(P, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(P, "archipelago_importable", lambda: True)
+    r = P.check_archipelago_submodule()
+    assert r.ok is False
+    assert "missing" in r.detail
+
+
+def test_is_dev_clone_detects_git_directory(tmp_path: Path) -> None:
+    (tmp_path / ".git").mkdir()
+    assert P.is_dev_clone(tmp_path) is True
+
+
+def test_is_dev_clone_detects_git_file_for_worktree(tmp_path: Path) -> None:
+    """``git worktree`` checkouts have ``.git`` as a *file* containing
+    ``gitdir: ...``, not a directory.  is_dev_clone must accept both."""
+    (tmp_path / ".git").write_text("gitdir: /elsewhere/.git/worktrees/x\n")
+    assert P.is_dev_clone(tmp_path) is True
+
+
+def test_is_dev_clone_false_outside_repo(tmp_path: Path) -> None:
+    assert P.is_dev_clone(tmp_path) is False
 
 
 def test_check_switch_mod_submodule_present(monkeypatch: pytest.MonkeyPatch,

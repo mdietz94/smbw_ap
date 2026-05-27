@@ -207,3 +207,32 @@ def test_cli_main_parses_phases(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_cli_main_rejects_unknown_phase() -> None:
     rc = W.main(["--phases", "made-up-phase"])
     assert rc == 2
+
+
+def test_run_junction_skips_when_not_in_dev_clone(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When the wizard runs from a packaged install (no ``.git`` in the
+    apworld's parent tree), the junction phase has nothing meaningful
+    to do -- AP must already discover us some other way or we couldn't
+    be running.  Report ok=True so the pipeline continues to build /
+    deploy, and never call into install_junction()."""
+    from apworld.smbw_archipelago._setup import prereqs as P
+
+    install_called: list[bool] = []
+
+    def fake_install_junction(*_a: Any, **_kw: Any) -> Any:
+        install_called.append(True)
+        raise AssertionError("install_junction must not run when not in a dev clone")
+
+    monkeypatch.setattr(P, "is_dev_clone", lambda: False)
+    monkeypatch.setattr(
+        "apworld.smbw_archipelago._setup.junction.install_junction",
+        fake_install_junction,
+    )
+
+    events: list[dict[str, Any]] = []
+    out = W.run_junction(callback=events.append)
+    assert out.ok is True
+    assert out.action == "skipped"
+    assert install_called == []
+    actions = [e for e in events if e["event"] == "junction_result"]
+    assert actions and actions[0]["action"] == "skipped"
