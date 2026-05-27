@@ -442,6 +442,43 @@ void NerveActivateOnce::Callback(void* nerve)
                         s_fires, nerve, (unsigned long long)vt_off);
     }
 
+    // Distinct-vtable survey (2026-05-26 follow-up to the level-entry abort):
+    // log the FIRST time we see each unique vt_off so the operator can
+    // identify Nerves we're not currently latching as scene transitions.
+    // The kVtableOff_SceneTransition gate at 0x33fd9a8 doesn't appear to
+    // fire for level-entry (FUN_710049F750 abort observed during level
+    // entry on v0.2.2-alpha) -- if a new vt_off appears in the log right
+    // before an abort, that's our missing scene-transition Nerve.  Small
+    // fixed table to avoid heap usage; 64 slots is ample for the
+    // ~20-30 distinct Nerves observed in steady-state play.
+    if (vt_off != 0) {
+        constexpr size_t kVtSeenSlots = 64;
+        static std::atomic<std::uint64_t> s_vt_seen[kVtSeenSlots] = {};
+        static std::atomic<std::uint32_t> s_vt_seen_count{0};
+        bool already_seen = false;
+        const auto cnt = s_vt_seen_count.load(std::memory_order_acquire);
+        for (std::uint32_t i = 0; i < cnt && i < kVtSeenSlots; ++i) {
+            if (s_vt_seen[i].load(std::memory_order_relaxed)
+                == static_cast<std::uint64_t>(vt_off)) {
+                already_seen = true;
+                break;
+            }
+        }
+        if (!already_seen) {
+            // Atomically claim a slot.  Races between threads are fine --
+            // worst case the same vt_off gets logged twice.
+            const auto slot = s_vt_seen_count.fetch_add(
+                1, std::memory_order_acq_rel);
+            if (slot < kVtSeenSlots) {
+                s_vt_seen[slot].store(static_cast<std::uint64_t>(vt_off),
+                                      std::memory_order_release);
+                SMBWAP_LOG_INFO(
+                    "NERVE_NEW_VT: slot=%u vt_off=NSO+0x%llx fire=%d",
+                    slot, (unsigned long long)vt_off, s_fires);
+            }
+        }
+    }
+
     // Target match: log unconditionally when the Wonder Seed Nerve activates.
     // This is THE per-pickup signal we've been trying to find — fires exactly
     // once when the player collects the Wonder Seed at the end of the Wonder
@@ -508,48 +545,41 @@ void NerveActivateOnce::Callback(void* nerve)
                 (unsigned long long)p[10], (unsigned long long)p[11]);
         }
 
-        // Discriminator pinned 2026-05-25 (R-2026-05-25 5-event obs run):
-        // two distinct nerve instances share vtable 0x33fd9a8 and the
-        // game routes them by purpose:
+        // Discriminator pinned 2026-05-25 (R-2026-05-25 5-event obs run);
+        // tightened 2026-05-26 after a Wonder-Seed-cleanup false positive.
+        // Distinct nerve instances share vtable 0x33fd9a8 and the game
+        // routes them by purpose; the type enum lives at +0x18 as a u64:
         //   * Player-controlled exit (restart course, exit course) ->
-        //     nerve_A (pointer stable across both events in one
-        //     session), `*(u32*)(nerve+0x18) == 0x84`, high u32 ==
-        //     0x00ff0037.
+        //     nerve_A, `*(u64*)(nerve+0x18) == 0x00ff003700000084`.
         //   * Mario death (pit, enemy hit, etc.) ->
-        //     nerve_B (stable across all 3 observed deaths in one
-        //     session), `*(u32*)(nerve+0x18) == 0x04`, high u32 ==
-        //     0x00ff0006.
+        //     nerve_B, `*(u64*)(nerve+0x18) == 0x00ff000600000004`.
+        //   * Post-Wonder-Seed-grab cleanup transition (observed 2026-05-26)
+        //     -> `*(u64*)(nerve+0x18) == 0x00ff000f00000004`.  Same low
+        //     u32 as death (0x04) -- the original low-u32-only filter
+        //     was misfiring DeathLink on every Wonder Seed.
         //
         // Death is the WHITELIST -- we only enqueue DEATH_DETECTED when
-        // the +0x18 low u32 reads 0x04.  Any other value (the 0x84
-        // controlled-exit enum; any unobserved variant like world-map
-        // travel, palace-clear, pause-quit) is logged + dropped.  This
-        // is more conservative than blacklisting 0x84; if a new sibling
-        // enum appears, we'd rather drop it than misfire DeathLinks.
-        //
-        // OPEN VERIFICATION: the diff was only against in-course events
-        // (restart / exit / death).  World-map travel and palace-clear
-        // were NOT in the observation pass.  If a non-death scenario
-        // accidentally fires DEATH_DETECTED during M3.8 smoke testing,
-        // the SCENE_TRANSITION dump (still enabled below for the first
-        // 30 fires) will reveal the new enum -> refine the filter.
+        // the full u64 at +0x18 matches the death enum exactly.  Any other
+        // value is logged + dropped.  Conservative against any further
+        // unobserved siblings (world-map travel, palace-clear, pause-quit,
+        // file-select -- none of these were in the observation pass).
         constexpr std::ptrdiff_t kDeathDiscriminator_Off = 0x18;
-        constexpr std::uint32_t  kDeathDiscriminator_Val = 0x00000004u;
+        constexpr std::uint64_t  kDeathDiscriminator_Val = 0x00ff000600000004ull;
 
         constexpr bool kEnableDeathDetect_Naive = true;
         if (kEnableDeathDetect_Naive && nerve) {
-            const auto state_word = *reinterpret_cast<const std::uint32_t*>(
+            const auto state_word = *reinterpret_cast<const std::uint64_t*>(
                 reinterpret_cast<const std::uint8_t*>(nerve)
                 + kDeathDiscriminator_Off);
             if (state_word != kDeathDiscriminator_Val) {
-                // Controlled exit / other transition -- not a death.
-                // Bounded log so a long session doesn't flood the file
-                // with non-death scene-transition lines.
+                // Controlled exit / Wonder-Seed cleanup / other transition
+                // -- not a death.  Bounded log so a long session doesn't
+                // flood the file with non-death scene-transition lines.
                 if (s_scene_fires <= 30) {
                     SMBWAP_LOG_INFO(
-                        "SCENE_TRANSITION non-death (state=0x%08x) "
+                        "SCENE_TRANSITION non-death (state=0x%016llx) "
                         "nerve=%p (fire #%d) -- not enqueuing",
-                        static_cast<unsigned>(state_word),
+                        static_cast<unsigned long long>(state_word),
                         nerve, s_scene_fires);
                 }
             } else if (probe::g_synthetic_death_this_frame.exchange(
@@ -565,9 +595,9 @@ void NerveActivateOnce::Callback(void* nerve)
                     "nerve=%p (fire #%d)", nerve, s_scene_fires);
             } else {
                 SMBWAP_LOG_INFO(
-                    "DEATH_DETECTED: nerve=%p (fire #%d) state=0x%08x",
+                    "DEATH_DETECTED: nerve=%p (fire #%d) state=0x%016llx",
                     nerve, s_scene_fires,
-                    static_cast<unsigned>(state_word));
+                    static_cast<unsigned long long>(state_word));
                 smbwap::ap::enqueueNerveFire(
                     smbwap::ap::NerveKind::DeathDetected,
                     static_cast<std::uint32_t>(s_scene_fires));

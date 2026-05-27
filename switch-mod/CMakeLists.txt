@@ -1,26 +1,27 @@
-cmake_minimum_required(VERSION 3.21)
-project(subsdk)
+cmake_minimum_required(VERSION 3.16)
 
-## Error if not using switch toolchain file
-if (NOT SWITCH)
-  message(FATAL_ERROR "Not targeting switch, make sure to specify -DCMAKE_TOOLCHAIN_FILE=cmake/toolchain.cmake")
-endif()
-
-set(CMAKE_C_STANDARD 17)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/sys/cmake/toolchain.cmake")
+project(smbw_archipelago VERSION 0.1 LANGUAGES ASM C CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-enable_language(ASM C CXX)
 
-## Title Id
-set(CONFIG_TITLE_ID 0x010015100B514000)
-add_compile_definitions(EXL_PROGRAM_ID=${CONFIG_TITLE_ID} EXL_LOAD_KIND=Module EXL_LOAD_KIND_ENUM=2 NNSDK IMGUI_USER_CONFIG="imgui_backend/nvn_imgui_config.h" private=public protected=public)
+include(config/config.cmake)
 
-## M4: LAN bridge discovery configuration.  BRIDGE_HOST_STRING seeds the
-## /24 sweep performed by ap/ApDiscovery; default is a typical home LAN
-## subnet -- override at configure time for other networks:
-##   cmake ... -DBRIDGE_HOST_STRING="192.168.7.42"
-if(NOT DEFINED BRIDGE_HOST_STRING)
-    set(BRIDGE_HOST_STRING "192.168.1.1")
+# Phase 1 of the hakkun migration: the only goal is to prove the hakkun
+# subsdk loader boots SMBW (Ryujinx + real Switch). Zero functional hooks
+# installed; hkMain just logs START/END so we can observe whether init runs.
+# Phase 2 will restore the M1-M4 hook surface (course clears, Wonder Seeds,
+# PlayReport capture, badge/seed grants). The exlaunch sources under
+# src/program/ are left on disk but excluded from this build.
+#
+# See docs/hakkun-migration-plan.md.
+
+option(SMBWAP_DEBUG_SD_LOG
+    "Drain the in-memory log ring to sd:/smbwap_boot.log via a worker thread \
+~5 s after hkMain. Required for the Phase 1 acceptance test on real hardware \
+(Ryujinx already surfaces svcOutputDebugString in its log file)."
+    OFF)
+if(SMBWAP_DEBUG_SD_LOG)
+    add_compile_definitions(SMBWAP_DEBUG_SD_LOG=1)
 endif()
 add_compile_definitions(
     BRIDGE_HOST_STRING="${BRIDGE_HOST_STRING}"
@@ -111,28 +112,18 @@ add_compile_options(-fpermissive -Wno-deprecated-declarations)
 ## Include nx tools
 include(${CMAKE_SOURCE_DIR}/cmake/SwitchTools.cmake)
 
-## subsdk9
-set(CMAKE_EXECUTABLE_SUFFIX ".nss")
-add_executable(subsdk9 ${SOURCES_ASM} ${SOURCES_C} ${SOURCES_CXX} ${IMGUI_SOURCES})
-
-
-## Prepare subsdk ld
-set(SUBSDK_LD_PATH ${CMAKE_CURRENT_SOURCE_DIR}/module/subsdk9.ld)
-set(GAME_VERSION 100)
-set(SYMS_PATH "${CMAKE_CURRENT_SOURCE_DIR}/syms/${GAME_VERSION}")
-
-execute_process(
-    COMMAND bash -c "find ${SYMS_PATH} -type f -name '*.sym' -exec cat {} + > ${CMAKE_BINARY_DIR}/syms.ld"
+# Phase 1 source list — explicit, NOT GLOB_RECURSE. The legacy exlaunch
+# source tree at src/program/, src/lib/, lib/{imgui,sead,NintendoSDK} is
+# intentionally orphaned from the build; Phase 2 will pull individual files
+# back in as they get ported to hakkun.
+set(SOURCES_CXX
+    ${PROJECT_SOURCE_DIR}/src/main.cpp
+    ${PROJECT_SOURCE_DIR}/src/util/Log.cpp
 )
+add_executable(${PROJECT_NAME} ${SOURCES_CXX})
+target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
-execute_process(COMMAND uname OUTPUT_VARIABLE uname)
-if (uname MATCHES "^MINGW")
-  string(REGEX REPLACE "^/([a-zA-Z])/" "\\1:/" SUBSDK_LD_PATH "${SUBSDK_LD_PATH}")
-endif ()
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/module/subsdk9.specs.template ${CMAKE_CURRENT_BINARY_DIR}/subsdk9.specs)
-
-## Build nso & generate npdm
-add_nso_target_subsdk(subsdk9)
-set_target_properties(subsdk9 PROPERTIES CONFIG_JSON "${CMAKE_CURRENT_BINARY_DIR}/subsdk9.json")
-__generate_npdm(subsdk9)
-set_target_properties(subsdk9 PROPERTIES LINK_FLAGS "-specs ${CMAKE_BINARY_DIR}/subsdk9.specs -g ${ARCH} -nostartfiles -nostdlib")
+include(sys/cmake/module.cmake)
+include(sys/cmake/deploy.cmake)
+include(sys/cmake/sail.cmake)
+usesail(${PROJECT_NAME})
