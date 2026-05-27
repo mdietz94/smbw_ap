@@ -79,11 +79,10 @@ bool synthKill() {
     return logStub<8>("synthKill");
 }
 
-// The two gates default to permissive so drainInbound's apply-flow runs
-// (and ApFrameBridge logs every received grant via the stubs above).
-// Once Phase 2g brings real state, these flip back to gated behavior.
-bool isSaveLoaded() { return true; }
-bool isInSceneTransitionWindow() { return false; }
+// isSaveLoaded() + isInSceneTransitionWindow() moved to Gates.cpp in
+// Phase 2g commit 1 -- both are now driven by real game-thread signals
+// (markSaveLoaded from gmd writer hooks; latchSceneTransitionTick from
+// the SceneTransition Nerve callback).
 
 void pushWonderSeedOverride(std::uint32_t /*value*/) {
     (void)logStub<10>("pushWonderSeedOverride");
