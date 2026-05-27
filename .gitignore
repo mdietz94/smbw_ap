@@ -19,8 +19,10 @@ venv/
 # SMBW Client log (rotated per-launch, written by Utils.init_logging)
 SMBWClient.txt
 
-# Build output for the packaged .apworld zip (scripts/build_apworld.py)
+# Build output for the packaged .apworld zip (scripts/install_apworld.py)
 build/
+release-artifacts/
+vendor/Archipelago/custom_worlds/smbwonder.apworld
 
 # OS noise
 Thumbs.db
