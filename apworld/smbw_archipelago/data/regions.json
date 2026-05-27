@@ -1,282 +1,209 @@
 {
   "W1 Start": {
-
-		"starting": true,
-
-		"connects_to": [
+    "starting": true,
+    "connects_to": [
       "W1 3 Seeds"
     ],
-
-		"requires": []
+    "requires": []
   },
   "W1 3 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "W1 10 Seeds"
     ],
-
-		"requires": "|W1 Wonder Seed:3|"
+    "requires": "|W1 Wonder Seed:3|"
   },
   "W1 10 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "W1 Post-Bulrush Express",
       "W1 14 Seeds"
     ],
-
-		"requires": "|W1 Wonder Seed:10|"
+    "requires": "|W1 Wonder Seed:10|"
   },
   "W1 Post-Bulrush Express": {
-
-		"connects_to": [
+    "connects_to": [
       "W1 Post-Jet Run"
     ],
-
-		"requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND (|Elephant Fruit| OR |Drill Mushroom|) AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND (|Elephant Fruit| OR |Drill Mushroom|) AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   "W1 Post-Jet Run": {
-
-		"connects_to": [],
-
-		"requires": "|Jet Run Badge|"
+    "connects_to": [],
+    "requires": []
   },
   "W1 14 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "PI Pre-W2"
     ],
-
-		"requires": "|W1 Wonder Seed:14| AND {OptOne(|ZL Button/Down|)} AND ({OptOne(|Up|)} OR {OptOne(|Wonder Flower|)} OR {OptOne(|Wonder Effect - Environment|)} OR {OptOne(|Wonder Effect - Musical|)} OR {OptOne(|Wonder Effect - Star Rain|)} OR {OptOne(|Wonder Effect - Tokens|)} OR |Wall-Climb Jump Badge| OR  {OptOne(|Y Button|)} OR {OptOne(|R Button|)})"
+    "requires": "|W1 Wonder Seed:14| AND {OptOne(|ZL Button/Down|)} AND ({OptOne(|Up|)} OR {OptOne(|Wonder Flower|)} OR {OptOne(|Wonder Effect - Environment|)} OR {OptOne(|Wonder Effect - Musical|)} OR {OptOne(|Wonder Effect - Star Rain|)} OR {OptOne(|Wonder Effect - Tokens|)} OR {OptOne(|Y Button|)} OR {OptOne(|R Button|)})"
   },
   "PI Pre-W2": {
-
-		"connects_to": [
+    "connects_to": [
       "PI Pre-W2 2 Seeds"
     ],
-
-		"requires": []
+    "requires": []
   },
   "PI Pre-W2 2 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "W2 Start",
       "PI 5 Seeds"
     ],
-
-		"requires": "|Petal Isles Wonder Seed:2|"
+    "requires": "|Petal Isles Wonder Seed:2|"
   },
   "PI 5 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "PI 8 Seeds"
     ],
-
-		"requires": "|Petal Isles Wonder Seed:5|"
+    "requires": "|Petal Isles Wonder Seed:5|"
   },
   "PI 8 Seeds": {
-
-		"connects_to": [],
-
-		"requires": "|Petal Isles Wonder Seed:8|"
+    "connects_to": [],
+    "requires": "|Petal Isles Wonder Seed:8|"
   },
   "W2 Start": {
-
-		"connects_to": [
+    "connects_to": [
       "W2 4 Seeds"
     ],
-
-		"requires": "{OptOne(|Up|)} AND |Petal Isles Wonder Seed:5|"
+    "requires": "{OptOne(|Up|)} AND |Petal Isles Wonder Seed:5|"
   },
   "W2 4 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "W2 9 Seeds",
       "W2 Post-Jump"
     ],
-
-		"requires": "|W2 Wonder Seed:4|"
+    "requires": "|W2 Wonder Seed:4|"
   },
   "W2 Post-Jump": {
-
-		"connects_to": [],
-
-		"requires": "{OptOne(|Y Button|)} AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "connects_to": [],
+    "requires": "{OptOne(|Y Button|)} AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   "W2 9 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "W2 14 Seeds"
     ],
-
-		"requires": "|W2 Wonder Seed:9| AND (({OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}) OR ({OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Flower|)}) OR ({OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Flower|)}) OR {OptOne(|Y Button|)} OR |Wall-Climb Jump Badge| OR |Floating High Jump Badge|)"
+    "requires": "|W2 Wonder Seed:9| AND (({OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}) OR ({OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Flower|)}) OR ({OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Flower|)}) OR {OptOne(|Y Button|)})"
   },
   "W2 14 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "PI Pre-W3"
     ],
-
-		"requires": "|W2 Wonder Seed:14|"
+    "requires": "|W2 Wonder Seed:14|"
   },
   "PI Pre-W3": {
-
-		"connects_to": [
+    "connects_to": [
       "W3 Start"
     ],
-
-		"requires": []
+    "requires": []
   },
   "W3 Start": {
-
-		"connects_to": [
+    "connects_to": [
       "W3 4 Seeds"
     ],
-
-		"requires": "|Petal Isles Wonder Seed:8|"
+    "requires": "|Petal Isles Wonder Seed:8|"
   },
   "W3 4 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "W3 10 Seeds"
     ],
-
-		"requires": "|W3 Wonder Seed:4|"
+    "requires": "|W3 Wonder Seed:4|"
   },
   "W3 10 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "PI Pre-W4"
     ],
-
-		"requires": "|W3 Wonder Seed:10|"
+    "requires": "|W3 Wonder Seed:10|"
   },
   "PI Pre-W4": {
-
-		"connects_to": [
+    "connects_to": [
       "W4 Start",
       "PI Post-Airship",
       "Pre-W4 Special"
     ],
-
-		"requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
   },
   "W4 Start": {
-
-		"connects_to": [
+    "connects_to": [
       "W4 Post-Invis",
       "W4 15 Seeds"
     ],
-
-		"requires": "|Petal Isles Wonder Seed:10|"
+    "requires": "|Petal Isles Wonder Seed:10|"
   },
   "W4 Post-Invis": {
-
-		"connects_to": [],
-
-		"requires": "|Invisibility Badge|"
+    "connects_to": [],
+    "requires": []
   },
   "W4 15 Seeds": {
-
-		"connects_to": [],
-
-		"requires": "|W4 Wonder Seed:15|"
+    "connects_to": [],
+    "requires": "|W4 Wonder Seed:15|"
   },
   "PI Post-Airship": {
-
-		"connects_to": [
+    "connects_to": [
       "W5 Start",
       "W6 Start"
     ],
-
-		"requires": "{OptOne(|Y Button|)}"
+    "requires": "{OptOne(|Y Button|)}"
   },
   "W5 Start": {
-
-		"connects_to": [
+    "connects_to": [
       "W5 6 Seeds"
     ],
-
-		"requires": "|Petal Isles Wonder Seed:12|"
+    "requires": "|Petal Isles Wonder Seed:12|"
   },
   "W5 6 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "W5 Post-Wubba"
     ],
-
-		"requires": "|W5 Wonder Seed:6|"
+    "requires": "|W5 Wonder Seed:6|"
   },
   "W5 11 Seeds": {
-
-		"connects_to": [],
-
-		"requires": "|W5 Wonder Seed:11|"
+    "connects_to": [],
+    "requires": "|W5 Wonder Seed:11|"
   },
   "W6 Start": {
-
-		"connects_to": [
+    "connects_to": [
       "W6 25 Seeds",
       "World Bowser"
     ],
-
-		"requires": "|Petal Isles Wonder Seed:15|"
+    "requires": "|Petal Isles Wonder Seed:15|"
   },
   "W6 25 Seeds": {
-
-		"connects_to": [
+    "connects_to": [
       "W6 Post-Spring"
     ],
-
-		"requires": "|W6 Wonder Seed:25|"
+    "requires": "|W6 Wonder Seed:25|"
   },
   "W6 Post-Spring": {
-
-		"connects_to": [
+    "connects_to": [
       "Special End"
     ],
-
-		"requires": "|Jet Run Badge| AND |Invisibility Badge|"
+    "requires": []
   },
   "World Bowser": {
-
-		"connects_to": [],
-
-		"requires": "|@Royal Seed:6|"
+    "connects_to": [],
+    "requires": "|@Royal Seed:6|"
   },
   "Pre-W4 Special": {
-
-		"connects_to": [],
-
-		"requires": "{OptOne(|Y Button|)} AND |Special World Wonder Seed:6| AND ((|Elephant Fruit| AND |Jet Run Badge|) OR |Spring Feet Badge| OR (|Invisibility Badge| AND |Petal Isles Wonder Seed:10|) OR (|W5 Wonder Seed:11| AND |Petal Isles Wonder Seed:12|)) AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Effect - Spike Ball|)} AND {OptOne(|Wonder Flower|)}"
+    "connects_to": [],
+    "requires": "{OptOne(|Y Button|)} AND |Special World Wonder Seed:6| AND ((|Elephant Fruit|) OR (|Petal Isles Wonder Seed:10|) OR (|W5 Wonder Seed:11| AND |Petal Isles Wonder Seed:12|)) AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Effect - Spike Ball|)} AND {OptOne(|Wonder Flower|)}"
   },
   "Special End": {
-
-		"connects_to": [
+    "connects_to": [
       "Post-Badge"
     ],
-
-		"requires": "|Elephant Fruit| AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Effect - Star Rain|)} AND {OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Effect - Time Modifier|)} AND {OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Effect - Spike Ball|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "|Elephant Fruit| AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Effect - Star Rain|)} AND {OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Effect - Time Modifier|)} AND {OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Effect - Spike Ball|)} AND {OptOne(|Wonder Flower|)}"
   },
   "Post-Badge": {
-
-		"connects_to": [],
-
-		"requires": "|W1 Wonder Seed:14| AND |W2 Wonder Seed:14| AND |W3 Wonder Seed:10| AND |W4 Wonder Seed:15| AND |W5 Wonder Seed:11| AND |W6 Wonder Seed:25| AND |Petal Isles Wonder Seed:15| AND |Special World Wonder Seed:16| AND |@Royal Seed:6|"
+    "connects_to": [],
+    "requires": "|W1 Wonder Seed:14| AND |W2 Wonder Seed:14| AND |W3 Wonder Seed:10| AND |W4 Wonder Seed:15| AND |W5 Wonder Seed:11| AND |W6 Wonder Seed:25| AND |Petal Isles Wonder Seed:15| AND |Special World Wonder Seed:16| AND |@Royal Seed:6|"
   },
   "W5 Post-Wubba": {
-
-		"connects_to": [
+    "connects_to": [
       "W5 Post-Swaying"
     ],
-
-		"requires": "{OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Flower|)}"
   },
   "W5 Post-Swaying": {
-
-		"connects_to": [
+    "connects_to": [
       "W5 11 Seeds"
     ],
-
-		"requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   }
 }
