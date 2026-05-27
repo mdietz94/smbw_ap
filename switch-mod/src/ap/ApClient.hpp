@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "../lib/nx/types.h"
+#include <hk/types.h>
 
 #include "ApDiscovery.hpp"
 
