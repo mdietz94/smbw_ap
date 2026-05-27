@@ -846,16 +846,30 @@ def check_archipelago_deps() -> PrereqResult:
     """Archipelago Python dependencies satisfied.
 
     Strategy:
-      1. Fast path: marker file at %LOCALAPPDATA%\\SMBWArchipelago\\ap_deps.ok
+      1. **Packaged-install short-circuit**: if we're not in a dev clone
+         and ``CommonClient`` is importable from the current Python,
+         the surrounding Archipelago install already provides AP deps.
+         There is no in-tree ``requirements.txt`` to install from, and
+         shelling out to pip would either pollute the user's Python or
+         no-op against an already-satisfied env.  Skip both check and
+         (later) install.
+      2. Fast path: marker file at %LOCALAPPDATA%\\SMBWArchipelago\\ap_deps.ok
          records that a prior wizard run installed deps successfully. If
          the marker is newer than vendor/Archipelago/requirements.txt,
          skip the import probe.
-      2. Slow path: probe by importing a representative sample
+      3. Slow path: probe by importing a representative sample
          (`_AP_SAMPLE_IMPORTS`). Done in a subprocess so missing modules
          don't pollute the wizard's import space.
 
     On success, writes/refreshes the marker so subsequent runs short-circuit.
     """
+    if not is_dev_clone() and archipelago_importable():
+        return PrereqResult(
+            "archipelago_deps", "Archipelago Python deps", True,
+            "satisfied by surrounding Archipelago install (no dev clone)",
+            auto_installable=True,
+        )
+
     marker = ap_deps_marker_path()
     req_path = repo_root() / "vendor" / "Archipelago" / "requirements.txt"
 
