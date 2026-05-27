@@ -145,13 +145,20 @@ class TestCourseResultClassification(unittest.TestCase):
             self.assertTrue(c.metadata["got_finish_seed"])
 
     def test_w1_2_secret_exit(self):
+        """The fixture has goal_id=1 (secret) AND
+        touch_goal_top_result=True (player happened to top the secret
+        flagpole), so both SECRET_EXIT and TOP_OF_SECRET_FLAG fire."""
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=W1_2_COURSE_RESULT_SECRET))
-        self.assertEqual(len(emitted), 1)
-        self.assertEqual(emitted[0].kind, CheckKind.SECRET_EXIT)
-        self.assertEqual(emitted[0].stage_key, W1_2_STAGE_KEY)
-        self.assertEqual(emitted[0].metadata["goal_id"], 1)
+        self.assertEqual(len(emitted), 2)
+        self.assertEqual(
+            [e.kind for e in emitted],
+            [CheckKind.SECRET_EXIT, CheckKind.TOP_OF_SECRET_FLAG])
+        for c in emitted:
+            self.assertEqual(c.stage_key, W1_2_STAGE_KEY)
+            self.assertEqual(c.metadata["goal_id"], 1)
+            self.assertTrue(c.metadata["touch_goal_top"])
 
     def test_duplicate_course_result_dedups(self):
         state = BridgeState()
@@ -379,8 +386,11 @@ class TestRealisticPlaythroughFlows(unittest.TestCase):
 
         self.assertTrue(state.has_emitted(CheckKind.WONDER_SEED, W1_2_STAGE_KEY))
         self.assertTrue(state.has_emitted(CheckKind.SECRET_EXIT, W1_2_STAGE_KEY))
+        # The fixture has touch_goal_top_result=True so TOP_OF_SECRET_FLAG
+        # also fires — but the *normal* TOP_OF_FLAG stays unfired.
+        self.assertTrue(state.has_emitted(CheckKind.TOP_OF_SECRET_FLAG, W1_2_STAGE_KEY))
         self.assertFalse(state.has_emitted(CheckKind.TOP_OF_FLAG, W1_2_STAGE_KEY))
-        self.assertEqual(state.count_emitted(), 2)
+        self.assertEqual(state.count_emitted(), 3)
 
     def test_palace_win_dual_event_fires_only_palace_clear(self):
         """Palace WIN emits BOTH course_result AND koopajr_result.  The
@@ -921,8 +931,11 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=W1_2_COURSE_RESULT_SECRET))
+        # The fixture has touch_goal_top_result=True so the secret-exit
+        # path emits both SECRET_EXIT and TOP_OF_SECRET_FLAG.  No TEN_COIN.
         self.assertEqual(
-            [c.kind for c in emitted], [CheckKind.SECRET_EXIT])
+            [c.kind for c in emitted],
+            [CheckKind.SECRET_EXIT, CheckKind.TOP_OF_SECRET_FLAG])
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
 
     def test_palace_companion_emits_no_ten_coin(self):

@@ -328,15 +328,18 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
         world_mother_seed == True          → palace clear (defer to
                                              koopajr_result; emit nothing
                                              here to avoid double-firing)
-        goal_id == 0 + touch_goal_top      → Top of Flag
+        goal_id == 0 + touch_goal_top      → Top of Flag + Normal Exit
         goal_id == 0 + !touch_goal_top     → Normal Exit
-        goal_id == 1                       → Secret Exit
+        goal_id == 1 + touch_goal_top      → Top of Secret Flag + Secret Exit
+        goal_id == 1 + !touch_goal_top     → Secret Exit
         goal_id == 2                       → Fake Exit (guessed)
 
     A Top of Flag clear is a strict superset of a Normal Exit, so when
     ``goal_id == 0`` and ``touch_goal_top`` we emit BOTH TOP_OF_FLAG
     and NORMAL_EXIT — the apworld has separate AP locations for each
-    and players should get credit for both on the same clear.
+    and players should get credit for both on the same clear.  The
+    same applies to the secret flagpole: TOP_OF_SECRET_FLAG is
+    emitted alongside SECRET_EXIT when the secret flag is topped.
 
     M2.2 10-coin layer (added 2026-05-25): after the exit-type emit,
     diff ``big_flower_coin_course_in`` against ``_out`` and emit one
@@ -389,6 +392,8 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
             kinds.append(CheckKind.TOP_OF_FLAG)
     elif goal_id == 1:
         kinds = [CheckKind.SECRET_EXIT]
+        if top:
+            kinds.append(CheckKind.TOP_OF_SECRET_FLAG)
     elif goal_id == 2:
         kinds = [CheckKind.FAKE_EXIT]
     else:
