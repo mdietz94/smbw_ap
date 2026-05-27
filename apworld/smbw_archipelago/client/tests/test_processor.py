@@ -543,22 +543,47 @@ class TestPoplinShopPurchase(unittest.TestCase):
         self.assertEqual(second, [])
         self.assertEqual(state.count_emitted(CheckKind.SHOP_SEED), 1)
 
-    def test_badge_buy_is_silent(self):
-        """A Coin Reward badge buy fires general_shop_result with
-        item_kind=0, item_value=55, but the processor drops it: the
-        Switch-side ``probe::setBadgeBitfieldAbsolute`` already does
-        read-diff-then-write (main.cpp 'M2.3 diff-on-overwrite') and
-        emits BadgeAcquiredMsg on the next tick, so emitting the same
-        check from the PlayReport would be redundant.  This test pins
-        that single-source-of-truth choice."""
+    def test_badge_buy_emits_badge_acquired(self):
+        """A badge buy fires general_shop_result with item_kind=0 and
+        item_value = the SMBW internal badge id.  The processor emits
+        BADGE_ACQUIRED with stage_key=internal_id, parallel to the
+        Switch-side bitfield-diff path (main.cpp 'M2.3 diff-on-overwrite').
+        Dedup by (kind, stage_key=internal_id) means at most one AP
+        LocationCheck goes out per badge even if both paths fire."""
+        # Coin Reward Badge buy at W1 Poplin Shop, internal_id=55 was the
+        # original W1 Poplin capture; in the badge_table the canonical
+        # Coin Reward internal_id is 9.  Either way the processor just
+        # forwards item_value as the stage_key.
         payload = self._shop_payload(
             world_no_hex="01", npc_id_hex="02",
             item_kind_hex="00", item_value_bytes="cc 37")  # item_value=55
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="general_shop_result", payload=payload))
-        self.assertEqual(emitted, [])
-        self.assertEqual(state.count_emitted(), 0)
+        self.assertEqual(len(emitted), 1)
+        check = emitted[0]
+        self.assertIsInstance(check, CheckEmitted)
+        self.assertEqual(check.kind, CheckKind.BADGE_ACQUIRED)
+        self.assertEqual(check.stage_key, 55)
+        self.assertEqual(check.metadata["source"], "shop_buy")
+        self.assertEqual(check.metadata["world_no"], 1)
+        self.assertEqual(check.metadata["npc_id"], 2)
+
+    def test_badge_buy_dedups_against_replay(self):
+        """The same shop badge buy seen twice (e.g. a PlayReport replay
+        on AP reconnect) must dedup -- BridgeState keys BADGE_ACQUIRED by
+        (kind, stage_key=internal_id, sub_key=0)."""
+        payload = self._shop_payload(
+            world_no_hex="01", npc_id_hex="02",
+            item_kind_hex="00", item_value_bytes="cc 37")
+        state = BridgeState()
+        first = process_event(state, PlayReportMsg(
+            room="general_shop_result", payload=payload))
+        second = process_event(state, PlayReportMsg(
+            room="general_shop_result", payload=payload))
+        self.assertEqual(len(first), 1)
+        self.assertEqual(second, [])
+        self.assertEqual(state.count_emitted(CheckKind.BADGE_ACQUIRED), 1)
 
     def test_consumable_buy_is_silent(self):
         """1-up buy: item_kind=2, item_value=1.  Not an AP check family."""
@@ -607,11 +632,12 @@ class TestPoplinShopPurchase(unittest.TestCase):
         self.assertEqual(slots, [0, 1])
         self.assertEqual(state.count_emitted(CheckKind.SHOP_SEED), 2)
 
-    def test_mixed_seed_and_badge_buy_emits_only_seed_check(self):
+    def test_mixed_seed_and_badge_buy_emits_both_checks(self):
         """A multi-item transaction can mix kinds (e.g. seed + badge).
-        Only the seed (SHOP_SEED) fires from this path; the badge is
-        dropped because the Switch-side bitfield-diff detector is the
-        single source of truth for BADGE_ACQUIRED."""
+        Both the seed (SHOP_SEED) and the badge (BADGE_ACQUIRED) fire
+        from this path -- badges are now emitted parallel to the
+        Switch-side bitfield-diff detector, with BridgeState dedup
+        keeping at most one AP LocationCheck per badge."""
         hexstr = (
             "de 00 07"
             "ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23"
@@ -635,11 +661,15 @@ class TestPoplinShopPurchase(unittest.TestCase):
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="general_shop_result", payload=payload))
-        # Seed → SHOP_SEED check; badge → dropped (Switch-side bitfield
-        # diff is the single source of truth for BADGE_ACQUIRED).
-        self.assertEqual(len(emitted), 1)
-        self.assertEqual(emitted[0].kind, CheckKind.SHOP_SEED)
-        self.assertEqual(emitted[0].metadata["item_value"], 0)
+        # Seed → SHOP_SEED check; badge (item_value=55) → BADGE_ACQUIRED.
+        self.assertEqual(len(emitted), 2)
+        kinds = sorted(c.kind.value for c in emitted)
+        self.assertEqual(kinds, ["badge_acquired", "shop_seed"])
+        seed = next(c for c in emitted if c.kind == CheckKind.SHOP_SEED)
+        badge = next(c for c in emitted if c.kind == CheckKind.BADGE_ACQUIRED)
+        self.assertEqual(seed.metadata["item_value"], 0)
+        self.assertEqual(badge.stage_key, 55)
+        self.assertEqual(badge.metadata["source"], "shop_buy")
 
     def test_w4_secret_three_slots_dedup_independently(self):
         """The W4 Poplin Shop (Secret) sells 3 Wonder Seeds at the same
@@ -956,6 +986,149 @@ class TestBadgeAcquired(unittest.TestCase):
         emitted = process_event(
             state, BadgeAcquiredMsg(internal_id=4))
         self.assertFalse(any(isinstance(e, DeathReported) for e in emitted))
+
+
+# ---------------------------------------------------------------------------
+# Course-clear -> BADGE_ACQUIRED.  Layered on top of the existing
+# exit-type checks; only fires for courses in _STAGE_TO_BADGE_INTERNAL_ID.
+
+from ..processor import _STAGE_TO_BADGE_INTERNAL_ID
+
+# Stage keys from location_table for the courses that grant badges.
+_STAGE_SPRING_FEET_I = 0xF421DB55
+_STAGE_MOUNTAINEERING = 0x954EB962
+_STAGE_BADGE_HOUSE_PIPEROCK = 0xA3207D45
+_STAGE_UPSHROOM_DOWNSHROOM = 0x54A60980
+_STAGE_WONDER_STAGE = 0x2D438F37
+_STAGE_JET_RUN_II = 0x69B9F9E6
+
+
+class TestCourseClearBadge(unittest.TestCase):
+    """Clearing a badge-granting course must emit a BADGE_ACQUIRED check
+    alongside the normal exit-type checks.  Dedup keeps the AP server
+    from seeing the same location twice when both the course path and
+    the Switch-side bitfield-diff path fire for the same badge."""
+
+    @staticmethod
+    def _course_result_fields(stage_key: int, *, goal_id: int = 0,
+                              top: bool = False, course_result: int = 1
+                              ) -> dict:
+        return {
+            "stage_info": {
+                "stage_key": stage_key,
+                "world_no": 0,
+                "course_no": 0,
+            },
+            "course_result": course_result,
+            "goal_id": goal_id,
+            "touch_goal_top_result": top,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+        }
+
+    def test_clearing_spring_feet_i_emits_spring_feet_badge(self):
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._course_result_fields(_STAGE_SPRING_FEET_I))
+        badge_emits = [c for c in emitted if c.kind == CheckKind.BADGE_ACQUIRED]
+        self.assertEqual(len(badge_emits), 1)
+        # internal_id 4 == Spring Feet per badge_table._BADGES.
+        self.assertEqual(badge_emits[0].stage_key, 4)
+        self.assertEqual(badge_emits[0].metadata["source"], "course_clear")
+        self.assertEqual(
+            badge_emits[0].metadata["course_stage_key"], _STAGE_SPRING_FEET_I)
+
+    def test_clearing_mountaineering_emits_auto_super_mushroom_badge(self):
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._course_result_fields(_STAGE_MOUNTAINEERING))
+        badge_emits = [c for c in emitted if c.kind == CheckKind.BADGE_ACQUIRED]
+        self.assertEqual(len(badge_emits), 1)
+        self.assertEqual(badge_emits[0].stage_key, 46)
+
+    def test_clearing_pipe_rock_badge_house_emits_parachute_cap(self):
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._course_result_fields(_STAGE_BADGE_HOUSE_PIPEROCK))
+        badge_emits = [c for c in emitted if c.kind == CheckKind.BADGE_ACQUIRED]
+        self.assertEqual(len(badge_emits), 1)
+        self.assertEqual(badge_emits[0].stage_key, 35)
+
+    def test_clearing_upshroom_emits_sensor(self):
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._course_result_fields(_STAGE_UPSHROOM_DOWNSHROOM))
+        badge_emits = [c for c in emitted if c.kind == CheckKind.BADGE_ACQUIRED]
+        self.assertEqual(len(badge_emits), 1)
+        self.assertEqual(badge_emits[0].stage_key, 32)
+
+    def test_clearing_wonder_stage_emits_sound_off(self):
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._course_result_fields(_STAGE_WONDER_STAGE))
+        badge_emits = [c for c in emitted if c.kind == CheckKind.BADGE_ACQUIRED]
+        self.assertEqual(len(badge_emits), 1)
+        self.assertEqual(badge_emits[0].stage_key, 33)
+
+    def test_ii_course_grants_same_badge_as_i(self):
+        """The 'II' badge challenges don't normally re-grant in-game,
+        but the apworld randomizer can route a player to a II first;
+        emit defensively so they still get credit."""
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._course_result_fields(_STAGE_JET_RUN_II))
+        badge_emits = [c for c in emitted if c.kind == CheckKind.BADGE_ACQUIRED]
+        self.assertEqual(len(badge_emits), 1)
+        # internal_id 19 == Jet Run.
+        self.assertEqual(badge_emits[0].stage_key, 19)
+
+    def test_non_badge_course_does_not_emit_badge(self):
+        """A normal course (W1-1) clearing must not emit a phantom badge."""
+        state = BridgeState()
+        # W1-1 stage_key is in the location table but not a badge source.
+        W1_1 = 0xAF11F7FC
+        self.assertNotIn(W1_1, _STAGE_TO_BADGE_INTERNAL_ID)
+        emitted = _handle_course_result(
+            state, self._course_result_fields(W1_1, top=True))
+        self.assertEqual(
+            state.count_emitted(CheckKind.BADGE_ACQUIRED), 0)
+        # Exit-type checks still fire.
+        self.assertGreater(len(emitted), 0)
+
+    def test_quit_suppresses_badge_emission(self):
+        """A pause-menu quit (course_result=3) must not award the badge,
+        even at a badge-granting stage_key -- the early return in
+        _handle_course_result drops everything including the badge."""
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._course_result_fields(
+                _STAGE_SPRING_FEET_I, course_result=3))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+    def test_badge_emit_dedups_across_replay(self):
+        state = BridgeState()
+        first = _handle_course_result(
+            state, self._course_result_fields(_STAGE_SPRING_FEET_I))
+        second = _handle_course_result(
+            state, self._course_result_fields(_STAGE_SPRING_FEET_I))
+        badge_first = [c for c in first if c.kind == CheckKind.BADGE_ACQUIRED]
+        badge_second = [c for c in second if c.kind == CheckKind.BADGE_ACQUIRED]
+        self.assertEqual(len(badge_first), 1)
+        self.assertEqual(badge_second, [])
+        self.assertEqual(state.count_emitted(CheckKind.BADGE_ACQUIRED), 1)
+
+    def test_badge_emit_dedups_against_switch_bitfield_diff(self):
+        """If the course clear emits a badge and the Switch-side bitfield
+        diff later sends a BadgeAcquiredMsg for the same internal_id,
+        the second emit must be deduped -- both keyed by (BADGE_ACQUIRED,
+        internal_id, sub_key=0)."""
+        state = BridgeState()
+        _handle_course_result(
+            state, self._course_result_fields(_STAGE_SPRING_FEET_I))
+        emitted = process_event(state, BadgeAcquiredMsg(internal_id=4))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(CheckKind.BADGE_ACQUIRED), 1)
 
 
 if __name__ == "__main__":
