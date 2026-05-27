@@ -1,12 +1,14 @@
 // SMBW Archipelago — hakkun edition entry point.
 //
-// Phases 2a-2c port the exlaunch-era trampolines from the legacy main.cpp
+// Phases 2a-2d port the exlaunch-era trampolines from the legacy main.cpp
 // (parked at src/program/main.cpp, excluded from the build) to hakkun:
 //   * Phase 2a: 3 CORE_INIT hooks via installAtMainOffset.
 //   * Phase 2b: 3 M1_EVENTS hooks (NerveActivateOnce + 2 Nerve execute hooks).
 //   * Phase 2c: 4 PLAYREPORT hooks via installAtSym (mangled C++ symbols
 //     resolved at runtime via hk::ro::lookupSymbol because we're built
 //     with HK_DISABLE_SAIL).
+//   * Phase 2d: 2 GRANTS hooks (the GameDataMgr container A/B writers
+//     that the M3 sprint identified as the universal save-grant primitives).
 //
 // All phases are "install + observe" only. The smbwap::ap::* bridge
 // wire-up, the WONDER_SEED_AWARDED vtable filter, the SCENE_TRANSITION
@@ -287,6 +289,71 @@ HkTrampoline<unsigned, void*, const void*, const PrepoInArrayChar*,
                 thisPtr, uid, room, payload, flags);
         });
 
+// =========================================================================
+// GRANTS (Phase 2d)
+// =========================================================================
+//
+// GameDataMgr (gmd::) container writers identified by the M3 static-analysis
+// sprint as the universal save-grant primitives. These are the same offsets
+// the legacy `probe::grantContainerACounter` / `probe::grantContainerBBool`
+// call from the bridge -- but Phase 2d hooks them only to OBSERVE the game's
+// own write activity (and any bridge-driven grants once the ap/ subsystem
+// returns in Phase 2f).
+//
+// Hook bodies are minimal in this PR (log hash + value + this-pointer +
+// chain Orig). The legacy callbacks layered three things on top -- they
+// also return in later phases:
+//   * `probe::markSaveLoaded(...)` -- the M4.5 save-loaded latch that
+//      ungates inbound grant replay.
+//   * `probe::dumpContainerCDiff(...)` -- diff logging for the badge bitmap
+//      that surfaced the container-C layout during M3.2.
+//   * The Wonder Seed counter override that interceps writes to the 5
+//      mirror hashes and substitutes the AP-authoritative count.
+// All three depend on `probe::` state + the ap/ subsystem; both come back
+// when PROBES (Phase 2e) and bridge (Phase 2f) restore.
+//
+// Signatures from the M3 sprint (docs/static-analysis-findings.md):
+//   * FUN_710049F648 = void(GameDataMgr*, uint32_t value, uint32_t hash)
+//   * FUN_7101F263FC = u64(GameDataMgr+8 substruct, u8 value & 1, uint32_t hash)
+// gmd is a `void*` here -- we don't need the typed struct yet.
+
+// GmdContainerAWriter @ NSO +0x0049F648 -- container-A counter SET.
+// Universal counter writer for flower_coin, regular_coin, etc. Lock-free
+// (uses ARM exclusive-monitor atomics on gmd->[+0xf8]). Deferred-write --
+// value queued, applied to persistent container at next save.
+HkTrampoline<void, void*, unsigned, unsigned> gmdContainerAWriterHook =
+    hk::hook::trampoline(
+        [](void* gmd, unsigned value, unsigned hash) -> void {
+            // Bound the log so save-load deserialization doesn't fill the
+            // ring. Save load fires dozens of these per slot.
+            static int s_fires = 0;
+            ++s_fires;
+            if (s_fires <= 50 || (s_fires & 0xFF) == 0) {
+                SMBWAP_LOG_INFO(
+                    "gmd.A_writer hash=0x%08x value=%u gmd=%p (fire #%d)",
+                    hash, value, gmd, s_fires);
+            }
+            gmdContainerAWriterHook.orig(gmd, value, hash);
+        });
+
+// GmdBoolWriter @ NSO +0x01F263FC -- container-B bool deferred-write
+// delegate. Called by FUN_710049EA24 (high-level wrapper, NSO +0x49EA24)
+// which gates on gmd+0x68 init/lock and delegates to this function with
+// `substruct = gmd + 8`. Used for Royal Seeds + COMPLETE_GAME + INTRO.
+HkTrampoline<unsigned long long, void*, unsigned char, unsigned>
+    gmdBoolWriterHook = hk::hook::trampoline(
+        [](void* substruct, unsigned char value, unsigned hash)
+            -> unsigned long long {
+            static int s_fires = 0;
+            ++s_fires;
+            if (s_fires <= 50 || (s_fires & 0xFF) == 0) {
+                SMBWAP_LOG_INFO(
+                    "gmd.bool_writer hash=0x%08x value=%u substruct=%p (fire #%d)",
+                    hash, value, substruct, s_fires);
+            }
+            return gmdBoolWriterHook.orig(substruct, value, hash);
+        });
+
 void installHook(const char* name, ::ptr offset, hk::Result rc) {
     if (rc.failed()) {
         SMBWAP_LOG_ERROR("install %s @ +0x%lx FAILED rc=0x%x",
@@ -311,7 +378,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2c: 3 CORE_INIT + 3 M1_EVENTS + 4 PLAYREPORT hooks");
+    SMBWAP_LOG_INFO("Phase 2d: 3 CORE_INIT + 3 M1_EVENTS + 4 PLAYREPORT + 2 GRANTS hooks");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -341,6 +408,12 @@ extern "C" void hkMain() {
     installSymHook("PrepoIpcSaveReportWithUser",
         prepoIpcSaveReportWithUserHook.installAtSym<
             "_ZN2nn2sf4cmif6client6detail13CmifProxyImplINS_5prepo6detail3ipc13IPrepoServiceENS2_19CmifDomainProxyKindINS0_4hipc6client38Hipc2ClientSessionManagedProxyKindBaseINSB_18Hipc2ProxyKindBaseILNSA_6detail11MessageTypeE6EEEEEEENS0_30MemoryResourceAllocationPolicyES8_NS3_19ProcessModifierImplINS2_21DefaultProxyFilterTagEEEE30_nn_sf_sync_SaveReportWithUserERKNS_7account3UidERKNS0_7InArrayIcEERKNS0_8InBufferEm">());
+
+    // GRANTS (Phase 2d)
+    installHook("GmdContainerAWriter", 0x0049f648,
+                gmdContainerAWriterHook.installAtMainOffset(0x0049f648));
+    installHook("GmdBoolWriter",       0x01f263fc,
+                gmdBoolWriterHook.installAtMainOffset(0x01f263fc));
 
     SMBWAP_LOG_INFO("=== smbwap hkMain END ===");
 }
