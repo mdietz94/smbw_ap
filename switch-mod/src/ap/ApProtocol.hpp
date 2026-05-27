@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <cstddef>
 
-#include "../util/Json.hpp"
+#include "util/Json.hpp"
 
 namespace smbwap::ap {
 
