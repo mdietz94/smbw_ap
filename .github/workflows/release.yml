@@ -1,0 +1,121 @@
+name: Release
+
+# Tag-triggered: pushing a `vMAJOR.MINOR.PATCH` tag cuts a release.
+# Also runnable via `workflow_dispatch` for dry-runs (uploads the
+# artifact but skips the publish-release job because there's no tag to
+# attach it to).
+#
+# Pre-release detection: any tag containing `-` (e.g. `v1.0.0-rc1`,
+# `v0.2.0-alpha2`) is marked as a GitHub pre-release. Stable releases
+# use bare semver.
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+
+# Ensure only one release run at a time per tag. cancel-in-progress is
+# false because a released artifact is durable — never cancel a run that
+# might already have published.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-apworld:
+    name: Build release apworld zip
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          # --bundle-mod needs switch-mod/lib/{imgui,NintendoSDK,sead}
+          # materialized. vendor/Archipelago is also needed because
+          # install_apworld.py writes into its custom_worlds/ dir.
+          submodules: recursive
+          fetch-depth: 0
+
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.11'
+
+      - name: Stamp version from tag
+        # Rewrites __version__ in apworld/smbw_archipelago/__init__.py
+        # and world_version in apworld/smbw_archipelago/archipelago.json
+        # to match the tag. Dev / workflow_dispatch runs leave the
+        # "0.0.0+dev" sentinel in place so user-reported logs from a
+        # released artifact never claim to be a dev build.
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          set -e
+          VERSION="${{ github.ref_name }}"
+          VERSION="${VERSION#v}"
+          echo "Stamping version $VERSION"
+          sed -i "s/^__version__ = .*/__version__ = \"$VERSION\"/" \
+            apworld/smbw_archipelago/__init__.py
+          python -c "
+          import json, pathlib
+          p = pathlib.Path('apworld/smbw_archipelago/archipelago.json')
+          d = json.loads(p.read_text())
+          d['world_version'] = '$VERSION'
+          p.write_text(json.dumps(d, indent=4) + '\n')
+          "
+          echo "After stamping:"
+          grep '^__version__' apworld/smbw_archipelago/__init__.py
+          python -c "import json; print(json.load(open('apworld/smbw_archipelago/archipelago.json'))['world_version'])"
+
+      - name: Build apworld zip with bundled switch-mod
+        run: python scripts/install_apworld.py --bundle-mod
+
+      - name: Stage release artifacts + checksum
+        run: |
+          mkdir release-artifacts
+          cp vendor/Archipelago/custom_worlds/smbwonder.apworld release-artifacts/
+          cd release-artifacts
+          sha256sum smbwonder.apworld > smbwonder.apworld.sha256
+          ls -lah
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        with:
+          name: smbwonder-apworld
+          path: release-artifacts/*
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-apworld]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # workflow_dispatch runs don't create a release — they only produce
+    # the build artifact (downloadable from the Actions UI for testing).
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        with:
+          name: smbwonder-apworld
+          path: dist/
+
+      - name: Show artifacts to be published
+        run: ls -lah dist/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+          draft: false
+          # Any tag containing `-` (e.g. v1.0.0-rc1) is marked pre-release.
+          prerelease: ${{ contains(github.ref, '-') }}
+          body: |
+            ## SMBW Archipelago ${{ github.ref_name }}
+
+            ### First-time users — start here
+
+            **[docs/first-time-setup.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/docs/first-time-setup.md)** — full walkthrough: prerequisites, multiworld generation, and the SMBW Client setup wizard.
+
+            ### Verifying the download
+
+            ```
+            sha256sum -c smbwonder.apworld.sha256
+            ```

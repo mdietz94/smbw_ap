@@ -10,6 +10,11 @@ The module-level `add_client_to_launcher()` call registers the "SMBW
 Client" Component with Archipelago Launcher so the user can spawn it
 with a button click.
 """
+# Stamped by .github/workflows/release.yml on tag push (e.g. "0.1.0-alpha1").
+# Dev builds and PR CI keep the +dev suffix so user-reported logs are
+# unambiguous about whether a release artifact or a dev checkout was running.
+__version__ = "0.0.0+dev"
+
 import logging
 from pathlib import Path
 from typing import Optional

@@ -6,6 +6,13 @@ on:
   push:
     branches: [master]
 
+# Cancel an in-flight test run when a newer commit lands on the same
+# branch / PR. The release workflow has its own (non-cancelling)
+# concurrency group keyed on the tag.
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
