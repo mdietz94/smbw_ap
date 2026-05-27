@@ -68,6 +68,7 @@ INSTALL_URLS = {
     "switch_mod_submodule": "",
     "archipelago_deps": "",
     "ryujinx": "https://github.com/Ryubing/Ryujinx/releases",
+    "lz4": "",
 }
 
 
@@ -934,6 +935,10 @@ def ap_deps_marker_path() -> Path:
     return local_appdata_root() / "ap_deps.ok"
 
 
+def lz4_marker_path() -> Path:
+    return local_appdata_root() / "lz4.ok"
+
+
 def check_archipelago_deps() -> PrereqResult:
     """Archipelago Python dependencies satisfied.
 
@@ -1010,6 +1015,57 @@ def check_archipelago_deps() -> PrereqResult:
 
 
 # ---------------------------------------------------------------------------
+# lz4 — Python package required by LibHakkun's deploy.py at cmake POST_BUILD.
+# deploy.cmake calls `python deploy.py` which does `import lz4.block` at
+# the top; if the PATH-resolved Python doesn't have lz4 the build fails
+# immediately after linking with a ModuleNotFoundError.
+# ---------------------------------------------------------------------------
+
+def check_lz4() -> PrereqResult:
+    """Verify lz4 is importable from the resolved Python.
+
+    LibHakkun's deploy.cmake runs:
+        COMMAND python .../sys/tools/deploy.py ...
+    deploy.py does `import lz4.block` before anything else. The Python
+    that cmake picks up from PATH is the same one `_compose_build_env`
+    prepends via `resolved_python_bin()` — so lz4 must be installed into
+    that interpreter.
+    """
+    marker = lz4_marker_path()
+    if marker.is_file():
+        return PrereqResult(
+            "lz4", "Python lz4 (cmake build dep)", True,
+            f"installed (marker at {marker})",
+            auto_installable=True,
+        )
+
+    py = _resolved_python_bin or sys.executable
+    r = _safe_run([py, "-c", "import lz4.block"])
+    if r is not None and r[0] == 0:
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("ok\n", encoding="utf-8")
+        except OSError:
+            pass
+        return PrereqResult(
+            "lz4", "Python lz4 (cmake build dep)", True,
+            f"importable via {Path(py).name}",
+            auto_installable=True,
+        )
+
+    return PrereqResult(
+        "lz4", "Python lz4 (cmake build dep)", False,
+        "not installed (LibHakkun's deploy.py does `import lz4.block`)",
+        INSTALL_URLS["lz4"],
+        note=(
+            "Click Auto-install to `pip install lz4` into the resolved "
+            "Python. ~1 MB."
+        ),
+        auto_installable=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Ryujinx — emulator install detection. Warn-only: the user may install
 # Ryujinx after running /setup, and the deploy phase can recover by
 # creating the mod dir tree under %APPDATA%\Ryujinx\.
@@ -1065,6 +1121,7 @@ def check_all() -> list[PrereqResult]:
         check_archipelago_submodule(),
         check_switch_mod_submodule(),
         check_archipelago_deps(),
+        check_lz4(),
         check_ryujinx(),
     ]
 
