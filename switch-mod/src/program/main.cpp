@@ -2296,34 +2296,121 @@ uint64_t ContainerAReader::Callback(long gmd, uint32_t* out_value,
     const void* caller_ret = __builtin_return_address(0);
     uint64_t result = Orig(gmd, out_value, hash);
 
+    // ------------------------------------------------------------------
     // AP-authoritative Wonder Seed substitution at the READER.
     //
-    // BISECT-B 2026-05-26: narrowed from all-5-mirror-hashes to ONLY the
-    // gate hash 0x390eb960.  Bisect-A confirmed that the *out_value
-    // mutation is necessary for the observed crash (disabling the write
-    // while keeping the trampoline + recursive Orig was stable across 7
-    // course in/out cycles, vs. the full build crashing after 2).  The
-    // 5 hashes have 8+ distinct caller PCs in the crash log; the gate
-    // hash (0x390eb960) is the only one with a non-UI semantic — it's
-    // read by the gate predicate at FUN_71001787b40.  The other 4 are
-    // UI mirrors whose consumers are the most plausible crash trigger
-    // (UI math with hardcoded per-world max).  Substituting only the
-    // gate hash:
-    //   * preserves the gate-unlock goal of this whole change
-    //   * leaves the UI count display stale (still a stale-cache issue
-    //     to solve, but it doesn't crash)
-    //   * reduces blast radius to the gate predicate's call sites only
-    // If this build is stable, we've identified the bad consumer(s)
-    // are among the 4 UI-mirror hashes.  If it crashes too, the trigger
-    // is one of the 5 gate-hash consumers (NSO+0x5f45a8, 0x5ee8c4,
-    // 0x794068, 0x129874, 0x21fb40 — small enough surface to decompile).
+    // Goal: when the game reads a Wonder Seed count from container A,
+    // return the AP-authoritative count for the current world instead of
+    // the game's natural count.  This makes the gate-unlock predicate at
+    // FUN_71001787b40 (which gates world-map travel on accumulated
+    // seeds) honor the AP item state, and propagates to the world-map
+    // UI count display.
     //
-    // Gated on isSaveLoaded() && !isInSceneTransitionWindow() so we don't
-    // race the game's transition-time bucket mutations.  Recursive Orig()
-    // call to fetch the world index bypasses our trampoline so it's
-    // recursion-safe.
-    static constexpr uint32_t kGateHash = 0x390eb960u;
-    if (out_value != nullptr && gmd != 0 && hash == kGateHash
+    // The 5 mirror hashes group:
+    //   0x21f89ab1, 0x8c20ccb7, 0xeeff353b, 0x390eb960, 0xa0e5f253
+    // All five are written together with the same value in steady state
+    // (writer-storm pattern observed at 10.913-10.979 of crash log
+    // Ryujinx_1.3.3_2026-05-26_19-16-12.log; values are u32 counts of
+    // collected seeds for the current world).  Per
+    // memory/smbwap_wonder_seed_gate_solved.md: writing to this mirror
+    // group unlocks gates; the gate predicate specifically reads
+    // 0x390eb960.
+    //
+    // ------------------------------------------------------------------
+    // Bisect history (2026-05-26) -- DO NOT compress without keeping
+    // the conclusions; this is load-bearing context if the flake returns.
+    // ------------------------------------------------------------------
+    //
+    // ATTEMPT 0 -- substitute all 5.  CRASHED flakily within 2 course
+    // in/outs.  Last successful log line before crash: an A_reader fire
+    // on 0x9f5ead3c (world index) from FUN_71004cceb0; multi-thread
+    // reader storm visible on threads 88/89/46 in the lead-up.  Crashed
+    // hard enough that Ryujinx didn't flush the fatal block to disk.
+    //
+    // BISECT-A -- keep trampoline + recursive Orig but disable the
+    // *out_value mutation.  Stable across 7 course in/outs.  Conclusion:
+    // the substituted value reaching a downstream consumer is necessary
+    // for the crash.  The trampoline itself + recursive Orig of the
+    // world index from inside the callback are both safe.  Reader is
+    // pure (decompile of FUN_710012ae94 confirms no internal mutex / no
+    // LRU update / no side effects).
+    //
+    // BISECT-B -- substitute ONLY the gate hash 0x390eb960.  Stable AND
+    // the world-map UI count displayed the AP value correctly.  Two
+    // findings from this iteration:
+    //
+    //   (1) The world-map UI count reads from the gate hash, so the
+    //       "per-world UI cache" we'd been hypothesizing as the reason
+    //       to move from writer-side to reader-side substitution
+    //       probably doesn't exist -- the original write-side
+    //       interceptor most likely failed for a different reason
+    //       (scene-transition timing race fixed in PR #40).
+    //
+    //   (2) UX quirk: upon ENTERING a course the displayed count
+    //       briefly swaps to the natural value because the
+    //       isInSceneTransitionWindow() gate suppresses substitution
+    //       during transitions.  This may matter for gate predicates
+    //       that fire mid-transition.  The transition gate was carried
+    //       over from the write-side code path (which had a real race
+    //       with FUN_710049F750); for the reader-side path the gate
+    //       is theoretically not needed but kept for safety until
+    //       proven harmful.
+    //
+    // BISECT-C -- substitute gate + first-half of the 4 non-gate
+    // mirrors (0x21f89ab1, 0x8c20ccb7).  Stable AND fixed the bisect-B
+    // UX quirk: the in-course HUD now also shows the AP value because
+    // one of these two hashes is what it reads from.  This is the
+    // CURRENT shipping configuration.
+    //
+    // Conclusion + animation hypothesis (live-validated):
+    //   The 5 mirrors serve animation interpolation roles -- some
+    //   subset are "previous"/"current" buffers used to drive seed-count
+    //   gain animations.  Substituting all 5 forced the animation
+    //   engine to compute a Delta of 10 (game=6 -> ap=16 in the crash
+    //   case) when it expects Delta <= 1 per frame, OOBing some
+    //   fixed-size animation slot array.  Leaving 0xeeff353b and
+    //   0xa0e5f253 untouched starves the animation engine of the input
+    //   that triggers the OOB, so it never fires.
+    //
+    // Why exactly these 3 hashes are safe but the other 2 aren't:
+    //   Unknown.  Hypotheses:
+    //     * 0xeeff353b / 0xa0e5f253 are the "animation source/target"
+    //       buffers and reading a discrepancy triggers a tween
+    //     * One of them is the "world clear celebration" trigger
+    //     * One is the in-course HUD's "previous frame" used to detect
+    //       gain events for sound/particle effects
+    //   None of these are confirmed; the bisect just proved which set
+    //   produces stable behavior.  If the flake returns, the next bisect
+    //   step is to peel back 0x8c20ccb7 first (it had zero callers in
+    //   the crash log -- least observed), then 0x21f89ab1, returning to
+    //   the gate-only configuration as a fallback.
+    //
+    // ------------------------------------------------------------------
+    //
+    // Implementation gates (preserved across the bisect):
+    //   * isSaveLoaded() -- gmd singleton ready, container A populated
+    //   * !isInSceneTransitionWindow() -- inherited from write-side
+    //     path; see BISECT-B finding (2) above
+    //   * Recursive Orig(gmd, &world_val, 0x9f5ead3c) to fetch the
+    //     world index bypasses our trampoline so it's recursion-safe
+    //     (reader is pure per the decompile)
+    //   * world_val -> bucket via kWorldValToBucket -- in-game world
+    //     index is NOT the AP bucket order: 1=W1, 2=Petal Isles,
+    //     3=W2, 4=W3, 5=W4, 6=W5, 7=W6, 8=Special, while AP buckets are
+    //     0=W1, 1=W2..5=W6, 6=Petal Isles, 7=Special.
+    // ------------------------------------------------------------------
+    static constexpr uint32_t kSafeWsSubstituteHashes[3] = {
+        0x390eb960u,  // gate hash (BISECT-B safe; read by FUN_71001787b40)
+        0x21f89ab1u,  // BISECT-C safe; in-course HUD reads from this group
+        0x8c20ccb7u,  // BISECT-C safe; zero callers in crash log (wildcard)
+        // 0xeeff353b -- NOT substituted; suspected animation trigger
+        // 0xa0e5f253 -- NOT substituted; suspected animation trigger
+    };
+    bool is_substitute_target = false;
+    for (uint32_t h : kSafeWsSubstituteHashes) {
+        if (h == hash) { is_substitute_target = true; break; }
+    }
+    if (out_value != nullptr && gmd != 0 && is_substitute_target
         && probe::isSaveLoaded()
         && !probe::isInSceneTransitionWindow()) {
         uint32_t world_val = 0;
@@ -2341,9 +2428,8 @@ uint64_t ContainerAReader::Callback(long gmd, uint32_t* out_value,
                 static std::atomic<uint32_t> sub_log_budget{32};
                 if (sub_log_budget.fetch_sub(1) > 0) {
                     SMBWAP_LOG_INFO(
-                        "WS read substitute (BISECT-B gate-only) "
-                        "hash=0x%08x world=%u bucket=%u "
-                        "game_value=%u -> ap_count=%u",
+                        "WS read substitute hash=0x%08x world=%u "
+                        "bucket=%u game_value=%u -> ap_count=%u",
                         hash, world_val, bucket, game_value, ap_count);
                 }
                 *out_value = ap_count;
