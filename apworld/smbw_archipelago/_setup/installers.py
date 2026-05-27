@@ -640,16 +640,30 @@ def install_archipelago_deps(on_line: ProgressFn | None = None) -> InstallResult
     resolved Python 3.11+.
 
     Uses `prereqs.resolved_python_bin()` so the install lands in the same
-    interpreter the wizard's import-probe will check on Re-check —
+    interpreter the wizard's import-probe will check on Re-check --
     otherwise a user with two Pythons could install into one and probe
     the other.
+
+    Short-circuits when running from a packaged install where the
+    surrounding Archipelago already supplies these deps -- there is no
+    in-tree ``requirements.txt`` to install from and shelling out to
+    pip would either pollute the user's Python or no-op against an
+    already-satisfied env.
     """
+    from .prereqs import archipelago_importable
+    if not is_dev_clone() and archipelago_importable():
+        msg = "satisfied by surrounding Archipelago install (no requirements.txt to install from)"
+        if on_line:
+            on_line(f"[install] {msg}")
+        return InstallResult(True, 0, msg, msg)
+
     py = resolved_python_bin() or sys.executable
     req_path = repo_root() / "vendor" / "Archipelago" / "requirements.txt"
     if not req_path.is_file():
         msg = (
-            f"requirements.txt not found at {req_path} — initialize the "
-            "Archipelago submodule first"
+            f"requirements.txt not found at {req_path} -- initialize the "
+            "Archipelago submodule first, or run the wizard from inside "
+            "an existing Archipelago install"
         )
         if on_line:
             on_line(f"[install] {msg}")
