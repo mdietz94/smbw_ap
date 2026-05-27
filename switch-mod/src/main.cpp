@@ -573,6 +573,86 @@ HkTrampoline<unsigned long long, void*, unsigned char, unsigned>
             return gmdBoolWriterHook.orig(substruct, value, hash);
         });
 
+// =========================================================================
+// WONDER SEED GATE OVERRIDE (reader-side substitution)
+// =========================================================================
+//
+// ContainerAReader @ NSO +0x0012AE94 -- container-A counter GET function.
+// Signature: `uint64_t FUN_710012AE94(GameDataMgr*, uint32_t* out, uint32_t hash)`.
+// Pure: decompile shows no internal mutex, no LRU update, no side effects.
+//
+// AP-authoritative Wonder Seed gate override.  drainInbound caches the
+// 8 per-world counts in g_wonder_seed_counts[]; this trampoline substitutes
+// the AP value into *out_value for the 3 mirror hashes the gate predicate
+// and HUD read from.  No proactive container write -- the writer-side
+// pushWonderSeedOverride approach raced with FUN_710049F750 during scene
+// transitions (PR #40 crash, never fully fixable).
+//
+// The 5 mirror hashes:
+//   0x21f89ab1, 0x8c20ccb7, 0xeeff353b, 0x390eb960, 0xa0e5f253
+// Only the first 3 are substituted (BISECT-C, 2026-05-26 in the retired
+// exlaunch code at src/program/main.cpp:2362-2530).  Substituting all 5
+// crashed -- 0xeeff353b and 0xa0e5f253 appear to feed seed-gain animation
+// interpolation, and a Δ>1 OOBs an animation slot array.
+//
+//   0x390eb960 -- gate hash, read by FUN_71001787b40
+//   0x21f89ab1 -- in-course HUD reads from this group
+//   0x8c20ccb7 -- BISECT-C safe; wildcard from the same group
+HkTrampoline<unsigned long long, long, unsigned*, unsigned>
+    containerAReaderHook = hk::hook::trampoline(
+        [](long gmd, unsigned* out_value, unsigned hash)
+            -> unsigned long long {
+            const unsigned long long result =
+                containerAReaderHook.orig(gmd, out_value, hash);
+
+            static constexpr unsigned kSafeWsSubstituteHashes[3] = {
+                0x390eb960u,  // gate hash (read by FUN_71001787b40)
+                0x21f89ab1u,  // in-course HUD
+                0x8c20ccb7u,  // BISECT-C safe wildcard
+                // 0xeeff353b / 0xa0e5f253 -- DO NOT substitute (animation
+                // source/target buffers; substituting crashed in ATTEMPT 0).
+            };
+            bool is_substitute_target = false;
+            for (unsigned h : kSafeWsSubstituteHashes) {
+                if (h == hash) { is_substitute_target = true; break; }
+            }
+            if (out_value != nullptr && gmd != 0 && is_substitute_target
+                && probe::isSaveLoaded()
+                && !probe::isInSceneTransitionWindow()) {
+                // Recursive Orig() bypasses our trampoline -- the reader is
+                // pure so this is recursion-safe.  Fetches the live current
+                // world index from container-A hash 0x9f5ead3c.
+                unsigned world_val = 0;
+                containerAReaderHook.orig(gmd, &world_val, 0x9f5ead3cu);
+                // In-game world index -> AP bucket.  In-game order is
+                // 1=W1, 2=Petal Isles, 3=W2..7=W6, 8=Special.  AP buckets
+                // are 0=W1..5=W6, 6=Petal Isles, 7=Special.
+                static constexpr signed char kWorldValToBucket[9] = {
+                    -1, 0, 6, 1, 2, 3, 4, 5, 7,
+                };
+                if (world_val >= 1 && world_val <= 8) {
+                    const unsigned bucket =
+                        static_cast<unsigned>(kWorldValToBucket[world_val]);
+                    const unsigned ap_count =
+                        smbwap::ap::getWonderSeedCount(bucket);
+                    const unsigned game_value = *out_value;
+                    if (game_value != ap_count) {
+                        static std::atomic<unsigned> sub_log_budget{32};
+                        if (sub_log_budget.fetch_sub(
+                                1, std::memory_order_relaxed) > 0) {
+                            SMBWAP_LOG_INFO(
+                                "WS read substitute hash=0x%08x world=%u "
+                                "bucket=%u game_value=%u -> ap_count=%u",
+                                hash, world_val, bucket,
+                                game_value, ap_count);
+                        }
+                        *out_value = ap_count;
+                    }
+                }
+            }
+            return result;
+        });
+
 void installHook(const char* name, ::ptr offset, hk::Result rc) {
     if (rc.failed()) {
         SMBWAP_LOG_ERROR("install %s @ +0x%lx FAILED rc=0x%x",
@@ -597,7 +677,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2g: 13 hooks + ap/ subsystem + real probe:: grants");
+    SMBWAP_LOG_INFO("Phase 2g: 13 hooks + ap/ subsystem + real probe:: grants + WS reader override");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -633,6 +713,10 @@ extern "C" void hkMain() {
                 gmdContainerAWriterHook.installAtMainOffset(0x0049f648));
     installHook("GmdBoolWriter",       0x01f263fc,
                 gmdBoolWriterHook.installAtMainOffset(0x01f263fc));
+
+    // WONDER SEED GATE OVERRIDE (reader-side substitution)
+    installHook("ContainerAReader",    0x0012ae94,
+                containerAReaderHook.installAtMainOffset(0x0012ae94));
 
     SMBWAP_LOG_INFO("=== smbwap hkMain END ===");
 }
