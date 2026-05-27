@@ -88,6 +88,68 @@ def _format_event(payload: dict[str, Any]) -> str:
     return f"[t+{ts:6.2f}] {evt} {fields}"
 
 
+class BufferedLogStreamer:
+    """Coalesces line events from worker threads into batched Kivy updates.
+
+    Why: the cmake/ninja build can stream hundreds of lines/sec. Scheduling
+    a separate Clock.schedule_once per line saturates the UI thread — each
+    callback reassigns log_view.text, forcing a full retokenize+relayout.
+    The window goes "not responding" until the queue drains.  This class
+    decouples production (O(1) lock-protected list append on the worker
+    thread) from display (one Clock.schedule_interval tick → ONE text
+    assignment per 100 ms).
+
+    File writes still happen synchronously on the worker thread so the log
+    is durable even if the wizard process dies before the next drain tick.
+    """
+
+    def __init__(
+        self,
+        log_box,
+        *,
+        max_buffer: int = 2000,
+        tail_size: int = 400,
+        drain_interval: float = 0.1,
+        file_writer=None,
+    ) -> None:
+        self._log_box = log_box
+        self._max_buffer = max_buffer
+        self._tail_size = tail_size
+        self._drain_interval = drain_interval
+        self._file_writer = file_writer
+        self._visible: list[str] = []
+        self._pending: list[str] = []
+        self._lock = threading.Lock()
+        self._event = None
+        self._start()
+
+    def _start(self) -> None:
+        from kivy.clock import Clock as _Clock
+        if self._event is None:
+            self._event = _Clock.schedule_interval(self._drain, self._drain_interval)
+
+    def on_line(self, line: str) -> None:
+        """Thread-safe entry point. Safe to call from any thread."""
+        if self._file_writer is not None:
+            try:
+                self._file_writer(line)
+            except Exception:
+                pass
+        with self._lock:
+            self._pending.append(line)
+
+    def _drain(self, _dt) -> None:
+        with self._lock:
+            if not self._pending:
+                return
+            batch = self._pending
+            self._pending = []
+        self._visible.extend(batch)
+        if len(self._visible) > self._max_buffer:
+            del self._visible[: len(self._visible) - self._max_buffer]
+        self._log_box.text = "\n".join(self._visible[-self._tail_size:])
+
+
 def run_setup_wizard() -> bool:
     """Open the Kivy wizard window. Blocks until the user closes it.
 
@@ -251,6 +313,9 @@ def run_setup_wizard() -> bool:
                 foreground_color=(0.9, 0.9, 0.9, 1),
                 cursor_color=(0, 0, 0, 0),
             )
+            self._streamer = BufferedLogStreamer(
+                self.log_view, file_writer=_append_wizard_log,
+            )
             scroll = ScrollView()
             scroll.add_widget(self.log_view)
             root.add_widget(scroll)
@@ -269,29 +334,24 @@ def run_setup_wizard() -> bool:
 
             return root
 
-        # ----- log helpers -----
+        # ----- log helper -----
 
-        def _append_log(self, line: str) -> None:
-            """Append one line to the GUI log pane (UI thread only)."""
-            self.log_view.text = self.log_view.text + line + "\n"
-            _append_wizard_log(line)
-
-        def _schedule_append(self, line: str) -> None:
-            """Thread-safe log append: marshals to UI thread."""
-            Clock.schedule_once(lambda _dt, _l=line: self._append_log(_l), 0)
+        def _log(self, line: str) -> None:
+            """Thread-safe log append — call from any thread."""
+            self._streamer.on_line(line)
 
         # ----- pipeline kick-off -----
 
         def _start_run(self) -> None:
             if state["running"]:
-                self._schedule_append("[wizard] already running")
+                self._log("[wizard] already running")
                 return
             state["running"] = True
             state["ok"] = False
             self.run_btn.disabled = True
             self.run_btn.text = "Running..."
             self.close_btn.disabled = True
-            self._schedule_append("[wizard] starting pipeline")
+            self._log("[wizard] starting pipeline")
             t = threading.Thread(target=self._worker, daemon=True)
             t.start()
 
@@ -318,7 +378,7 @@ def run_setup_wizard() -> bool:
                 )
 
                 def cb(payload: dict[str, Any]) -> None:
-                    self._schedule_append(_format_event(payload))
+                    self._log(_format_event(payload))
 
                 outcome = run_pipeline(opts, callback=cb)
                 state["ok"] = outcome.ok
@@ -326,7 +386,7 @@ def run_setup_wizard() -> bool:
                     "[wizard] pipeline OK" if outcome.ok
                     else f"[wizard] pipeline FAILED at {outcome.failed_phase}"
                 )
-                self._schedule_append(summary)
+                self._log(summary)
                 # Persist a small state file so a future re-run can default
                 # to the same deploy target + path.
                 save_setup_state({
@@ -336,7 +396,7 @@ def run_setup_wizard() -> bool:
                     "last_ok": outcome.ok,
                 })
             except Exception as e:  # pragma: no cover — defensive
-                self._schedule_append(f"[wizard] crashed: {type(e).__name__}: {e}")
+                self._log(f"[wizard] crashed: {type(e).__name__}: {e}")
                 log.exception("wizard worker crashed")
             finally:
                 state["running"] = False
