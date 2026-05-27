@@ -15,15 +15,6 @@ include(config/config.cmake)
 #
 # See docs/hakkun-migration-plan.md.
 
-option(SMBWAP_DEBUG_SD_LOG
-    "Drain the in-memory log ring to sd:/smbwap_boot.log via a worker thread \
-~5 s after hkMain. Required for the Phase 1 acceptance test on real hardware \
-(Ryujinx already surfaces svcOutputDebugString in its log file)."
-    OFF)
-if(SMBWAP_DEBUG_SD_LOG)
-    add_compile_definitions(SMBWAP_DEBUG_SD_LOG=1)
-endif()
-
 # Source list — explicit, NOT GLOB_RECURSE. The legacy exlaunch source
 # tree at src/program/, src/lib/, lib/{imgui,sead,NintendoSDK} is
 # intentionally orphaned from the build; we pull individual files back in

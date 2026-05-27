@@ -77,6 +77,29 @@ IncrementShadow s_increment_shadow[kShadowSlots] = {};
 bool grantContainerACounter(std::uint32_t hash, std::uint32_t value) {
     void* gmd = gmdSingleton();
     if (gmd == nullptr) return false;
+
+    const auto bp = checkContainerA();
+    if (bp.refuse) {
+        static std::atomic<std::uint32_t> defer_budget{32};
+        if (defer_budget.fetch_sub(1) > 0) {
+            SMBWAP_LOG_WARN(
+                "[backpressure] refused grantContainerACounter(hash=0x%08x, "
+                "value=%u): %s at %u%% of cap (>= %u%%)",
+                hash, value, bp.tightest_ring, bp.max_pct,
+                kBackpressureRefusePct);
+        }
+        return false;
+    }
+    if (bp.warn) {
+        static std::atomic<std::uint32_t> warn_budget{32};
+        if (warn_budget.fetch_sub(1) > 0) {
+            SMBWAP_LOG_WARN(
+                "[backpressure] grantContainerACounter near cap: %s at %u%% "
+                "(>= %u%%)",
+                bp.tightest_ring, bp.max_pct, kBackpressureWarnPct);
+        }
+    }
+
     containerAWriter()(gmd, value, hash);
 
     static std::atomic<std::uint32_t> log_budget{16};
@@ -91,6 +114,35 @@ bool grantContainerACounter(std::uint32_t hash, std::uint32_t value) {
 bool incrementContainerACounter(std::uint32_t hash, std::int32_t delta) {
     void* gmd = gmdSingleton();
     if (gmd == nullptr) return false;
+
+    const auto bp = checkContainerA();
+    if (bp.refuse) {
+        // Non-idempotent path -- refusing here loses the delta because
+        // the bridge doesn't re-enqueue on false return.  The 2026-05-27
+        // observability session showed peak qA depth of 2/140 in 6 min
+        // of active play, so a refusal here means we're already in
+        // catastrophic territory under some unknown code path; better to
+        // surface that with a CRITICAL warning than abort the game.  If
+        // this fires in practice, add a bridge-side retry path for
+        // IncrementHashKeyed.
+        SMBWAP_LOG_ERROR(
+            "[backpressure] CRITICAL: refused incrementContainerACounter("
+            "hash=0x%08x, delta=%d): %s at %u%% of cap -- delta LOST; "
+            "bridge does not re-enqueue IncrementHashKeyed",
+            hash, static_cast<int>(delta),
+            bp.tightest_ring, bp.max_pct);
+        return false;
+    }
+    if (bp.warn) {
+        static std::atomic<std::uint32_t> warn_budget{32};
+        if (warn_budget.fetch_sub(1) > 0) {
+            SMBWAP_LOG_WARN(
+                "[backpressure] incrementContainerACounter near cap: %s at "
+                "%u%% (>= %u%%)",
+                bp.tightest_ring, bp.max_pct, kBackpressureWarnPct);
+        }
+    }
+
     const auto getfn = containerAReader();
     const auto setfn = containerAWriter();
 

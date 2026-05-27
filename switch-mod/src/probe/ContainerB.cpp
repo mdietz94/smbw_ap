@@ -41,6 +41,29 @@ constexpr std::uint32_t kContainerBWriterOffset = 0x0049EA24;
 bool grantContainerBBool(std::uint32_t hash, std::uint32_t value) {
     void* gmd = gmdSingleton();
     if (gmd == nullptr) return false;
+
+    const auto bp = checkContainerB();
+    if (bp.refuse) {
+        static std::atomic<std::uint32_t> defer_budget{32};
+        if (defer_budget.fetch_sub(1) > 0) {
+            SMBWAP_LOG_WARN(
+                "[backpressure] refused grantContainerBBool(hash=0x%08x, "
+                "value=%u): %s at %u%% of cap (>= %u%%)",
+                hash, value, bp.tightest_ring, bp.max_pct,
+                kBackpressureRefusePct);
+        }
+        return false;
+    }
+    if (bp.warn) {
+        static std::atomic<std::uint32_t> warn_budget{32};
+        if (warn_budget.fetch_sub(1) > 0) {
+            SMBWAP_LOG_WARN(
+                "[backpressure] grantContainerBBool near cap: %s at %u%% "
+                "(>= %u%%)",
+                bp.tightest_ring, bp.max_pct, kBackpressureWarnPct);
+        }
+    }
+
     const auto fn = reinterpret_cast<GmdSetBoolFn>(
         mainBase() + kContainerBWriterOffset);
     fn(gmd, value, hash);
