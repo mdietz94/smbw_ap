@@ -1823,6 +1823,75 @@ bool grantContainerBBool(uint32_t hash, uint32_t value)
 {
     long gmd = gmdSingleton();
     if (gmd == 0) return false;
+
+    // Per-hash dedup cache.  Tracks the last value we wrote for each
+    // hash; if a subsequent call would write the same value, skip the
+    // bool writer entirely.
+    //
+    // Motivation -- ModuleSystemWorker1 abort 2026-05-27 08:30:20:
+    //   The bridge sends SetRoyalSeedsAbsolute(mask=0x00) on a 2 s
+    //   periodic tick (plus every ReceivedItems and HelloMsg).  For
+    //   seeds where AP authority has no Royal Seeds, the mask is
+    //   permanently 0x00 -- we observed 15,294 identical mask=0
+    //   messages over a 9-hour session, each producing 6 calls
+    //   through the bool writer (one per Royal Seed hash).  All but
+    //   the first per hash are no-op state-wise but each one queues a
+    //   write to the deferred-write buffer at gmd+0xf8.  After enough
+    //   accumulation a delayed SDK validator audit running on
+    //   ModuleSystemWorker1 aborts inside FUN_71001F263FC.  Same
+    //   delayed-validator pattern documented in CLAUDE.md gotcha #3
+    //   for prepo hooks.
+    //
+    // Correctness:
+    //   The dedup honors AP-authoritative downgrade semantics: the
+    //   first write per hash always goes through, so any genuine state
+    //   change (1 -> 0 clear when the save had it set; 0 -> 1 grant
+    //   when AP receives the item) is applied immediately.  Only
+    //   redundant restates are skipped.
+    //
+    // Known limitation:
+    //   If the game naturally sets a bool between our writes (e.g.,
+    //   player collects a Royal Seed after AP cleared it), our cache
+    //   still reflects "we wrote 0 last" and we won't re-clear on the
+    //   next AP-still-says-0 message.  Active re-clearing of natural
+    //   in-game acquisitions is a separate problem -- it requires
+    //   hooking the seed-acquisition Nerve, which would belong in M5
+    //   (suppress in-game grants entirely).  For now, AP authority is
+    //   enforced on every connect (HelloMsg triggers a fresh send) and
+    //   on every ReceivedItems; the periodic 2 s tick is a backstop
+    //   not a primary path.
+    //
+    // Threading:
+    //   drainInbound runs only on the game thread (via
+    //   NerveActivateOnce::Callback and SetCourseClearFlagExecute::Callback
+    //   per ApFrameBridge.hpp), so this cache is single-producer/
+    //   single-consumer and needs no synchronization.
+    struct CacheEntry { uint32_t hash; uint32_t value; };
+    static constexpr size_t kCacheCap = 12;  // 8 bool hashes + headroom
+    static CacheEntry s_cache[kCacheCap] = {};
+    static size_t s_cache_size = 0;
+
+    bool hash_seen = false;
+    for (size_t i = 0; i < s_cache_size; ++i) {
+        if (s_cache[i].hash == hash) {
+            if (s_cache[i].value == value) {
+                static std::atomic<uint32_t> skip_log_budget{16};
+                if (skip_log_budget.fetch_sub(1) > 0) {
+                    SMBWAP_LOG_INFO(
+                        "GrantHashKeyedBool dedup-skip: hash=0x%08x value=%u",
+                        hash, value);
+                }
+                return true;
+            }
+            s_cache[i].value = value;
+            hash_seen = true;
+            break;
+        }
+    }
+    if (!hash_seen && s_cache_size < kCacheCap) {
+        s_cache[s_cache_size++] = {hash, value};
+    }
+
     const uintptr_t base = exl::util::modules::GetTargetStart();
     auto fn = reinterpret_cast<GmdSetBoolFn>(base + 0x0049EA24);
     fn(gmd, value, hash);
