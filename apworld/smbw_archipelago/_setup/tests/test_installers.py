@@ -412,3 +412,48 @@ def test_install_lz4_pip_failure_no_marker(
     r = I.install_lz4()
     assert r.ok is False
     assert not marker.exists()
+
+
+# ---------------------------------------------------------------------------
+# install_pyelftools
+# ---------------------------------------------------------------------------
+
+def test_install_pyelftools_runs_pip_and_writes_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Successful pip install: command contains 'pyelftools' and marker is written."""
+    marker = tmp_path / "pyelftools.ok"
+    from apworld.smbw_archipelago._setup import prereqs as P
+    monkeypatch.setattr(P, "pyelftools_marker_path", lambda: marker)
+    monkeypatch.setattr(I, "resolved_python_bin", lambda: "/usr/bin/python3")
+
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda cmd, **_k: spawned.append(cmd) or I.InstallResult(True, 0, ""))
+
+    r = I.install_pyelftools()
+    assert r.ok is True
+    assert len(spawned) == 1
+    assert "pyelftools" in spawned[0]
+    assert "pip" in spawned[0]
+    assert "--user" in spawned[0]
+    assert marker.is_file()
+
+
+def test_install_pyelftools_pip_failure_no_marker(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """pip install fails: marker must NOT be written and ok=False returned."""
+    marker = tmp_path / "pyelftools.ok"
+    from apworld.smbw_archipelago._setup import prereqs as P
+    monkeypatch.setattr(P, "pyelftools_marker_path", lambda: marker)
+    monkeypatch.setattr(I, "resolved_python_bin", lambda: "/usr/bin/python3")
+
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda cmd, **_k: I.InstallResult(False, 1, "pip failed"))
+
+    r = I.install_pyelftools()
+    assert r.ok is False
+    assert not marker.exists()
