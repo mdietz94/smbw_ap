@@ -290,6 +290,7 @@ def run_setup_wizard() -> bool:
             state["ok"] = False
             self.run_btn.disabled = True
             self.run_btn.text = "Running..."
+            self.close_btn.disabled = True
             self._schedule_append("[wizard] starting pipeline")
             t = threading.Thread(target=self._worker, daemon=True)
             t.start()
@@ -343,6 +344,7 @@ def run_setup_wizard() -> bool:
                 def _reset_btn(_dt: float) -> None:
                     self.run_btn.disabled = False
                     self.run_btn.text = "Run setup again"
+                    self.close_btn.disabled = False
                 Clock.schedule_once(_reset_btn, 0)
 
     WizardApp().run()
