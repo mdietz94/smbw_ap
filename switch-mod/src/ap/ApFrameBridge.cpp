@@ -149,19 +149,54 @@ void drainInbound() {
             pending_at_entry);
     }
 
+    // Coalesce absolute-overwrite kinds within this drain call.
+    //
+    // The bridge sends a SetBadgesAbsolute + SetRoyalSeedsAbsolute +
+    // SetWonderSeedCounts triplet every ~2 s as an idempotent backstop
+    // that reverts in-game pickups bypassing AP.  Under the gates above
+    // (isSaveLoaded + isInSceneTransitionWindow), identical triplets
+    // pile up in the inbound ring during gated windows and flush as
+    // bursts when the gate opens -- one ~3 s gated window observed
+    // 18 triplets drained in 3 ms (Ryujinx_1.3.3_2026-05-26_19-16-12.log
+    // lines 11197-11405).
+    //
+    // For absolute-overwrite payloads, last-write-wins is the entire
+    // semantic, so applying each of N piled messages produces the same
+    // final state as applying only the latest.  We defer them until
+    // after the drain loop and apply once per kind with the latest
+    // payload.  Non-deduplicable kinds (GrantHashKeyed, Kill, etc.)
+    // still apply inline preserving their original order, because
+    // they aren't last-write-wins (RMW counter increments, side-effects
+    // like HP=0) -- losing any of them is observable.
+    //
+    // This is purely Switch-side and only collapses messages that pile
+    // up between drain calls.  When the gate is open and drainInbound
+    // runs every tick, each drain pops at most one of each absolute-
+    // overwrite kind, and we apply that one -- so a real state change
+    // never gets skipped, even when its payload matches a previous one
+    // (live state may have drifted from in-game writes).  This is the
+    // key correctness property that prevented us from doing the same
+    // dedup bridge-side: the bridge can't see Switch-local drift, but
+    // the Switch always can because it IS the live state.
+    InboundMsg last_badges{};
+    InboundMsg last_seeds{};
+    InboundMsg last_wsc{};
+    bool has_badges = false;
+    bool has_seeds = false;
+    bool has_wsc = false;
+    int dedup_badges_skipped = 0;
+    int dedup_seeds_skipped = 0;
+    int dedup_wsc_skipped = 0;
+
     InboundMsg msg;
     int drained = 0;
     while (inboundRing().pop(msg)) {
         ++drained;
         switch (msg.kind) {
             case InboundKind::SetBadgesAbsolute: {
-                const auto bits = msg.set_badges_absolute.bits;
-                const bool ok = probe::setBadgeBitfieldAbsolute(bits);
-                SMBWAP_LOG_INFO(
-                    "[grant] drained SetBadgesAbsolute(bits=0x%016llx) -> "
-                    "setBadgeBitfieldAbsolute returned %s",
-                    static_cast<unsigned long long>(bits),
-                    ok ? "true" : "false");
+                if (has_badges) ++dedup_badges_skipped;
+                last_badges = msg;
+                has_badges = true;
                 break;
             }
             case InboundKind::GrantHashKeyed: {
@@ -244,71 +279,15 @@ void drainInbound() {
                 break;
             }
             case InboundKind::SetRoyalSeedsAbsolute: {
-                // AP-authoritative Royal Seed sync (2026-05-26).  Loop
-                // the 6 container-B bool hashes in mask-bit order and
-                // grant/clear each per the mask.  The container-B bool
-                // writer FUN_710049EA24 accepts value=0 just fine, so
-                // a 0 bit cleanly reverts an in-game palace clear that
-                // ran ahead of AP releasing the matching seed item.
-                const auto mask = msg.set_royal_seeds_absolute.mask;
-                std::uint32_t granted = 0;
-                for (std::size_t i = 0; i < kRoyalSeedCount; ++i) {
-                    const std::uint32_t bit_v = (mask >> i) & 1u;
-                    if (probe::grantContainerBBool(kRoyalSeedHashes[i],
-                                                   bit_v)) {
-                        if (bit_v) ++granted;
-                    }
-                }
-                SMBWAP_LOG_INFO(
-                    "[grant] drained SetRoyalSeedsAbsolute(mask=0x%02x) -> "
-                    "%u/%u seed(s) granted (others cleared)",
-                    static_cast<unsigned>(mask),
-                    granted,
-                    static_cast<unsigned>(kRoyalSeedCount));
+                if (has_seeds) ++dedup_seeds_skipped;
+                last_seeds = msg;
+                has_seeds = true;
                 break;
             }
             case InboundKind::SetWonderSeedCounts: {
-                // AP-authoritative per-world Wonder Seed gate override.
-                // Cache the 8 counts; ContainerAReader::Callback in main.cpp
-                // substitutes the AP-authoritative value on every read of
-                // the 3 safe-substituted mirror hashes (gate + 2 UI
-                // mirrors).  No proactive container write -- the previous
-                // pushWonderSeedOverrideCurrentWorld() call here raced
-                // with the game's secondary-container mutations during
-                // scene transitions PR #40's gate didn't catch (notably
-                // level-entry transitions), and aborted inside
-                // FUN_710049F750.  Stack-trace forensics:
-                // Ryujinx_1.3.3_2026-05-26_19-29-05.log (user report,
-                // crash on entering a level).
-                //
-                // The reader-side substitution provides the SAME visible
-                // behavior as the old proactive push:
-                //   * Gate predicate (FUN_71001787b40) reads 0x390eb960
-                //     -> substituted on every read.
-                //   * In-course HUD reads 0x21f89ab1 or 0x8c20ccb7
-                //     -> substituted on every read.
-                // Without the race surface of writing to container A from
-                // our thread during a transition.
-                for (std::uint32_t i = 0; i < kWorldCount; ++i) {
-                    g_wonder_seed_counts[i].store(
-                        msg.set_wonder_seed_counts.counts[i],
-                        std::memory_order_relaxed);
-                }
-                SMBWAP_LOG_INFO(
-                    "[grant] drained SetWonderSeedCounts counts="
-                    "[%u,%u,%u,%u,%u,%u,%u,%u]",
-                    msg.set_wonder_seed_counts.counts[0],
-                    msg.set_wonder_seed_counts.counts[1],
-                    msg.set_wonder_seed_counts.counts[2],
-                    msg.set_wonder_seed_counts.counts[3],
-                    msg.set_wonder_seed_counts.counts[4],
-                    msg.set_wonder_seed_counts.counts[5],
-                    msg.set_wonder_seed_counts.counts[6],
-                    msg.set_wonder_seed_counts.counts[7]);
-                // NOTE: previously called probe::pushWonderSeedOverrideCurrentWorld()
-                // here.  Removed -- see comment block above.  The function
-                // and its helper pushWonderSeedOverride() are now
-                // unreferenced and kept only for archaeology / re-use.
+                if (has_wsc) ++dedup_wsc_skipped;
+                last_wsc = msg;
+                has_wsc = true;
                 break;
             }
             case InboundKind::Kill: {
@@ -342,6 +321,117 @@ void drainInbound() {
                 break;
         }
     }
+    // Apply the latest payload of each deduplicable absolute-overwrite
+    // kind.  See the comment above the deferral declarations for the
+    // last-write-wins rationale.
+
+    if (has_badges) {
+        const auto bits = last_badges.set_badges_absolute.bits;
+        const bool ok = probe::setBadgeBitfieldAbsolute(bits);
+        if (dedup_badges_skipped > 0) {
+            SMBWAP_LOG_INFO(
+                "[grant] coalesced SetBadgesAbsolute(bits=0x%016llx; "
+                "collapsed %d earlier duplicate%s within this drain) -> "
+                "setBadgeBitfieldAbsolute returned %s",
+                static_cast<unsigned long long>(bits),
+                dedup_badges_skipped, dedup_badges_skipped == 1 ? "" : "s",
+                ok ? "true" : "false");
+        } else {
+            SMBWAP_LOG_INFO(
+                "[grant] drained SetBadgesAbsolute(bits=0x%016llx) -> "
+                "setBadgeBitfieldAbsolute returned %s",
+                static_cast<unsigned long long>(bits),
+                ok ? "true" : "false");
+        }
+    }
+
+    if (has_seeds) {
+        // AP-authoritative Royal Seed sync (2026-05-26).  Loop the 6
+        // container-B bool hashes in mask-bit order and grant/clear each
+        // per the mask.  The container-B bool writer FUN_710049EA24
+        // accepts value=0 just fine, so a 0 bit cleanly reverts an
+        // in-game palace clear that ran ahead of AP releasing the
+        // matching seed item.
+        const auto mask = last_seeds.set_royal_seeds_absolute.mask;
+        std::uint32_t granted = 0;
+        for (std::size_t i = 0; i < kRoyalSeedCount; ++i) {
+            const std::uint32_t bit_v = (mask >> i) & 1u;
+            if (probe::grantContainerBBool(kRoyalSeedHashes[i], bit_v)) {
+                if (bit_v) ++granted;
+            }
+        }
+        if (dedup_seeds_skipped > 0) {
+            SMBWAP_LOG_INFO(
+                "[grant] coalesced SetRoyalSeedsAbsolute(mask=0x%02x; "
+                "collapsed %d earlier duplicate%s within this drain) -> "
+                "%u/%u seed(s) granted (others cleared)",
+                static_cast<unsigned>(mask),
+                dedup_seeds_skipped, dedup_seeds_skipped == 1 ? "" : "s",
+                granted, static_cast<unsigned>(kRoyalSeedCount));
+        } else {
+            SMBWAP_LOG_INFO(
+                "[grant] drained SetRoyalSeedsAbsolute(mask=0x%02x) -> "
+                "%u/%u seed(s) granted (others cleared)",
+                static_cast<unsigned>(mask),
+                granted, static_cast<unsigned>(kRoyalSeedCount));
+        }
+    }
+
+    if (has_wsc) {
+        // AP-authoritative per-world Wonder Seed gate override.  Cache
+        // the 8 counts; ContainerAReader::Callback in main.cpp
+        // substitutes the AP-authoritative value on every read of the
+        // 3 safe-substituted mirror hashes (gate + 2 UI mirrors).  No
+        // proactive container write -- the previous
+        // pushWonderSeedOverrideCurrentWorld() call here raced with the
+        // game's secondary-container mutations during scene transitions
+        // PR #40's gate didn't catch (notably level-entry transitions),
+        // and aborted inside FUN_710049F750.  Stack-trace forensics:
+        // Ryujinx_1.3.3_2026-05-26_19-29-05.log (user report, crash on
+        // entering a level).
+        //
+        // The reader-side substitution provides the SAME visible
+        // behavior as the old proactive push:
+        //   * Gate predicate (FUN_71001787b40) reads 0x390eb960
+        //     -> substituted on every read.
+        //   * In-course HUD reads 0x21f89ab1 or 0x8c20ccb7
+        //     -> substituted on every read.
+        // Without the race surface of writing to container A from our
+        // thread during a transition.
+        for (std::uint32_t i = 0; i < kWorldCount; ++i) {
+            g_wonder_seed_counts[i].store(
+                last_wsc.set_wonder_seed_counts.counts[i],
+                std::memory_order_relaxed);
+        }
+        if (dedup_wsc_skipped > 0) {
+            SMBWAP_LOG_INFO(
+                "[grant] coalesced SetWonderSeedCounts (collapsed %d "
+                "earlier duplicate%s within this drain) counts="
+                "[%u,%u,%u,%u,%u,%u,%u,%u]",
+                dedup_wsc_skipped, dedup_wsc_skipped == 1 ? "" : "s",
+                last_wsc.set_wonder_seed_counts.counts[0],
+                last_wsc.set_wonder_seed_counts.counts[1],
+                last_wsc.set_wonder_seed_counts.counts[2],
+                last_wsc.set_wonder_seed_counts.counts[3],
+                last_wsc.set_wonder_seed_counts.counts[4],
+                last_wsc.set_wonder_seed_counts.counts[5],
+                last_wsc.set_wonder_seed_counts.counts[6],
+                last_wsc.set_wonder_seed_counts.counts[7]);
+        } else {
+            SMBWAP_LOG_INFO(
+                "[grant] drained SetWonderSeedCounts counts="
+                "[%u,%u,%u,%u,%u,%u,%u,%u]",
+                last_wsc.set_wonder_seed_counts.counts[0],
+                last_wsc.set_wonder_seed_counts.counts[1],
+                last_wsc.set_wonder_seed_counts.counts[2],
+                last_wsc.set_wonder_seed_counts.counts[3],
+                last_wsc.set_wonder_seed_counts.counts[4],
+                last_wsc.set_wonder_seed_counts.counts[5],
+                last_wsc.set_wonder_seed_counts.counts[6],
+                last_wsc.set_wonder_seed_counts.counts[7]);
+        }
+    }
+
     if (drained > 0) {
         SMBWAP_LOG_DEBUG("[grant] drainInbound drained %d msg(s)", drained);
     }
