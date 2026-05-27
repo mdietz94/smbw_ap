@@ -8,14 +8,14 @@ Coverage:
   - winget tools (Git, CMake, Ninja, Python 3.11) — silent install +
     PATH prepend so the next Re-check resolves the tool without a
     shell restart.
-  - devkitPro: download the official Windows installer from GitHub
-    releases (with SHA-256 verification) and run it. Interactive — the
-    installer's silent-mode flags vary by NSIS/InnoSetup version and a
-    broken silent run is worse than a clear "click through this window".
-  - switch-dev pacman group: invoke `pacman -S --noconfirm switch-dev`
-    via devkitPro's bundled MSYS2 once devkitPro is present.
-  - Git submodule init: `git submodule update --init --recursive` for
-    `vendor/Archipelago` and `switch-mod/lib/{imgui,NintendoSDK,sead}`.
+  - LLVM 19.1.7: download the upstream Windows-MSVC tarball from GitHub
+    releases (with SHA-256 verification) and extract to
+    `%LOCALAPPDATA%/SMBWArchipelago/llvm/`. Coexists with any other LLVM
+    the user has installed — never touches `C:\\Program Files\\LLVM\\`
+    or modifies global PATH. The build step's PATH prepend is scoped to
+    the build subprocess only.
+  - Git submodule init: `git submodule update --init` for
+    `vendor/Archipelago` and `switch-mod/{sys, lib/imgui}`.
   - pip install of Archipelago's `requirements.txt` into the resolved
     Python 3.11+.
 
@@ -38,7 +38,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -49,11 +51,10 @@ from . import local_appdata_root
 from .prereqs import (
     _prepend_path,
     _winget_ninja_paths,
-    _DEVKITPRO_PACMAN_REL,
-    _devkitpro_default_root,
+    ensure_python3_shim,
     is_dev_clone,
+    llvm_portable_root,
     repo_root,
-    resolved_devkitpro_root,
     resolved_python_bin,
 )
 
@@ -320,7 +321,10 @@ def install_python311(on_line: ProgressFn | None = None) -> InstallResult:
     if not r.ok:
         return r
     # Best-effort PATH prepend: winget lands py.exe under
-    # %LOCALAPPDATA%\Programs\Python\Launcher\.
+    # %LOCALAPPDATA%\Programs\Python\Launcher\ and the interpreter at
+    # %LOCALAPPDATA%\Programs\Python\Python311\python.exe. Drop the
+    # `python3.exe` shim so LibHakkun's bare-`python3` shellouts resolve
+    # to the real interpreter, not the Microsoft Store stub.
     localapp = os.environ.get("LOCALAPPDATA")
     if localapp:
         launcher = Path(localapp) / "Programs" / "Python" / "Launcher"
@@ -328,40 +332,33 @@ def install_python311(on_line: ProgressFn | None = None) -> InstallResult:
             _prepend_path(launcher)
             if on_line:
                 on_line(f"[install] prepended {launcher} to PATH")
+        python_exe = (Path(localapp) / "Programs" / "Python"
+                      / "Python311" / "python.exe")
+        if python_exe.is_file():
+            ensure_python3_shim(python_exe)
+            if on_line:
+                on_line(f"[install] ensured python3.exe shim next to {python_exe}")
     return InstallResult(True, 0, r.log, "Python 3.11 installed")
 
 
 # ---------------------------------------------------------------------------
-# devkitPro — direct download + interactive run
+# LLVM 19.1.7 — direct tar.xz extract to %LOCALAPPDATA%\SMBWArchipelago\llvm\
+#
+# LibHakkun's [switch-mod/sys/cmake/toolchain.cmake] hardcodes clang/clang++
+# and the libc++ headers it fetches via setup_libcxx_prepackaged.py are
+# ABI-pinned to LLVM 19. We pin a specific 19.1.x release for reproducibility.
 # ---------------------------------------------------------------------------
 
-# Pinned latest devkitPro Windows installer (as of 2026-05-25). Bumping
-# is a three-field change: URL + (optional) SHA256 + the expected
-# DEVKITPRO env var the installer sets system-wide. The installer is
-# ~5 MB; the real toolchain comes down via pacman afterward (see
-# `install_switch_dev`).
-#
-# We pin a specific release rather than tracking "latest" because the
-# devkitPro installer occasionally changes its silent-mode flags and a
-# silent install with the wrong flag set runs interactively anyway.
-# A pinned version lets us pre-verify the flag set works.
-DEVKITPRO_INSTALLER_URL = (
-    "https://github.com/devkitPro/installer/releases/download/"
-    "v3.0.3/devkitpro-updater-3.0.3.exe"
+LLVM_VERSION = "19.1.7"
+LLVM_URL = (
+    "https://github.com/llvm/llvm-project/releases/download/"
+    f"llvmorg-{LLVM_VERSION}/clang+llvm-{LLVM_VERSION}-x86_64-pc-windows-msvc.tar.xz"
 )
-# SHA-256 left empty in v1: the upstream release doesn't publish a
-# matching `.sha256` file, and pinning the binary's hash without an
-# upstream source-of-truth invites stale-pin breakage. Future hardening:
-# add the hash once we've verified it from a known-good machine.
-DEVKITPRO_INSTALLER_SHA256: str = ""
-DEVKITPRO_INSTALLER_BYTES = 6 * 1024 * 1024     # ~6 MB headroom
-DEVKITPRO_INSTALL_MIN_FREE_BYTES = 1 * 1024 ** 3   # ~1 GiB for switch-dev too
-
-
-def _devkitpro_local_cache() -> Path:
-    d = local_appdata_root() / "devkitpro"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+# Upstream-published SHA-256 of the tarball — protects against
+# mid-download corruption and supply-chain tamper.
+LLVM_SHA256 = "b4557b4f012161f56a2f5d9e877ab9635cafd7a08f7affe14829bd60c9d357f0"
+LLVM_DOWNLOAD_BYTES = 845_236_708       # ~806 MB compressed
+LLVM_UNPACKED_BYTES = 3_563_705_149     # ~3.32 GB on disk
 
 
 def _download_with_progress(
@@ -370,6 +367,7 @@ def _download_with_progress(
     *,
     on_line: ProgressFn | None = None,
     expected_sha256: str = "",
+    timeout: float = 600.0,
 ) -> InstallResult:
     """Stream a URL to disk with per-chunk progress + optional SHA-256
     verification.
@@ -391,7 +389,7 @@ def _download_with_progress(
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "smbwap-setup/1.0"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             total = int(resp.headers.get("Content-Length", "0") or 0)
             written = 0
             next_threshold = 0
@@ -432,122 +430,140 @@ def _download_with_progress(
     return InstallResult(True, 0, "\n".join(log_lines), str(dest))
 
 
-def install_devkitpro(on_line: ProgressFn | None = None) -> InstallResult:
-    """Download the official devkitPro installer and launch it.
-
-    Strategy:
-      1. Pre-check disk (need ~1 GiB free for installer + switch-dev pkgs).
-      2. Download the installer to %LOCALAPPDATA%\\SMBWArchipelago\\devkitpro\\.
-      3. Run it interactively (not silent — installer's silent flags vary
-         by version and a half-broken silent install is worse than a
-         clearly-visible interactive one).
-      4. Tell the user via on_line / detail to click through and then
-         Re-check. The post-install probe (`prereqs.check_devkitpro`)
-         picks up the new $DEVKITPRO env var when the user clicks
-         Re-check.
-
-    On non-Windows: returns ok=False with a "not supported" message —
-    devkitPro on POSIX uses a different installer entirely (pacman from
-    the user's distro).
+def _extract_tar_xz_strip_top(
+    src: Path,
+    dst: Path,
+    *,
+    on_line: ProgressFn | None = None,
+) -> InstallResult:
+    """Extract ``src`` (.tar.xz) into ``dst``, stripping the single
+    top-level dir. LLVM's tarball lays out as
+    ``clang+llvm-19.1.7-x86_64-pc-windows-msvc/...``; we land its
+    contents directly under ``<dst>/`` so the result is
+    ``<dst>/bin/clang.exe`` rather than ``<dst>/clang+llvm-.../bin/clang.exe``.
     """
-    if sys.platform != "win32":
-        msg = (
-            "automatic devkitPro install is Windows-only; on POSIX, "
-            "follow https://devkitpro.org/wiki/Getting_Started"
-        )
+    log_lines: list[str] = []
+
+    def _emit(s: str) -> None:
+        log_lines.append(s)
+        if on_line:
+            on_line(s)
+
+    _emit(f"[extract] opening {src} (tar.xz)")
+    dst.mkdir(parents=True, exist_ok=True)
+    last_emit = time.monotonic()
+    n = 0
+    try:
+        with tarfile.open(src, "r:xz") as tf:
+            for member in tf:
+                parts = member.name.split("/", 1)
+                if len(parts) < 2 or not parts[1]:
+                    continue  # skip the top-level dir entry itself
+                stripped = parts[1]
+                if any(seg in (".", "..") for seg in stripped.split("/")):
+                    raise RuntimeError(
+                        f"refusing to extract suspicious entry: {member.name!r}"
+                    )
+                target = dst / stripped
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if member.issym() or member.islnk():
+                    # Windows MSVC tarball shouldn't contain these; if it
+                    # does, skip quietly — extractfile() returns None for
+                    # symlinks anyway.
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                f = tf.extractfile(member)
+                if f is None:
+                    continue
+                with f, open(target, "wb") as out:
+                    shutil.copyfileobj(f, out)
+                try:
+                    os.chmod(target, member.mode & 0o777)
+                except OSError:
+                    pass
+                n += 1
+                now = time.monotonic()
+                if now - last_emit >= 1.0:
+                    last_emit = now
+                    _emit(f"[extract] {n} files written...")
+    except (tarfile.TarError, OSError, RuntimeError) as e:
+        msg = f"extract failed: {e}"
+        _emit(msg)
+        return InstallResult(False, 1, "\n".join(log_lines), msg)
+    _emit(f"[extract] done ({n} files)")
+    return InstallResult(True, 0, "\n".join(log_lines), str(dst))
+
+
+def install_llvm19(on_line: ProgressFn | None = None) -> InstallResult:
+    """Download LLVM 19.1.7 + extract to %LOCALAPPDATA%\\SMBWArchipelago\\llvm\\.
+
+    Coexists with any other LLVM the user has installed — never touches
+    `C:\\Program Files\\LLVM\\` or modifies global PATH. The build step's
+    PATH prepend (build._compose_build_env) is scoped to the build
+    subprocess only.
+
+    Flow:
+      1. Disk-space precheck against download + unpacked total.
+      2. Skip download if a portable install already exists with a
+         working `clang.exe`.
+      3. Download to a temp file with SHA-256 verification.
+      4. Extract to `<root>/llvm/`, stripping the archive's top-level
+         `clang+llvm-19.1.7-.../` dir.
+      5. The next `check_llvm19()` finds `bin/clang.exe` and flips the
+         prereq row green.
+    """
+    def emit(msg: str) -> None:
         if on_line:
             on_line(msg)
+
+    if sys.platform != "win32":
+        msg = "install_llvm19 is Windows-only (the pinned tarball is the MSVC build)."
+        emit(f"[llvm] {msg}")
         return InstallResult(False, 1, msg, msg)
 
-    cache = _devkitpro_local_cache()
+    dst = llvm_portable_root()
+    clang = dst / "bin" / "clang.exe"
+    if clang.is_file():
+        emit(f"[llvm] already installed at {dst}; skipping download")
+        return InstallResult(True, 0, str(dst), str(dst))
+
     try:
-        _check_disk_space(cache, DEVKITPRO_INSTALL_MIN_FREE_BYTES)
+        # Need download + unpacked + ~10% headroom for tarfile streaming.
+        need = int((LLVM_DOWNLOAD_BYTES + LLVM_UNPACKED_BYTES) * 1.10)
+        _check_disk_space(dst, need)
     except InsufficientDiskError as e:
-        if on_line:
-            on_line(f"[install] {e}")
+        emit(f"[llvm] {e}")
         return InstallResult(False, 1, str(e), str(e))
 
-    installer = cache / "devkitpro-updater.exe"
-    if not installer.is_file():
-        dl = _download_with_progress(
-            DEVKITPRO_INSTALLER_URL,
-            installer,
+    with tempfile.TemporaryDirectory(prefix="smbwap-llvm-") as td:
+        td_path = Path(td)
+        tarball = td_path / f"clang+llvm-{LLVM_VERSION}-windows-msvc.tar.xz"
+        emit(f"[llvm] downloading LLVM {LLVM_VERSION} (~{LLVM_DOWNLOAD_BYTES / (1024**2):.0f} MB)...")
+        r = _download_with_progress(
+            LLVM_URL, tarball,
             on_line=on_line,
-            expected_sha256=DEVKITPRO_INSTALLER_SHA256,
+            expected_sha256=LLVM_SHA256,
+            timeout=600.0,
         )
-        if not dl.ok:
-            return dl
+        if not r.ok:
+            return r
+        emit(f"[llvm] extracting to {dst} (~{LLVM_UNPACKED_BYTES / (1024**3):.1f} GB unpacked)...")
+        r = _extract_tar_xz_strip_top(tarball, dst, on_line=on_line)
+        if not r.ok:
+            return r
 
-    if on_line:
-        on_line(
-            "[install] launching devkitPro installer — click through the "
-            "installer that opens, select the Switch toolchain, then "
-            "click Re-check in the wizard."
+    if not clang.is_file():
+        msg = (
+            f"extraction reported success but {clang} is missing. The "
+            f"tarball layout may have changed in a newer release."
         )
-    # Run without --silent: the installer is a stub that downloads + runs
-    # the real toolchain installer; silent flags are inconsistent across
-    # versions and a stuck-but-invisible installer is worse than an
-    # interactive one.
-    try:
-        proc = subprocess.Popen(
-            [str(installer)],
-            creationflags=_NO_WINDOW,
-        )
-    except OSError as e:
-        msg = f"failed to launch installer: {e}"
-        if on_line:
-            on_line(f"[install] {msg}")
+        emit(f"[llvm] {msg}")
         return InstallResult(False, 1, msg, msg)
-
-    msg = (
-        "devkitPro installer launched (PID "
-        f"{proc.pid}). Click through it, then click Re-check."
-    )
-    if on_line:
-        on_line(f"[install] {msg}")
-    # Don't wait — the installer is interactive and the user owns the
-    # subsequent click-through. The wizard's Re-check button re-probes
-    # the prereq row.
-    return InstallResult(True, 0, msg, msg)
-
-
-def install_switch_dev(on_line: ProgressFn | None = None) -> InstallResult:
-    """Invoke `pacman -S --noconfirm switch-dev` via devkitPro's MSYS2.
-
-    Requires `install_devkitpro` to have completed successfully (and the
-    user to have clicked Re-check on the devkitPro row so the wizard
-    resolved `%DEVKITPRO%`). Without a resolved devkitPro root, this
-    can't even find pacman.
-    """
-    root = resolved_devkitpro_root() or os.environ.get("DEVKITPRO")
-    if not root:
-        # Fall back to default install location — the user may have
-        # installed but not Re-checked yet.
-        default = _devkitpro_default_root()
-        if default:
-            root = str(default)
-    if not root:
-        msg = "DEVKITPRO not set and no install at default location; run devkitPro install first"
-        if on_line:
-            on_line(f"[install] {msg}")
-        return InstallResult(False, 1, msg, msg)
-
-    pac = Path(root) / _DEVKITPRO_PACMAN_REL
-    if not pac.is_file():
-        msg = f"pacman not found at {pac} (devkitPro install may be incomplete)"
-        if on_line:
-            on_line(f"[install] {msg}")
-        return InstallResult(False, 1, msg, msg)
-
-    # Pass devkitPro's own MSYS2 env vars so pacman finds its mirrors.
-    env = os.environ.copy()
-    env["DEVKITPRO"] = root
-    return _stream_subprocess(
-        [str(pac), "-S", "--noconfirm", "--needed", "switch-dev"],
-        on_line=on_line,
-        env=env,
-        timeout=600.0,   # 10 min — slow mirrors can take a while
-    )
+    _prepend_path(clang.parent)
+    emit(f"[llvm] ready: {clang} (PATH-prepended for this process)")
+    return InstallResult(True, 0, str(dst), str(dst))
 
 
 # ---------------------------------------------------------------------------
@@ -597,13 +613,15 @@ def install_archipelago_submodule(on_line: ProgressFn | None = None) -> InstallR
 
 
 def install_switch_mod_submodule(on_line: ProgressFn | None = None) -> InstallResult:
-    """Initialize switch-mod's vendored libs.
+    """Initialize switch-mod's hakkun framework + vendored libs.
 
     Two paths:
-      * **Dev clone**: ``git submodule update --init --recursive`` for
-        the three lib submodules (imgui / NintendoSDK / sead).
+      * **Dev clone**: ``git submodule update --init`` for
+        ``switch-mod/sys`` (LibHakkun — load-bearing for the build) and
+        ``switch-mod/lib/imgui`` (currently gated off, but cheap to
+        keep ready for the debug-overlay flip-on).
       * **Packaged install**: the same sources ship inside the .apworld
-        zip at ``smbwonder/_setup/switch_mod/`` thanks to
+        zip at ``smbwonder/_setup/switch-mod/`` thanks to
         ``scripts/install_apworld.py --bundle-mod``.  No git needed --
         the build phase calls ``bundled_switch_mod()`` to extract them
         on first use.  We just verify the bundle is reachable.
@@ -620,13 +638,14 @@ def install_switch_mod_submodule(on_line: ProgressFn | None = None) -> InstallRe
         # Fall through to the git path so the user gets a clear "not a
         # git clone" error rather than a silent "ok" that fails later.
 
-    # switch-mod itself was promoted from submodule to plain subdirectory of
-    # this repo. Only its nested third-party libs (imgui / NintendoSDK / sead)
-    # still need `git submodule update --init` to be checked out.
+    # switch-mod is plain tracked subdirectory of this repo; only the
+    # framework (sys = LibHakkun) and one nested third-party lib (imgui)
+    # still need `git submodule update --init`. The exlaunch-era
+    # submodules (NintendoSDK, sead) were retired during the hakkun
+    # migration.
     return _git_submodule_update(
+        "switch-mod/sys",
         "switch-mod/lib/imgui",
-        "switch-mod/lib/NintendoSDK",
-        "switch-mod/lib/sead",
         on_line=on_line,
     )
 
@@ -684,8 +703,7 @@ INSTALLERS: dict[str, Callable[[ProgressFn | None], InstallResult]] = {
     "cmake": install_cmake,
     "ninja": install_ninja,
     "python311": install_python311,
-    "devkitpro": install_devkitpro,
-    "switch_dev": install_switch_dev,
+    "llvm19": install_llvm19,
     "archipelago_submodule": install_archipelago_submodule,
     "switch_mod_submodule": install_switch_mod_submodule,
     "archipelago_deps": install_archipelago_deps,
@@ -695,14 +713,14 @@ INSTALLERS: dict[str, Callable[[ProgressFn | None], InstallResult]] = {
 # downstream:
 #   git → submodules (need git to clone)
 #   submodules → archipelago_deps (need vendor/Archipelago/requirements.txt)
-#   devkitpro → switch_dev (need pacman from devkitPro's MSYS2)
+# LLVM is the biggest download (~806 MB), so it goes early — fail-fast on
+# disk / network problems while user attention is still fresh.
 INSTALL_ORDER: tuple[str, ...] = (
     "git",
     "cmake",
     "ninja",
     "python311",
-    "devkitpro",
-    "switch_dev",
+    "llvm19",
     "archipelago_submodule",
     "switch_mod_submodule",
     "archipelago_deps",

@@ -300,14 +300,14 @@ def run_build(
     """Run cmake configure (skipped if cache exists) + ninja build.
 
     Pre-warms prereq detectors that populate `resolved_*` caches the
-    build subprocess reads (DEVKITPRO, cmake, ninja). When PROBE was
+    build subprocess reads (LLVM, cmake, ninja, Python). When PROBE was
     run earlier in the same pipeline the caches are already populated
     and the warm is a fast no-op; when `--phases build` is run alone
     the warm makes sure the build env is properly composed.
     """
     from .build import run_build_phase
     from .prereqs import (
-        check_all, resolved_cmake, resolved_devkitpro_root, resolved_ninja_bin,
+        check_all, resolved_cmake, resolved_llvm_bin, resolved_ninja_bin,
     )
 
     anchor = t0 if t0 is not None else time.monotonic()
@@ -315,7 +315,7 @@ def run_build(
 
     needs_warm = (
         resolved_cmake() == "cmake"
-        or resolved_devkitpro_root() is None
+        or resolved_llvm_bin() is None
         or resolved_ninja_bin() is None
     )
     if needs_warm:

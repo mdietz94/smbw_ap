@@ -2,7 +2,18 @@
 
 This is the project-overview doc. For current-state details and the M-numbered roadmap, always read [docs/handoff.md](docs/handoff.md) first and [docs/milestones.md](docs/milestones.md) second.
 
-> **🚧 In-flight migration (2026-05-27):** the Switch subsdk framework is mid-switch from **exlaunch** to **hakkun**. The exlaunch path described below stopped booting SMBW on Atmosphere 1.11.1 + HATS-2026-05-11 (see [docs/hakkun-migration-plan.md](docs/hakkun-migration-plan.md) and memory `[[smbwap-exlaunch-real-hw-broken]]`). The new build under `switch-mod/CMakeLists.txt` + `switch-mod/sys/` (hakkun submodule) + `switch-mod/config/` + `switch-mod/src/{main.cpp, ap/, probe/, util/}` boots on real hardware as of Phase 2f. The exlaunch-era code at `switch-mod/src/program/`, `switch-mod/src/lib/`, and `switch-mod/module/` is **excluded from the build** but kept on disk as reference until Phase 3 cleanup. The hook-pattern sections below describe the exlaunch API; the hakkun equivalents are in memory `[[smbwap-hakkun-migration]]` (cheat-sheet table). Phase 2g handoff for the next session: `[[smbwap-phase-2g-handoff]]`.
+> **Subsdk framework: hakkun (LLVM 19 + LibHakkun).** The earlier exlaunch
+> path stopped booting SMBW on Atmosphere 1.11.1 + HATS-2026-05-11 (see
+> [docs/hakkun-migration-plan.md](docs/hakkun-migration-plan.md) and memory
+> `[[smbwap-exlaunch-real-hw-broken]]`). The current build is driven by
+> `switch-mod/CMakeLists.txt` + `switch-mod/sys/` (LibHakkun submodule) +
+> `switch-mod/config/` + `switch-mod/src/{main.cpp, ap/, probe/, util/}`
+> and boots on real hardware. The retired exlaunch-era code at
+> `switch-mod/src/program/`, `switch-mod/src/lib/`, and `switch-mod/module/`
+> is **excluded from the build** but kept on disk as reference until
+> Phase 3 cleanup. The hook-pattern sections below describe the exlaunch
+> API; the hakkun equivalents are in memory `[[smbwap-hakkun-migration]]`
+> (cheat-sheet table).
 
 ## What this project is
 
@@ -39,24 +50,27 @@ smwonder_archipelago/             ← outer git repo (this one)
 │           └── tests/              207 tests, runnable via `python -m pytest`
 ├── vendor/
 │   └── Archipelago/                git submodule, pinned to commit 799e0b7b
-└── switch-mod/                     inlined wondar fork (subsdk source; tracked in this repo)
-    ├── CMakeLists.txt              modified: -fpermissive + symlink shim for Windows
-    ├── cmake/toolchain.cmake       devkitA64 cross-compile
-    ├── syms/100/sdk.sym            ★ Nintendo SDK symbol map for InstallAtSymbol
+└── switch-mod/                     subsdk source (tracked in this repo)
+    ├── CMakeLists.txt              hakkun-driven; sets the toolchain file itself
+    ├── config/config.cmake         module name, title ID, USE_SAIL, addons
+    ├── sys/                        ★ git submodule (fruityloops1/LibHakkun) — framework
+    │   ├── cmake/toolchain.cmake     LLVM clang cross-compile (aarch64-none-elf)
+    │   └── cmake/{module,deploy,sail,...}.cmake
+    ├── syms/100/sdk.sym            ★ Nintendo SDK symbol map (Ghidra import)
     ├── lib/imgui                   git submodule (ocornut/imgui, docking branch)
-    ├── lib/NintendoSDK             git submodule (fruityloops1/nnheaders)
-    ├── lib/sead                    git submodule (open-ead/sead)
+    │                                 — debug overlay (gated off in Phase 1 config)
     ├── src/
-    │   ├── lib/                    wondar's inlined exlaunch source
-    │   └── program/
-    │       ├── main.cpp            ★ all our hook installs and callbacks
-    │       ├── util/Log.{hpp,cpp}  smbwap kernel-debug logger (no thread_local)
-    │       ├── util/TargetActorProbe.{hpp,cpp}  legacy probe (stub)
-    │       └── pe/                 wondar's DbgGui (disabled in our build)
+    │   ├── main.cpp                ★ hkMain entry + hook installs
+    │   ├── ap/                     LAN bridge + wire protocol
+    │   ├── probe/                  gmd::GameDataMgr grant primitives
+    │   ├── util/                   Log, Json
+    │   ├── lib/                    retired exlaunch sources (excluded from build)
+    │   └── program/                retired exlaunch sources (excluded from build)
+    ├── module/                     retired exlaunch headers (excluded from build)
     └── build/                      ← gitignored, CMake artifacts
 ```
 
-`switch-mod/` was previously a separate git repo (fork of `mdietz94/wondar`) referenced as a submodule. It has been absorbed into this repo as plain tracked files so the Switch subsdk ships alongside the apworld in a single release. Only the upstream third-party libs under `switch-mod/lib/` remain as submodules; the original wondar repo on GitHub is kept around for historical reference.
+`switch-mod/` was previously a separate git repo (fork of `mdietz94/wondar`) referenced as a submodule. It has been absorbed into this repo as plain tracked files so the Switch subsdk ships alongside the apworld in a single release. The hakkun framework at `switch-mod/sys/` and the imgui submodule are the only remaining submodules under `switch-mod/`; the exlaunch-era NintendoSDK and sead submodules were retired in the hakkun migration.
 
 ## Launching the SMBW Client
 
@@ -84,12 +98,15 @@ Ryujinx with the SMBW mod.
 
 ## Daily dev loop
 
+Prereqs (drive these via `/setup` from SMBW Client for a guided install):
+LLVM 19.1.x (clang on PATH), CMake 3.24+, Ninja, Python 3.11+ with a
+`python3.exe` shim alongside (LibHakkun's `toolchain.cmake` shells out
+to bare `python3` for `setup_libcxx_prepackaged.py`). devkitPro is **not**
+used anywhere — hakkun's toolchain hardcodes clang/clang++.
+
 PowerShell. Build + deploy:
 
 ```pwsh
-$env:DEVKITPRO = "C:\devkitPro"
-$env:PATH = "C:\devkitPro\msys2\usr\bin;" + $env:PATH
-
 & "C:\Program Files\CMake\bin\cmake.exe" --build `
     "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build"
 
@@ -106,9 +123,12 @@ First-time configure (only after blowing away `build/`):
 & "C:\Program Files\CMake\bin\cmake.exe" `
     -S "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod" `
     -B "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build" `
-    -G Ninja `
-    -DCMAKE_TOOLCHAIN_FILE="C:/Users/maxwe/Documents/smwonder_archipelago/switch-mod/cmake/toolchain.cmake"
+    -G Ninja
 ```
+
+No `-DCMAKE_TOOLCHAIN_FILE` — `switch-mod/CMakeLists.txt:3` sets
+`CMAKE_TOOLCHAIN_FILE` to `${CMAKE_SOURCE_DIR}/sys/cmake/toolchain.cmake`
+before `project()`, so passing one is at best dead, at worst wrong.
 
 Tail the live game log (Ryujinx writes `svcOutputDebugString` to its file log):
 

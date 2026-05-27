@@ -23,23 +23,61 @@ def test_expected_artifacts_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert arts["main.npdm"] == tmp_path / "switch-mod" / "build" / "subsdk9.npdm"
 
 
-def test_compose_build_env_sets_devkitpro(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(B, "resolved_devkitpro_root", lambda: str(tmp_path / "devkitPro"))
+def test_compose_build_env_prepends_llvm_bin(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """LibHakkun's toolchain.cmake hardcodes bare clang/clang++. The
+    build env must prepend the wizard-resolved LLVM bin so cmake picks
+    up the verified 19.1.x rather than whatever's first on PATH."""
+    llvm_bin = str(tmp_path / "llvm" / "bin")
+    monkeypatch.setattr(B, "resolved_llvm_bin", lambda: llvm_bin)
     monkeypatch.setattr(B, "resolved_ninja_bin", lambda: None)
-    (tmp_path / "devkitPro" / "msys2" / "usr" / "bin").mkdir(parents=True)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: None)
     env = B._compose_build_env()
-    assert env["DEVKITPRO"] == str(tmp_path / "devkitPro")
-    expected_msys2 = str(tmp_path / "devkitPro" / "msys2" / "usr" / "bin")
-    assert expected_msys2 in env["PATH"]
+    assert llvm_bin in env["PATH"].split(os.pathsep)
     assert env["PYTHONIOENCODING"] == "utf-8"
+
+
+def test_compose_build_env_prepends_python_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """LibHakkun's toolchain.cmake shells out to bare `python3` for
+    setup_libcxx_prepackaged.py. The build env must prepend the resolved
+    Python's dir so that `python3.exe` (the shim ensure_python3_shim
+    drops) is reachable."""
+    py_exe = tmp_path / "py" / "python.exe"
+    py_exe.parent.mkdir(parents=True)
+    py_exe.write_text("", encoding="utf-8")
+    monkeypatch.setattr(B, "resolved_llvm_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_ninja_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: str(py_exe))
+    env = B._compose_build_env()
+    assert str(py_exe.parent) in env["PATH"].split(os.pathsep)
 
 
 def test_compose_build_env_prepends_ninja(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     ninja_bin = str(tmp_path / "ninja-dir")
-    monkeypatch.setattr(B, "resolved_devkitpro_root", lambda: None)
+    monkeypatch.setattr(B, "resolved_llvm_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: None)
     monkeypatch.setattr(B, "resolved_ninja_bin", lambda: ninja_bin)
     env = B._compose_build_env()
     assert ninja_bin in env["PATH"].split(os.pathsep)
+
+
+def test_compose_build_env_no_devkitpro_leakage(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The post-hakkun build env must not set DEVKITPRO or prepend
+    msys2 paths from a *resolved* devkitPro install. We scrub the
+    inherited PATH down to a known value first so we can assert what
+    _compose_build_env itself adds — anything that was already in the
+    user's PATH (e.g. a system-wide devkitPro install) is irrelevant
+    here; we just care that the wizard doesn't re-add the exlaunch
+    toolchain on top."""
+    monkeypatch.setattr(B, "resolved_llvm_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_ninja_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: None)
+    monkeypatch.delenv("DEVKITPRO", raising=False)
+    monkeypatch.setenv("PATH", "C:/known/path")
+    env = B._compose_build_env()
+    assert "DEVKITPRO" not in env
+    # Composed-on PATH must be exactly the inherited stub (no new
+    # devkitpro/msys2 entries prepended by the function).
+    assert env.get("PATH", "") == "C:/known/path"
 
 
 def test_run_build_phase_skips_configure_when_cache_exists(monkeypatch: pytest.MonkeyPatch,
@@ -140,16 +178,19 @@ def test_run_build_phase_fails_on_empty_artifacts(monkeypatch: pytest.MonkeyPatc
     assert outcome.ok is False
 
 
-def test_cmake_configure_fails_without_toolchain(monkeypatch: pytest.MonkeyPatch,
+def test_cmake_configure_fails_without_libhakkun(monkeypatch: pytest.MonkeyPatch,
                                                   tmp_path: Path) -> None:
-    """When toolchain.cmake doesn't exist we must fail clean, not crash
-    inside cmake."""
+    """When switch-mod/sys/cmake/module.cmake (LibHakkun submodule sentinel)
+    is missing, the configure must fail clean with an actionable
+    `git submodule update` hint rather than blow up inside cmake's
+    `include(sys/cmake/module.cmake)`."""
+    monkeypatch.setattr(B, "is_dev_clone", lambda: True)
     monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
     (tmp_path / "switch-mod").mkdir()
-    # No cmake/toolchain.cmake.
+    # No sys/cmake/module.cmake → LibHakkun submodule not initialized.
     r = B.cmake_configure()
     assert r.ok is False
-    assert "toolchain" in r.log.lower()
+    assert "submodule" in r.log.lower() or "libhakkun" in r.log.lower()
 
 
 def test_cmake_build_fails_without_build_dir(monkeypatch: pytest.MonkeyPatch,

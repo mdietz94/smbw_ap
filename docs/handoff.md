@@ -474,18 +474,19 @@ C:\Users\maxwe\Documents\smwonder_archipelago\
 ├── manual_smbwonder_zim\   ← the existing Archipelago Manual world (Python apworld)
 │                             we'll convert this to an integrated apworld
 │                             once the Switch mod talks to a host service
-└── switch-mod\             ← the Switch subsdk (forked from fruityloops1/wondar)
-    ├── CMakeLists.txt        — modified: -fpermissive, symlink shim for include/
-    ├── cmake\toolchain.cmake — devkitA64 cross-compile
-    ├── include\, lib\        — wondar's vendored headers + sead/imgui/NN SDK submodules
+└── switch-mod\             ← the Switch subsdk (hakkun-based)
+    ├── CMakeLists.txt        — sets toolchain to sys/cmake/toolchain.cmake before project()
+    ├── config\config.cmake   — module name, title ID, USE_SAIL=FALSE, addons
+    ├── sys\                  — git submodule: fruityloops1/LibHakkun (framework)
+    │   └── cmake\toolchain.cmake — LLVM clang cross-compile (aarch64-none-elf)
+    ├── lib\imgui             — git submodule: ocornut/imgui (gated off in Phase 1)
     └── src\
-        ├── program\
-        │   ├── main.cpp          ← all our hook installs and callbacks live here
-        │   ├── util\Log.hpp      ← ported from smo_archipelago — svcOutputDebugString
-        │   ├── util\Log.cpp        sink, level prefixes, no thread_local
-        │   ├── util\TargetActorProbe.{hpp,cpp}  ← legacy probe, currently a stub
-        │   └── pe\               — wondar's debug UI (mostly disabled in our build)
-        └── lib\                  — wondar's inlined exlaunch source
+        ├── main.cpp          ← hkMain entry + hook installs
+        ├── ap\               — LAN bridge + wire protocol
+        ├── probe\            — gmd::GameDataMgr grant primitives
+        ├── util\Log.{hpp,cpp}, util\Json.{hpp,cpp}
+        ├── lib\              — retired exlaunch sources (excluded from build)
+        └── program\          — retired exlaunch sources (excluded from build)
 ```
 
 Original wondar (upstream): https://github.com/fruityloops1/wondar
@@ -494,10 +495,12 @@ The plan document the project started from: `C:\Users\maxwe\.claude\plans\rustli
 
 ## Build + deploy (the daily dev loop)
 
-```pwsh
-$env:DEVKITPRO = "C:\devkitPro"
-$env:PATH = "C:\devkitPro\msys2\usr\bin;" + $env:PATH
+Prereqs: LLVM 19.1.x (clang on PATH), CMake 3.24+, Ninja, Python 3.11+
+with a `python3.exe` shim alongside (LibHakkun's `toolchain.cmake`
+shells out to bare `python3` for `setup_libcxx_prepackaged.py`). The
+wizard at `/setup` installs all of this. devkitPro is not used.
 
+```pwsh
 # build
 & "C:\Program Files\CMake\bin\cmake.exe" --build `
     "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build"
@@ -516,11 +519,12 @@ Copy-Item "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build\subsdk
 & "C:\Program Files\CMake\bin\cmake.exe" `
     -S "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod" `
     -B "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build" `
-    -G Ninja `
-    -DCMAKE_TOOLCHAIN_FILE="C:/Users/maxwe/Documents/smwonder_archipelago/switch-mod/cmake/toolchain.cmake"
+    -G Ninja
 ```
 
-If the build fails with a *symlink* error (`sead/container/seadPtrArray.h: No such file or directory`), the CMake-side shim that materializes the broken POSIX symlinks didn't run. Re-run cmake configure; the shim copies `lib/sead/include`, `lib/NintendoSDK/include/{nn,nvn,vapours}` into `build/symlink-shims/` and adds it to the include path. See `CMakeLists.txt` around the `_SYMLINK_SHIM_DIR` block.
+No `-DCMAKE_TOOLCHAIN_FILE` — `switch-mod/CMakeLists.txt` sets the
+toolchain via `set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/sys/cmake/toolchain.cmake")`
+before `project()`, which wins over command-line `-D`.
 
 ## Tailing the in-game log
 
@@ -799,6 +803,6 @@ See `milestones.md` for the full M2+ plan.
 - `src/program/util/TargetActorProbe.hpp`/`TargetActorProbe.cpp` (new): legacy actor-vtable runtime-discovery probe, currently a stub.
 - `src/program/pe/DbgGui/Windows/ActorBrowser.cpp`: lightly modified to call into the probe stub.
 
-This outer repo (`smwonder_archipelago/`) now also holds the `switch-mod/` tree directly. Only the upstream third-party libs under `switch-mod/lib/{imgui,NintendoSDK,sead}` remain as git submodules; everything else is tracked here as plain files.
+This outer repo (`smwonder_archipelago/`) now also holds the `switch-mod/` tree directly. The hakkun framework at `switch-mod/sys/` and `switch-mod/lib/imgui` are the only remaining submodules under `switch-mod/`; the exlaunch-era `NintendoSDK` and `sead` submodules were retired in the hakkun migration. Everything else is tracked here as plain files.
 
 Decide before upstreaming: the symlink-shim and `-fpermissive` fixes are general Windows-build-fixes worth a PR to wondar; the prepo hooks are SMBW-specific and stay private.

@@ -8,8 +8,8 @@ What this test validates, in order:
 
   1. **Bundle build** — `scripts/install_apworld.py --bundle-mod` produces
      a non-empty `smbwonder.apworld` containing both the apworld region
-     and a populated `_setup/switch_mod/` region with all three lib
-     submodules (imgui, NintendoSDK, sead).
+     and a populated `_setup/switch-mod/` region with the LibHakkun
+     framework (sys/) and the imgui submodule.
 
   2. **Sandboxed APPDATA / LOCALAPPDATA** — wizard reads/writes are
      routed into a tempdir via `SMBWAP_APPDATA_ROOT` /
@@ -19,12 +19,12 @@ What this test validates, in order:
 
   3. **Prereq detection** — `wizard_cli.run_probe()` walks every detector
      and returns a per-row result. The test asserts the probe completes
-     (not that every prereq passes — devkitPro / Archipelago submodule
+     (not that every prereq passes — LLVM 19 / Archipelago submodule
      init are documented manual prereqs of the audit, not the test's
      job to install).
 
   4. **Cold switch-mod build** — if every build-relevant prereq is
-     present (devkitPro, cmake, ninja, python311, switch_mod_submodule,
+     present (llvm19, cmake, ninja, python311, switch_mod_submodule,
      archipelago_submodule), runs `wizard_cli.run_build()` end-to-end
      and asserts `subsdk9` + `subsdk9.npdm` exist post-build. If any
      build prereq is missing the test SKIPS with a clear message — this
@@ -32,8 +32,8 @@ What this test validates, in order:
 
 What this test does NOT exercise:
 
-  - Auto-install of devkitPro (~1.5 GB download + interactive installer
-    UI). The test assumes the maintainer's machine has it already.
+  - Auto-install of LLVM 19 (~806 MB download + ~3.3 GB unpack). The
+    test assumes the maintainer's machine has it already.
   - The deploy phase (writes to Ryujinx mods dir, outside the sandbox).
     Build outputs are validated; deploy is a `shutil.copy` step we trust.
   - Leak-audit walk (SMO has `scripts/release_audit.py` with allowed-glob
@@ -41,7 +41,7 @@ What this test does NOT exercise:
     bundled-tree extraction mode and a release_audit module to back it.
 
 If this test passes on a clean machine that has the manual prereqs
-(devkitPro, git, cmake, ninja, python3.11), every link from "fresh
+(LLVM 19, git, cmake, ninja, python3.11), every link from "fresh
 checkout" to "subsdk9 ready to deploy" has been validated against
 current scripts, current pinned submodule SHAs, current wizard
 orchestration, and the produced apworld zip.
@@ -76,25 +76,18 @@ _REPO_ROOT = Path(__file__).resolve().parents[4]
 
 
 def _require_manual_prereqs() -> None:
-    """The test assumes Python tooling, git, and devkitPro are already
+    """The test assumes Python tooling, git, and LLVM 19 are already
     on the machine. Skip with a clear message if any is missing — this
     is the audit's documented prereq, not its job to validate."""
-    for tool in ("git", "cmake", "ninja", "python"):
+    for tool in ("git", "cmake", "ninja", "python", "clang"):
         if not shutil.which(tool):
             pytest.skip(
                 f"manual prereq {tool!r} not on PATH. The audit assumes "
                 f"the maintainer's machine has git, cmake, ninja, python3.11, "
-                f"and devkitPro already installed (the wizard's auto-install "
+                f"and LLVM 19 already installed (the wizard's auto-install "
                 f"covers them on a fresh user machine; this test focuses on "
                 f"the bundle + build flow above those tools)."
             )
-    if not os.environ.get("DEVKITPRO"):
-        # The build will fail if DEVKITPRO is unset; surface the skip
-        # before spending 5 min on a guaranteed-failing build.
-        pytest.skip(
-            "DEVKITPRO env var not set. Install devkitPro and ensure the "
-            "system-wide env var points at C:\\devkitPro (or equivalent)."
-        )
 
 
 @pytest.fixture
@@ -162,22 +155,31 @@ def test_bundle_and_build_against_real_environment(
         with zipfile.ZipFile(apworld_zip) as zf:
             names = zf.namelist()
         apworld_files = [n for n in names
-                         if not n.startswith("smbwonder/_setup/switch_mod/")]
+                         if not n.startswith("smbwonder/_setup/switch-mod/")]
         mod_files = [n for n in names
-                     if n.startswith("smbwonder/_setup/switch_mod/")]
+                     if n.startswith("smbwonder/_setup/switch-mod/")]
         assert apworld_files, "apworld region empty"
-        assert mod_files, "_setup/switch_mod region empty (--bundle-mod broken?)"
-        # Sentinel files the wizard needs to build.
-        assert "smbwonder/_setup/switch_mod/CMakeLists.txt" in names
-        assert "smbwonder/_setup/switch_mod/cmake/toolchain.cmake" in names
-        assert "smbwonder/_setup/switch_mod/src/program/main.cpp" in names
-        # All three lib submodules populated.
-        for sub in ("imgui", "NintendoSDK", "sead"):
-            sub_files = [n for n in mod_files
-                         if f"/lib/{sub}/" in n]
-            assert sub_files, (
-                f"lib/{sub} submodule is empty in bundle — "
-                f"run `git submodule update --init --recursive` and re-run"
+        assert mod_files, "_setup/switch-mod region empty (--bundle-mod broken?)"
+        # Sentinel files the wizard needs to build with the hakkun toolchain.
+        assert "smbwonder/_setup/switch-mod/CMakeLists.txt" in names
+        assert "smbwonder/_setup/switch-mod/sys/CMakeLists.txt" in names, (
+            "LibHakkun framework (switch-mod/sys/) missing from bundle"
+        )
+        assert "smbwonder/_setup/switch-mod/sys/cmake/toolchain.cmake" in names
+        assert "smbwonder/_setup/switch-mod/src/main.cpp" in names
+        # imgui submodule populated (currently gated off but ready for
+        # the debug-overlay flip-on).
+        imgui_files = [n for n in mod_files if "/lib/imgui/" in n]
+        assert imgui_files, (
+            "lib/imgui submodule is empty in bundle — "
+            "run `git submodule update --init switch-mod/lib/imgui` and re-run"
+        )
+        # Retired exlaunch submodules MUST NOT be back in the bundle.
+        for retired in ("NintendoSDK", "sead"):
+            stale = [n for n in mod_files if f"/lib/{retired}/" in n]
+            assert not stale, (
+                f"lib/{retired} (retired exlaunch dep) should not be in the "
+                f"post-hakkun bundle; saw {stale[:3]}"
             )
 
         # --- 3. Sandbox write check -------------------------------------
@@ -201,7 +203,7 @@ def test_bundle_and_build_against_real_environment(
 
         # --- 4. Probe phase ---------------------------------------------
         # Just confirms the probe doesn't crash. We do NOT assert every
-        # prereq passes — devkitPro / Archipelago submodule init are
+        # prereq passes — LLVM 19 / Archipelago submodule init are
         # auto-installable on a user's machine but documented manual
         # prereqs for the audit.
         from apworld.smbw_archipelago._setup import wizard_cli
@@ -222,7 +224,7 @@ def test_bundle_and_build_against_real_environment(
         # documented requirements of running the audit, and the rest of
         # the bundle/probe coverage above is still meaningful.
         build_required_keys = {
-            "devkitpro", "cmake", "ninja", "python311",
+            "llvm19", "cmake", "ninja", "python311",
             "archipelago_submodule", "switch_mod_submodule",
         }
         by_key = {r.key: r for r in probe_outcome.results}

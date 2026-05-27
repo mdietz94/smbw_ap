@@ -24,12 +24,12 @@ Worktree asymmetry (intentional):
     having to merge first.
 
 Supersedes the older ``scripts/install_smbw_apworld.ps1`` — the PS1
-called ``cmd /c mklink`` which resolved to msys2's shell-shim ``cmd``
-(not Windows' ``cmd.exe``) when ``$DEVKITPRO\msys2\usr\bin`` was on
-PATH and failed with "Cannot run a document in the middle of a
-pipeline".  ``subprocess.run(['cmd', '/c', ...])`` from Python goes
-through the Windows app-paths resolver and always lands on the real
-``cmd.exe``.
+called ``cmd /c mklink`` which resolved to whatever ``cmd`` happened to
+be first on PATH (msys2's shell-shim, if the user had an msys2 install
+with its ``usr/bin`` on PATH), failing with "Cannot run a document in
+the middle of a pipeline".  ``subprocess.run(['cmd', '/c', ...])`` from
+Python goes through the Windows app-paths resolver and always lands on
+the real ``cmd.exe``.
 
 Idempotent: re-running over a junction that already points at the
 desired source is a no-op.  A junction pointing somewhere else (e.g. a

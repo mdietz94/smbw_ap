@@ -182,7 +182,7 @@ def run_setup_wizard() -> bool:
             ai_cb.bind(active=_ai_change)
             ai_row.add_widget(ai_cb)
             ai_row.add_widget(Label(
-                text="Auto-install missing prerequisites (winget + devkitPro + git submodules)",
+                text="Auto-install missing prerequisites (winget + LLVM 19 + git submodules)",
                 halign="left", valign="middle",
             ))
             opts.add_widget(ai_row)

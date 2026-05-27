@@ -30,15 +30,11 @@ End-to-end smoke test for the M4 bidirectional MVP.  Validates:
 ## Build + deploy the Switch mod
 
 ```pwsh
-$env:DEVKITPRO = "C:\devkitPro"
-$env:PATH = "C:\devkitPro\msys2\usr\bin;" + $env:PATH
-
-# Reconfigure ONCE after adding new files under switch-mod/src/program/ap/.
+# Reconfigure ONCE after adding new files under switch-mod/src/.
 & "C:\Program Files\CMake\bin\cmake.exe" `
     -S "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod" `
     -B "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build" `
-    -G Ninja `
-    -DCMAKE_TOOLCHAIN_FILE="C:/Users/maxwe/Documents/smwonder_archipelago/switch-mod/cmake/toolchain.cmake"
+    -G Ninja
 
 # Then build incrementally:
 & "C:\Program Files\CMake\bin\cmake.exe" --build `

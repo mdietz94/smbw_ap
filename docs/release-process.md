@@ -22,15 +22,16 @@ normal zip with two logical regions:
 | Inside the zip | Source | What for |
 |---|---|---|
 | `smbwonder/...` | `apworld/smbw_archipelago/` minus `tests/`, `__pycache__/`, dev-only caches | The apworld itself (items, locations, regions, hooks, client/, _setup/) |
-| `smbwonder/_setup/switch_mod/...` | `switch-mod/` + the three lib submodules (`imgui`, `NintendoSDK`, `sead`) | C++ source tree the wizard compiles on the user's machine |
+| `smbwonder/_setup/switch-mod/...` | `switch-mod/` + the `sys/` (LibHakkun) and `lib/imgui` submodules | C++ source tree the wizard compiles on the user's machine |
 
-Size budget: ~13 MB compressed (the lib submodules — particularly imgui's
-demo collection — are the bulk of the weight).
+Size budget: a few MB compressed (LibHakkun + imgui's demo collection are
+the bulk of the weight).
 
 The wizard rebuilds `subsdk9` locally from the bundled sources on every
 fresh user install; we do NOT ship a precompiled Switch binary. This
-keeps CI off of devkitA64 (no toolchain in the runner) and avoids
-distributing a compiled artifact that depends on Nintendo SDK headers.
+keeps CI off of the LLVM cross-compile toolchain (no clang in the
+runner) and avoids distributing a compiled artifact that depends on
+Nintendo SDK headers.
 
 ## Tag conventions
 
@@ -79,11 +80,13 @@ build.
    into a tempdir at `C:\smbwape2e-XXXX\` — your real filesystem state is
    untouched.
 2. Builds the apworld zip (`install_apworld.py --bundle-mod`) and asserts
-   the bundle contains both regions and all three lib submodules.
+   the bundle contains both regions plus the `sys/` (LibHakkun) and
+   `lib/imgui` submodules (and that the retired exlaunch submodules are
+   absent).
 3. Confirms `SMBWAP_APPDATA_ROOT` / `SMBWAP_LOCALAPPDATA_ROOT` overrides
    are in effect so wizard writes can't leak to real %APPDATA%.
 4. Runs `wizard_cli.run_probe()` and prints per-prereq status.
-5. If every build-side prereq is detected (devkitPro, cmake, ninja,
+5. If every build-side prereq is detected (llvm19, cmake, ninja,
    python311, both submodules initialized), runs a real cold switch-mod
    build and asserts `subsdk9` + `subsdk9.npdm` exist post-build.
 6. Restores the pre-test `smbwonder.apworld` (if any) so dev junctions
@@ -122,10 +125,11 @@ $env:SMBWAP_LIVE_INSTALL = "1"; python -m pytest `
 git push --no-verify origin v0.X.Y-alpha
 ```
 
-**Requirements the gate does not auto-install:** `devkitPro`, `cmake`,
-`ninja`, `git`, and `python` must already be on PATH (auto-installed by
-the wizard on a user's machine; expected to already be present on a
-maintainer's). If missing, the test skips with a clear message.
+**Requirements the gate does not auto-install:** `clang` (LLVM 19),
+`cmake`, `ninja`, `git`, and `python` must already be on PATH
+(auto-installed by the wizard on a user's machine; expected to already
+be present on a maintainer's). If missing, the test skips with a clear
+message.
 
 ## Pre-release checklist
 
