@@ -197,6 +197,45 @@ def test_is_dev_clone_false_outside_repo(tmp_path: Path) -> None:
     assert P.is_dev_clone(tmp_path) is False
 
 
+def test_check_archipelago_deps_short_circuits_on_packaged_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Packaged install + AP importable: skip the marker/import probe
+    and trust the surrounding install.  Otherwise the wizard queues a
+    pointless pip install against a `requirements.txt` that doesn't
+    exist outside a dev clone."""
+    monkeypatch.setattr(P, "is_dev_clone", lambda repo=None: False)
+    monkeypatch.setattr(P, "archipelago_importable", lambda: True)
+    # Should not even try to read the marker -- if we patch _safe_run
+    # to raise, the test would catch a leak into the probe path.
+    def boom(*_a, **_kw):
+        raise AssertionError("import probe must not run in short-circuit")
+    monkeypatch.setattr(P, "_safe_run", boom)
+    r = P.check_archipelago_deps()
+    assert r.ok is True
+    assert "surrounding" in r.detail.lower() or "satisfied" in r.detail.lower()
+
+
+def test_check_archipelago_deps_runs_probe_in_dev_clone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Dev clone: the short-circuit MUST NOT fire even if AP happens to
+    be importable -- a dev with a stale submodule wants the import
+    probe to surface the actual breakage."""
+    monkeypatch.setattr(P, "is_dev_clone", lambda repo=None: True)
+    monkeypatch.setattr(P, "archipelago_importable", lambda: True)
+    monkeypatch.setattr(P, "repo_root", lambda: tmp_path)   # no req.txt
+
+    probe_calls: list[list[str]] = []
+    def fake_run(cmd):
+        probe_calls.append(cmd)
+        return (0, "", "")
+    monkeypatch.setattr(P, "_safe_run", fake_run)
+
+    P.check_archipelago_deps()
+    assert probe_calls, "import probe should run in a dev clone"
+
+
 def test_check_switch_mod_submodule_present(monkeypatch: pytest.MonkeyPatch,
                                              tmp_path: Path) -> None:
     # switch-mod itself is inlined in the repo; the check now keys on

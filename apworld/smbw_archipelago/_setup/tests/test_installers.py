@@ -260,3 +260,48 @@ def test_install_switch_mod_submodule_falls_through_to_git_without_bundle(
     r = I.install_switch_mod_submodule()
     assert r.ok is False
     assert "not a git clone" in r.detail
+
+
+def test_install_archipelago_deps_short_circuits_on_packaged_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Packaged install + AP importable: deps are satisfied by the
+    surrounding Archipelago; the wizard must not try to pip install
+    from a `requirements.txt` that doesn't exist in this tree."""
+    monkeypatch.setattr(I, "is_dev_clone", lambda repo=None: False)
+    from apworld.smbw_archipelago._setup import prereqs as P
+    monkeypatch.setattr(P, "archipelago_importable", lambda: True)
+
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda cmd, **_k: spawned.append(cmd) or I.InstallResult(True, 0, ""))
+
+    lines: list[str] = []
+    r = I.install_archipelago_deps(lines.append)
+    assert r.ok is True
+    assert spawned == []   # never reached pip
+    assert any("surrounding" in ln.lower() or "satisfied" in ln.lower() for ln in lines)
+
+
+def test_install_archipelago_deps_pip_installs_in_dev_clone(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Dev clone with a real requirements.txt: pip install runs."""
+    monkeypatch.setattr(I, "is_dev_clone", lambda repo=None: True)
+    monkeypatch.setattr(I, "repo_root", lambda: tmp_path)
+    req = tmp_path / "vendor" / "Archipelago" / "requirements.txt"
+    req.parent.mkdir(parents=True)
+    req.write_text("websockets\n", encoding="utf-8")
+    monkeypatch.setattr(I, "resolved_python_bin", lambda: "/usr/bin/python3")
+
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda cmd, **_k: spawned.append(cmd) or I.InstallResult(True, 0, ""))
+
+    r = I.install_archipelago_deps()
+    assert r.ok is True
+    assert len(spawned) == 1
+    assert "pip" in spawned[0]
+    assert "install" in spawned[0]
