@@ -1459,6 +1459,142 @@ class TestGeneralShopResultPayload(unittest.TestCase):
                          [{"item_kind": 1, "item_value": 0}])
 
 
+# course_result for W4 Treasure Vault — a Break Time! course (1579 bytes,
+# 57 fields).  Captured live 2026-05-27 (Ryujinx log, 00:02:36.276).
+# Break Time! courses are short, flagpole-less bonus stages whose only
+# AP location is the Wonder Seed; the game still emits a normal-shaped
+# course_result on clear (course_result=1, goal_id=0,
+# touch_goal_top_result=False), which without this fixture's regression
+# coverage was being misrouted to NORMAL_EXIT and silently dropped (no
+# matching entry in locations.json for these stages).
+#
+# See _BREAK_TIME_STAGE_KEYS in processor.py for the full set.
+BREAK_TIME_COURSE_RESULT = _hex(
+    "de 00 39 ab 73 61 76 65 64 61 74 61 5f 69 64 d9 23 36 32 66 64 30",
+    "37 36 30 2d 66 36 35 63 34 64 34 35 2d 62 35 61 61 34 64 65 32 2d",
+    "33 32 61 31 38 37 30 64 a9 70 6c 61 79 5f 6d 6f 64 65 01 af 74 6f",
+    "74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 d7 00 00 00 00 00 00 00 04",
+    "c7 aa 73 74 61 67 65 5f 69 6e 66 6f 84 a9 73 74 61 67 65 5f 6b 65",
+    "79 d3 00 00 00 00 f9 b3 93 22 aa 77 6f 72 6c 64 5f 6b 69 6e 64 00",
+    "a8 77 6f 72 6c 64 5f 6e 6f 05 a9 63 6f 75 72 73 65 5f 6e 6f 25 ad",
+    "63 6f 75 72 73 65 5f 69 6e 5f 75 74 63 d7 00 00 00 00 00 6a 17 48",
+    "68 b3 74 6f 74 61 6c 5f 70 6c 61 79 5f 74 69 6d 65 5f 73 65 63 1d",
+    "b5 63 75 72 72 65 6e 74 5f 70 6c 61 79 5f 74 69 6d 65 5f 73 65 63",
+    "1d ad 63 6f 75 72 73 65 5f 72 65 73 75 6c 74 01 b0 68 61 6e 61 5f",
+    "72 61 63 65 5f 72 65 73 75 6c 74 00 a7 67 6f 61 6c 5f 69 64 00 b6",
+    "72 65 6d 6f 74 65 5f 65 6e 63 6f 75 6e 74 65 72 5f 63 6f 75 6e 74",
+    "00 b5 67 68 6f 73 74 5f 65 6e 63 6f 75 6e 74 65 72 5f 63 6f 75 6e",
+    "74 00 af 67 65 74 5f 79 65 6c 6c 6f 77 5f 63 6f 69 6e 09 ae 67 65",
+    "74 5f 6c 75 63 6b 79 5f 63 6f 69 6e 01 b5 79 65 6c 6c 6f 77 5f 63",
+    "6f 69 6e 5f 63 6f 75 72 73 65 5f 69 6e 1d b6 79 65 6c 6c 6f 77 5f",
+    "63 6f 69 6e 5f 63 6f 75 72 73 65 5f 6f 75 74 26 b5 66 6c 6f 77 65",
+    "72 5f 63 6f 69 6e 5f 63 6f 75 72 73 65 5f 69 6e cd 02 8b b6 66 6c",
+    "6f 77 65 72 5f 63 6f 69 6e 5f 63 6f 75 72 73 65 5f 6f 75 74 cd 02",
+    "8c b9 62 69 67 5f 66 6c 6f 77 65 72 5f 63 6f 69 6e 5f 63 6f 75 72",
+    "73 65 5f 69 6e 93 c2 c2 c2 ba 62 69 67 5f 66 6c 6f 77 65 72 5f 63",
+    "6f 69 6e 5f 63 6f 75 72 73 65 5f 6f 75 74 93 c2 c2 c2 b1 61 72 65",
+    "6e 61 5f 73 63 6f 72 65 5f 65 6e 74 65 72 ce ff ff ff ff b2 61 72",
+    "65 6e 61 5f 73 63 6f 72 65 5f 72 65 73 75 6c 74 ce ff ff ff ff b4",
+    "74 6f 75 63 68 5f 67 6f 61 6c 5f 74 6f 70 5f 65 6e 74 65 72 c2 b5",
+    "74 6f 75 63 68 5f 67 6f 61 6c 5f 74 6f 70 5f 72 65 73 75 6c 74 c2",
+    "b0 6e 65 77 5f 66 6c 6f 77 65 72 5f 63 6f 75 6e 74 00 b0 67 65 74",
+    "5f 66 6c 6f 77 65 72 5f 63 6f 75 6e 74 01 b3 77 6f 72 6c 64 5f 77",
+    "6f 6e 64 65 72 5f 66 6c 6f 77 65 72 24 b1 77 6f 72 6c 64 5f 6d 6f",
+    "74 68 65 72 5f 73 65 65 64 c3 b1 6c 61 73 74 5f 70 75 74 5f 70 61",
+    "6e 65 6c 5f 69 64 ff a9 73 74 61 72 74 5f 6d 6d 70 00 aa 72 65 73",
+    "75 6c 74 5f 6d 6d 70 00 b2 66 72 69 65 6e 64 5f 72 61 63 65 5f 6d",
+    "65 6d 62 65 72 00 b2 66 72 69 65 6e 64 5f 72 61 63 65 5f 72 65 73",
+    "75 6c 74 00 b1 72 6f 6f 6d 5f 6d 65 6d 62 65 72 5f 65 6e 74 65 72",
+    "00 af 72 6f 6f 6d 5f 6d 65 6d 62 65 72 5f 6d 61 78 00 b2 6c 61 73",
+    "74 5f 63 74 72 6c 5f 62 79 5f 73 74 63 69 6b c3 a6 72 65 73 63 75",
+    "65 8a b4 72 65 73 63 75 65 5f 72 65 6d 6f 74 65 5f 64 69 72 65 63",
+    "74 00 b1 72 65 73 63 75 65 5f 72 65 6d 6f 74 65 5f 6b 6b 73 00 b5",
+    "72 65 73 63 75 65 64 5f 72 65 6d 6f 74 65 5f 64 69 72 65 63 74 00",
+    "b2 72 65 73 63 75 65 64 5f 72 65 6d 6f 74 65 5f 6b 6b 73 00 b5 72",
+    "65 73 63 75 65 64 5f 72 65 6d 6f 74 65 5f 75 6b 5f 6b 6b 73 00 b4",
+    "72 65 73 63 75 65 64 5f 67 68 6f 73 74 5f 64 69 72 65 63 74 00 b4",
+    "72 65 73 63 75 65 64 5f 6c 6f 63 61 6c 5f 64 69 72 65 63 74 00 b1",
+    "72 65 73 63 75 65 64 5f 6c 6f 63 61 6c 5f 6b 6b 73 00 b0 72 65 73",
+    "63 75 65 64 5f 73 65 6c 66 5f 6b 6b 73 00 ad 73 65 74 5f 6c 6f 63",
+    "61 6c 5f 6b 6b 73 00 a8 69 74 65 6d 5f 62 6c 6e 85 a8 73 65 74 5f",
+    "6c 62 6c 6e 00 ad 67 65 74 5f 73 65 6c 66 5f 6c 62 6c 6e 00 ae 67",
+    "65 74 5f 6f 74 68 65 72 5f 6c 62 6c 6e 00 a8 67 65 74 5f 72 62 6c",
+    "6e 00 af 67 65 74 5f 6c 62 6c 6e 5f 62 79 5f 72 6d 74 00 a5 65 6d",
+    "6f 74 65 84 a6 70 69 63 74 5f 30 00 a6 70 69 63 74 5f 31 00 a6 70",
+    "69 63 74 5f 32 00 a6 70 69 63 74 5f 33 00 aa 63 74 72 6c 5f 67 75",
+    "69 64 65 85 aa 6f 70 65 6e 5f 63 6f 75 6e 74 00 a9 6c 61 73 74 5f",
+    "70 61 67 65 ff ac 70 61 67 65 5f 66 72 61 6d 65 5f 30 00 ac 70 61",
+    "67 65 5f 66 72 61 6d 65 5f 31 00 ac 70 61 67 65 5f 66 72 61 6d 65",
+    "5f 32 00 af 63 68 61 6c 6c 65 6e 67 65 5f 63 6f 75 6e 74 01 b2 74",
+    "6f 74 61 6c 5f 77 6f 6e 64 65 72 5f 63 6f 75 6e 74 00 b0 6d 61 78",
+    "5f 77 6f 6e 64 65 72 5f 63 6f 75 6e 74 00 bb 74 6f 74 61 6c 5f 67",
+    "65 74 5f 66 69 6e 69 73 68 5f 73 65 65 64 5f 63 6f 75 6e 74 00 a8",
+    "6e 65 74 5f 6d 6f 64 65 c2 ae 62 61 64 67 65 5f 69 64 5f 61 72 72",
+    "61 79 91 21 b5 70 6c 61 79 65 72 5f 72 65 73 74 5f 63 6f 75 72 73",
+    "65 5f 69 6e 63 b6 70 6c 61 79 65 72 5f 72 65 73 74 5f 63 6f 75 72",
+    "73 65 5f 6f 75 74 63 af 74 6f 74 61 6c 5f 31 75 70 5f 63 6f 75 6e",
+    "74 00 b0 6c 6f 63 61 6c 5f 70 6c 61 79 65 72 5f 6e 75 6d 01 b0 63",
+    "74 72 6c 5f 73 74 79 6c 65 5f 61 72 72 61 79 94 00 05 05 05 b0 63",
+    "68 61 72 61 5f 74 79 70 65 5f 61 72 72 61 79 91 00 b7 73 65 6c 66",
+    "5f 73 68 61 62 6f 6e 5f 63 6f 75 6e 74 5f 61 72 72 61 79 94 00 00",
+    "00 00 b7 6d 69 73 73 5f 73 68 61 62 6f 6e 5f 63 6f 75 6e 74 5f 61",
+    "72 72 61 79 94 00 00 00 00 b0 64 65 61 64 5f 63 6f 75 6e 74 5f 61",
+    "72 72 61 79 94 00 00 00 00 b7 64 69 72 65 63 74 5f 64 65 61 64 5f",
+    "63 6f 75 6e 74 5f 61 72 72 61 79 94 00 00 00 00 b1 73 79 73 74 65",
+    "6d 5f 72 65 70 6f 72 74 5f 74 61 67 ce 81 a7 03 b8",
+)
+
+
+class TestBreakTimeCourseResultPayload(unittest.TestCase):
+    """W4 Treasure Vault — a Break Time! course clear.
+
+    Captured live 2026-05-27 from a real Switch session.  Same outer
+    shape as a regular course_result (57 fields, course_result=1), but
+    the discriminating values trigger the bug this fixture guards
+    against: goal_id=0 + touch_goal_top_result=False would have routed
+    to NORMAL_EXIT — a check that doesn't exist in locations.json for
+    Break Time! stages.  See processor._BREAK_TIME_STAGE_KEYS for the
+    fix.
+    """
+
+    def test_decodes_clean(self):
+        self.assertEqual(len(BREAK_TIME_COURSE_RESULT), 1579)
+        r = decode_play_report(BREAK_TIME_COURSE_RESULT)
+        self.assertEqual(r.entry_count, 57)
+        self.assertEqual(r.decoded_count, 57)
+        self.assertIsNone(r.error)
+
+    def test_stage_info_identifies_treasure_vault(self):
+        # W4: Treasure Vault — stage_key 0xF9B39322 (negative when
+        # interpreted as signed s64, which is how the encoder picks
+        # the 0xD3 opcode).  world_no=5 follows the PlayReport's
+        # remapped world indexing (AP "W4" → PR world_no=5).
+        r = decode_play_report(BREAK_TIME_COURSE_RESULT)
+        sk = r.fields["stage_info"]["stage_key"] & 0xFFFFFFFF
+        self.assertEqual(sk, 0xF9B39322)
+        self.assertEqual(r.fields["stage_info"]["world_no"], 5)
+        self.assertEqual(r.fields["stage_info"]["course_no"], 37)
+
+    def test_clear_shape_matches_normal_exit_pattern(self):
+        # course_result=1 (cleared), goal_id=0, touch_goal_top_result=
+        # False.  This is the trap: without the Break Time! stage-key
+        # check the processor would emit CheckKind.NORMAL_EXIT.
+        r = decode_play_report(BREAK_TIME_COURSE_RESULT)
+        self.assertEqual(r.fields["course_result"], 1)
+        self.assertEqual(r.fields["goal_id"], 0)
+        self.assertEqual(r.fields["touch_goal_top_result"], False)
+
+    def test_wonder_seed_was_collected(self):
+        # get_flower_count=1 (wonder flower touched during the run).
+        # total_get_finish_seed_count=0 is interesting — Break Time!
+        # courses appear NOT to increment this end-of-course tally
+        # even though the seed was collected; the bridge ignores this
+        # field for Break Time! routing.
+        r = decode_play_report(BREAK_TIME_COURSE_RESULT)
+        self.assertEqual(r.fields["get_flower_count"], 1)
+        self.assertEqual(r.fields["total_get_finish_seed_count"], 0)
+
+
 # ---------------------------------------------------------------------------
 # Error-reporting tests.
 

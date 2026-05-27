@@ -13,6 +13,7 @@ from __future__ import annotations
 import unittest
 
 from ..processor import (
+    _BREAK_TIME_STAGE_KEYS,
     _HUB_HOUSE_STAGE_KEYS,
     _emit_ten_coin_checks,
     _handle_course_result,
@@ -30,6 +31,7 @@ from ..protocol import (
 )
 from ..state import BridgeState, CurrentCourse
 from .test_play_report import (
+    BREAK_TIME_COURSE_RESULT,
     COURSE_RESULT,
     COURSE_RESULT_QUIT,
     KOOPAJR_RESULT_LOSS,
@@ -301,6 +303,70 @@ class TestHubHouseRemap(unittest.TestCase):
         emitted = _handle_course_result(state2, fields)
         self.assertEqual(len(emitted), 1)
         self.assertEqual(emitted[0].kind, CheckKind.WONDER_SEED)
+
+
+# ---------------------------------------------------------------------------
+# Break Time! courses — flagpole-less bonus stages with only a Wonder
+# Seed AP location.  Same routing shape as hub houses but a separate
+# set of stage_keys.  Regression target: the 2026-05-27 user report
+# that a W4 Treasure Vault clear silently fired nothing because the
+# processor was emitting NORMAL_EXIT (no such entry in locations.json
+# for these stages).
+
+TREASURE_VAULT_STAGE_KEY = 0xF9B39322  # W4: Treasure Vault — Break Time!
+
+
+class TestBreakTimeRemap(unittest.TestCase):
+
+    def test_break_time_set_contains_treasure_vault(self):
+        """Guard: the live-captured fixture stage_key must be in the set
+        or the rest of these tests are vacuous."""
+        self.assertIn(TREASURE_VAULT_STAGE_KEY, _BREAK_TIME_STAGE_KEYS)
+
+    def test_break_time_set_disjoint_from_hub_houses_and_palaces(self):
+        """The three sets carve up distinct stage_key namespaces; an
+        accidental overlap would create ambiguous routing."""
+        from ..processor import _PALACE_STAGE_KEYS
+        self.assertEqual(
+            _BREAK_TIME_STAGE_KEYS & _HUB_HOUSE_STAGE_KEYS, frozenset())
+        self.assertEqual(
+            _BREAK_TIME_STAGE_KEYS & _PALACE_STAGE_KEYS, frozenset())
+
+    def test_treasure_vault_clear_emits_wonder_seed_not_normal_exit(self):
+        """The live-captured PlayReport: course_result=1, goal_id=0,
+        touch_goal_top_result=False at a Break Time! stage_key must
+        emit WONDER_SEED (the only AP location these stages have),
+        NEVER NORMAL_EXIT."""
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="course_result", payload=BREAK_TIME_COURSE_RESULT))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].kind, CheckKind.WONDER_SEED)
+        self.assertEqual(emitted[0].stage_key, TREASURE_VAULT_STAGE_KEY)
+        self.assertFalse(state.has_emitted(
+            CheckKind.NORMAL_EXIT, TREASURE_VAULT_STAGE_KEY))
+
+    def test_wonder_seed_nerve_inside_break_time_is_suppressed(self):
+        """Same one-shot semantics as hub houses: the in-game seed
+        only awards once per save, so the nerve path is suppressed in
+        favor of the course_result re-fire path."""
+        state = BridgeState()
+        state.set_current_course(CurrentCourse(
+            stage_key=TREASURE_VAULT_STAGE_KEY, world_no=5, course_no=37))
+        emitted = process_event(state, NerveFireMsg(
+            kind=NerveKind.WONDER_SEED_AWARDED, seq=1))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+    def test_break_time_replay_after_session_restart_re_fires(self):
+        """Disconnect at pickup → reconnect later: the next clear of
+        the Break Time! course must still emit the AP check."""
+        state2 = BridgeState()
+        emitted = process_event(state2, PlayReportMsg(
+            room="course_result", payload=BREAK_TIME_COURSE_RESULT))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].kind, CheckKind.WONDER_SEED)
+        self.assertEqual(emitted[0].stage_key, TREASURE_VAULT_STAGE_KEY)
 
 
 # ---------------------------------------------------------------------------

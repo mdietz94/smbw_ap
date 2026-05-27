@@ -56,6 +56,57 @@ _HUB_HOUSE_STAGE_KEYS: frozenset[int] = frozenset({
 })
 
 
+# Break Time! stage_keys: short, flagpole-less bonus courses whose only
+# AP location is the Wonder Seed handed out at the end (no
+# Normal/Secret/Top-of-Flag/10-Coin entries in locations.json).
+# Mechanically identical to hub houses from the bridge's POV -- the
+# game emits a regular ``course_result`` (course_result=1, goal_id=0,
+# touch_goal_top_result=False) on clear, which would otherwise misroute
+# to NORMAL_EXIT and silently drop because no such AP location exists
+# for these stages.  Live-confirmed 2026-05-27 with W4 Treasure Vault
+# (stage_key=0xF9B39322); see BREAK_TIME_COURSE_RESULT fixture in
+# test_play_report.py.
+#
+# Tumble House (W5) is included here rather than in hub houses because
+# the existing hub-house set predates this fix and we want a single
+# code path for Break Time-shaped clears; functionally equivalent.
+#
+# Set membership derived from the location_table: every stage that has
+# a WONDER_SEED entry and no NORMAL_EXIT / TOP_OF_FLAG / SECRET_EXIT /
+# PALACE_CLEAR / FAKE_EXIT entry, minus the four named hub houses.
+_BREAK_TIME_STAGE_KEYS: frozenset[int] = frozenset({
+    0x2030D011,  # W1: Hurry, Hurry
+    0x77B85684,  # W1: Wonder Token Tunes
+    0x333F1388,  # W1: Pop Up, Hoppo!
+    0x25CD59CE,  # W2: Puzzling Park
+    0x093F62A1,  # W2: Kick It, Outmaway
+    0x5380FCA8,  # W2: Fluff-Puff Peaks Cabin
+    0x0B2722F6,  # W2: Cloud Cover
+    0xDF2CCAC3,  # W2: Zip-Go-Round
+    0x103647C3,  # W3: An Empty Park?
+    0xDCD9A44A,  # W3: Unreachable Treasure?
+    0xC21517B6,  # W3: Watery Wonder Tokens
+    0x647768F3,  # W3: Timer-Switch Climb
+    0x53835ED1,  # W3: Timer-Switch Dash
+    0xEFDA9369,  # W4: Pipe Park
+    0xF9B39322,  # W4: Treasure Vault
+    0x54710BE6,  # W4: Raise the Stage
+    0xF6633FB9,  # W4: Revver Run
+    0x9813AE4B,  # W4: Floating Wonder Tokens
+    0xA1C1F90F,  # W4: Bouncy Tunes
+    0x813617AB,  # W4: Lights Out
+    0x36ED2775,  # W5: Tumble House
+    0x128C6CC8,  # W5: Trottin' Piranha Plants
+    0x3B24E83C,  # W6: Observatory #1
+    0x333AB7F4,  # W6: Item Park
+    0x67BE7C0E,  # W6: Hot-Hot Rocks
+    0x3217F3D0,  # W6: Observatory #2
+    0x46D083C8,  # W6: Observatory #3
+    0x86D3E8CB,  # W6: Observatory #4
+    0x13F9E775,  # PI: Spelunking!
+})
+
+
 # stage_key -> SMBW internal badge id (== container-C owned-bitfield
 # bit position).  When the player clears one of these courses we emit
 # a BADGE_ACQUIRED check in addition to the normal exit-type checks --
@@ -187,13 +238,15 @@ def _handle_nerve_fire(state: BridgeState, event: NerveFireMsg) -> list[Processo
                 "wonder_seed_awarded fire #%d with no current_course; dropping",
                 event.seq)
             return []
-        if course.stage_key in _HUB_HOUSE_STAGE_KEYS:
-            # Hub-house wonder seeds only award once per save -- replay
-            # after disconnect can't re-fire this nerve.  Suppress here
-            # and let _handle_course_result emit the AP check off the
-            # exit event instead.
+        if (course.stage_key in _HUB_HOUSE_STAGE_KEYS
+                or course.stage_key in _BREAK_TIME_STAGE_KEYS):
+            # Hub-house and Break Time! wonder seeds only award once
+            # per save -- replay after disconnect can't re-fire this
+            # nerve.  Suppress here and let _handle_course_result emit
+            # the AP check off the exit event instead (which fires on
+            # every re-entry).
             log.info(
-                "wonder_seed_awarded fire #%d inside hub-house "
+                "wonder_seed_awarded fire #%d inside seed-only "
                 "stage_key=0x%08x; suppressing (routed via course_result)",
                 event.seq, course.stage_key)
             return []
@@ -423,11 +476,15 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
             "deferring to koopajr_result",
             stage_key)
         return []
-    if stage_key in _HUB_HOUSE_STAGE_KEYS:
-        # Hub-house exits route to the WONDER_SEED AP location.  The
-        # in-game wonder-seed nerve fires once-per-save (suppressed in
-        # _handle_nerve_fire); the exit event re-fires on every visit,
-        # so a disconnected player can retry by re-entering the house.
+    if (stage_key in _HUB_HOUSE_STAGE_KEYS
+            or stage_key in _BREAK_TIME_STAGE_KEYS):
+        # Hub-house and Break Time! exits route to the WONDER_SEED AP
+        # location -- these stages have no flagpole and the seed IS
+        # the goal of the course, so the location_table only registers
+        # WONDER_SEED for them.  The in-game wonder-seed nerve fires
+        # once-per-save (suppressed in _handle_nerve_fire); the exit
+        # event re-fires on every visit, so a disconnected player can
+        # retry by re-entering the course.
         kinds = [CheckKind.WONDER_SEED]
     elif goal_id == 0:
         kinds = [CheckKind.NORMAL_EXIT]
