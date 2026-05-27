@@ -1,31 +1,24 @@
 // SMBW Archipelago — hakkun edition entry point.
 //
-// Phase 2b of the hakkun migration (docs/hakkun-migration-plan.md): port
-// the 3 M1_EVENTS trampolines (NerveActivateOnce, SetCourseClearFlagExecute,
-// GameGoalReachedExecute) from the legacy exlaunch main.cpp. These are the
-// core AP location-check hooks — Wonder Seed pickup, course clear, and
-// final-Bowser game-goal.
+// Phases 2a-2c port the exlaunch-era trampolines from the legacy main.cpp
+// (parked at src/program/main.cpp, excluded from the build) to hakkun:
+//   * Phase 2a: 3 CORE_INIT hooks via installAtMainOffset.
+//   * Phase 2b: 3 M1_EVENTS hooks (NerveActivateOnce + 2 Nerve execute hooks).
+//   * Phase 2c: 4 PLAYREPORT hooks via installAtSym (mangled C++ symbols
+//     resolved at runtime via hk::ro::lookupSymbol because we're built
+//     with HK_DISABLE_SAIL).
 //
-// Phase 2b is "install + observe" only:
-//   * Each callback chains through Orig and logs the fire.
-//   * NerveActivateOnce additionally reads `nerve[0]` (the vtable pointer)
-//     and logs the NSO-relative vtable offset, with a distinct-vtable dedup
-//     so we don't flood the ring (this helper fires on every Nerve
-//     one-shot activation — many per second in active gameplay).
+// All phases are "install + observe" only. The smbwap::ap::* bridge
+// wire-up, the WONDER_SEED_AWARDED vtable filter, the SCENE_TRANSITION
+// death detector, the GmdContainerAWriter override, and the
+// PlayReport-payload bridge enqueue all return in Phase 2d/e when the
+// ap/ subsystem is restored to the build alongside the GRANTS hooks.
 //
-// What Phase 2b explicitly does NOT do (returns in Phase 2c+):
-//   * The smbwap::ap::enqueueNerveFire() bridge wire-up.
-//   * The WONDER_SEED_AWARDED vtable filter that converts a NerveActivateOnce
-//     fire into an outbound AP location check.
-//   * The SCENE_TRANSITION death detector + DeathLink enqueue.
-//   * The GmdContainerAWriter override that keeps the Wonder Seed gate
-//     pinned to the AP-authoritative count.
-// Those depend on the ap/ subsystem (still parked under src/program/ap/,
-// excluded from the build) and on the GRANTS hooks (Phase 2c).
-//
-// Hook signatures are intentionally `void(void*)` rather than the typed
-// game::nerve::Nerve* the legacy code used — Phase 2b doesn't dereference
-// past nerve[0] (a single uintptr_t read), so we sidestep the lib/ headers.
+// Hook signatures stay intentionally minimal — `void*` for Nerves and
+// PlayReport `this` pointers (we never dereference past one level),
+// `const PrepoInArrayChar*` / `const PrepoInBuffer*` for the IPC layer
+// (16-byte structs passed by const& through the AAPCS, received as
+// pointer-to-stack-temp). No sead/nn headers needed.
 
 #include <atomic>
 
@@ -171,6 +164,129 @@ HkTrampoline<void, void*> gameGoalReachedExecuteHook = hk::hook::trampoline(
         gameGoalReachedExecuteHook.orig(nerve);
     });
 
+// =========================================================================
+// PLAYREPORT (Phase 2c)
+// =========================================================================
+//
+// PlayReport is the SDK's telemetry/event API. Games emit reports during
+// many gameplay moments (course-in, course-result, world-result, etc.);
+// SMBW's PlayReport stream is the bridge's primary signal for "which
+// course is the player in" and per-course classification. M2.4-M2.6 reverse-
+// engineered the wire format end-to-end; the bridge handles the decode.
+//
+// We hook 4 mangled C++ symbols. Resolution path under HK_DISABLE_SAIL is
+// hk::ro::lookupSymbol(literal) at install time. If the symbol is missing
+// (firmware mismatch, SDK rebuild), installAtSym returns a failed Result
+// rather than aborting — installHook() then logs the failure but lets the
+// rest of hkMain proceed.
+//
+// CRITICAL gotcha (CLAUDE.md #3): hooking *any* PlayReport member function
+// beyond ctor + SetEventId crashes the game via a delayed SDK validator
+// abort on a different thread. The workaround is to drop below the
+// PlayReport class to the IPC client layer (CmifProxyImpl<IPrepoService>::
+// _nn_sf_sync_SaveReport[WithUser]) which sees the report already
+// serialized and is below the audited state. Phase 2c installs:
+//   * PlayReportCtor (safe per the gotcha)
+//   * PlayReportSetEventId (safe per the gotcha)
+//   * PrepoIpcSaveReport (IPC layer)
+//   * PrepoIpcSaveReportWithUser (IPC layer)
+// The Save / SaveUid / Add* PlayReport methods are NOT installed.
+
+// 16-byte {ptr, size} struct that the IPC layer passes by const&. AAPCS
+// flattens this onto the stack and our trampoline receives a pointer.
+struct PrepoInArrayChar { const char* ptr; ::size size; };
+struct PrepoInBuffer    { const void* ptr; ::size size; };
+
+// Hex-dump the IPC payload across multiple log lines so a single ~355-byte
+// report fits in the ring without truncation.  Direct port of the legacy
+// helper.  kChunk=128 -> ~384 hex chars per line, well under the 512-byte
+// log buffer cap.
+void smbwapLogPayloadHex(const void* buf, ::size total_size) {
+    if (!buf || total_size == 0) return;
+    constexpr ::size kChunk = 128;
+    constexpr ::size kMax   = 4096;
+    const ::size to_dump = total_size < kMax ? total_size : kMax;
+    const unsigned char* p = static_cast<const unsigned char*>(buf);
+    static constexpr char kHex[] = "0123456789abcdef";
+    char line[3 * kChunk + 1];
+    for (::size off = 0; off < to_dump; off += kChunk) {
+        const ::size n = (to_dump - off < kChunk) ? to_dump - off : kChunk;
+        for (::size i = 0; i < n; ++i) {
+            const unsigned char v = p[off + i];
+            line[i * 3 + 0] = kHex[v >> 4];
+            line[i * 3 + 1] = kHex[v & 0x0F];
+            line[i * 3 + 2] = ' ';
+        }
+        line[n * 3] = '\0';
+        SMBWAP_LOG_INFO("prepo.ipc.bytes(%zu..%zu/%zu): %s",
+                        off, off + n, total_size, line);
+    }
+    if (total_size > kMax) {
+        SMBWAP_LOG_INFO("prepo.ipc.bytes: TRUNCATED at %zu/%zu",
+                        kMax, total_size);
+    }
+}
+
+// nn::prepo::PlayReport ctor with-event-id. Rarely used by SMBW (game uses
+// no-arg ctor + SetEventId), but the M2.4 bisect found it safe to hook.
+HkTrampoline<void, void*, const char*> playReportCtorHook = hk::hook::trampoline(
+    [](void* thisPtr, const char* event_id) -> void {
+        SMBWAP_LOG_INFO("prepo.ctor this=%p event=%s",
+                        thisPtr, event_id ? event_id : "(null)");
+        playReportCtorHook.orig(thisPtr, event_id);
+    });
+
+// nn::prepo::PlayReport::SetEventId — the post-construction event-name
+// setter. SMBW takes the no-arg-ctor-then-SetEventId path, so this is the
+// hook that actually reveals which "room" each report is for.
+HkTrampoline<unsigned, void*, const char*> playReportSetEventIdHook =
+    hk::hook::trampoline(
+        [](void* thisPtr, const char* event_id) -> unsigned {
+            SMBWAP_LOG_INFO("prepo.set_event this=%p event=%s",
+                            thisPtr, event_id ? event_id : "(null)");
+            return playReportSetEventIdHook.orig(thisPtr, event_id);
+        });
+
+// IPC client layer below PlayReport. The huge mangled name encodes the
+// CmifProxyImpl<IPrepoService, ...> template instantiation chain plus the
+// _nn_sf_sync_SaveReport member signature.
+HkTrampoline<unsigned, void*, const PrepoInArrayChar*, const PrepoInBuffer*,
+             unsigned long>
+    prepoIpcSaveReportHook = hk::hook::trampoline(
+        [](void* thisPtr, const PrepoInArrayChar* room,
+           const PrepoInBuffer* payload, unsigned long flags) -> unsigned {
+            const char* room_ptr =
+                (room && room->ptr) ? room->ptr : "(null)";
+            const ::size room_len = room ? room->size : 0;
+            const void* pay_ptr = payload ? payload->ptr : nullptr;
+            const ::size pay_size = payload ? payload->size : 0;
+            SMBWAP_LOG_INFO(
+                "prepo.ipc.save this=%p room=%.*s pay=%p size=%zu flags=0x%lx",
+                thisPtr, static_cast<int>(room_len), room_ptr,
+                pay_ptr, pay_size, flags);
+            smbwapLogPayloadHex(pay_ptr, pay_size);
+            return prepoIpcSaveReportHook.orig(thisPtr, room, payload, flags);
+        });
+
+HkTrampoline<unsigned, void*, const void*, const PrepoInArrayChar*,
+             const PrepoInBuffer*, unsigned long>
+    prepoIpcSaveReportWithUserHook = hk::hook::trampoline(
+        [](void* thisPtr, const void* uid, const PrepoInArrayChar* room,
+           const PrepoInBuffer* payload, unsigned long flags) -> unsigned {
+            const char* room_ptr =
+                (room && room->ptr) ? room->ptr : "(null)";
+            const ::size room_len = room ? room->size : 0;
+            const void* pay_ptr = payload ? payload->ptr : nullptr;
+            const ::size pay_size = payload ? payload->size : 0;
+            SMBWAP_LOG_INFO(
+                "prepo.ipc.save_uid this=%p uid=%p room=%.*s pay=%p size=%zu flags=0x%lx",
+                thisPtr, uid, static_cast<int>(room_len), room_ptr,
+                pay_ptr, pay_size, flags);
+            smbwapLogPayloadHex(pay_ptr, pay_size);
+            return prepoIpcSaveReportWithUserHook.orig(
+                thisPtr, uid, room, payload, flags);
+        });
+
 void installHook(const char* name, ::ptr offset, hk::Result rc) {
     if (rc.failed()) {
         SMBWAP_LOG_ERROR("install %s @ +0x%lx FAILED rc=0x%x",
@@ -182,11 +298,20 @@ void installHook(const char* name, ::ptr offset, hk::Result rc) {
     }
 }
 
+void installSymHook(const char* friendly, hk::Result rc) {
+    if (rc.failed()) {
+        SMBWAP_LOG_ERROR("install %s by symbol FAILED rc=0x%x (symbol missing?)",
+                         friendly, static_cast<unsigned>(rc.getValue()));
+    } else {
+        SMBWAP_LOG_INFO("install %s by symbol OK", friendly);
+    }
+}
+
 }  // namespace
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2b: 3 CORE_INIT + 3 M1_EVENTS hooks");
+    SMBWAP_LOG_INFO("Phase 2c: 3 CORE_INIT + 3 M1_EVENTS + 4 PLAYREPORT hooks");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -203,6 +328,19 @@ extern "C" void hkMain() {
                 setCourseClearFlagExecuteHook.installAtMainOffset(0x01bf28cc));
     installHook("GameGoalReachedExecute",    0x015b77a8,
                 gameGoalReachedExecuteHook.installAtMainOffset(0x015b77a8));
+
+    // PLAYREPORT (Phase 2c)
+    installSymHook("PlayReportCtor",
+        playReportCtorHook.installAtSym<"_ZN2nn5prepo10PlayReportC2EPKc">());
+    installSymHook("PlayReportSetEventId",
+        playReportSetEventIdHook.installAtSym<
+            "_ZN2nn5prepo10PlayReport10SetEventIdEPKc">());
+    installSymHook("PrepoIpcSaveReport",
+        prepoIpcSaveReportHook.installAtSym<
+            "_ZN2nn2sf4cmif6client6detail13CmifProxyImplINS_5prepo6detail3ipc13IPrepoServiceENS2_19CmifDomainProxyKindINS0_4hipc6client38Hipc2ClientSessionManagedProxyKindBaseINSB_18Hipc2ProxyKindBaseILNSA_6detail11MessageTypeE6EEEEEEENS0_30MemoryResourceAllocationPolicyES8_NS3_19ProcessModifierImplINS2_21DefaultProxyFilterTagEEEE22_nn_sf_sync_SaveReportERKNS0_7InArrayIcEERKNS0_8InBufferEm">());
+    installSymHook("PrepoIpcSaveReportWithUser",
+        prepoIpcSaveReportWithUserHook.installAtSym<
+            "_ZN2nn2sf4cmif6client6detail13CmifProxyImplINS_5prepo6detail3ipc13IPrepoServiceENS2_19CmifDomainProxyKindINS0_4hipc6client38Hipc2ClientSessionManagedProxyKindBaseINSB_18Hipc2ProxyKindBaseILNSA_6detail11MessageTypeE6EEEEEEENS0_30MemoryResourceAllocationPolicyES8_NS3_19ProcessModifierImplINS2_21DefaultProxyFilterTagEEEE30_nn_sf_sync_SaveReportWithUserERKNS_7account3UidERKNS0_7InArrayIcEERKNS0_8InBufferEm">());
 
     SMBWAP_LOG_INFO("=== smbwap hkMain END ===");
 }
