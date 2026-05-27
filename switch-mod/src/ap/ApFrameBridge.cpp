@@ -4,7 +4,7 @@
 #include <cstring>
 
 #include "ApState.hpp"
-#include "../util/Log.hpp"
+#include "util/Log.hpp"
 
 namespace smbwap::ap {
 

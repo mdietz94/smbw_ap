@@ -19,9 +19,10 @@
 #include <cstdint>
 #include <cstring>
 
-extern "C" {
-#include "../lib/nx/kernel/svc.h"
-}
+// hakkun's hk::svc::SleepThread is a C++ namespaced wrapper around the SVC.
+// Used to be wrapped in extern "C" when this code targeted libnx's flat
+// svcSleepThread; now that we're on hakkun, the wrapper is removed.
+#include "hk/svc/api.h"
 
 // nn::os thread API.  We MUST use these instead of raw svcCreateThread
 // for the worker: nn::os::* mutex operations (which nn::socket transitively
@@ -43,8 +44,8 @@ namespace nn::os {
 #include "ApFrameBridge.hpp"
 #include "ApProtocol.hpp"
 #include "ApState.hpp"
-#include "../util/Json.hpp"
-#include "../util/Log.hpp"
+#include "util/Json.hpp"
+#include "util/Log.hpp"
 
 // nn::nifm — networking bring-up.
 namespace nn::nifm {
@@ -125,7 +126,7 @@ void setConn(ConnState s) {
 
 void sleepMs(std::int64_t ms) {
     // svcSleepThread is in nanoseconds.
-    svcSleepThread(ms * 1'000'000ll);
+    hk::svc::SleepThread(ms * 1'000'000ll);
 }
 
 bool sockAddrFromIpv4(const char* host, std::uint16_t port, ::sockaddr& out) {
@@ -155,7 +156,7 @@ int sockPollReadable(std::int32_t fd, std::uint32_t timeout_ms) {
 void apClientWorkerEntry(void* arg) {
     static_cast<ApClient*>(arg)->threadMain();
     // Should never return; sleep forever to keep the kernel happy.
-    while (true) svcSleepThread(INT64_MAX);
+    while (true) hk::svc::SleepThread(INT64_MAX);
 }
 
 ApClient& ApClient::instance() {

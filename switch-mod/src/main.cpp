@@ -30,7 +30,19 @@
 #include "hk/svc/api.h"
 #include "hk/types.h"
 
+#include "ap/ApClient.hpp"
+#include "ap/ApFrameBridge.hpp"
+#include "ap/ApProtocol.hpp"
 #include "util/Log.hpp"
+
+namespace nn::socket {
+    // Forward-decl: declared without bodies; resolved by the runtime
+    // RTLD symbol lookup that hakkun's installAtSym pattern uses. We
+    // call this once from GameFrameworkInitialize::post-Orig to bring
+    // up our own socket pool (768 KiB, matches the legacy build).
+    unsigned int Initialize(void* pool, unsigned long pool_size,
+                            unsigned long tcp_alloc, int max_concurrent);
+}
 
 namespace {
 
@@ -57,7 +69,28 @@ HkTrampoline<void, void*, const void*> gameFrameworkInitializeHook =
     hk::hook::trampoline(
         [](void* thisPtr, const void* arg) -> void {
             SMBWAP_LOG_INFO("hook: GameFrameworkInitialize fire (pre)");
+
+            // Bring up nn::socket BEFORE Orig so our pool wins the
+            // one-shot Initialize race (per the M4 legacy comment:
+            // first call wins; SMBW's later call lands on a no-op
+            // disarm trampoline we'd install if we cared, but we
+            // don't yet because SMBW's pattern + pool sizing has
+            // historically been a no-op).
+            constexpr ::size kSocketPoolSize = 0xC0000;  // 768 KiB
+            alignas(0x1000) static unsigned char s_socket_pool[kSocketPoolSize];
+            const unsigned int rc = nn::socket::Initialize(
+                s_socket_pool, kSocketPoolSize, 0x4000, 0xe);
+            SMBWAP_LOG_INFO("[net] nn::socket::Initialize rc=0x%x pool=%lu bytes",
+                            rc,
+                            static_cast<unsigned long>(kSocketPoolSize));
+
             gameFrameworkInitializeHook.orig(thisPtr, arg);
+
+            // Spawn the LAN client worker thread post-Orig. The
+            // worker itself does nifm bring-up + the reconnect loop.
+            // Idempotent -- repeat calls no-op.
+            smbwap::ap::ApClient::instance().start();
+
             SMBWAP_LOG_INFO("hook: GameFrameworkInitialize fire (post)");
         });
 
@@ -76,8 +109,21 @@ HkTrampoline<void, void*, const void*> gameFrameworkInitializeHook =
 // is safe — verified working under exlaunch's And64InlineHook. Hakkun's
 // trampoline uses similar machinery; if this Phase 2b run shows the
 // callback firing without crashes, the relocation is safe under hakkun too.
+// Vtable offsets we care about. WonderSeedAwarded is the load-bearing
+// one for AP -- every Wonder Seed pickup funnels through here and gets
+// translated into a Switch->bridge enqueueNerveFire(WonderSeedAwarded).
+// The other 5 are observability-only.
+constexpr ::ptr kVtableOff_WonderSeedAwarded = 0x3345728;
+
 HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
     [](void* nerve) -> void {
+        // M4: drain inbound grants on the game thread. NerveActivateOnce
+        // fires on every Nerve activation -- many per second in active
+        // gameplay -- which makes it the natural high-frequency drain
+        // anywhere the player is in a course. Drain is single-atomic-load
+        // early-return when the ring is empty: essentially free.
+        smbwap::ap::drainInbound();
+
         // Cheap vtable-offset read. nerve[0] is the C++ vtable pointer;
         // subtract the loaded NSO base to get the NSO-relative offset.
         ::ptr vt_off = 0;
@@ -134,6 +180,19 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
             }
         }
 
+        // Target match: WONDER_SEED_AWARDED. Fires exactly once when the
+        // player collects the Wonder Seed at the end of the Wonder phase.
+        // The bridge attributes via current_course (set by the most recent
+        // course_in PlayReport). The DeathLink + scene-transition variants
+        // come back in Phase 2g (need probe:: state).
+        if (vt_off == kVtableOff_WonderSeedAwarded) {
+            SMBWAP_LOG_INFO("WONDER_SEED_AWARDED: nerve=%p (fire #%d)",
+                            nerve, s_fires);
+            smbwap::ap::enqueueNerveFire(
+                smbwap::ap::NerveKind::WonderSeedAwarded,
+                static_cast<unsigned>(s_fires));
+        }
+
         nerveActivateOnceHook.orig(nerve);
     });
 
@@ -146,6 +205,11 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
 // course). Prologue is clean per CLAUDE.md notes.
 HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
     [](void* nerve) -> void {
+        // Drain inbound grants on the game thread before the existing
+        // course-clear work. Bridge classifies course clears via the
+        // course_result PlayReport (not this Nerve), so no outbound
+        // enqueue here; we just log.
+        smbwap::ap::drainInbound();
         static int s_fires = 0;
         ++s_fires;
         SMBWAP_LOG_INFO("COURSE_CLEARED: nerve=%p (fire #%d)", nerve, s_fires);
@@ -160,9 +224,15 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 // ClientStatus.CLIENT_GOAL StatusUpdate; for Phase 2b we just log.
 HkTrampoline<void, void*> gameGoalReachedExecuteHook = hk::hook::trampoline(
     [](void* nerve) -> void {
+        // Drain inbound grants -- same idiom as SetCourseClearFlagExecute.
+        smbwap::ap::drainInbound();
         static int s_fires = 0;
         ++s_fires;
         SMBWAP_LOG_INFO("GAME_GOAL_REACHED: nerve=%p (fire #%d)", nerve, s_fires);
+        // Outbound: tell the bridge a CLIENT_GOAL StatusUpdate is due.
+        smbwap::ap::enqueueNerveFire(
+            smbwap::ap::NerveKind::GameGoalReached,
+            static_cast<unsigned>(s_fires));
         gameGoalReachedExecuteHook.orig(nerve);
     });
 
@@ -252,6 +322,22 @@ HkTrampoline<unsigned, void*, const char*> playReportSetEventIdHook =
 // IPC client layer below PlayReport. The huge mangled name encodes the
 // CmifProxyImpl<IPrepoService, ...> template instantiation chain plus the
 // _nn_sf_sync_SaveReport member signature.
+// Build a null-terminated room buffer + push to the bridge. Truncates
+// to kRoomCap - 1 chars. Shared by both IPC hook callbacks.
+void enqueuePlayReportFromIpc(const PrepoInArrayChar* room,
+                              const void* pay_ptr,
+                              ::size pay_size) {
+    char room_buf[smbwap::ap::kRoomCap];
+    const ::size room_len = room ? room->size : 0;
+    const ::size take = room_len < sizeof(room_buf) - 1
+        ? room_len : sizeof(room_buf) - 1;
+    if (room && room->ptr) {
+        for (::size i = 0; i < take; ++i) room_buf[i] = room->ptr[i];
+    }
+    room_buf[take] = '\0';
+    smbwap::ap::enqueuePlayReport(room_buf, pay_ptr, pay_size);
+}
+
 HkTrampoline<unsigned, void*, const PrepoInArrayChar*, const PrepoInBuffer*,
              unsigned long>
     prepoIpcSaveReportHook = hk::hook::trampoline(
@@ -267,6 +353,9 @@ HkTrampoline<unsigned, void*, const PrepoInArrayChar*, const PrepoInBuffer*,
                 thisPtr, static_cast<int>(room_len), room_ptr,
                 pay_ptr, pay_size, flags);
             smbwapLogPayloadHex(pay_ptr, pay_size);
+            // Forward to the bridge BEFORE Orig so a hypothetical
+            // Orig-aborting path still gets the event recorded.
+            enqueuePlayReportFromIpc(room, pay_ptr, pay_size);
             return prepoIpcSaveReportHook.orig(thisPtr, room, payload, flags);
         });
 
@@ -285,6 +374,9 @@ HkTrampoline<unsigned, void*, const void*, const PrepoInArrayChar*,
                 thisPtr, uid, static_cast<int>(room_len), room_ptr,
                 pay_ptr, pay_size, flags);
             smbwapLogPayloadHex(pay_ptr, pay_size);
+            // Bridge treats either IPC variant identically; the uid is
+            // irrelevant for AP routing.
+            enqueuePlayReportFromIpc(room, pay_ptr, pay_size);
             return prepoIpcSaveReportWithUserHook.orig(
                 thisPtr, uid, room, payload, flags);
         });
@@ -378,7 +470,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2d: 3 CORE_INIT + 3 M1_EVENTS + 4 PLAYREPORT + 2 GRANTS hooks");
+    SMBWAP_LOG_INFO("Phase 2f: 12 hooks + ap/ subsystem (outbound) + probe stubs");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
