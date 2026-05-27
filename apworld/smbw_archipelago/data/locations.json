@@ -68,6 +68,15 @@
     "requires": "{OptOne(|Y Button|)} AND {OptOne(|ZL Button/Down|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Flower|)}"
   },
   {
+    "name": "W1: Piranha Plants on Parade - Top of Secret Flag",
+    "region": "W1 Start",
+    "category": [
+      "World 1",
+      "Gold Flag"
+    ],
+    "requires": "{OptOne(|Y Button|)} AND {OptOne(|ZL Button/Down|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Flower|)}"
+  },
+  {
     "name": "W1: Piranha Plants on Parade - Wonder Seed",
     "region": "W1 Start",
     "category": [
@@ -184,6 +193,15 @@
     "region": "W1 3 Seeds",
     "category": [
       "World 1"
+    ],
+    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+  },
+  {
+    "name": "W1: Bulrush Coming Through! - Top of Secret Flag",
+    "region": "W1 3 Seeds",
+    "category": [
+      "World 1",
+      "Gold Flag"
     ],
     "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
@@ -540,6 +558,15 @@
     "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND |Elephant Fruit| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   {
+    "name": "W1: Bulrush Express - Top of Secret Flag",
+    "region": "W1 10 Seeds",
+    "category": [
+      "World 1",
+      "Gold Flag"
+    ],
+    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND |Elephant Fruit| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+  },
+  {
     "name": "W1: Bulrush Express - Wonder Seed",
     "region": "W1 10 Seeds",
     "category": [
@@ -626,6 +653,14 @@
       "10 Coin"
     ],
     "requires": "|Wall-Climb Jump Badge| AND {OptOne(|Y Button|)}"
+  },
+  {
+    "name": "W1: Pipe-Rock Rumble - Normal Exit",
+    "region": "W1 10 Seeds",
+    "category": [
+      "World 1"
+    ],
+    "requires": []
   },
   {
     "name": "W1: Pipe-Rock Rumble - Wonder Seed",
@@ -1171,6 +1206,15 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   {
+    "name": "W2: Outmaway Valley - Top of Secret Flag",
+    "region": "W2 Start",
+    "category": [
+      "World 2",
+      "Gold Flag"
+    ],
+    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+  },
+  {
     "name": "W2: Outmaway Valley - Wonder Seed",
     "region": "W2 Start",
     "category": [
@@ -1533,6 +1577,14 @@
       "10 Coin"
     ],
     "requires": "|Floating High Jump Badge| AND {OptOne(|Y Button|)}"
+  },
+  {
+    "name": "W2: Fluff-Puff Kerfuff - Normal Exit",
+    "region": "W2 4 Seeds",
+    "category": [
+      "World 2"
+    ],
+    "requires": []
   },
   {
     "name": "W2: Fluff-Puff Kerfuff - Wonder Seed",
@@ -1998,7 +2050,7 @@
   },
   {
     "name": "PI: Dolphin Kick II - Normal Exit",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -2006,7 +2058,7 @@
   },
   {
     "name": "PI: Dolphin Kick II - Top of Flag",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles",
       "Gold Flag"
@@ -2015,7 +2067,7 @@
   },
   {
     "name": "PI: Dolphin Kick II - 10 Coin #1",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2024,7 +2076,7 @@
   },
   {
     "name": "PI: Dolphin Kick II - 10 Coin #2",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2033,7 +2085,7 @@
   },
   {
     "name": "PI: Dolphin Kick II - 10 Coin #3",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2042,7 +2094,7 @@
   },
   {
     "name": "PI: Swimming! - Normal Exit",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -2050,7 +2102,7 @@
   },
   {
     "name": "PI: Downpour Uproar - Normal Exit",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -2058,7 +2110,7 @@
   },
   {
     "name": "PI: Downpour Uproar - Wonder Seed",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -2066,7 +2118,7 @@
   },
   {
     "name": "PI: Downpour Uproar - Top of Flag",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles",
       "Gold Flag"
@@ -2075,7 +2127,7 @@
   },
   {
     "name": "PI: Downpour Uproar - 10 Coin #1",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2084,7 +2136,7 @@
   },
   {
     "name": "PI: Downpour Uproar - 10 Coin #2",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2093,7 +2145,7 @@
   },
   {
     "name": "PI: Downpour Uproar - 10 Coin #3",
-    "region": "PI Pre-W3",
+    "region": "PI 5 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2599,7 +2651,7 @@
   },
   {
     "name": "PI: Jewel-Block Cave - Normal Exit",
-    "region": "PI Pre-W4",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -2607,7 +2659,7 @@
   },
   {
     "name": "PI: Jewel-Block Cave - Wonder Seed",
-    "region": "PI Pre-W4",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -2615,7 +2667,7 @@
   },
   {
     "name": "PI: Jewel-Block Cave - Top of Flag",
-    "region": "PI Pre-W4",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "Gold Flag"
@@ -2624,7 +2676,7 @@
   },
   {
     "name": "PI: Jewel-Block Cave - 10 Coin #1",
-    "region": "PI Pre-W4",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2633,7 +2685,7 @@
   },
   {
     "name": "PI: Jewel-Block Cave - 10 Coin #2",
-    "region": "PI Pre-W4",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2642,7 +2694,7 @@
   },
   {
     "name": "PI: Jewel-Block Cave - 10 Coin #3",
-    "region": "PI Pre-W4",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -2651,7 +2703,7 @@
   },
   {
     "name": "PI: Poplin Shop (East) - Wonder Seed",
-    "region": "PI Pre-W4",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3046,6 +3098,15 @@
     "requires": []
   },
   {
+    "name": "W4: Secrets of Shova Mansion - Top of Secret Flag",
+    "region": "W4 Start",
+    "category": [
+      "World 4",
+      "Gold Flag"
+    ],
+    "requires": []
+  },
+  {
     "name": "W4: Secrets of Shova Mansion - Wonder Seed",
     "region": "W4 Start",
     "category": [
@@ -3272,6 +3333,14 @@
       "10 Coin"
     ],
     "requires": "|Invisibility Badge|"
+  },
+  {
+    "name": "W4: Sunbaked Skirmish - Normal Exit",
+    "region": "W4 Start",
+    "category": [
+      "World 4"
+    ],
+    "requires": []
   },
   {
     "name": "W4: Sunbaked Skirmish - Wonder Seed",
@@ -3526,7 +3595,7 @@
   },
   {
     "name": "PI: Petal Isles Flying Battleship - Normal Exit",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3534,7 +3603,7 @@
   },
   {
     "name": "PI: Petal Isles Flying Battleship - Wonder Seed",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3542,7 +3611,7 @@
   },
   {
     "name": "PI: Petal Isles Flying Battleship - 10 Coin #1",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3551,7 +3620,7 @@
   },
   {
     "name": "PI: Petal Isles Flying Battleship - 10 Coin #2",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3560,7 +3629,7 @@
   },
   {
     "name": "PI: Petal Isles Flying Battleship - 10 Coin #3",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3569,7 +3638,7 @@
   },
   {
     "name": "PI: Gnawsher Lair - Normal Exit",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3577,7 +3646,7 @@
   },
   {
     "name": "PI: Gnawsher Lair - Wonder Seed",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3585,7 +3654,7 @@
   },
   {
     "name": "PI: Gnawsher Lair - Top of Flag",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "Gold Flag"
@@ -3594,7 +3663,7 @@
   },
   {
     "name": "PI: Gnawsher Lair - 10 Coin #1",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3603,7 +3672,7 @@
   },
   {
     "name": "PI: Gnawsher Lair - 10 Coin #2",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3612,7 +3681,7 @@
   },
   {
     "name": "PI: Gnawsher Lair - 10 Coin #3",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3621,7 +3690,7 @@
   },
   {
     "name": "PI: Maw-Maw Mouthful - Normal Exit",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3629,7 +3698,7 @@
   },
   {
     "name": "PI: Maw-Maw Mouthful - Wonder Seed",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3637,7 +3706,7 @@
   },
   {
     "name": "PI: Maw-Maw Mouthful - Top of Flag",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "Gold Flag"
@@ -3646,7 +3715,7 @@
   },
   {
     "name": "PI: Maw-Maw Mouthful - 10 Coin #1",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3655,7 +3724,7 @@
   },
   {
     "name": "PI: Maw-Maw Mouthful - 10 Coin #2",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3664,7 +3733,7 @@
   },
   {
     "name": "PI: Maw-Maw Mouthful - 10 Coin #3",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3673,7 +3742,7 @@
   },
   {
     "name": "PI: Boosting Spin Jump I - Normal Exit",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3681,7 +3750,7 @@
   },
   {
     "name": "PI: Boosting Spin Jump I - Top of Flag",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "Gold Flag"
@@ -3690,7 +3759,7 @@
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #1",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3699,7 +3768,7 @@
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #2",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3708,7 +3777,7 @@
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #3",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3717,7 +3786,15 @@
   },
   {
     "name": "PI: Spelunking! - Wonder Seed",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Petal Isles"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Petal Meddle - Normal Exit",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3725,7 +3802,7 @@
   },
   {
     "name": "PI: Petal Meddle - Wonder Seed",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -3733,7 +3810,7 @@
   },
   {
     "name": "PI: Petal Meddle - 10 Coin #1",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3742,7 +3819,7 @@
   },
   {
     "name": "PI: Petal Meddle - 10 Coin #2",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3751,7 +3828,7 @@
   },
   {
     "name": "PI: Petal Meddle - 10 Coin #3",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -3760,7 +3837,7 @@
   },
   {
     "name": "Boosting Spin Jump Badge Obtained",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Badges"
     ],
@@ -3768,7 +3845,7 @@
   },
   {
     "name": "Special: Way of the Goomba - Normal Exit",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Special World"
     ],
@@ -3776,7 +3853,7 @@
   },
   {
     "name": "Special: Way of the Goomba - Wonder Seed",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Special World"
     ],
@@ -3784,7 +3861,7 @@
   },
   {
     "name": "Special: Way of the Goomba - Top of Flag",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Special World",
       "Gold Flag"
@@ -3793,7 +3870,7 @@
   },
   {
     "name": "Special: Way of the Goomba - 10 Coin #1",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Special World",
       "10 Coin"
@@ -3802,7 +3879,7 @@
   },
   {
     "name": "Special: Way of the Goomba - 10 Coin #2",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Special World",
       "10 Coin"
@@ -3811,7 +3888,7 @@
   },
   {
     "name": "Special: Way of the Goomba - 10 Coin #3",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Special World",
       "10 Coin"
@@ -4223,6 +4300,14 @@
     "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
   },
   {
+    "name": "W5: Fungi Funk - Normal Exit",
+    "region": "W5 Post-Swaying",
+    "category": [
+      "World 5"
+    ],
+    "requires": []
+  },
+  {
     "name": "W5: Fungi Funk - Wonder Seed",
     "region": "W5 Post-Swaying",
     "category": [
@@ -4434,6 +4519,15 @@
     "requires": "|Drill Mushroom|"
   },
   {
+    "name": "W6: Where the Rrrumbas Rule - Top of Secret Flag",
+    "region": "W6 Start",
+    "category": [
+      "World 6",
+      "Gold Flag"
+    ],
+    "requires": "|Drill Mushroom|"
+  },
+  {
     "name": "W6: Where the Rrrumbas Rule - Wonder Seed",
     "region": "W6 Start",
     "category": [
@@ -4637,6 +4731,15 @@
     "region": "W6 Start",
     "category": [
       "World 6"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Hot-Hot Hot! - Top of Secret Flag",
+    "region": "W6 Start",
+    "category": [
+      "World 6",
+      "Gold Flag"
     ],
     "requires": []
   },
@@ -4921,6 +5024,14 @@
     "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
   },
   {
+    "name": "W6: Magma Flare-Up - Normal Exit",
+    "region": "W6 Start",
+    "category": [
+      "World 6"
+    ],
+    "requires": []
+  },
+  {
     "name": "W6: Magma Flare-Up - Wonder Seed",
     "region": "W6 Start",
     "category": [
@@ -5005,7 +5116,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - Royal Seed",
-    "region": "W6 15 Seeds",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6"
     ],
@@ -5013,7 +5124,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - Wonder Seed",
-    "region": "W6 15 Seeds",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6"
     ],
@@ -5021,7 +5132,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - 10 Coin #1",
-    "region": "W6 15 Seeds",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -5030,7 +5141,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - 10 Coin #2",
-    "region": "W6 15 Seeds",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -5039,7 +5150,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - 10 Coin #3",
-    "region": "W6 15 Seeds",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -5655,7 +5766,7 @@
   },
   {
     "name": "PI: Muncher Fields - Normal Exit",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -5663,7 +5774,7 @@
   },
   {
     "name": "PI: Muncher Fields - Wonder Seed",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
     ],
@@ -5671,7 +5782,7 @@
   },
   {
     "name": "PI: Muncher Fields - Top of Flag",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "Gold Flag"
@@ -5680,7 +5791,7 @@
   },
   {
     "name": "PI: Muncher Fields - 10 Coin #1",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -5689,7 +5800,7 @@
   },
   {
     "name": "PI: Muncher Fields - 10 Coin #2",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"
@@ -5698,7 +5809,7 @@
   },
   {
     "name": "PI: Muncher Fields - 10 Coin #3",
-    "region": "PI Post-Airship",
+    "region": "PI 8 Seeds",
     "category": [
       "Petal Isles",
       "10 Coin"

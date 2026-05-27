@@ -96,6 +96,11 @@ class CheckKind(str, Enum):
     """The AP location families this bridge classifies events into."""
 
     TOP_OF_FLAG = "top_of_flag"          # 89 AP checks
+    TOP_OF_SECRET_FLAG = "top_of_secret_flag"  # 7 AP checks: emitted when
+                                         # goal_id==1 and touch_goal_top_result.
+                                         # Distinct AP location from
+                                         # TOP_OF_FLAG (which is for the
+                                         # normal-exit flagpole).
     NORMAL_EXIT = "normal_exit"          # 96 AP checks
     SECRET_EXIT = "secret_exit"          # 9 AP checks
     FAKE_EXIT = "fake_exit"              # 5 AP checks (goal_id=2 guessed)
