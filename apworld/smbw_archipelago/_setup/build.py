@@ -388,14 +388,14 @@ def expected_artifacts(repo: Path | None = None) -> dict[str, Path]:
     """The two files `cmake --build` is expected to produce.
 
     Keys match what `deploy._ryujinx_layout` consumes: `"subsdk9"` and
-    `"main.npdm"`. Build emits `subsdk9.npdm`; deploy renames during
-    copy. We expose under the deploy-side key so the wizard can hand
-    the dict over directly.
+    `"main.npdm"`. LibHakkun's deploy.cmake step copies both files into
+    `build/exefs/` with the correct names — no rename is needed.
     """
     bd = build_dir(repo)
+    exefs = bd / "exefs"
     return {
-        "subsdk9": bd / "subsdk9",
-        "main.npdm": bd / "subsdk9.npdm",
+        "subsdk9": exefs / "subsdk9",
+        "main.npdm": exefs / "main.npdm",
     }
 
 

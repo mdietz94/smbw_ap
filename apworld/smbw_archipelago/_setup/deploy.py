@@ -5,7 +5,7 @@ matches what CLAUDE.md's "Daily dev loop" `Copy-Item` commands produce:
 
   %APPDATA%\\Ryujinx\\mods\\contents\\010015100b514000\\smbwap\\exefs\\
       subsdk9
-      main.npdm     ← (renamed from `subsdk9.npdm` during copy)
+      main.npdm
 
 The deploy module is intentionally separate from build.py so a user can
 re-deploy a previously-built artifact (e.g. after switching Ryujinx
@@ -89,9 +89,6 @@ def detect_sd_candidates() -> list[Path]:
 def _ryujinx_layout(ryujinx_root: Path) -> dict[str, Path]:
     """Destination paths for the two artifacts inside a Ryujinx install.
 
-    Note the rename: build emits `subsdk9.npdm`, but the Switch loader
-    reads it as `main.npdm`. CLAUDE.md's `Copy-Item` does the same
-    rename on copy.
     """
     base = ryujinx_root / "mods" / "contents" / SMBW_TITLE_ID / RYU_MOD_NAME / "exefs"
     return {
