@@ -221,3 +221,42 @@ def test_git_submodule_update_runs_when_in_clone(
     assert r.ok is True
     assert len(spawned) == 1
     assert "submodule" in spawned[0]
+
+
+def test_install_switch_mod_submodule_short_circuits_with_bundle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Packaged install + bundle available: no git involvement, just
+    report ok and let the build phase extract on demand."""
+    monkeypatch.setattr(I, "is_dev_clone", lambda repo=None: False)
+    from apworld.smbw_archipelago._setup import build as B
+    monkeypatch.setattr(B, "bundled_switch_mod_available", lambda: True)
+
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda cmd, **_k: spawned.append(cmd) or I.InstallResult(True, 0, ""))
+
+    lines: list[str] = []
+    r = I.install_switch_mod_submodule(lines.append)
+    assert r.ok is True
+    assert spawned == []   # never reached git
+    assert any("bundled" in ln for ln in lines)
+
+
+def test_install_switch_mod_submodule_falls_through_to_git_without_bundle(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Packaged install with NO bundled sources is a real failure --
+    the installer should fall through and surface the dev-clone error
+    rather than silently passing."""
+    # is_dev_clone accepts an optional repo arg, so the patched stub
+    # has to accept it too.
+    monkeypatch.setattr(I, "is_dev_clone", lambda repo=None: False)
+    monkeypatch.setattr(I, "repo_root", lambda: tmp_path)   # no .git
+    from apworld.smbw_archipelago._setup import build as B
+    monkeypatch.setattr(B, "bundled_switch_mod_available", lambda: False)
+
+    r = I.install_switch_mod_submodule()
+    assert r.ok is False
+    assert "not a git clone" in r.detail
