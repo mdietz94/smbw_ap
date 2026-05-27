@@ -186,14 +186,15 @@ def main(argv: list[str] | None = None) -> int:
             # so the inner folder name MUST equal the zip stem.
             _add_to_zip(zf, p, Path("smbwonder") / p.relative_to(SRC))
 
-        # Bundled mod sources land under smbwonder/_setup/switch_mod/ so
-        # the wizard can locate them via __file__ relative paths
-        # regardless of whether the apworld was installed as a loose
-        # source tree or a zip.
+        # Bundled mod sources land under smbwonder/_setup/switch-mod/ so
+        # extraction at runtime yields the same on-disk layout the dev
+        # checkout has at <repo>/switch-mod/, letting build.py's
+        # switch_mod_root(repo) -> repo / "switch-mod" math work for
+        # both shapes without per-call dispatch.
         for p in bundled_mod_files:
             _add_to_zip(
                 zf, p,
-                Path("smbwonder") / "_setup" / "switch_mod" /
+                Path("smbwonder") / "_setup" / "switch-mod" /
                 p.relative_to(REPO / "switch-mod"),
             )
 

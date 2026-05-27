@@ -597,6 +597,29 @@ def install_archipelago_submodule(on_line: ProgressFn | None = None) -> InstallR
 
 
 def install_switch_mod_submodule(on_line: ProgressFn | None = None) -> InstallResult:
+    """Initialize switch-mod's vendored libs.
+
+    Two paths:
+      * **Dev clone**: ``git submodule update --init --recursive`` for
+        the three lib submodules (imgui / NintendoSDK / sead).
+      * **Packaged install**: the same sources ship inside the .apworld
+        zip at ``smbwonder/_setup/switch_mod/`` thanks to
+        ``scripts/install_apworld.py --bundle-mod``.  No git needed --
+        the build phase calls ``bundled_switch_mod()`` to extract them
+        on first use.  We just verify the bundle is reachable.
+    """
+    if not is_dev_clone():
+        # build.py owns the extraction logic; importing it here is fine
+        # (single direction; build never imports installers).
+        from .build import bundled_switch_mod_available
+        if bundled_switch_mod_available():
+            msg = "satisfied by bundled sources inside the .apworld (extracted on first build)"
+            if on_line:
+                on_line(f"[install] {msg}")
+            return InstallResult(True, 0, msg, msg)
+        # Fall through to the git path so the user gets a clear "not a
+        # git clone" error rather than a silent "ok" that fails later.
+
     # switch-mod itself was promoted from submodule to plain subdirectory of
     # this repo. Only its nested third-party libs (imgui / NintendoSDK / sead)
     # still need `git submodule update --init` to be checked out.

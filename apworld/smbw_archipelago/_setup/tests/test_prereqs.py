@@ -210,6 +210,65 @@ def test_check_switch_mod_submodule_present(monkeypatch: pytest.MonkeyPatch,
     assert r.ok is True
 
 
+def test_check_switch_mod_submodule_accepts_bundled_apworld(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Packaged-install path: imgui.h doesn't exist on disk, we're not
+    in a dev clone, but a .apworld zip is reachable by walking up from
+    this file -- the check must return ok so the wizard doesn't queue a
+    pointless `git submodule update` install step."""
+    # Synthesize a .apworld file + a fake __file__ under it.
+    apworld = tmp_path / "smbwonder.apworld"
+    apworld.write_bytes(b"PK\x03\x04")
+    fake_file = apworld / "smbwonder" / "_setup" / "prereqs.py"
+    # No actual on-disk dir here -- Path() math is enough; the helper
+    # just walks parents and checks suffix.
+
+    monkeypatch.setattr(P, "repo_root", lambda: tmp_path / "no-repo")
+    monkeypatch.setattr(P, "is_dev_clone", lambda: False)
+    # Patch the resolved __file__ that check_switch_mod_submodule walks
+    # up from.
+    import apworld.smbw_archipelago._setup.prereqs as P_mod
+
+    orig_resolve = Path.resolve
+    def fake_resolve(self):
+        # Only intercept the prereqs.py resolve() inside the check;
+        # leave everything else alone so test infrastructure works.
+        if self == Path(P_mod.__file__):
+            return fake_file
+        return orig_resolve(self)
+    monkeypatch.setattr(Path, "resolve", fake_resolve)
+
+    r = P.check_switch_mod_submodule()
+    assert r.ok is True
+    assert "bundled" in r.detail.lower()
+
+
+def test_check_switch_mod_submodule_fails_for_loose_install(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Loose-files install (extracted .apworld, not a zip ancestor,
+    not a dev clone): no way to build, surface a clear failure."""
+    monkeypatch.setattr(P, "repo_root", lambda: tmp_path / "no-repo")
+    monkeypatch.setattr(P, "is_dev_clone", lambda: False)
+    # Make sure Path.resolve doesn't accidentally land on a real
+    # .apworld -- redirect to a clean tmp tree with no .apworld
+    # ancestors.
+    import apworld.smbw_archipelago._setup.prereqs as P_mod
+    loose_setup = tmp_path / "loose" / "smbw_archipelago" / "_setup"
+    loose_setup.mkdir(parents=True)
+    orig_resolve = Path.resolve
+    def fake_resolve(self):
+        if self == Path(P_mod.__file__):
+            return loose_setup / "prereqs.py"
+        return orig_resolve(self)
+    monkeypatch.setattr(Path, "resolve", fake_resolve)
+
+    r = P.check_switch_mod_submodule()
+    assert r.ok is False
+    assert "not a dev clone" in r.detail.lower() or "no bundled" in r.detail.lower()
+
+
 def test_check_ryujinx_warn_only(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Ryujinx missing is warn-only — won't fail the pipeline."""
     monkeypatch.setattr(P, "ryujinx_default_root", lambda: tmp_path / "nonexistent")

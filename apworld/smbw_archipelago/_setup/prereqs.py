@@ -764,10 +764,20 @@ def check_archipelago_submodule() -> PrereqResult:
 def check_switch_mod_submodule() -> PrereqResult:
     """switch-mod's nested third-party libs (imgui / NintendoSDK / sead) initialized.
 
-    switch-mod itself lives inline in this repo; only its three vendored
-    libs under `switch-mod/lib/` still come from `git submodule`. Sentinel:
-    `switch-mod/lib/imgui/imgui.h` — without imgui (and the other two),
-    the build phase fails at configure/link time.
+    Two acceptable shapes:
+      * **Dev clone**: ``switch-mod/lib/imgui/imgui.h`` present in the
+        repo via ``git submodule update --init --recursive``.
+      * **Packaged install**: the same sources ship inside the .apworld
+        zip under ``smbwonder/_setup/switch_mod/`` (added by
+        ``scripts/install_apworld.py --bundle-mod`` at release time).
+        Extracted lazily on first build via
+        :func:`build.bundled_switch_mod` -- here we just check the zip
+        is on disk so the prereq row doesn't claim "missing" on a
+        perfectly buildable packaged install.
+
+    Falls back to ``not applicable`` (ok with warn-only=False, no
+    install needed) when neither path applies AND we're not in a dev
+    clone -- the user can't fix it without re-installing the apworld.
     """
     sentinel = repo_root() / "switch-mod" / "lib" / "imgui" / "imgui.h"
     if sentinel.is_file():
@@ -776,6 +786,38 @@ def check_switch_mod_submodule() -> PrereqResult:
             f"present ({sentinel.parent.parent})",
             auto_installable=True,
         )
+
+    # Packaged-install short-circuit: avoid importing build.py at
+    # apworld-import time (its zipfile / shutil imports are heavier
+    # than we need for a probe), so duplicate the lightweight detection
+    # logic here.  The actual extraction is deferred to build phase.
+    if not is_dev_clone():
+        setup_root = Path(__file__).resolve().parent
+        cur = setup_root
+        for _ in range(10):
+            if cur.suffix == ".apworld" and cur.is_file():
+                return PrereqResult(
+                    "switch_mod_submodule", "switch-mod vendored libs", True,
+                    f"bundled inside {cur.name} (extracted on first build)",
+                    auto_installable=True,
+                )
+            parent = cur.parent
+            if parent == cur:
+                break
+            cur = parent
+        return PrereqResult(
+            "switch_mod_submodule", "switch-mod vendored libs", False,
+            "no bundled sources and not a dev clone",
+            INSTALL_URLS["switch_mod_submodule"],
+            note=(
+                "The apworld appears to be installed as loose files "
+                "(not a .apworld zip) outside a dev clone, so the wizard "
+                "can neither find git-checked-out submodules nor extract "
+                "bundled sources.  Re-install the apworld from a release "
+                "build, or clone the source repo to rebuild from scratch."
+            ),
+        )
+
     return PrereqResult(
         "switch_mod_submodule", "switch-mod vendored libs", False,
         f"missing {sentinel}",

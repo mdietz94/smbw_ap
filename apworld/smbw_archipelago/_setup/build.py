@@ -31,20 +31,35 @@ from __future__ import annotations
 
 import os
 import queue
+import shutil
 import subprocess
 import sys
 import threading
 import time
+import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
+from . import appdata_root
 from .prereqs import (
+    is_dev_clone,
     repo_root,
     resolved_cmake,
     resolved_devkitpro_root,
     resolved_ninja_bin,
 )
+
+# Where this module lives on disk.  In a packaged install (.apworld zip
+# loaded via zipimport) this is a path WITH the zip-file as a midpoint
+# directory -- `Path.is_dir()` returns False for siblings, and cmake
+# can't read sources at such paths.  `_extract_bundled_tree()` handles
+# the extraction.  In a dev checkout this is just a regular directory.
+_SETUP_ROOT = Path(__file__).resolve().parent
+
+# Memoizes the resolved on-disk location of the bundled tree.  Once
+# extraction succeeds we never re-extract within the same process.
+_extracted_bundled_root: Path | None = None
 
 # Suppress per-child console windows under the windowed Launcher
 # (Kivy-based parent, no console → Windows spawns a fresh one per child
@@ -87,9 +102,280 @@ class CMakeOutcome:
     outputs: dict[str, Path] = field(default_factory=dict)
 
 
+def _find_apworld_zip(setup_root: Path) -> Path | None:
+    """Walk up from ``setup_root`` looking for a ``.apworld`` file ancestor.
+
+    Returns the zip path if ``setup_root`` is inside a zip-loaded apworld
+    (the production case under the AP Launcher), or None on a dev source
+    checkout where ``setup_root`` is a real on-disk directory.
+    """
+    cur = setup_root
+    # Walk up at most ~10 levels; .apworld is normally 2-3 levels above us.
+    for _ in range(10):
+        if cur.suffix == ".apworld" and cur.is_file():
+            return cur
+        parent = cur.parent
+        if parent == cur:
+            return None
+        cur = parent
+    return None
+
+
+def _bundled_tree_has_files(root: Path) -> bool:
+    """True iff the bundled tree at ``root`` has at least one
+    ``switch-mod`` file -- used to reject a zip whose prefix filter
+    matched no real entries (truncated or corrupt apworld)."""
+    mod = root / "switch-mod"
+    try:
+        return mod.is_dir() and any(mod.iterdir())
+    except OSError:
+        return False
+
+
+def _extract_bundled_tree(
+    setup_root: Path | None = None,
+    *,
+    dst_override: Path | None = None,
+) -> Path:
+    """Extract the bundled ``switch_mod/`` tree from the apworld zip to
+    a real filesystem location and return that location.
+
+    Necessary because:
+      - AP loads ``.apworld`` files via Python's zipimporter. Code inside
+        the zip imports fine, but ``Path(__file__).parent / "switch_mod"
+        / "CMakeLists.txt"`` is a path string with the .apworld ZIP-file
+        as a midpoint directory: ``Path.exists()`` returns False and
+        cmake can't open files at such paths.
+      - cmake reads switch-mod's source tree as a regular filesystem
+        layout (CMakeLists.txt, src/, lib/imgui/, lib/sead/, etc.).
+
+    Caches in ``_extracted_bundled_root`` so we only extract once per
+    process.  On a dev source checkout where ``setup_root`` is a real
+    directory (no ``.apworld`` zip ancestor), the in-place
+    ``_SETUP_ROOT`` is returned unchanged.
+
+    Extraction target: ``%APPDATA%/SMBWArchipelago/bundled/``.  The full
+    switch-mod source incl. vendored imgui / NintendoSDK / sead is
+    several MB; kept out of the AP install dir (which on the official
+    installer often requires admin to write to).
+
+    Tests pass ``dst_override`` to redirect into a tempdir so we don't
+    touch the user's real %APPDATA%.
+    """
+    global _extracted_bundled_root
+    if _extracted_bundled_root is not None and dst_override is None:
+        return _extracted_bundled_root
+
+    root = setup_root if setup_root is not None else _SETUP_ROOT
+    apworld_zip = _find_apworld_zip(root)
+    if apworld_zip is None:
+        # Dev / source checkout -- _SETUP_ROOT IS the real on-disk dir.
+        # The bundled switch_mod lives at repo_root() / "switch-mod" in
+        # that case; the caller (`switch_mod_root`) knows to look there.
+        if dst_override is None:
+            _extracted_bundled_root = root
+        return root
+
+    dst = dst_override if dst_override is not None else (appdata_root() / "bundled")
+    # Marker file records the source-zip mtime so an apworld upgrade
+    # (user drops a newer .apworld in) triggers re-extract instead of
+    # serving a stale cached copy.
+    marker = dst / ".source-zip-mtime"
+    src_mtime = apworld_zip.stat().st_mtime
+
+    if marker.exists():
+        try:
+            cached_mtime = float(marker.read_text(encoding="utf-8").strip())
+            if cached_mtime == src_mtime and _bundled_tree_has_files(dst):
+                if dst_override is None:
+                    _extracted_bundled_root = dst
+                return dst
+        except (ValueError, OSError):
+            pass  # corrupt marker -- re-extract
+
+    # Stale or absent.  Extract to a sibling "<dst>.new" then atomically
+    # rename so a mid-extraction crash can't poison the cache: the
+    # marker file is the LAST thing written, only after the swap.
+    staging = dst.with_name(dst.name + ".new")
+    if staging.exists():
+        try:
+            shutil.rmtree(staging)
+        except OSError as e:
+            raise RuntimeError(
+                f"Could not clear stale bundled-tree staging dir at "
+                f"{staging}: {e}. Close any program that might be "
+                f"holding files in this folder (Ryujinx, an antivirus "
+                f"realtime scan, Explorer windows) and re-run setup."
+            ) from e
+    try:
+        staging.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise RuntimeError(
+            f"Could not create bundled-tree staging dir at {staging}: "
+            f"{e}. Check that %APPDATA% is writable and has free space."
+        ) from e
+
+    # Inside the .apworld zip the bundle lives at
+    # ``smbwonder/_setup/switch-mod/...`` -- see
+    # scripts/install_apworld.py's --bundle-mod path mapping.  We extract
+    # the contents of ``smbwonder/_setup/`` to the staging dir so that
+    # callers see the same ``<staging>/switch-mod/...`` layout the dev
+    # checkout has at ``<repo>/switch-mod/...`` -- the existing
+    # ``switch_mod_root(repo) = repo / "switch-mod"`` math then works
+    # for both shapes by passing the bundled root as ``repo``.
+    prefix = "smbwonder/_setup/"
+    current_target: Path | None = None
+    try:
+        with zipfile.ZipFile(apworld_zip) as zf:
+            for info in zf.infolist():
+                name = info.filename
+                if not name.startswith(prefix):
+                    continue
+                rel = name[len(prefix):]
+                if not rel:
+                    continue  # the prefix entry itself
+                target = staging / rel
+                current_target = target
+                if info.is_dir() or name.endswith("/"):
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(info) as src_f, open(target, "wb") as dst_f:
+                    shutil.copyfileobj(src_f, dst_f)
+                # Post-write size assertion: a disk-full or AV-induced
+                # truncation between read and write completion can leave
+                # the destination shorter than expected without raising.
+                actual = target.stat().st_size
+                if actual != info.file_size:
+                    raise RuntimeError(
+                        f"bundled tree extraction wrote {actual} bytes "
+                        f"for {rel} but the zip entry declares "
+                        f"{info.file_size}"
+                    )
+    except (OSError, zipfile.BadZipFile, RuntimeError) as e:
+        try:
+            shutil.rmtree(staging, ignore_errors=True)
+        except Exception:
+            pass
+        loc = f" while writing {current_target}" if current_target else ""
+        raise RuntimeError(
+            f"Failed to extract bundled tree from {apworld_zip.name}"
+            f"{loc}: {type(e).__name__}: {e}. Common causes: disk full, "
+            f"antivirus blocking the write, or the .apworld zip is "
+            f"corrupt. Free space under %APPDATA%, then re-run setup."
+        ) from e
+
+    if not _bundled_tree_has_files(staging):
+        try:
+            shutil.rmtree(staging, ignore_errors=True)
+        except Exception:
+            pass
+        raise FileNotFoundError(
+            f"bundled tree extracted from {apworld_zip.name} contains "
+            f"no files under switch_mod/. The apworld was likely built "
+            f"without `--bundle-mod`, or the zip is truncated -- "
+            f"re-download the release and try again."
+        )
+
+    # Swap-in.  On Windows a rename across a non-empty target is a hard
+    # error, so the rmtree of the old `dst` must come first.
+    if dst.exists():
+        try:
+            shutil.rmtree(dst)
+        except OSError as e:
+            try:
+                shutil.rmtree(staging, ignore_errors=True)
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Could not remove old bundled tree at {dst}: {e}. "
+                f"Close any program holding files in that folder "
+                f"(Ryujinx, antivirus realtime scan, Explorer window) "
+                f"and re-run setup."
+            ) from e
+    try:
+        staging.rename(dst)
+    except OSError as e:
+        raise RuntimeError(
+            f"Could not finalize bundled tree at {dst}: {e}. The "
+            f"staged tree at {staging} is intact; you can rename it "
+            f"manually or re-run setup."
+        ) from e
+
+    try:
+        marker.write_text(str(src_mtime), encoding="utf-8")
+    except OSError as e:
+        raise RuntimeError(
+            f"Bundled tree extracted to {dst} but the cache marker "
+            f"could not be written: {e}. The next run will re-extract "
+            f"unnecessarily -- non-fatal but wastes I/O."
+        ) from e
+    if dst_override is None:
+        _extracted_bundled_root = dst
+    return dst
+
+
+def _resolve_repo(repo: Path | None) -> Path:
+    """When the build helpers are called with ``repo=None``, choose
+    between the dev clone (``<git-root>``) and the freshly-extracted
+    bundle root (``%APPDATA%/SMBWArchipelago/bundled``) based on whether
+    we're running from a packaged install.
+
+    Returned path is suitable to pass to :func:`switch_mod_root` /
+    :func:`build_dir` / :func:`expected_artifacts` -- in both shapes
+    ``<repo>/switch-mod/CMakeLists.txt`` is the cmake source root.
+    """
+    if repo is not None:
+        return repo
+    if is_dev_clone():
+        return repo_root()
+    return _extract_bundled_tree()
+
+
+def bundled_switch_mod() -> Path:
+    """Return the on-disk ``switch-mod/`` directory for cmake to read.
+
+    Dispatches to the dev tree at ``<repo>/switch-mod`` when we're in
+    a git clone, or to the freshly-extracted bundle under
+    ``%APPDATA%/SMBWArchipelago/bundled/switch-mod`` otherwise.  Raises
+    FileNotFoundError if neither is available -- typically means the
+    apworld was packaged without ``--bundle-mod``.
+    """
+    root = _resolve_repo(None)
+    mod = root / "switch-mod"
+    if not (mod / "CMakeLists.txt").is_file():
+        raise FileNotFoundError(
+            f"switch-mod sources not found at {mod}. "
+            f"The apworld zip was likely built without `--bundle-mod`. "
+            f"Re-download a release build, or run "
+            f"`python scripts/install_apworld.py --bundle-mod` from a "
+            f"dev clone of the source repo."
+        )
+    return mod
+
+
+def bundled_switch_mod_available() -> bool:
+    """Non-raising probe for prereq checks.  Doesn't trigger extraction.
+
+    Only the cheap detection -- "we have a dev tree" or "there's an
+    apworld zip we could extract from" -- so the prereq row stays
+    snappy.  The real failure (truncated zip, no ``--bundle-mod``)
+    surfaces from :func:`bundled_switch_mod` at build time with a
+    precise error.
+    """
+    if is_dev_clone():
+        return (repo_root() / "switch-mod" / "CMakeLists.txt").is_file()
+    return _find_apworld_zip(_SETUP_ROOT) is not None
+
+
 def switch_mod_root(repo: Path | None = None) -> Path:
-    repo = repo if repo is not None else repo_root()
-    return repo / "switch-mod"
+    """Path to the cmake source directory.
+
+    The original API: ``repo=None`` resolves to the active repo (dev or
+    packaged bundle).  Tests pass ``repo=tmp_path`` to point at a
+    synthetic layout.
+    """
+    return _resolve_repo(repo) / "switch-mod"
 
 
 def build_dir(repo: Path | None = None) -> Path:
@@ -304,7 +590,7 @@ def cmake_configure(
     Resolved cmake binary comes from prereqs (rejects msys2's cmake).
     Build dir is created if missing.
     """
-    repo = repo if repo is not None else repo_root()
+    repo = _resolve_repo(repo)
     src = switch_mod_root(repo)
     bd = build_dir(repo)
     tc = toolchain_file(repo)
@@ -345,7 +631,7 @@ def cmake_build(
     in the calling `run_build_phase()` so caller can distinguish "build
     succeeded but artifacts missing" from "build failed".
     """
-    repo = repo if repo is not None else repo_root()
+    repo = _resolve_repo(repo)
     bd = build_dir(repo)
     if not bd.is_dir():
         return BuildResult(
@@ -380,7 +666,7 @@ def run_build_phase(
     successful build with missing artifacts as a failure so the wizard
     surfaces it rather than the deploy phase blowing up later.
     """
-    repo = repo if repo is not None else repo_root()
+    repo = _resolve_repo(repo)
     bd = build_dir(repo)
     step_results: dict[str, BuildResult] = {}
 
