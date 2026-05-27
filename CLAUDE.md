@@ -2,6 +2,8 @@
 
 This is the project-overview doc. For current-state details and the M-numbered roadmap, always read [docs/handoff.md](docs/handoff.md) first and [docs/milestones.md](docs/milestones.md) second.
 
+> **🚧 In-flight migration (2026-05-27):** the Switch subsdk framework is mid-switch from **exlaunch** to **hakkun**. The exlaunch path described below stopped booting SMBW on Atmosphere 1.11.1 + HATS-2026-05-11 (see [docs/hakkun-migration-plan.md](docs/hakkun-migration-plan.md) and memory `[[smbwap-exlaunch-real-hw-broken]]`). The new build under `switch-mod/CMakeLists.txt` + `switch-mod/sys/` (hakkun submodule) + `switch-mod/config/` + `switch-mod/src/{main.cpp, ap/, probe/, util/}` boots on real hardware as of Phase 2f. The exlaunch-era code at `switch-mod/src/program/`, `switch-mod/src/lib/`, and `switch-mod/module/` is **excluded from the build** but kept on disk as reference until Phase 3 cleanup. The hook-pattern sections below describe the exlaunch API; the hakkun equivalents are in memory `[[smbwap-hakkun-migration]]` (cheat-sheet table). Phase 2g handoff for the next session: `[[smbwap-phase-2g-handoff]]`.
+
 ## What this project is
 
 An Archipelago multiworld integration for **Super Mario Bros. Wonder** (SMBW v1.0.0) running on modded Switch + Ryujinx. The architecture mirrors the user's existing `smo_archipelago` project (Super Mario Odyssey): a Switch subsdk hooks the game NSO, ships events over LAN to a PC-side Python service, which bridges to the Archipelago server.

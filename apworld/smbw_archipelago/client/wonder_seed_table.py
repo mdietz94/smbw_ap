@@ -113,8 +113,13 @@ def world_index_for_item(item_name: str) -> int | None:
     """Look up the world bucket index for a Wonder Seed AP item name.
     Returns ``None`` if the name isn't a known Wonder Seed (the caller
     should silently drop, matching the rest of the ItemTable layer's
-    fallback semantics)."""
-    idx = _ITEM_TO_WORLD_INDEX.get(item_name)
-    if idx is None:
-        log.debug("wonder_seed_table: no bucket for item %r", item_name)
-    return idx
+    fallback semantics).
+
+    No log on miss: ``_recompute_wonder_seed_counts`` calls this for
+    every item in ``items_received`` (which includes every non-Wonder-
+    Seed AP item -- character chooser, power-ups, 10 Coin, Royal Seeds,
+    etc.), so a per-call debug line spams the log on every periodic
+    2 s recompute.  Misses are normal control flow and not worth
+    logging.
+    """
+    return _ITEM_TO_WORLD_INDEX.get(item_name)
