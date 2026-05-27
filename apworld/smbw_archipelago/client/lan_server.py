@@ -234,6 +234,27 @@ class LanServer:
         # every session install/drop so deltas never cross sessions.
         self._pending_increments: dict[int, int] = {}
 
+        # Last-sent payload cache for the three idempotent
+        # absolute-overwrite messages.  Consulted only when a caller
+        # passes ``dedup=True`` (the periodic ~2 s tick); HelloMsg
+        # replays and per-ReceivedItems pushes bypass dedup so a real
+        # state change always reaches the Switch.  Why: under the gating
+        # in ApFrameBridge::drainInbound (``isSaveLoaded`` +
+        # ``isInSceneTransitionWindow``), identical triplets pile up in
+        # the SPSC ring during gated windows and flush in bursts -- we
+        # observed 18 triplets drained in 3 ms after a long gated window
+        # in Ryujinx_1.3.3_2026-05-26_19-16-12.log lines 11197-11405.
+        # Skipping the put when the payload hasn't changed since the
+        # last successful enqueue keeps the Switch ring clean without
+        # affecting correctness (Switch handler is idempotent on
+        # absolute overwrites; real changes still come through).  Reset
+        # on every session install/drop -- a fresh Switch hasn't seen
+        # anything, and the HelloMsg push (dedup=False) re-establishes
+        # the baseline.
+        self._last_sent_badges_bits: int | None = None
+        self._last_sent_royal_seeds_mask: int | None = None
+        self._last_sent_wonder_seed_counts: tuple[int, ...] | None = None
+
     # ---- Lifecycle ----------------------------------------------------
 
     async def start(self, host: str = "0.0.0.0", port: int = 17777) -> None:
@@ -277,7 +298,7 @@ class LanServer:
 
     # ---- Public outbound API ------------------------------------------
 
-    def send_set_badges_absolute(self, bits: int) -> None:
+    def send_set_badges_absolute(self, bits: int, *, dedup: bool = False) -> None:
         """Enqueue a SetBadgesAbsolute to the active Switch client.
 
         ``bits`` is the absolute desired badge bitmask -- the Switch
@@ -289,6 +310,11 @@ class LanServer:
         next HelloMsg will trigger a fresh send anyway (via
         :meth:`_push_badge_sync_now`), so any dropped tick is reliably
         recovered on reconnect.
+
+        When ``dedup=True`` (the periodic ~2 s tick path), skip the put
+        if ``bits`` byte-equals the last successfully enqueued value
+        for this message type.  HelloMsg replays and per-ReceivedItems
+        pushes leave ``dedup=False`` so they always fire.
         """
         msg = wire.SetBadgesAbsoluteMsg(bits=bits)
         if self._send_queue is None:
@@ -296,8 +322,13 @@ class LanServer:
                 "send_set_badges_absolute(bits=0x%x): no Switch client "
                 "connected; dropping", bits)
             return
+        if dedup and self._last_sent_badges_bits == bits:
+            log.debug(
+                "send_set_badges_absolute: dedup skip bits=0x%x", bits)
+            return
         try:
             self._send_queue.put_nowait(msg)
+            self._last_sent_badges_bits = bits
             log.debug(
                 "send_set_badges_absolute: enqueued bits=0x%x", bits)
         except asyncio.QueueFull:
@@ -305,7 +336,7 @@ class LanServer:
                 "send_set_badges_absolute(bits=0x%x): outbound queue "
                 "full; dropping", bits)
 
-    def send_set_royal_seeds_absolute(self, mask: int) -> None:
+    def send_set_royal_seeds_absolute(self, mask: int, *, dedup: bool = False) -> None:
         """Enqueue a SetRoyalSeedsAbsolute to the active Switch client.
 
         ``mask`` is the absolute 6-bit Royal Seed set AP has granted
@@ -318,6 +349,10 @@ class LanServer:
         next HelloMsg triggers a fresh send via
         :meth:`_push_royal_seeds_now`, so any dropped tick is reliably
         recovered on reconnect.
+
+        ``dedup`` follows the same convention as
+        :meth:`send_set_badges_absolute`: True on the periodic ~2 s
+        tick path, False everywhere else.
         """
         msg = wire.SetRoyalSeedsAbsoluteMsg(mask=mask)
         if self._send_queue is None:
@@ -325,8 +360,14 @@ class LanServer:
                 "send_set_royal_seeds_absolute(mask=0x%x): no Switch "
                 "client connected; dropping", mask)
             return
+        if dedup and self._last_sent_royal_seeds_mask == mask:
+            log.debug(
+                "send_set_royal_seeds_absolute: dedup skip mask=0x%x",
+                mask)
+            return
         try:
             self._send_queue.put_nowait(msg)
+            self._last_sent_royal_seeds_mask = mask
             log.debug(
                 "send_set_royal_seeds_absolute: enqueued mask=0x%x", mask)
         except asyncio.QueueFull:
@@ -363,7 +404,9 @@ class LanServer:
                 "dropping",
                 source, cause)
 
-    def send_set_wonder_seed_counts(self, counts: list[int]) -> None:
+    def send_set_wonder_seed_counts(
+        self, counts: list[int], *, dedup: bool = False,
+    ) -> None:
         """Enqueue a SetWonderSeedCounts (per-world Wonder Seed gate
         override) to the active Switch client.  ``counts`` must be a
         list of length ``wonder_seed_table.WORLD_COUNT`` (8); see
@@ -378,16 +421,27 @@ class LanServer:
         writes that value to the 5 mirror hashes including
         ``0x390eb960`` (the one the gate predicate reads).  Idempotent
         absolute-overwrite: AP is the sole authority over Wonder Seed
-        gating."""
-        msg = wire.SetWonderSeedCountsMsg(counts=tuple(counts))
+        gating.
+
+        ``dedup`` follows the same convention as
+        :meth:`send_set_badges_absolute`: True on the periodic ~2 s
+        tick path, False everywhere else."""
+        counts_tuple = tuple(counts)
+        msg = wire.SetWonderSeedCountsMsg(counts=counts_tuple)
         if self._send_queue is None:
             log.warning(
                 "send_set_wonder_seed_counts(counts=%s): no Switch "
                 "client connected; dropping",
                 counts)
             return
+        if dedup and self._last_sent_wonder_seed_counts == counts_tuple:
+            log.debug(
+                "send_set_wonder_seed_counts: dedup skip counts=%s",
+                counts)
+            return
         try:
             self._send_queue.put_nowait(msg)
+            self._last_sent_wonder_seed_counts = counts_tuple
             log.debug(
                 "send_set_wonder_seed_counts: enqueued counts=%s",
                 counts)
@@ -673,6 +727,12 @@ class LanServer:
             # client drop) are stale -- the Switch has restarted and
             # would have no context for them.
             self._pending_increments = {}
+            # Fresh dedup cache per session.  A new Switch hasn't seen
+            # anything yet -- the HelloMsg push (dedup=False) will
+            # re-establish the baseline cache entry.
+            self._last_sent_badges_bits = None
+            self._last_sent_royal_seeds_mask = None
+            self._last_sent_wonder_seed_counts = None
             self._writer_task = asyncio.create_task(
                 self._writer_loop(writer, self._send_queue),
                 name="lan-writer",
@@ -717,15 +777,21 @@ class LanServer:
         # the Switch is gone, drop them so a future reconnect starts
         # from a clean slate (matches the per-session queue drop above).
         self._pending_increments = {}
+        # Same for the per-session dedup cache: the next Switch starts
+        # fresh and won't have seen any of these payloads.
+        self._last_sent_badges_bits = None
+        self._last_sent_royal_seeds_mask = None
+        self._last_sent_wonder_seed_counts = None
 
     # ---- Badge sync ---------------------------------------------------
 
-    def _push_badge_sync_now(self) -> None:
+    def _push_badge_sync_now(self, *, dedup: bool = False) -> None:
         """Pull the current AP-known badge mask from the provider and
         enqueue a SetBadgesAbsolute.  No-op if no provider was wired
         (e.g. unit tests that don't care about badges) or no client is
-        connected.  Called from HelloMsg dispatch and from the periodic
-        tick loop."""
+        connected.  Called from HelloMsg dispatch (``dedup=False``,
+        always replay) and from the periodic tick loop
+        (``dedup=True``, skip when payload unchanged)."""
         if self._badge_mask_provider is None:
             return
         try:
@@ -733,19 +799,20 @@ class LanServer:
         except Exception:
             log.exception("badge_mask_provider raised; skipping sync")
             return
-        self.send_set_badges_absolute(bits)
+        self.send_set_badges_absolute(bits, dedup=dedup)
 
-    def _push_royal_seeds_now(self) -> None:
+    def _push_royal_seeds_now(self, *, dedup: bool = False) -> None:
         """Pull the current AP-known 6-bit Royal Seed mask from the
         provider and enqueue a SetRoyalSeedsAbsolute.  No-op if no
         provider was wired (e.g. unit tests that don't care about
         seeds) or no client is connected.  Called from HelloMsg
-        dispatch and from the periodic tick loop.
+        dispatch (``dedup=False``) and from the periodic tick loop
+        (``dedup=True``).
 
-        ALWAYS pushes -- even when mask=0 -- so AP stays the sole
-        authority over Royal Seeds.  An empty mask clears any seed the
-        player obtained in-game without AP, which is the correct
-        behavior pre-grant."""
+        On the HelloMsg path always pushes -- even when mask=0 -- so AP
+        stays the sole authority over Royal Seeds.  An empty mask
+        clears any seed the player obtained in-game without AP, which
+        is the correct behavior pre-grant."""
         if self._royal_seed_mask_provider is None:
             return
         try:
@@ -754,9 +821,9 @@ class LanServer:
             log.exception(
                 "royal_seed_mask_provider raised; skipping sync")
             return
-        self.send_set_royal_seeds_absolute(mask)
+        self.send_set_royal_seeds_absolute(mask, dedup=dedup)
 
-    def _push_wonder_seeds_now(self) -> None:
+    def _push_wonder_seeds_now(self, *, dedup: bool = False) -> None:
         """Pull the AP-known per-world Wonder Seed counts from the
         provider and enqueue a ``SetWonderSeedCountsMsg``.  No-op if no
         provider was wired or no client is connected.  Same idempotent
@@ -778,7 +845,7 @@ class LanServer:
             log.exception(
                 "wonder_seed_counts_provider raised; skipping sync")
             return
-        self.send_set_wonder_seed_counts(counts)
+        self.send_set_wonder_seed_counts(counts, dedup=dedup)
 
     async def _idempotent_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
@@ -789,15 +856,25 @@ class LanServer:
         seed grabs, flag-pole goal seeds, 10-coin rewards) to AP's view
         within seconds -- AP is the sole authority over each surface.
 
+        Each push runs with ``dedup=True`` so identical successive
+        triplets are skipped at the bridge.  Under the Switch-side
+        gating in ``ApFrameBridge::drainInbound`` (``isSaveLoaded`` +
+        ``isInSceneTransitionWindow``), identical triplets would
+        otherwise pile up in the SPSC ring during gated windows and
+        flush as bursts when the gate opens -- harmless but noisy.  AP
+        authority is preserved because real state changes
+        (``ReceivedItems``, ``HelloMsg``) push with ``dedup=False`` and
+        always reach the Switch.
+
         Runs until cancelled by ``_drop_active_client_locked`` (i.e.
         only while a Switch client is connected; no point ticking when
         no one is listening)."""
         try:
             while True:
                 await asyncio.sleep(BADGE_SYNC_INTERVAL_SEC)
-                self._push_badge_sync_now()
-                self._push_royal_seeds_now()
-                self._push_wonder_seeds_now()
+                self._push_badge_sync_now(dedup=True)
+                self._push_royal_seeds_now(dedup=True)
+                self._push_wonder_seeds_now(dedup=True)
         except asyncio.CancelledError:
             raise
         except Exception:
