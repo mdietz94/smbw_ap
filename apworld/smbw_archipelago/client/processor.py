@@ -122,6 +122,37 @@ _STAGE_TO_BADGE_INTERNAL_ID: dict[int, int] = {
 }
 
 
+# Palace stage_keys (one per Royal Seed location).  Used by
+# ``_handle_course_result`` to suppress the misleading default-fields
+# course_result that palace WINs emit alongside their koopajr_result --
+# previous code gated on the ``world_mother_seed`` PlayReport field, but
+# that flag is "player owns the Royal Seed for this world" (a persistent
+# state), NOT "this event is a palace clear".  Live-reproduced 2026-05-27
+# in user run 10-08-58: W1 course 3 ("Bulrush Coming Through!") emitted
+# course_result with world_mother_seed=True simply because the player had
+# already cleared the W1 palace earlier, causing every subsequent W1
+# course clear to be silently dropped.
+#
+# Stage-key allowlist is the right discriminator: it identifies the
+# course directly, not the player's progression state.  Mirrors the seven
+# entries in :mod:`.location_table` that map to ``CheckKind.PALACE_CLEAR``
+# (W1/W2 palaces, W3 mansion, W4/W5/W6 palaces, PI Bowser's Rage Stage).
+#
+# Edge case -- W3 mansion + W5 Operation Poplin Rescue ALSO have
+# ``SECRET_EXIT`` locations.  The suppression below is gated on
+# ``goal_id == 0`` so a secret-exit clear (goal_id == 1) at those stages
+# still fires the SECRET_EXIT branch normally.
+_PALACE_STAGE_KEYS: frozenset[int] = frozenset({
+    0x89927C97,  # W1: Pipe-Rock Plateau Palace
+    0xB2B07454,  # W2: Fluff-Puff Peaks Palace
+    0xA5E2BB3A,  # W3: Royal Seed Mansion
+    0x1969941E,  # W4: Sunbaked Desert Palace
+    0x87E6D263,  # W5: Operation Poplin Rescue
+    0x7E523816,  # W6: Deep Magma Bog Palace
+    0x6895BF00,  # PI: Bowser's Rage Stage
+})
+
+
 # ---------------------------------------------------------------------------
 # Top-level dispatch.
 
@@ -369,17 +400,29 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
             result_code, stage_info["stage_key"])
         return []
 
-    if fields.get("world_mother_seed"):
-        # Palace WIN's companion course_result.  Suppress — the
-        # koopajr_result event handles it.
-        log.debug("course_result with world_mother_seed=True; deferring to koopajr_result")
-        return []
-
     emitted: list[CheckEmitted] = []
 
     goal_id = fields.get("goal_id", 0)
     top = bool(fields.get("touch_goal_top_result", False))
     stage_key = stage_info["stage_key"]
+
+    # Palace WIN duplicate-fire suppression.  Palace clears emit BOTH
+    # course_result AND koopajr_result ~1 ms apart for the same event;
+    # _handle_koopajr_result is the authoritative palace-clear handler
+    # (emits PALACE_CLEAR), and this course_result would otherwise
+    # double-fire as NORMAL_EXIT because palace course_result reports
+    # goal_id=0 + touch_goal_top_result=False (the AAPCS-default zeroed
+    # fields when the palace clear path doesn't set them).  Gated on
+    # goal_id == 0 so a SECRET_EXIT at W3 Royal Seed Mansion or W5
+    # Operation Poplin Rescue (goal_id == 1) still fires normally.
+    # See _PALACE_STAGE_KEYS docstring for the history of the previous
+    # world_mother_seed-based gate, which was a false positive.
+    if stage_key in _PALACE_STAGE_KEYS and goal_id == 0:
+        log.debug(
+            "course_result at palace stage_key=0x%08x goal_id=0; "
+            "deferring to koopajr_result",
+            stage_key)
+        return []
     if stage_key in _HUB_HOUSE_STAGE_KEYS:
         # Hub-house exits route to the WONDER_SEED AP location.  The
         # in-game wonder-seed nerve fires once-per-save (suppressed in
