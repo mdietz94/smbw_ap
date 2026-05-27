@@ -86,6 +86,7 @@ namespace {
 constexpr std::int32_t kAfInet     = 2;
 constexpr std::int32_t kSockStream = 1;
 constexpr std::int32_t kIpprotoTcp = 6;
+constexpr std::int32_t kTcpNoDelay = 1;
 constexpr std::int32_t kPollIn     = 0x0001;
 constexpr std::int32_t kPollErr    = 0x0008;
 constexpr std::int32_t kPollHup    = 0x0010;
@@ -294,6 +295,17 @@ bool ApClient::connectOnce(const BridgeTarget& target) {
     const std::int32_t one = 1;
     (void)nn::socket::SetSockOpt(
         socket_fd_, kSolSocket, kSoKeepAlive, &one, sizeof(one));
+    // M-Hakkun Phase 2g.9: disable Nagle.  Outbound messages are short
+    // (HelloMsg 81 B, NerveFire ~60 B, BadgeAcquired ~60 B, PlayReport
+    // ~3 KB).  Without TCP_NODELAY the kernel waits up to 200 ms hoping
+    // to coalesce subsequent writes, but our writer is bursty: one
+    // message per game-thread event with arbitrary gaps.  The bridge's
+    // `readuntil(b"\n")` requires a complete line to surface to user
+    // code, so a delayed flush stalls the entire game->bridge path even
+    // though Send() returned non-negative bytes on the Switch side.
+    const std::int32_t nodelay_rc = nn::socket::SetSockOpt(
+        socket_fd_, kIpprotoTcp, kTcpNoDelay, &one, sizeof(one));
+    SMBWAP_LOG_INFO("[conn] TCP_NODELAY setsockopt rc=%d", nodelay_rc);
 
     SMBWAP_LOG_INFO("[conn] TCP connect OK -> %s:%u",
                     target.host.c_str(), target.port);
