@@ -6,8 +6,8 @@ spawns `_setup.wizard.run_setup_wizard` in a new window via
 (toolchain update, apworld update, switching deploy targets).
 
 The wizard's job is to turn a fresh machine into one that can:
-  - build the Switch subsdk for Super Mario Bros. Wonder via the
-    devkitPro / devkitA64 cross-compiler
+  - build the Switch subsdk for Super Mario Bros. Wonder using the
+    LibHakkun framework + LLVM 19 cross-compiler
   - deploy the result to Ryujinx's mods directory (SD card / real Switch
     deploy is M6 territory; deferred)
 
@@ -15,12 +15,12 @@ The packages here are organized so each step is independently testable:
 
   - `smbwap_file.py`  — `.smbwap` JSON metadata read/write
                         (no I/O dependencies beyond stdlib)
-  - `prereqs.py`      — detect devkitPro, CMake, Ninja, git, Python 3.11,
-                        Archipelago submodule + deps, switch-mod submodule,
-                        Windows Dev Mode, Ryujinx
+  - `prereqs.py`      — detect LLVM 19, CMake, Ninja, git, Python 3.11,
+                        Archipelago submodule + deps, switch-mod hakkun
+                        + libs, Windows Dev Mode, Ryujinx
   - `installers.py`   — auto-installers (winget for cmake/ninja/python/git,
-                        devkitPro installer download, pacman switch-dev,
-                        git submodule update, pip Archipelago deps)
+                        LLVM 19 tarball download + extract, git submodule
+                        update, pip Archipelago deps)
   - `junction.py`     — create the
                         vendor/Archipelago/custom_worlds/smbw_archipelago
                         directory junction (also exposed at
@@ -42,7 +42,7 @@ Output destinations on the user's machine (all under %APPDATA% /
   %APPDATA%/SMBWArchipelago/launch-warning.log  ← show_launch_warning
   %APPDATA%/SMBWArchipelago/setup_state.json    ← remembers last deploy
   %LOCALAPPDATA%/SMBWArchipelago/ap_deps.ok     ← Archipelago pip marker
-  %LOCALAPPDATA%/SMBWArchipelago/devkitpro/     ← downloaded installer
+  %LOCALAPPDATA%/SMBWArchipelago/llvm/          ← portable LLVM 19 install
 """
 
 from __future__ import annotations

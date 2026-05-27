@@ -60,8 +60,7 @@ def test_install_many_stops_on_first_failure(monkeypatch: pytest.MonkeyPatch) ->
         "cmake": make("cmake", False),
         "ninja": make("ninja", True),  # must not run
         "python311": make("python311", True),  # must not run
-        "devkitpro": make("devkitpro", True),
-        "switch_dev": make("switch_dev", True),
+        "llvm19": make("llvm19", True),
         "archipelago_submodule": make("archipelago_submodule", True),
         "switch_mod_submodule": make("switch_mod_submodule", True),
         "archipelago_deps": make("archipelago_deps", True),
@@ -305,3 +304,66 @@ def test_install_archipelago_deps_pip_installs_in_dev_clone(
     assert len(spawned) == 1
     assert "pip" in spawned[0]
     assert "install" in spawned[0]
+
+
+def test_install_llvm19_short_circuits_when_already_installed(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """If `bin/clang.exe` already exists under the portable root, the
+    installer should skip the ~806 MB download entirely."""
+    root = tmp_path / "llvm"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin" / "clang.exe").write_text("", encoding="utf-8")
+    monkeypatch.setattr(I, "llvm_portable_root", lambda: root)
+    monkeypatch.setattr(I.sys, "platform", "win32")
+
+    # Any download attempt would trip this — the test catches a regression
+    # to non-idempotent behavior.
+    def boom(*_a, **_kw):
+        raise AssertionError("download must not run when already installed")
+    monkeypatch.setattr(I, "_download_with_progress", boom)
+
+    lines: list[str] = []
+    r = I.install_llvm19(lines.append)
+    assert r.ok is True
+    assert any("already installed" in ln for ln in lines)
+
+
+def test_install_llvm19_non_windows_refuses(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The pinned tarball is the windows-msvc build; refuse on POSIX
+    rather than downloading something that won't run."""
+    monkeypatch.setattr(I.sys, "platform", "linux")
+    r = I.install_llvm19()
+    assert r.ok is False
+    assert "windows" in r.detail.lower()
+
+
+def test_install_switch_mod_submodule_targets_sys_and_imgui(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """The post-migration submodule init must target switch-mod/sys
+    (LibHakkun) + switch-mod/lib/imgui only — NOT the exlaunch-era
+    NintendoSDK or sead, which were removed from .gitmodules."""
+    (tmp_path / ".git").mkdir()
+    monkeypatch.setattr(I, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(I.shutil, "which", lambda _n: "/usr/bin/git")
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda cmd, **_k: spawned.append(cmd) or I.InstallResult(True, 0, ""))
+
+    r = I.install_switch_mod_submodule()
+    assert r.ok is True
+    assert len(spawned) == 1
+    cmd = spawned[0]
+    assert "switch-mod/sys" in cmd
+    assert "switch-mod/lib/imgui" in cmd
+    assert "switch-mod/lib/NintendoSDK" not in cmd
+    assert "switch-mod/lib/sead" not in cmd
+
+
+def test_no_retired_exlaunch_installers_remain() -> None:
+    """Hakkun migration retired these keys; guard against re-introduction."""
+    for retired in ("devkitpro", "switch_dev"):
+        assert retired not in I.INSTALLERS
+        assert retired not in I.INSTALL_ORDER

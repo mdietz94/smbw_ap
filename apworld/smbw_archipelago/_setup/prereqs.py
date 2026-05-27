@@ -26,17 +26,19 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import local_appdata_root
+
 # Suppress the per-child console window when running under the Launcher's
 # windowed PyInstaller (no parent console → Windows opens a fresh console
 # for each CONSOLE-subsystem child, which steals focus from the wizard).
 # No-op on non-Windows.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-# Hard min for cmake — switch-mod uses target features that landed in 3.21
-# (FetchContent updates, project versioning). The CLAUDE.md commands assume
-# a Kitware Windows CMake; msys2's cmake mangles drive letters and is
-# rejected below.
-MIN_CMAKE = (3, 21)
+# Hard min for cmake — LibHakkun's CMake (switch-mod/sys/cmake/) uses
+# features that landed in 3.24 (CMP0135, modern FetchContent semantics).
+# Kitware's Windows CMake is required; msys2's cmake mangles drive letters
+# and is rejected below.
+MIN_CMAKE = (3, 24)
 
 # AP's CommonClient + kvui require Python 3.10+. We aim higher for headroom
 # and to match the AP launcher's bundled interpreter.
@@ -47,10 +49,11 @@ MIN_PYTHON = (3, 11)
 # the wizard's pip-install step is required.
 _AP_SAMPLE_IMPORTS = ("websockets", "bsdiff4", "certifi", "kvui")
 
-# devkitPro environment variable + binary path. The installer sets DEVKITPRO
-# system-wide and (typically) drops devkitA64 at $DEVKITPRO\devkitA64\bin.
-_DEVKITPRO_GCC_REL = Path("devkitA64") / "bin" / "aarch64-none-elf-gcc.exe"
-_DEVKITPRO_PACMAN_REL = Path("msys2") / "usr" / "bin" / "pacman.exe"
+# LibHakkun is ABI-pinned to LLVM 19. The libc++ headers the toolchain
+# downloads via setup_libcxx_prepackaged.py only link against 19.x; 20+
+# fails to link and pre-19.1 lacks the C++23 features the cross-compile
+# uses. The wizard rejects both directions.
+LLVM_MAJOR = 19
 
 # Install pages surfaced by the wizard's "Install..." fallback link when
 # auto-install isn't available.
@@ -60,8 +63,7 @@ INSTALL_URLS = {
     "cmake": "https://cmake.org/download/",
     "ninja": "https://github.com/ninja-build/ninja/releases",
     "python311": "https://www.python.org/downloads/release/python-3119/#files",
-    "devkitpro": "https://github.com/devkitPro/installer/releases/latest",
-    "switch_dev": "",
+    "llvm19": "https://github.com/llvm/llvm-project/releases/tag/llvmorg-19.1.7",
     "archipelago_submodule": "",
     "switch_mod_submodule": "",
     "archipelago_deps": "",
@@ -569,6 +571,10 @@ def check_python311() -> PrereqResult:
         if Path(interp).is_file():
             _resolved_python_bin = interp
             _prepend_path(Path(interp).parent)
+            # Drop a `python3.exe` copy alongside so LibHakkun's bare
+            # `python3` shellouts (setup_libcxx_prepackaged.py) resolve
+            # to the same interpreter, not the Microsoft Store stub.
+            ensure_python3_shim(Path(interp))
         return PrereqResult(
             "python311", f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+", True,
             f"{ver[0]}.{ver[1]}.{ver[2]} ({cmd[0]})",
@@ -589,130 +595,208 @@ def check_python311() -> PrereqResult:
 
 
 # ---------------------------------------------------------------------------
-# devkitPro / devkitA64 — cross-compiler for the Switch target.
+# LLVM 19.1.x — clang/clang++ cross-compiler for the Switch target.
+#
+# LibHakkun's [switch-mod/sys/cmake/toolchain.cmake] hardcodes the C/C++
+# compilers to bare `clang` / `clang++`. The libc++ + musl + compiler-rt
+# bundle that toolchain.cmake fetches on first configure is ABI-pinned to
+# LLVM 19.x, so we reject anything else even when found on PATH.
 # ---------------------------------------------------------------------------
 
-_resolved_devkitpro_root: str | None = None
+
+def llvm_portable_root() -> Path:
+    """Where the wizard's auto-installer extracts LLVM to. Outside %APPDATA%
+    because LOCALAPPDATA is roaming-profile-excluded and a ~3.3 GB toolchain
+    has no business following a domain user across machines."""
+    return local_appdata_root() / "llvm"
 
 
-def resolved_devkitpro_root() -> str | None:
-    return _resolved_devkitpro_root
+# Canonical Windows install paths laid down by the official LLVM .exe
+# installer. Probed BEFORE `clang` on PATH so a dev with LLVM installed
+# in the standard place (but not on PATH) doesn't see a perma-red prereq
+# row. Mirrors `_CMAKE_DEFAULT_PATHS`. Order matters: 64-bit first.
+_LLVM_DEFAULT_PATHS = (
+    Path("C:/Program Files/LLVM/bin/clang.exe"),
+    Path("C:/Program Files (x86)/LLVM/bin/clang.exe"),
+)
 
 
-def _devkitpro_default_root() -> Path | None:
-    """Standard install location on Windows: C:\\devkitPro. Honored when
-    %DEVKITPRO% isn't set yet (e.g. the user just installed but hasn't
-    restarted the wizard)."""
-    if sys.platform == "win32":
-        for candidate in (Path("C:/devkitPro"), Path("C:/devkitpro")):
-            if candidate.is_dir():
-                return candidate
+_resolved_llvm_bin: str | None = None
+
+
+def resolved_llvm_bin() -> str | None:
+    """Return the LLVM `bin/` dir the most recent `check_llvm19` resolved,
+    or None if detection hasn't run or didn't find one. build.py prepends
+    this to the cmake subprocess's PATH so the build uses the SAME clang
+    the prereq check passed — not whatever's first on the inherited PATH."""
+    return _resolved_llvm_bin
+
+
+def _parse_clang_version(text: str) -> tuple[int, int, int] | None:
+    """`clang --version` prints `clang version 19.1.7 ...` on portable
+    builds and `(distro) clang version 19.1.7 ...` on Linux distros.
+    Capture the dotted triple regardless of leading prose."""
+    m = re.search(r"clang version (\d+)\.(\d+)(?:\.(\d+))?", text)
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3) or "0"))
+
+
+def _llvm_gate_version(ver: tuple[int, int, int]) -> str | None:
+    """Return None if `ver` is acceptable LLVM 19.1.x, else a short reason
+    string the caller surfaces. LibHakkun's libc++ won't link against 20+;
+    pre-19.1 lacks the C++23 features the cross-compile relies on."""
+    if ver[0] != LLVM_MAJOR:
+        return (f"need LLVM {LLVM_MAJOR}.x (got {ver[0]}.{ver[1]}.{ver[2]}); "
+                f"LibHakkun's libc++ ABI is pinned at 19")
+    if ver[1] < 1:
+        return (f"need LLVM 19.1.x (got 19.{ver[1]}.{ver[2]}); 19.0.x "
+                f"predates the libc++ features the cross-compile uses")
     return None
 
 
-def check_devkitpro() -> PrereqResult:
-    """devkitPro install + devkitA64 cross-compiler.
+def check_llvm19() -> PrereqResult:
+    """LLVM 19.1.x cross-compiler.
 
     Probe order:
-      1. `%DEVKITPRO%` env var → check for `devkitA64/bin/aarch64-none-elf-gcc.exe`
-      2. `C:\\devkitPro` (default Windows install location)
+      1. Portable install at ``%LOCALAPPDATA%/SMBWArchipelago/llvm/bin/clang.exe``
+         — the path the wizard's auto-installer writes to. Wins
+         unconditionally so a user with a different LLVM on PATH still
+         gets the version the wizard built against.
+      2. Canonical Windows install at ``C:/Program Files/LLVM/bin/clang.exe``
+         — where the official LLVM .exe installer drops it. Probed before
+         the PATH fallback because devs who installed LLVM themselves
+         often don't add it to PATH; without this probe their prereq row
+         shows red even though the right toolchain is sitting right
+         there. Only accepted if version-gated to 19.1.x.
+      3. ``clang --version`` on PATH — accept only if 19.1.x. Lets a
+         developer with LLVM 19 already on PATH skip the ~806 MB download.
 
-    Side effect: caches the resolved root so installers.py / build.py
-    can re-use it without re-probing.
+    Side effect: caches the resolved `bin/` dir so build.py can prepend
+    it to the cmake subprocess PATH.
     """
-    global _resolved_devkitpro_root
+    global _resolved_llvm_bin
 
-    candidates: list[Path] = []
-    env_root = os.environ.get("DEVKITPRO")
-    if env_root:
-        candidates.append(Path(env_root))
-    default = _devkitpro_default_root()
-    if default and default not in candidates:
-        candidates.append(default)
+    portable_clang = llvm_portable_root() / "bin" / "clang.exe"
+    if portable_clang.is_file():
+        r = _safe_run([str(portable_clang), "--version"])
+        if r and r[0] == 0:
+            ver = _parse_clang_version(r[1] or r[2])
+            if ver is not None:
+                reason = _llvm_gate_version(ver)
+                if reason is None:
+                    _resolved_llvm_bin = str(portable_clang.parent)
+                    return PrereqResult(
+                        "llvm19", "LLVM 19.1.x", True,
+                        f"{ver[0]}.{ver[1]}.{ver[2]} ({portable_clang}) [portable]",
+                        auto_installable=True,
+                    )
+                return PrereqResult(
+                    "llvm19", "LLVM 19.1.x", False,
+                    f"portable install at {portable_clang.parent} has wrong "
+                    f"version: {reason}",
+                    INSTALL_URLS["llvm19"],
+                    note=(
+                        "Delete %LOCALAPPDATA%\\SMBWArchipelago\\llvm\\ "
+                        "and click Auto-install to re-fetch LLVM 19.1.7."
+                    ),
+                    auto_installable=True,
+                )
 
-    for root in candidates:
-        gcc = root / _DEVKITPRO_GCC_REL
-        if not gcc.is_file():
+    # Canonical official-installer paths. We only accept a 19.1.x match
+    # here — a wrong-version system install is NOT a hard failure (the
+    # PATH fallback below or a portable install can still succeed).
+    for default_clang in _LLVM_DEFAULT_PATHS:
+        if not default_clang.is_file():
             continue
-        r = _safe_run([str(gcc), "--version"])
+        r = _safe_run([str(default_clang), "--version"])
         if r is None or r[0] != 0:
             continue
-        ver_line = (r[1] or r[2]).strip().splitlines()[0] if (r[1] or r[2]).strip() else ""
-        _resolved_devkitpro_root = str(root)
-        # Populate $DEVKITPRO for downstream subprocesses (cmake reads
-        # this in the toolchain file).
-        os.environ.setdefault("DEVKITPRO", str(root))
+        ver = _parse_clang_version(r[1] or r[2])
+        if ver is None:
+            continue
+        if _llvm_gate_version(ver) is not None:
+            continue
+        _resolved_llvm_bin = str(default_clang.parent)
         return PrereqResult(
-            "devkitpro", "devkitPro / devkitA64", True,
-            f"{ver_line or 'devkitA64 gcc'} ({root})",
+            "llvm19", "LLVM 19.1.x", True,
+            f"{ver[0]}.{ver[1]}.{ver[2]} ({default_clang})",
             auto_installable=True,
         )
 
-    return PrereqResult(
-        "devkitpro", "devkitPro / devkitA64", False,
-        "not found (DEVKITPRO env unset and no install at C:\\devkitPro)",
-        INSTALL_URLS["devkitpro"],
-        note=(
-            "Install devkitPro from the official installer "
-            "(github.com/devkitPro/installer/releases) and select the "
-            "Switch toolchain. The wizard's Auto-install downloads + runs "
-            "this for you. After install, %DEVKITPRO% is set automatically; "
-            "click Re-check to pick it up without restarting the wizard."
-        ),
-        auto_installable=True,
-    )
-
-
-# ---------------------------------------------------------------------------
-# switch-dev pacman group — devkitPro ships a meta-installer that needs
-# `pacman -S switch-dev` to actually fetch the Switch toolchain + libnx.
-# A bare devkitPro install without switch-dev is missing libnx headers.
-# ---------------------------------------------------------------------------
-
-def _pacman_path() -> Path | None:
-    root = _resolved_devkitpro_root or os.environ.get("DEVKITPRO")
-    if not root:
-        return None
-    p = Path(root) / _DEVKITPRO_PACMAN_REL
-    return p if p.is_file() else None
-
-
-def check_switch_dev() -> PrereqResult:
-    """devkitPro's `switch-dev` pacman package group — provides libnx,
-    switch-tools, switch-libs, etc.
-
-    Depends on `check_devkitpro` having run first (so the resolved root
-    is available). If pacman itself can't be found, we surface a clear
-    "devkitPro missing pacman" message rather than failing silently.
-    """
-    pac = _pacman_path()
-    if pac is None:
-        return PrereqResult(
-            "switch_dev", "devkitPro switch-dev", False,
-            "pacman not found (run devkitPro check first)",
-            INSTALL_URLS["switch_dev"],
-            note="Install devkitPro first; switch-dev installs via its bundled pacman.",
-        )
-    r = _safe_run([str(pac), "-Qq", "switch-dev"])
+    r = _safe_run(["clang", "--version"])
     if r is None or r[0] != 0:
         return PrereqResult(
-            "switch_dev", "devkitPro switch-dev", False,
-            "switch-dev package group not installed via pacman",
-            INSTALL_URLS["switch_dev"],
+            "llvm19", "LLVM 19.1.x", False,
+            "not found (LibHakkun's toolchain.cmake hardcodes clang/clang++)",
+            INSTALL_URLS["llvm19"],
             note=(
-                "Open the devkitPro MSYS2 shell (`$DEVKITPRO\\msys2\\msys2.exe`) and run:\n"
-                "    pacman -S --noconfirm switch-dev\n"
-                "Or click Auto-install — the wizard invokes pacman silently."
+                "Click Auto-install to download LLVM 19.1.7 (~806 MB, "
+                "~3.3 GB on disk) into "
+                "%LOCALAPPDATA%\\SMBWArchipelago\\llvm\\. Your system "
+                "LLVM (if any) stays untouched — the wizard scopes its "
+                "PATH prepend to the build subprocess."
             ),
             auto_installable=True,
         )
-    # pacman -Qq prints the package name on success.
-    pkgs = [ln for ln in (r[1] or "").strip().splitlines() if ln]
+    ver = _parse_clang_version(r[1] or r[2])
+    if ver is None:
+        return PrereqResult(
+            "llvm19", "LLVM 19.1.x", False,
+            "found on PATH but couldn't parse `clang --version` output",
+            INSTALL_URLS["llvm19"],
+            auto_installable=True,
+        )
+    reason = _llvm_gate_version(ver)
+    if reason is not None:
+        return PrereqResult(
+            "llvm19", "LLVM 19.1.x", False,
+            f"PATH has LLVM {ver[0]}.{ver[1]}.{ver[2]} — {reason}",
+            INSTALL_URLS["llvm19"],
+            note=(
+                "Your system-installed LLVM stays untouched. Click "
+                "Auto-install to add a parallel LLVM 19.1.7 under "
+                "%LOCALAPPDATA%\\SMBWArchipelago\\llvm\\."
+            ),
+            auto_installable=True,
+        )
+    path_clang = shutil.which("clang")
+    if path_clang:
+        _resolved_llvm_bin = str(Path(path_clang).parent)
     return PrereqResult(
-        "switch_dev", "devkitPro switch-dev", True,
-        f"installed ({len(pkgs)} pkg(s))",
+        "llvm19", "LLVM 19.1.x", True,
+        f"{ver[0]}.{ver[1]}.{ver[2]} (PATH)",
         auto_installable=True,
     )
+
+
+def ensure_python3_shim(python_exe: Path) -> None:
+    """Create a ``python3.exe`` copy of ``python_exe`` in the same dir.
+
+    Standard Windows CPython installers ship ``python.exe`` + ``pythonw.exe``
+    but NOT ``python3.exe``. LibHakkun's [sys/cmake/toolchain.cmake] calls
+    bare ``python3 sys/tools/setup_libcxx_prepackaged.py`` when the
+    prepackaged libc++ + musl + compiler-rt bundle is missing. With nothing
+    called ``python3.exe`` on PATH, that resolves to the Microsoft Store
+    stub which exits silently — cmake captures the result var but never
+    checks it, and the build dies much later with cryptic missing-stdlib
+    errors.
+
+    Copy (not symlink) because Windows symlinks need admin or Dev Mode.
+    Idempotent: skips if ``python3.exe`` already exists.
+    """
+    if not python_exe.is_file():
+        return
+    shim = python_exe.with_name("python3.exe")
+    if shim.is_file():
+        return
+    try:
+        shutil.copy2(python_exe, shim)
+    except OSError:
+        # Best-effort. If the copy fails (read-only target dir on a
+        # locked-down install), the user can still configure manually by
+        # passing ``-DPython3_EXECUTABLE=<path>`` to cmake.
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -762,28 +846,37 @@ def check_archipelago_submodule() -> PrereqResult:
 
 
 def check_switch_mod_submodule() -> PrereqResult:
-    """switch-mod's nested third-party libs (imgui / NintendoSDK / sead) initialized.
+    """switch-mod's hakkun framework + vendored libs initialized.
+
+    Required submodules:
+      * ``switch-mod/sys``       — LibHakkun (the subsdk framework + cmake
+                                   driver). The build cannot configure
+                                   without it.
+      * ``switch-mod/lib/imgui`` — Dear ImGui. Currently unused in the
+                                   Phase 1 build (debug overlay gated off
+                                   in config/config.cmake) but the next
+                                   addon flip-on will pull it in.
 
     Two acceptable shapes:
-      * **Dev clone**: ``switch-mod/lib/imgui/imgui.h`` present in the
-        repo via ``git submodule update --init --recursive``.
+      * **Dev clone**: ``switch-mod/sys/cmake/module.cmake`` present via
+        ``git submodule update --init switch-mod/sys switch-mod/lib/imgui``.
+        (LibHakkun has no top-level ``CMakeLists.txt`` — the repo's main
+        ``switch-mod/CMakeLists.txt`` does ``include(sys/cmake/module.cmake)``
+        instead of ``add_subdirectory(sys)``, so ``module.cmake`` is the
+        load-bearing sentinel.)
       * **Packaged install**: the same sources ship inside the .apworld
-        zip under ``smbwonder/_setup/switch_mod/`` (added by
+        zip under ``smbwonder/_setup/switch-mod/`` (added by
         ``scripts/install_apworld.py --bundle-mod`` at release time).
         Extracted lazily on first build via
         :func:`build.bundled_switch_mod` -- here we just check the zip
         is on disk so the prereq row doesn't claim "missing" on a
         perfectly buildable packaged install.
-
-    Falls back to ``not applicable`` (ok with warn-only=False, no
-    install needed) when neither path applies AND we're not in a dev
-    clone -- the user can't fix it without re-installing the apworld.
     """
-    sentinel = repo_root() / "switch-mod" / "lib" / "imgui" / "imgui.h"
-    if sentinel.is_file():
+    sys_sentinel = repo_root() / "switch-mod" / "sys" / "cmake" / "module.cmake"
+    if sys_sentinel.is_file():
         return PrereqResult(
-            "switch_mod_submodule", "switch-mod vendored libs", True,
-            f"present ({sentinel.parent.parent})",
+            "switch_mod_submodule", "switch-mod hakkun + libs", True,
+            f"present ({sys_sentinel.parent.parent})",
             auto_installable=True,
         )
 
@@ -797,7 +890,7 @@ def check_switch_mod_submodule() -> PrereqResult:
         for _ in range(10):
             if cur.suffix == ".apworld" and cur.is_file():
                 return PrereqResult(
-                    "switch_mod_submodule", "switch-mod vendored libs", True,
+                    "switch_mod_submodule", "switch-mod hakkun + libs", True,
                     f"bundled inside {cur.name} (extracted on first build)",
                     auto_installable=True,
                 )
@@ -806,7 +899,7 @@ def check_switch_mod_submodule() -> PrereqResult:
                 break
             cur = parent
         return PrereqResult(
-            "switch_mod_submodule", "switch-mod vendored libs", False,
+            "switch_mod_submodule", "switch-mod hakkun + libs", False,
             "no bundled sources and not a dev clone",
             INSTALL_URLS["switch_mod_submodule"],
             note=(
@@ -819,12 +912,12 @@ def check_switch_mod_submodule() -> PrereqResult:
         )
 
     return PrereqResult(
-        "switch_mod_submodule", "switch-mod vendored libs", False,
-        f"missing {sentinel}",
+        "switch_mod_submodule", "switch-mod hakkun + libs", False,
+        f"missing {sys_sentinel} (LibHakkun submodule under switch-mod/sys/ not initialized)",
         INSTALL_URLS["switch_mod_submodule"],
         note=(
             "Run from the repo root:\n"
-            "    git submodule update --init --recursive switch-mod/lib\n"
+            "    git submodule update --init switch-mod/sys switch-mod/lib/imgui\n"
             "Or click Auto-install."
         ),
         auto_installable=True,
@@ -838,7 +931,6 @@ def check_switch_mod_submodule() -> PrereqResult:
 # ---------------------------------------------------------------------------
 
 def ap_deps_marker_path() -> Path:
-    from . import local_appdata_root
     return local_appdata_root() / "ap_deps.ok"
 
 
@@ -960,17 +1052,16 @@ def check_ryujinx() -> PrereqResult:
 
 def check_all() -> list[PrereqResult]:
     """Run every detector. Order is wizard-display order — cheap probes
-    first, then heavier ones. devkitPro/switch-dev appear after CMake
-    because they're the bulkiest install and the most likely to be missing
-    on a fresh dev box."""
+    first, then heavier ones. LLVM 19 appears after the small-download
+    rows because it's the bulkiest install (~806 MB) and most likely to
+    be missing on a fresh dev box."""
     return [
         check_dev_mode(),
         check_git(),
         check_cmake(),
         check_ninja(),
         check_python311(),
-        check_devkitpro(),
-        check_switch_dev(),
+        check_llvm19(),
         check_archipelago_submodule(),
         check_switch_mod_submodule(),
         check_archipelago_deps(),

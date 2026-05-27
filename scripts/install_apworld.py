@@ -19,9 +19,10 @@ Run from anywhere; paths resolve relative to this file.
     # Dev / unit-test default: apworld files only
     python scripts/install_apworld.py
 
-    # Release build: also bundle switch-mod sources (incl. lib submodules)
-    # under _setup/switch_mod/ inside the zip so the first-run wizard has
-    # everything it needs to compile the Switch mod on the user's machine.
+    # Release build: also bundle switch-mod sources (incl. sys/ +
+    # lib/imgui submodules) under _setup/switch-mod/ inside the zip so the
+    # first-run wizard has everything it needs to compile the Switch mod
+    # on the user's machine.
     python scripts/install_apworld.py --bundle-mod
 """
 
@@ -65,16 +66,19 @@ MOD_SKIP_NAMES = SKIP_NAMES | {
 # in the source bundle).
 MOD_SKIP_SUFFIXES = {".exe", ".dll", ".pdb", ".obj", ".o", ".a"}
 
-# Submodule paths under switch-mod/lib/ that must be populated for a
+# Submodule paths under switch-mod/ that must be populated for a
 # --bundle-mod release to produce a buildable bundle. The user-facing
-# install_apworld --bundle-mod requires `git submodule update --init
-# --recursive`; this check surfaces the failure at bundle time with a
-# clear instruction rather than letting the user discover it as a cmake
-# error on their machine.
+# install_apworld --bundle-mod requires `git submodule update --init`;
+# this check surfaces the failure at bundle time with a clear instruction
+# rather than letting the user discover it as a cmake error on their
+# machine.  `sys` is the LibHakkun framework (load-bearing — cmake can't
+# even configure without it); `lib/imgui` is currently gated off in the
+# Phase 1 build but cheap to ship for the next debug-overlay flip-on.
+# The exlaunch-era submodules (NintendoSDK, sead) were retired in the
+# hakkun migration and are no longer in .gitmodules.
 SWITCH_MOD_SUBMODULES = (
+    Path("sys"),
     Path("lib") / "imgui",
-    Path("lib") / "NintendoSDK",
-    Path("lib") / "sead",
 )
 
 
@@ -83,9 +87,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--bundle-mod",
         action="store_true",
-        help="Also copy switch-mod/ sources (incl. lib submodule contents) "
-             "under _setup/switch_mod/ in the zip. Required for the "
-             "first-run wizard to build subsdk9 on the user's machine.",
+        help="Also copy switch-mod/ sources (incl. sys/ + lib submodule "
+             "contents) under _setup/switch-mod/ in the zip. Required for "
+             "the first-run wizard to build subsdk9 on the user's machine.",
     )
     return p.parse_args(argv)
 
@@ -138,7 +142,7 @@ def main(argv: list[str] | None = None) -> int:
     if not DST_DIR.parent.is_dir():
         print(f"FAIL: Archipelago checkout not found at {DST_DIR.parent}",
               file=sys.stderr)
-        print("      (run `git submodule update --init --recursive` first)",
+        print("      (run `git submodule update --init` first)",
               file=sys.stderr)
         return 2
     DST_DIR.mkdir(parents=True, exist_ok=True)
@@ -155,12 +159,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"FAIL: --bundle-mod requested but {mod_root} missing",
                   file=sys.stderr)
             return 2
-        # Submodule presence check: each lib submodule must be populated
-        # (non-empty directory). Without these the bundled tree would
-        # produce a cmake error on the user's machine. `--recursive` is
-        # required here because the lib/ submodules are siblings, not
-        # nested — but a future maintainer adding a nested submodule
-        # should keep the recursive form in the user instruction.
+        # Submodule presence check: each switch-mod submodule must be
+        # populated (non-empty directory). Without these the bundled
+        # tree would produce a cmake error on the user's machine.
         for rel in SWITCH_MOD_SUBMODULES:
             sub = mod_root / rel
             if not _check_submodule_populated(sub):
@@ -168,7 +169,8 @@ def main(argv: list[str] | None = None) -> int:
                     f"FAIL: --bundle-mod requested but submodule "
                     f"{rel.as_posix()} is not initialized (empty or "
                     f"missing at {sub}). Run "
-                    f"`git submodule update --init --recursive` first.",
+                    f"`git submodule update --init switch-mod/{rel.as_posix()}` "
+                    f"first.",
                     file=sys.stderr,
                 )
                 return 2

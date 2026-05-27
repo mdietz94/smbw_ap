@@ -76,11 +76,11 @@ def test_check_cmake_accepts_recent(patch_run: dict[str, Any], monkeypatch: pyte
 
 
 def test_check_cmake_rejects_msys2_bare_name(patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    """devkitPro's MSYS2 cmake mangles drive-letter paths. Even when
-    version-good, the bare-name PATH fallback must reject it."""
+    """msys2's cmake mangles drive-letter paths. Even when version-good,
+    the bare-name PATH fallback must reject it."""
     patch_run["cmake"] = (0, "cmake version 3.30.5\n", "")
     P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
-    monkeypatch.setattr(P.shutil, "which", lambda _x: "C:/devkitPro/msys2/usr/bin/cmake.exe")
+    monkeypatch.setattr(P.shutil, "which", lambda _x: "C:/msys64/usr/bin/cmake.exe")
     r = P.check_cmake()
     assert r.ok is False
     assert "msys2" in r.detail.lower()
@@ -107,28 +107,117 @@ def test_check_python311_uses_sys_executable(monkeypatch: pytest.MonkeyPatch, pa
     assert "3.12.0" in r.detail
 
 
-def test_check_devkitpro_missing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("DEVKITPRO", raising=False)
-    monkeypatch.setattr(P, "_devkitpro_default_root", lambda: None)
-    r = P.check_devkitpro()
+def test_check_llvm19_missing(monkeypatch: pytest.MonkeyPatch,
+                              tmp_path: Path,
+                              patch_run: dict[str, Any]) -> None:
+    """No portable install, no canonical install, no `clang` on PATH →
+    fail with auto-install available."""
+    monkeypatch.setattr(P, "llvm_portable_root", lambda: tmp_path / "noexist")
+    monkeypatch.setattr(P, "_LLVM_DEFAULT_PATHS", ())
+    patch_run["clang"] = None
+    r = P.check_llvm19()
+    assert r.ok is False
+    assert "not found" in r.detail
+    assert r.auto_installable is True
+
+
+def test_check_llvm19_accepts_portable_19(monkeypatch: pytest.MonkeyPatch,
+                                          tmp_path: Path,
+                                          patch_run: dict[str, Any]) -> None:
+    """Synthesize a portable LLVM 19.1.7 install and verify the detector
+    picks it up + caches the bin dir."""
+    P._resolved_llvm_bin = None  # type: ignore[attr-defined]
+    root = tmp_path / "llvm"
+    bin_dir = root / "bin"
+    clang_exe = bin_dir / "clang.exe"
+    bin_dir.mkdir(parents=True)
+    clang_exe.write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "llvm_portable_root", lambda: root)
+    monkeypatch.setattr(P, "_LLVM_DEFAULT_PATHS", ())
+    patch_run[str(clang_exe)] = (0, "clang version 19.1.7\n", "")
+    r = P.check_llvm19()
+    assert r.ok is True
+    assert "19.1.7" in r.detail
+    assert P.resolved_llvm_bin() == str(bin_dir)
+
+
+def test_check_llvm19_accepts_canonical_install(monkeypatch: pytest.MonkeyPatch,
+                                                tmp_path: Path,
+                                                patch_run: dict[str, Any]) -> None:
+    """Probe finds LLVM 19 at the canonical `C:\\Program Files\\LLVM\\bin\\`
+    install path even when there's no portable install and `clang` isn't
+    on PATH (typical for devs who installed via the official .exe but
+    didn't tick "add to PATH")."""
+    P._resolved_llvm_bin = None  # type: ignore[attr-defined]
+    monkeypatch.setattr(P, "llvm_portable_root", lambda: tmp_path / "noportable")
+    canonical = tmp_path / "Program Files" / "LLVM" / "bin" / "clang.exe"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "_LLVM_DEFAULT_PATHS", (canonical,))
+    patch_run[str(canonical)] = (0, "clang version 19.1.7\n", "")
+    # `clang` on PATH must NOT win — we want to prove the canonical
+    # probe fires before PATH fallback.
+    patch_run["clang"] = None
+    r = P.check_llvm19()
+    assert r.ok is True
+    assert "19.1.7" in r.detail
+    assert P.resolved_llvm_bin() == str(canonical.parent)
+
+
+def test_check_llvm19_skips_canonical_with_wrong_version(monkeypatch: pytest.MonkeyPatch,
+                                                         tmp_path: Path,
+                                                         patch_run: dict[str, Any]) -> None:
+    """A canonical install at the wrong major version (e.g. LLVM 18 or 20
+    that the user installed for another project) must not poison the
+    probe — fall through to the PATH fallback or report not-found
+    cleanly rather than blocking on the wrong-version system install."""
+    P._resolved_llvm_bin = None  # type: ignore[attr-defined]
+    monkeypatch.setattr(P, "llvm_portable_root", lambda: tmp_path / "noportable")
+    canonical = tmp_path / "Program Files" / "LLVM" / "bin" / "clang.exe"
+    canonical.parent.mkdir(parents=True)
+    canonical.write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "_LLVM_DEFAULT_PATHS", (canonical,))
+    patch_run[str(canonical)] = (0, "clang version 20.1.0\n", "")
+    patch_run["clang"] = None
+    r = P.check_llvm19()
+    # Wrong-version canonical install was skipped; PATH probe also
+    # failed → reported as not-found rather than blocking on the bad
+    # canonical install.
     assert r.ok is False
     assert "not found" in r.detail
 
 
-def test_check_devkitpro_finds_via_env(monkeypatch: pytest.MonkeyPatch,
-                                        tmp_path: Path,
-                                        patch_run: dict[str, Any]) -> None:
-    """Synthesize a devkitPro tree and verify the detector picks it up."""
-    root = tmp_path / "devkitPro"
-    gcc_path = root / "devkitA64" / "bin" / "aarch64-none-elf-gcc.exe"
-    gcc_path.parent.mkdir(parents=True)
-    gcc_path.write_text("", encoding="utf-8")
-    monkeypatch.setenv("DEVKITPRO", str(root))
-    patch_run[str(gcc_path)] = (0, "gcc (devkitA64) 14.2.0\n", "")
-    monkeypatch.setattr(P, "_devkitpro_default_root", lambda: None)
-    r = P.check_devkitpro()
-    assert r.ok is True
-    assert "devkitA64" in r.detail or "gcc" in r.detail.lower()
+def test_check_llvm19_rejects_wrong_major(monkeypatch: pytest.MonkeyPatch,
+                                          tmp_path: Path,
+                                          patch_run: dict[str, Any]) -> None:
+    """LLVM 20+ on PATH must be rejected with a clear version-mismatch
+    message — LibHakkun's libc++ ABI is pinned at 19."""
+    P._resolved_llvm_bin = None  # type: ignore[attr-defined]
+    monkeypatch.setattr(P, "llvm_portable_root", lambda: tmp_path / "noexist")
+    monkeypatch.setattr(P, "_LLVM_DEFAULT_PATHS", ())
+    patch_run["clang"] = (0, "clang version 20.1.0\n", "")
+    r = P.check_llvm19()
+    assert r.ok is False
+    assert "19" in r.detail
+
+
+def test_ensure_python3_shim_creates_copy(tmp_path: Path) -> None:
+    src = tmp_path / "python.exe"
+    src.write_text("fake interpreter", encoding="utf-8")
+    P.ensure_python3_shim(src)
+    shim = tmp_path / "python3.exe"
+    assert shim.is_file()
+    assert shim.read_text(encoding="utf-8") == "fake interpreter"
+
+
+def test_ensure_python3_shim_idempotent(tmp_path: Path) -> None:
+    src = tmp_path / "python.exe"
+    src.write_text("v1", encoding="utf-8")
+    shim = tmp_path / "python3.exe"
+    shim.write_text("existing", encoding="utf-8")
+    P.ensure_python3_shim(src)
+    # Existing shim left alone.
+    assert shim.read_text(encoding="utf-8") == "existing"
 
 
 def test_check_archipelago_submodule_present(monkeypatch: pytest.MonkeyPatch,
@@ -238,10 +327,12 @@ def test_check_archipelago_deps_runs_probe_in_dev_clone(
 
 def test_check_switch_mod_submodule_present(monkeypatch: pytest.MonkeyPatch,
                                              tmp_path: Path) -> None:
-    # switch-mod itself is inlined in the repo; the check now keys on
-    # one of the nested vendored libs (imgui) being checked out.
-    (tmp_path / "switch-mod" / "lib" / "imgui").mkdir(parents=True)
-    (tmp_path / "switch-mod" / "lib" / "imgui" / "imgui.h").write_text(
+    # switch-mod itself is inlined in the repo; the check keys on the
+    # LibHakkun framework (switch-mod/sys/cmake/module.cmake) being
+    # checked out, since that's the file the repo's main CMakeLists.txt
+    # actually includes.
+    (tmp_path / "switch-mod" / "sys" / "cmake").mkdir(parents=True)
+    (tmp_path / "switch-mod" / "sys" / "cmake" / "module.cmake").write_text(
         "", encoding="utf-8"
     )
     monkeypatch.setattr(P, "repo_root", lambda: tmp_path)
@@ -347,9 +438,11 @@ def test_check_all_returns_ordered_results() -> None:
     assert "cmake" in keys
     assert "ninja" in keys
     assert "python311" in keys
-    assert "devkitpro" in keys
-    assert "switch_dev" in keys
+    assert "llvm19" in keys
     assert "archipelago_submodule" in keys
     assert "switch_mod_submodule" in keys
     assert "archipelago_deps" in keys
     assert "ryujinx" in keys
+    # exlaunch-era keys should be retired entirely:
+    assert "devkitpro" not in keys
+    assert "switch_dev" not in keys

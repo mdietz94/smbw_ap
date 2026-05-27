@@ -15,7 +15,7 @@ You are working on `smwonder_archipelago` — an Archipelago multiworld integrat
 3. **Legacy reference.** `switch-mod/src/program/main.cpp` lines 38-870 and 890-1700+ contain the original `probe::` implementation (~2700 lines). Read it carefully — most of it ports cleanly with the API translations in `[[smbwap-hakkun-migration]]`, but several call sites use exlaunch primitives (`HOOK_DEFINE_TRAMPOLINE`, `exl::util::modules::GetTargetStart`, `nn::Result` from exlaunch's nn headers) that need translation to the hakkun equivalents listed in that memory.
 4. **Build env.** PowerShell on Windows. Build cycle:
    ```pwsh
-   $env:Path = 'C:\Program Files\LLVM\bin;C:\devkitPro\msys2\usr\bin;' + $env:Path
+   $env:Path = 'C:\Program Files\LLVM\bin;' + $env:Path
    & 'C:\Program Files\CMake\bin\cmake.exe' --build switch-mod\build
    ```
    Build artifacts: `switch-mod/build/exefs/{subsdk9, main.npdm}`. Deploy to Ryujinx via `Copy-Item ... -Destination "$env:APPDATA\Ryujinx\mods\contents\010015100b514000\smbwap\exefs\"` then launch with `Ryujinx.exe '<NSP path>'`. SD path for real hardware is `D:\atmosphere\contents\010015100B514000\exefs\` when the user has the SD mounted.

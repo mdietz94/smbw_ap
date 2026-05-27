@@ -1,4 +1,4 @@
-"""Drive the cmake configure + ninja build of switch-mod.
+"""Drive the cmake configure + ninja build of switch-mod (hakkun subsdk).
 
 Two steps:
 
@@ -16,15 +16,16 @@ BuildResult with `ok=False` plus the full captured log.
 The build env is composed deterministically from the wizard's resolved
 prereq paths:
 
-  - DEVKITPRO            ← prereqs.resolved_devkitpro_root()
-  - PATH (prepended)     ← devkitPro msys2 usr/bin (for `make`, `pacman`-installed tools)
   - CMake binary         ← prereqs.resolved_cmake() (rejects msys2's cmake)
-  - Ninja generator      ← bare name "Ninja"; cmake finds the binary
-                            from the same PATH we set up
-
-Without this, `cmake --build` would shell out to whatever cmake/ninja
-happens to be first on the inherited PATH and frequently miss-resolve
-to the msys2 build (see CLAUDE.md "critical gotchas").
+  - PATH (prepended)     ← resolved LLVM bin (clang/clang++ for hakkun's
+                           toolchain.cmake), resolved Ninja bin, resolved
+                           Python dir (LibHakkun's toolchain.cmake shells
+                           out to bare `python3` for setup_libcxx_prepackaged.py).
+  - The toolchain file itself is NOT passed as -DCMAKE_TOOLCHAIN_FILE;
+    [switch-mod/CMakeLists.txt] sets it via early `set(CMAKE_TOOLCHAIN_FILE
+    "${CMAKE_SOURCE_DIR}/sys/cmake/toolchain.cmake")` before `project()`.
+    Passing a -D would be either dead (overridden by the in-CMakeLists set)
+    or actively wrong (if it pointed somewhere else).
 """
 
 from __future__ import annotations
@@ -46,8 +47,9 @@ from .prereqs import (
     is_dev_clone,
     repo_root,
     resolved_cmake,
-    resolved_devkitpro_root,
+    resolved_llvm_bin,
     resolved_ninja_bin,
+    resolved_python_bin,
 )
 
 # Where this module lives on disk.  In a packaged install (.apworld zip
@@ -382,10 +384,6 @@ def build_dir(repo: Path | None = None) -> Path:
     return switch_mod_root(repo) / "build"
 
 
-def toolchain_file(repo: Path | None = None) -> Path:
-    return switch_mod_root(repo) / "cmake" / "toolchain.cmake"
-
-
 def expected_artifacts(repo: Path | None = None) -> dict[str, Path]:
     """The two files `cmake --build` is expected to produce.
 
@@ -406,27 +404,40 @@ def _compose_build_env() -> dict[str, str]:
 
     Composed from:
       - the parent process env (inherit base)
-      - DEVKITPRO from prereqs.resolved_devkitpro_root() (falls back to
-        env if cache wasn't populated)
-      - PATH prepended with $DEVKITPRO\\msys2\\usr\\bin (where pacman
-        installs binaries like libnx-headers helpers; devkitA64's own
-        bin/ is already discoverable to cmake via toolchain.cmake)
-      - PATH prepended with the resolved Ninja bin dir if we have one
+      - PATH prepended with the resolved LLVM `bin/` dir. LibHakkun's
+        [switch-mod/sys/cmake/toolchain.cmake] hardcodes the compilers
+        to bare `clang` / `clang++`, so this is what makes cmake find
+        the wizard-verified LLVM 19.1.x rather than whatever else is
+        first on the inherited PATH.
+      - PATH prepended with the resolved Python dir. LibHakkun's
+        toolchain.cmake shells out to bare `python3 sys/tools/setup_libcxx_prepackaged.py`
+        when its prepackaged libc++/musl/compiler-rt bundle is missing.
+        Without `python3` on PATH, that resolves to the Microsoft Store
+        stub and silently no-ops; prereqs.ensure_python3_shim() drops a
+        `python3.exe` copy alongside, but only if the dir is on PATH.
+      - PATH prepended with the resolved Ninja bin dir if we have one.
       - PYTHONIOENCODING=utf-8 so child python prints don't crash on
         non-ASCII (em-dashes etc.) under cp932 / cp1252 default consoles.
     """
     env = os.environ.copy()
-    root = resolved_devkitpro_root() or env.get("DEVKITPRO")
-    if root:
-        env["DEVKITPRO"] = root
-        # devkitPro toolchain.cmake reads $DEVKITPRO via os.getenv-style
-        # lookup, so set even if we inherited it already.
-        msys2_bin = Path(root) / "msys2" / "usr" / "bin"
-        if msys2_bin.is_dir():
-            env["PATH"] = str(msys2_bin) + os.pathsep + env.get("PATH", "")
+
+    def prepend(dir_path: str) -> None:
+        if dir_path and dir_path not in env.get("PATH", "").split(os.pathsep):
+            env["PATH"] = dir_path + os.pathsep + env.get("PATH", "")
+
+    # Order matters: tail-most prepend wins on PATH lookup. We want LLVM
+    # first (its `clang.exe` is what cmake invokes by bare name), then
+    # Ninja, then Python (least likely to collide with anything else).
+    py_bin = resolved_python_bin()
+    if py_bin:
+        prepend(str(Path(py_bin).parent))
     ninja_bin = resolved_ninja_bin()
-    if ninja_bin and ninja_bin not in env.get("PATH", "").split(os.pathsep):
-        env["PATH"] = ninja_bin + os.pathsep + env.get("PATH", "")
+    if ninja_bin:
+        prepend(ninja_bin)
+    llvm_bin = resolved_llvm_bin()
+    if llvm_bin:
+        prepend(llvm_bin)
+
     env.setdefault("PYTHONIOENCODING", "utf-8")
     return env
 
@@ -584,21 +595,32 @@ def cmake_configure(
     repo: Path | None = None,
     on_line: ProgressFn | None = None,
 ) -> BuildResult:
-    """`cmake -S switch-mod -B switch-mod/build -G Ninja
-       -DCMAKE_TOOLCHAIN_FILE=switch-mod/cmake/toolchain.cmake`
+    """`cmake -S switch-mod -B switch-mod/build -G Ninja`
 
     Resolved cmake binary comes from prereqs (rejects msys2's cmake).
     Build dir is created if missing.
+
+    Note: no `-DCMAKE_TOOLCHAIN_FILE` arg. [switch-mod/CMakeLists.txt]
+    sets the toolchain itself via early
+    `set(CMAKE_TOOLCHAIN_FILE "${CMAKE_SOURCE_DIR}/sys/cmake/toolchain.cmake")`
+    before `project()`. The in-CMakeLists assignment wins over any -D we'd
+    pass, so passing one is at best dead, at worst misleading.
     """
     repo = _resolve_repo(repo)
     src = switch_mod_root(repo)
     bd = build_dir(repo)
-    tc = toolchain_file(repo)
 
     if not src.is_dir():
         return BuildResult(False, 1, f"switch-mod root missing: {src}")
-    if not tc.is_file():
-        return BuildResult(False, 1, f"toolchain file missing: {tc}")
+    # LibHakkun has no top-level CMakeLists.txt — sys/cmake/module.cmake is
+    # the file `switch-mod/CMakeLists.txt:62` does `include(...)` against.
+    sys_module = src / "sys" / "cmake" / "module.cmake"
+    if not sys_module.is_file():
+        return BuildResult(
+            False, 1,
+            f"LibHakkun submodule missing: {sys_module} (run "
+            f"`git submodule update --init switch-mod/sys` from the repo root)",
+        )
 
     bd.mkdir(parents=True, exist_ok=True)
 
@@ -607,7 +629,6 @@ def cmake_configure(
         "-S", str(src),
         "-B", str(bd),
         "-G", "Ninja",
-        f"-DCMAKE_TOOLCHAIN_FILE={tc}",
     ]
     env = _compose_build_env()
     return _stream_subprocess(

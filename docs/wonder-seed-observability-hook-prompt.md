@@ -235,9 +235,6 @@ SeedBitfieldRead::InstallAtOffset(0x124134);
 Lifted from CLAUDE.md "Daily dev loop":
 
 ```pwsh
-$env:DEVKITPRO = "C:\devkitPro"
-$env:PATH = "C:\devkitPro\msys2\usr\bin;" + $env:PATH
-
 & "C:\Program Files\CMake\bin\cmake.exe" --build `
     "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build"
 

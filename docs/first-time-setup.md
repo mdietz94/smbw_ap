@@ -11,8 +11,8 @@ This page walks a new user from "downloaded `smbwonder.apworld`" to
   our Switch mod is pinned to v1.0.0.
 - A working Archipelago install (see https://archipelago.gg).
 
-The wizard handles the rest (devkitPro, CMake, Ninja, Python 3.11, git
-submodules, Archipelago pip deps) on first launch.
+The wizard handles the rest (LLVM 19.1.x, CMake, Ninja, Python 3.11,
+git submodules, Archipelago pip deps) on first launch.
 
 ## Install
 
@@ -45,9 +45,11 @@ If this is your first run, type `/setup` in the SMBW Client chat box.
 The setup wizard opens in a new window and walks through:
 
 1. **Probe** — detects which prerequisites are already installed.
-2. **Install** — auto-installs everything missing (devkitPro, CMake,
-   Ninja, Python 3.11, git submodules, Archipelago pip deps). devkitPro's
-   own installer UI will pop up; click through it.
+2. **Install** — auto-installs everything missing (CMake, Ninja, Python
+   3.11, git submodules, Archipelago pip deps via winget; LLVM 19.1.7
+   via a portable download to `%LOCALAPPDATA%\SMBWArchipelago\llvm\` —
+   ~806 MB download, ~3.3 GB on disk; coexists with any other LLVM
+   you have installed).
 3. **Junction** — creates the dev-mode junction at
    `vendor/Archipelago/custom_worlds/smbw_archipelago` so subsequent
    AP installs see the apworld directly.
