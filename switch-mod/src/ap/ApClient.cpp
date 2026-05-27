@@ -351,6 +351,19 @@ void ApClient::pumpOutbound() {
                 static_cast<unsigned>(ev.kind));
             break;
         }
+        // Phase 2g.8 diagnostic: confirm Send succeeded.  Without this,
+        // a silent successful Send and a silent enqueue look identical
+        // in the log.  Bounded so a long session doesn't flood (first 50
+        // sends then 1-in-256).
+        static std::atomic<std::uint32_t> s_send_count{0};
+        const std::uint32_t c = s_send_count.fetch_add(
+            1, std::memory_order_relaxed);
+        if (c < 50 || (c & 0xFF) == 0) {
+            SMBWAP_LOG_INFO(
+                "[ring] outbound sent ok bytes=%d kind=%u (#%u)",
+                static_cast<int>(n),
+                static_cast<unsigned>(ev.kind), c);
+        }
     }
 }
 

@@ -33,6 +33,8 @@
 #include "ap/ApClient.hpp"
 #include "ap/ApFrameBridge.hpp"
 #include "ap/ApProtocol.hpp"
+#include "probe/DeathLink.hpp"
+#include "probe/Gates.hpp"
 #include "util/Log.hpp"
 
 namespace nn::socket {
@@ -112,8 +114,13 @@ HkTrampoline<void, void*, const void*> gameFrameworkInitializeHook =
 // Vtable offsets we care about. WonderSeedAwarded is the load-bearing
 // one for AP -- every Wonder Seed pickup funnels through here and gets
 // translated into a Switch->bridge enqueueNerveFire(WonderSeedAwarded).
-// The other 5 are observability-only.
+// SceneTransition is the M3.8 gate latch -- on every fire we stamp the
+// system tick so the bridge's drainInbound gates container writers for
+// the next ~3 s (covers death, course entry/exit, world-map, palace,
+// Poplin shop, post-Wonder-Seed cleanup -- every "container state may
+// be mid-mutation" window).  The other vtables are observability-only.
 constexpr ::ptr kVtableOff_WonderSeedAwarded = 0x3345728;
+constexpr ::ptr kVtableOff_SceneTransition   = 0x33fd9a8;
 
 HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
     [](void* nerve) -> void {
@@ -183,14 +190,69 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
         // Target match: WONDER_SEED_AWARDED. Fires exactly once when the
         // player collects the Wonder Seed at the end of the Wonder phase.
         // The bridge attributes via current_course (set by the most recent
-        // course_in PlayReport). The DeathLink + scene-transition variants
-        // come back in Phase 2g (need probe:: state).
+        // course_in PlayReport). DeathLink classification of scene
+        // transitions (death vs. controlled exit vs. cleanup) comes back
+        // in Phase 2g commit 6 alongside synthKill.
         if (vt_off == kVtableOff_WonderSeedAwarded) {
             SMBWAP_LOG_INFO("WONDER_SEED_AWARDED: nerve=%p (fire #%d)",
                             nerve, s_fires);
             smbwap::ap::enqueueNerveFire(
                 smbwap::ap::NerveKind::WonderSeedAwarded,
                 static_cast<unsigned>(s_fires));
+        }
+
+        // M3.8 scene-transition latch + DEATH_DETECTED classification.
+        // Stamping every fire of vtable 0x33fd9a8 covers death, course/
+        // area entry+exit, world-map, palace, Poplin shop entry, post-
+        // Wonder-Seed cleanup -- every "container state may be mid-
+        // mutation" window.  Reader (probe::isInSceneTransitionWindow)
+        // compares the latched tick against svc::getSystemTick() and
+        // gates drainInbound's container writers if elapsed < ~3 s.
+        //
+        // For DeathLink: distinct nerve instances share vtable 0x33fd9a8
+        // and the game routes them by purpose; the type enum lives at
+        // +0x18 as a u64.  Death whitelist:
+        //   * 0x00ff000600000004 -- Mario death (pit, enemy, etc).
+        //   * 0x00ff003700000084 -- player-controlled exit (not death).
+        //   * 0x00ff000f00000004 -- post-Wonder-Seed-grab cleanup
+        //     (same low u32 as death; whole-u64 match required).
+        // Conservative whitelist: only emit DEATH_DETECTED on exact
+        // match; log + drop other values (covers world-map travel /
+        // palace-clear / pause-quit / file-select etc).
+        if (vt_off == kVtableOff_SceneTransition) {
+            probe::latchSceneTransitionTick(hk::svc::getSystemTick());
+
+            constexpr std::ptrdiff_t kDeathDiscriminator_Off = 0x18;
+            constexpr std::uint64_t  kDeathDiscriminator_Val = 0x00ff000600000004ull;
+            if (nerve) {
+                const auto state_word =
+                    *reinterpret_cast<const std::uint64_t*>(
+                        reinterpret_cast<const std::uint8_t*>(nerve)
+                        + kDeathDiscriminator_Off);
+                if (state_word == kDeathDiscriminator_Val) {
+                    if (probe::consumeSyntheticDeathThisFrame()) {
+                        // Loop guard: synthKill just fired from an
+                        // inbound DeathLink.  Suppress the outbound
+                        // echo.
+                        SMBWAP_LOG_INFO(
+                            "DEATH_DETECTED suppressed (synthetic kill) "
+                            "nerve=%p (fire #%d)", nerve, s_fires);
+                    } else {
+                        SMBWAP_LOG_INFO(
+                            "DEATH_DETECTED: nerve=%p (fire #%d) "
+                            "state=0x%016llx",
+                            nerve, s_fires,
+                            static_cast<unsigned long long>(state_word));
+                        smbwap::ap::enqueueNerveFire(
+                            smbwap::ap::NerveKind::DeathDetected,
+                            static_cast<unsigned>(s_fires));
+                    }
+                }
+                // Other state_words (controlled exit / Wonder-Seed
+                // cleanup / etc) intentionally drop without log to
+                // avoid flooding -- the scene-transition gate still
+                // engages because we latched the tick above.
+            }
         }
 
         nerveActivateOnceHook.orig(nerve);
@@ -214,6 +276,23 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
         ++s_fires;
         SMBWAP_LOG_INFO("COURSE_CLEARED: nerve=%p (fire #%d)", nerve, s_fires);
         setCourseClearFlagExecuteHook.orig(nerve);
+    });
+
+// PlayerTickLatch @ NSO +0x00273868 -- function-entry trampoline on
+// FUN_7100273868(long param_1, long param_2), the per-frame player tick
+// function.  Replaces the abandoned inline hook at +0x2743BC -- the
+// 5-instruction patch window there corrupted execution silently, even
+// though hakkun's / exlaunch's relocator nominally handle cbz/b.le.
+// Function-entry trampoline avoids the relocator entirely.
+//
+// First non-null walk captures the HP-bearing struct so probe::synthKill
+// can write HP=0 on inbound DeathLink.  Once latched, subsequent calls
+// short-circuit on an atomic load.  See probe/DeathLink.cpp for the
+// dereference chain (replicates the game's own walk at +0x2743A0).
+HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
+    [](void* param_1, void* param_2) -> void {
+        probe::tryLatchPlayerHpStruct(param_1);
+        playerTickLatchHook.orig(param_1, param_2);
     });
 
 // GameGoalReachedExecute @ NSO +0x0015b77a8.
@@ -416,6 +495,14 @@ HkTrampoline<unsigned, void*, const void*, const PrepoInArrayChar*,
 HkTrampoline<void, void*, unsigned, unsigned> gmdContainerAWriterHook =
     hk::hook::trampoline(
         [](void* gmd, unsigned value, unsigned hash) -> void {
+            // M4.5: latch the save-loaded gate BEFORE the bounded log so
+            // a fast save-load burst (50+ writes in tight succession)
+            // can never skip past the latch.  The save deserializer is
+            // by induction the FIRST caller of this writer because
+            // drainInbound never produces a writer call until
+            // probe::isSaveLoaded() is already true.
+            probe::markSaveLoaded("gmd.A_writer");
+
             // Bound the log so save-load deserialization doesn't fill the
             // ring. Save load fires dozens of these per slot.
             static int s_fires = 0;
@@ -436,6 +523,12 @@ HkTrampoline<unsigned long long, void*, unsigned char, unsigned>
     gmdBoolWriterHook = hk::hook::trampoline(
         [](void* substruct, unsigned char value, unsigned hash)
             -> unsigned long long {
+            // Same M4.5 latch idiom as gmdContainerAWriterHook -- in
+            // case the bool half of the save deserializer beats the
+            // counter half (e.g., if save load touches a container-B
+            // field before any container-A counter).
+            probe::markSaveLoaded("gmd.bool_writer");
+
             static int s_fires = 0;
             ++s_fires;
             if (s_fires <= 50 || (s_fires & 0xFF) == 0) {
@@ -470,7 +563,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2f: 12 hooks + ap/ subsystem (outbound) + probe stubs");
+    SMBWAP_LOG_INFO("Phase 2g: 13 hooks + ap/ subsystem + real probe:: grants");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -480,13 +573,15 @@ extern "C" void hkMain() {
     installHook("GameFrameworkInitialize", 0x005a5cfc,
                 gameFrameworkInitializeHook.installAtMainOffset(0x005a5cfc));
 
-    // M1_EVENTS (Phase 2b)
+    // M1_EVENTS (Phase 2b) + PlayerTickLatch (Phase 2g.6 for DeathLink)
     installHook("NerveActivateOnce",        0x00559f7c,
                 nerveActivateOnceHook.installAtMainOffset(0x00559f7c));
     installHook("SetCourseClearFlagExecute", 0x01bf28cc,
                 setCourseClearFlagExecuteHook.installAtMainOffset(0x01bf28cc));
     installHook("GameGoalReachedExecute",    0x015b77a8,
                 gameGoalReachedExecuteHook.installAtMainOffset(0x015b77a8));
+    installHook("PlayerTickLatch",           0x00273868,
+                playerTickLatchHook.installAtMainOffset(0x00273868));
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",

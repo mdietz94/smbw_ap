@@ -39,7 +39,13 @@ set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/ap/ApFrameBridge.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApProtocol.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApState.cpp
-    ${PROJECT_SOURCE_DIR}/src/probe/Stubs.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/ContainerA.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/ContainerB.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/ContainerC.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/DeathLink.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/Diagnostics.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/Gates.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/PerCourse.cpp
 )
 add_executable(${PROJECT_NAME} ${SOURCES_CXX})
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
