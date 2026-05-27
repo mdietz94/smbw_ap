@@ -34,7 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from . import appdata_root, setup_state_path
-from .deploy import detect_ryujinx_path
+from .deploy import detect_ryujinx_path, detect_sd_candidates
 from .wizard_cli import (
     ALL_PHASES, PipelineOptions, run_pipeline,
 )
@@ -107,22 +107,53 @@ def run_setup_wizard() -> bool:
     from kivy.uix.checkbox import CheckBox
     from kivy.uix.label import Label
     from kivy.uix.scrollview import ScrollView
+    from kivy.uix.spinner import Spinner
     from kivy.uix.textinput import TextInput
 
     _append_wizard_log("=== wizard start ===")
     saved_state = load_setup_state()
+
+    # Deploy target dropdown labels.  Order matches PipelineOptions'
+    # supported values; the wizard's worker maps display label -> key.
+    _DEPLOY_LABELS: dict[str, str] = {
+        "ryujinx": "Ryujinx",
+        "sd":      "SD card",
+        "custom":  "Custom folder",
+        "none":    "None (skip deploy)",
+    }
+    _DEPLOY_KEYS: dict[str, str] = {v: k for k, v in _DEPLOY_LABELS.items()}
+
+    # Initial deploy target: honor what setup_state.json remembers from a
+    # prior successful run, fall back to "ryujinx" (the previous default).
+    initial_target = saved_state.get("deploy_target", "ryujinx")
+    if initial_target not in _DEPLOY_LABELS:
+        initial_target = "ryujinx"
+
+    # Initial deploy path: target-aware default.  For Ryujinx we feed
+    # the auto-detected %APPDATA%\Ryujinx path so the user can see what
+    # the wizard will use; for SD we offer the first mounted Switch SD
+    # card (Atmosphere layout); custom defaults to empty.
+    def _default_deploy_path(target: str) -> str:
+        if target == "ryujinx":
+            p = detect_ryujinx_path()
+            return str(p) if p is not None else ""
+        if target == "sd":
+            sds = detect_sd_candidates()
+            return str(sds[0]) if sds else ""
+        return saved_state.get("deploy_path", "") if target == "custom" else ""
 
     # Shared state between the UI and the worker thread.
     state: dict[str, Any] = {
         "running": False,
         "ok": False,
         "auto_install": True,
-        "deploy_to_ryujinx": True,
+        "deploy_target": initial_target,
+        "deploy_path": _default_deploy_path(initial_target),
     }
 
     class WizardApp(App):
         def build(self):
-            self.title = "SMBW Archipelago — Setup"
+            self.title = "SMBW Archipelago - Setup"
             root = BoxLayout(orientation="vertical", padding=12, spacing=8)
 
             # --- Header
@@ -132,7 +163,7 @@ def run_setup_wizard() -> bool:
             ))
             root.add_widget(Label(
                 text=(
-                    "Runs: probe → install missing → junction → build → deploy.\n"
+                    "Runs: probe -> install missing -> junction -> build -> deploy.\n"
                     "Detailed log at " + str(wizard_log_path())
                 ),
                 size_hint_y=None, height=48,
@@ -141,7 +172,7 @@ def run_setup_wizard() -> bool:
 
             # --- Options
             opts = BoxLayout(
-                orientation="vertical", size_hint_y=None, height=88, spacing=4,
+                orientation="vertical", size_hint_y=None, height=140, spacing=4,
             )
 
             ai_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=36)
@@ -156,21 +187,60 @@ def run_setup_wizard() -> bool:
             ))
             opts.add_widget(ai_row)
 
-            ryu_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=36)
-            ryu_cb = CheckBox(active=True, size_hint_x=None, width=40)
-            def _ryu_change(_inst, value):
-                state["deploy_to_ryujinx"] = bool(value)
-            ryu_cb.bind(active=_ryu_change)
-            ryu_row.add_widget(ryu_cb)
-            ryujinx_hint = (
-                f"Deploy to Ryujinx (detected: {detect_ryujinx_path()})"
-                if detect_ryujinx_path() is not None
-                else "Deploy to Ryujinx (no install detected — will fail unless Ryujinx is present)"
-            )
-            ryu_row.add_widget(Label(
-                text=ryujinx_hint, halign="left", valign="middle",
+            # Deploy target selector: dropdown + path field side-by-side.
+            # The path field's editability follows the dropdown -- Ryujinx
+            # defaults to auto-detected %APPDATA%\Ryujinx (editable in case
+            # the user has a non-default install), SD/Custom require an
+            # explicit path, None disables the field entirely.
+            deploy_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=36, spacing=8)
+            deploy_row.add_widget(Label(
+                text="Deploy target:", halign="left", valign="middle",
+                size_hint_x=None, width=130,
             ))
-            opts.add_widget(ryu_row)
+            spinner = Spinner(
+                text=_DEPLOY_LABELS[state["deploy_target"]],
+                values=tuple(_DEPLOY_LABELS.values()),
+                size_hint_x=None, width=200,
+            )
+            self.deploy_path_input = TextInput(
+                text=state["deploy_path"],
+                multiline=False,
+                size_hint_x=1,
+            )
+            def _deploy_target_change(_inst, value):
+                key = _DEPLOY_KEYS.get(value, "none")
+                state["deploy_target"] = key
+                # Reset the path field to the new target's default. The
+                # user can still edit it afterward -- this is just a
+                # convenience nudge so switching Ryujinx -> SD doesn't
+                # leave a stale Ryujinx path in the box.
+                new_default = _default_deploy_path(key)
+                self.deploy_path_input.text = new_default
+                state["deploy_path"] = new_default
+                # "None" target has no meaningful path; lock the field so
+                # an accidental keystroke can't surface as a confusing
+                # "deploy-path supplied but target=none" warning later.
+                self.deploy_path_input.disabled = (key == "none")
+            spinner.bind(text=_deploy_target_change)
+            self.deploy_path_input.bind(
+                text=lambda _i, v: state.update(deploy_path=v))
+            self.deploy_path_input.disabled = (state["deploy_target"] == "none")
+            deploy_row.add_widget(spinner)
+            deploy_row.add_widget(self.deploy_path_input)
+            opts.add_widget(deploy_row)
+
+            # Per-target hint line so the user knows what they're committing
+            # to before they click Run.
+            sd_count = len(detect_sd_candidates())
+            hint_lines = [
+                "  Ryujinx: writes subsdk9 + main.npdm under <path>/mods/contents/<TITLE_ID>/smbwap/exefs/",
+                f"  SD card: writes under <drive>/atmosphere/contents/<TITLE_ID>/exefs/ ({sd_count} card(s) detected)",
+                "  Custom folder: same atmosphere/contents/... layout under your chosen folder (useful for offline SD-sync)",
+            ]
+            opts.add_widget(Label(
+                text="\n".join(hint_lines), size_hint_y=None, height=60,
+                halign="left", valign="top", font_size="11sp",
+            ))
 
             root.add_widget(opts)
 
@@ -226,10 +296,24 @@ def run_setup_wizard() -> bool:
 
         def _worker(self) -> None:
             try:
+                target = state["deploy_target"]
+                path_str = (state.get("deploy_path") or "").strip()
+                # Only the SD / Custom / Ryujinx-with-override paths
+                # carry a deploy_path through to run_deploy(); "none"
+                # ignores it, and Ryujinx with the auto-detected path
+                # is fine to leave None so detect_ryujinx_path() runs
+                # again at deploy time (catches the user installing
+                # Ryujinx between wizard runs).
+                deploy_path = Path(path_str) if path_str else None
+                if target == "ryujinx" and deploy_path is not None:
+                    auto = detect_ryujinx_path()
+                    if auto is not None and Path(str(auto)) == deploy_path:
+                        deploy_path = None
                 opts = PipelineOptions(
                     phases=ALL_PHASES,
                     install_missing=state["auto_install"],
-                    deploy_target=("ryujinx" if state["deploy_to_ryujinx"] else "none"),
+                    deploy_target=target,
+                    deploy_path=deploy_path,
                 )
 
                 def cb(payload: dict[str, Any]) -> None:
@@ -243,10 +327,11 @@ def run_setup_wizard() -> bool:
                 )
                 self._schedule_append(summary)
                 # Persist a small state file so a future re-run can default
-                # to the same deploy target.
+                # to the same deploy target + path.
                 save_setup_state({
                     **saved_state,
                     "deploy_target": opts.deploy_target,
+                    "deploy_path": path_str,
                     "last_ok": outcome.ok,
                 })
             except Exception as e:  # pragma: no cover — defensive

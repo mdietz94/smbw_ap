@@ -115,6 +115,41 @@ def repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
+def is_dev_clone(repo: Path | None = None) -> bool:
+    """True if ``repo`` (default: :func:`repo_root`) is a git checkout
+    (regular clone, submodule, or worktree).
+
+    Used to gate phases that only make sense in a dev tree: ``git
+    submodule update`` and the ``mklink /J`` junction.  A user who
+    installed the .apworld into a stock Archipelago via pip / custom
+    worlds extraction has no ``.git`` here and shouldn't get a confusing
+    "fatal: not a git repository" when the wizard tries to fetch a
+    submodule that's already satisfied by the surrounding AP install.
+
+    ``.git`` is a directory in a normal clone, a file (with
+    ``gitdir: ...``) in a worktree, and absent in a release install.
+    Either form counts as "dev clone" for our purposes.
+    """
+    root = repo if repo is not None else repo_root()
+    return (root / ".git").exists()
+
+
+def archipelago_importable() -> bool:
+    """True if ``CommonClient`` is importable from the current Python.
+
+    Used as a "we don't need vendor/Archipelago to be initialized
+    because AP is already on sys.path" short-circuit.  Uses
+    :func:`importlib.util.find_spec` so we don't actually load the
+    module (avoids the side effects of pulling in AP's heavy import
+    graph for what should be a cheap probe).
+    """
+    import importlib.util
+    try:
+        return importlib.util.find_spec("CommonClient") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 def primary_worktree_root(start: Path | None = None) -> Path:
     """Resolve the *primary* worktree's repo root.
 
@@ -689,12 +724,25 @@ def check_archipelago_submodule() -> PrereqResult:
 
     Probes for a sentinel file (`CommonClient.py`) at the expected path.
     A missing submodule is the typical first-run failure on a fresh clone.
+
+    Short-circuit: if ``CommonClient`` is importable from the current
+    Python AND we're not in a dev clone (so we won't try to wire a
+    junction into ``vendor/Archipelago/custom_worlds/`` anyway), we
+    treat AP as satisfied by whatever install loaded us.  This is the
+    Launcher / pip-install / packaged-apworld case where the user has
+    no use for a fresh submodule clone.
     """
     sentinel = repo_root() / "vendor" / "Archipelago" / "CommonClient.py"
     if sentinel.is_file():
         return PrereqResult(
             "archipelago_submodule", "vendor/Archipelago submodule", True,
             f"present ({sentinel.parent})",
+            auto_installable=True,
+        )
+    if archipelago_importable() and not is_dev_clone():
+        return PrereqResult(
+            "archipelago_submodule", "vendor/Archipelago submodule", True,
+            "satisfied by surrounding Archipelago install (no dev clone)",
             auto_installable=True,
         )
     return PrereqResult(
@@ -704,7 +752,10 @@ def check_archipelago_submodule() -> PrereqResult:
         note=(
             "Run from the repo root:\n"
             "    git submodule update --init --recursive vendor/Archipelago\n"
-            "Or click Auto-install — the wizard runs the git command for you."
+            "Or click Auto-install -- the wizard runs the git command for you.\n"
+            "If you installed this apworld into an existing Archipelago "
+            "(not a dev clone), clone the source repo to rebuild the "
+            "Switch subsdk."
         ),
         auto_installable=True,
     )

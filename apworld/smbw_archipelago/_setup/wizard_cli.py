@@ -250,11 +250,32 @@ def run_junction(
     callback: EventCallback | None = None,
     t0: float | None = None,
 ) -> JunctionOutcomeWrapper:
-    """Create the vendor/Archipelago/custom_worlds/smbw_archipelago junction."""
+    """Create the vendor/Archipelago/custom_worlds/smbw_archipelago junction.
+
+    Skipped when we're not running from a dev clone: there is no
+    ``vendor/Archipelago/`` for the junction to live in, and the apworld
+    must already be discoverable some other way (pip-installed,
+    extracted into a stock AP ``custom_worlds/``) or the wizard could
+    not have launched at all.  Reporting ok=True here lets a packaged-
+    install user run probe/build/deploy without seeing a spurious
+    junction failure.
+    """
     from .junction import install_junction
+    from .prereqs import is_dev_clone
 
     anchor = t0 if t0 is not None else time.monotonic()
     _emit(callback, "phase_start", phase=PHASE_JUNCTION, t0=anchor)
+
+    if not is_dev_clone():
+        msg = "skipped: not a dev clone (apworld is already discoverable by the running Archipelago)"
+        _emit(callback, "junction_result",
+              t0=anchor, ok=True, action="skipped",
+              target="", source="", message=msg)
+        _emit(callback, "phase_end", phase=PHASE_JUNCTION, t0=anchor, ok=True)
+        return JunctionOutcomeWrapper(
+            ok=True, action="skipped", target="", source="", message=msg,
+        )
+
     result = install_junction()
     _emit(callback, "junction_result",
           t0=anchor, ok=result.ok, action=result.action,

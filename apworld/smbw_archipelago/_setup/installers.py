@@ -51,6 +51,7 @@ from .prereqs import (
     _winget_ninja_paths,
     _DEVKITPRO_PACMAN_REL,
     _devkitpro_default_root,
+    is_dev_clone,
     repo_root,
     resolved_devkitpro_root,
     resolved_python_bin,
@@ -557,14 +558,32 @@ def _git_submodule_update(
     *submodule_paths: str,
     on_line: ProgressFn | None = None,
 ) -> InstallResult:
-    """`git submodule update --init --recursive -- <path>...` from repo root."""
+    """`git submodule update --init --recursive -- <path>...` from repo root.
+
+    Pre-flights that we're actually in a git checkout.  Without this, a
+    user running from a packaged apworld install (no ``.git`` anywhere
+    in the tree) sees ``fatal: not a git repository`` from git itself,
+    which is unactionable -- they'd need to know the wizard is trying to
+    update a submodule of a repo that doesn't exist on their disk.
+    """
+    repo = repo_root()
+    if not is_dev_clone(repo):
+        msg = (
+            f"not a git clone at {repo}: cannot run git submodule update. "
+            f"To rebuild the Switch subsdk, clone the source repo "
+            f"(https://github.com/mdietz94/smwonder_archipelago) and run "
+            f"the wizard from there.  If the apworld is already installed "
+            f"into your Archipelago, you do not need this step."
+        )
+        if on_line:
+            on_line(f"[install] {msg}")
+        return InstallResult(False, 1, msg, msg)
     git = shutil.which("git")
     if git is None:
         msg = "git not found on PATH; install git first"
         if on_line:
             on_line(f"[install] {msg}")
         return InstallResult(False, 127, msg, msg)
-    repo = repo_root()
     return _stream_subprocess(
         [git, "submodule", "update", "--init", "--recursive", "--", *submodule_paths],
         on_line=on_line,
