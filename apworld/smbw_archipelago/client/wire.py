@@ -710,6 +710,32 @@ class PongMsg:
         return cls(ts_ms=int(d.get("ts_ms", 0)))
 
 
+@dataclass(frozen=True)
+class LogMsg:
+    """Switch -> Bridge.  A single SMBWAP_LOG_* line relayed from the
+    Switch so it appears in the AP client's log panel without requiring
+    a Ryujinx log tail.
+
+    ``level`` is one of ``"debug"``, ``"info"``, ``"warn"``, ``"error"``.
+    ``msg`` is the formatted body WITHOUT the ``"[smbwap x] "`` prefix.
+    """
+
+    T = "log"
+
+    level: str = "info"
+    msg: str = ""
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "level": self.level, "msg": self.msg}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> LogMsg:
+        return cls(
+            level=str(d.get("level", "info")),
+            msg=str(d.get("msg", "")),
+        )
+
+
 # Union of all message types -- handy for type hints on decoder return.
 WireMsg = (
     HelloMsg
@@ -726,6 +752,7 @@ WireMsg = (
     | ErrMsg
     | PingMsg
     | PongMsg
+    | LogMsg
 )
 
 
@@ -747,6 +774,7 @@ _FROM_WIRE: dict[str, Any] = {
     ErrMsg.T: ErrMsg.from_wire,
     PingMsg.T: PingMsg.from_wire,
     PongMsg.T: PongMsg.from_wire,
+    LogMsg.T: LogMsg.from_wire,
 }
 
 

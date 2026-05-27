@@ -99,6 +99,16 @@ void encodePong(util::json::LineBuffer& out, std::int64_t ts_ms) {
     out.append('\n');
 }
 
+void encodeLog(util::json::LineBuffer& out, const WireLog& msg) {
+    util::json::Encoder e(out);
+    e.beginObject();
+        e.key("t").value("log");
+        e.key("level").value(msg.level);
+        e.key("msg").value(msg.msg);
+    e.endObject();
+    out.append('\n');
+}
+
 bool encodeOutbound(util::json::LineBuffer& out, const OutboundEvent& ev) {
     switch (ev.kind) {
         case OutboundKind::Hello:         encodeHello(out, ev.hello); return true;
@@ -106,6 +116,7 @@ bool encodeOutbound(util::json::LineBuffer& out, const OutboundEvent& ev) {
         case OutboundKind::PlayReport:    encodePlayReport(out, ev.play_report); return true;
         case OutboundKind::Ping:          encodePing(out, ev.ping); return true;
         case OutboundKind::BadgeAcquired: encodeBadgeAcquired(out, ev.badge_acquired); return true;
+        case OutboundKind::Log:           encodeLog(out, ev.log); return true;
         case OutboundKind::None:
         default:
             return false;
