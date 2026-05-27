@@ -69,6 +69,7 @@ INSTALL_URLS = {
     "archipelago_deps": "",
     "ryujinx": "https://github.com/Ryubing/Ryujinx/releases",
     "lz4": "",
+    "pyelftools": "",
 }
 
 
@@ -939,6 +940,10 @@ def lz4_marker_path() -> Path:
     return local_appdata_root() / "lz4.ok"
 
 
+def pyelftools_marker_path() -> Path:
+    return local_appdata_root() / "pyelftools.ok"
+
+
 def check_archipelago_deps() -> PrereqResult:
     """Archipelago Python dependencies satisfied.
 
@@ -1066,6 +1071,55 @@ def check_lz4() -> PrereqResult:
 
 
 # ---------------------------------------------------------------------------
+# pyelftools — Python package required by LibHakkun's elf2nso.py at cmake
+# POST_BUILD. elf2nso.py does `from elftools.elf.elffile import ELFFile` at
+# the top; if the PATH-resolved Python doesn't have pyelftools the build
+# fails immediately after linking with an ImportError.
+# ---------------------------------------------------------------------------
+
+def check_pyelftools() -> PrereqResult:
+    """Verify pyelftools is importable from the resolved Python.
+
+    LibHakkun's SwitchTools.cmake runs elf2nso.py (Python) which imports
+    elftools. The Python that cmake picks up from PATH is the same one
+    `_compose_build_env` prepends via `resolved_python_bin()` — so
+    pyelftools must be installed into that interpreter.
+    """
+    marker = pyelftools_marker_path()
+    if marker.is_file():
+        return PrereqResult(
+            "pyelftools", "Python pyelftools (cmake build dep)", True,
+            f"installed (marker at {marker})",
+            auto_installable=True,
+        )
+
+    py = _resolved_python_bin or sys.executable
+    r = _safe_run([py, "-c", "from elftools.elf.elffile import ELFFile"])
+    if r is not None and r[0] == 0:
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("ok\n", encoding="utf-8")
+        except OSError:
+            pass
+        return PrereqResult(
+            "pyelftools", "Python pyelftools (cmake build dep)", True,
+            f"importable via {Path(py).name}",
+            auto_installable=True,
+        )
+
+    return PrereqResult(
+        "pyelftools", "Python pyelftools (cmake build dep)", False,
+        "not installed (LibHakkun's elf2nso.py does `from elftools.elf.elffile import ELFFile`)",
+        INSTALL_URLS["pyelftools"],
+        note=(
+            "Click Auto-install to `pip install pyelftools` into the resolved "
+            "Python. ~1 MB."
+        ),
+        auto_installable=True,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Ryujinx — emulator install detection. Warn-only: the user may install
 # Ryujinx after running /setup, and the deploy phase can recover by
 # creating the mod dir tree under %APPDATA%\Ryujinx\.
@@ -1122,6 +1176,7 @@ def check_all() -> list[PrereqResult]:
         check_switch_mod_submodule(),
         check_archipelago_deps(),
         check_lz4(),
+        check_pyelftools(),
         check_ryujinx(),
     ]
 

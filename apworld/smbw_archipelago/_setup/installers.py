@@ -680,6 +680,32 @@ def install_lz4(on_line: ProgressFn | None = None) -> InstallResult:
     return result
 
 
+def install_pyelftools(on_line: ProgressFn | None = None) -> InstallResult:
+    """`pip install --user pyelftools` into the resolved Python.
+
+    LibHakkun's SwitchTools.cmake runs elf2nso.py which imports elftools.
+    The resolved Python (prepended to PATH by _compose_build_env) must have
+    pyelftools installed for the cmake build to succeed.
+    """
+    from .prereqs import pyelftools_marker_path
+
+    py = resolved_python_bin() or sys.executable
+    result = _stream_subprocess(
+        [py, "-m", "pip", "install", "--user", "--disable-pip-version-check", "pyelftools"],
+        on_line=on_line,
+        timeout=120.0,
+    )
+    if result.ok:
+        marker = pyelftools_marker_path()
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("ok\n", encoding="utf-8")
+        except OSError as e:
+            if on_line:
+                on_line(f"[pyelftools] could not write marker {marker}: {e}")
+    return result
+
+
 def install_archipelago_deps(on_line: ProgressFn | None = None) -> InstallResult:
     """`pip install -r vendor/Archipelago/requirements.txt` into the
     resolved Python 3.11+.
@@ -734,6 +760,7 @@ INSTALLERS: dict[str, Callable[[ProgressFn | None], InstallResult]] = {
     "switch_mod_submodule": install_switch_mod_submodule,
     "archipelago_deps": install_archipelago_deps,
     "lz4": install_lz4,
+    "pyelftools": install_pyelftools,
 }
 
 # Order the wizard's "Install all missing" walker uses. Dependencies feed
@@ -752,6 +779,7 @@ INSTALL_ORDER: tuple[str, ...] = (
     "switch_mod_submodule",
     "archipelago_deps",
     "lz4",
+    "pyelftools",
 )
 
 
