@@ -11,3 +11,6 @@
 [submodule "switch-mod/lib/sead"]
 	path = switch-mod/lib/sead
 	url = https://github.com/open-ead/sead
+[submodule "switch-mod/sys"]
+	path = switch-mod/sys
+	url = https://github.com/fruityloops1/LibHakkun.git
