@@ -43,9 +43,7 @@ bool logStub(const char* name) {
 }
 }  // namespace
 
-bool setBadgeBitfieldAbsolute(std::uint64_t /*bits*/) {
-    return logStub<1>("setBadgeBitfieldAbsolute");
-}
+// setBadgeBitfieldAbsolute moved to ContainerC.cpp in Phase 2g commit 4.
 
 // grantContainerACounter + incrementContainerACounter moved to
 // ContainerA.cpp in Phase 2g commit 2.
@@ -58,10 +56,7 @@ bool setPerCourseBitfieldAbsolute(std::uint32_t /*hash*/,
     return logStub<5>("setPerCourseBitfieldAbsolute");
 }
 
-bool setContainerCBit(std::uint32_t /*hash*/, std::uint32_t /*bit_index*/,
-                      bool /*value*/) {
-    return logStub<6>("setContainerCBit");
-}
+// setContainerCBit moved to ContainerC.cpp in Phase 2g commit 4.
 
 bool dumpSaveField(std::uint32_t /*base_nso_offset*/,
                    std::uint32_t /*field_offset*/) {
