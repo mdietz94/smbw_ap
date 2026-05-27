@@ -47,13 +47,8 @@ bool setBadgeBitfieldAbsolute(std::uint64_t /*bits*/) {
     return logStub<1>("setBadgeBitfieldAbsolute");
 }
 
-bool grantContainerACounter(std::uint32_t /*hash*/, std::uint32_t /*value*/) {
-    return logStub<2>("grantContainerACounter");
-}
-
-bool incrementContainerACounter(std::uint32_t /*hash*/, std::int32_t /*delta*/) {
-    return logStub<3>("incrementContainerACounter");
-}
+// grantContainerACounter + incrementContainerACounter moved to
+// ContainerA.cpp in Phase 2g commit 2.
 
 bool grantContainerBBool(std::uint32_t /*hash*/, std::uint32_t /*value*/) {
     return logStub<4>("grantContainerBBool");

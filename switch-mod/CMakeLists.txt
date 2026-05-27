@@ -39,6 +39,7 @@ set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/ap/ApFrameBridge.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApProtocol.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApState.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/ContainerA.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/Gates.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/Stubs.cpp
 )
