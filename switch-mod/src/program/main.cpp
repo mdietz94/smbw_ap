@@ -84,6 +84,11 @@ void CreateFileDeviceMgr::Callback(sead::FileDeviceMgr* thisPtr)
     SMBWAP_LOG_INFO("smbwap: CreateFileDeviceMgr::Callback: Orig() returned, mounting SD");
     nn::fs::MountSdCardForDebug("sd");
     SMBWAP_LOG_INFO("smbwap: CreateFileDeviceMgr::Callback: SD mounted");
+    // SD drain moved to GameFrameworkInitialize::Callback (later, safer).
+    // The smo_archipelago project went through multiple iterations before
+    // settling on a stable SD-write pattern; following that empirical
+    // lesson, we only drain once everything (sead heap, fs, framework) is
+    // fully up — not in mid-init helpers like this one.
 }
 
 HOOK_DEFINE_TRAMPOLINE(GameFrameworkInitialize) { static void Callback(sead::GameFramework * thisPtr, const sead::Framework::InitializeArg& arg); };
@@ -120,6 +125,23 @@ void GameFrameworkInitialize::Callback(sead::GameFramework* thisPtr, const sead:
     Orig(thisPtr, arg);
     SMBWAP_LOG_INFO("smbwap: GameFrameworkInitialize::Callback: Orig() returned");
     initDbgGui();
+
+    // M5 real-hardware boot-log drain.  This is the LATEST point in init
+    // we hook (sead + heap + file device mgr + game framework all up),
+    // matching the smo_archipelago empirical rule of "only write SD once
+    // everything is fully initialized."  The drain is also called after
+    // initDbgGui to keep order similar to ApClient::start: SD I/O before
+    // we spawn a worker thread that could compete for nn::fs state.
+    //
+    // If our exl_main never ran (suspected on real hw), this hook never
+    // fires either and no log is produced — but in that case the
+    // Atmosphere crash report at sd:/atmosphere/crash_reports/ is the
+    // only signal we'd get regardless.  Soft-fails on any nn::fs error.
+    {
+        const bool drained = smbwap::util::drainPendingToSd();
+        SMBWAP_LOG_INFO("smbwap: GameFrameworkInitialize::Callback: SD drain %s",
+                        drained ? "OK" : "SKIPPED/FAIL");
+    }
 
     // M4: spawn the LAN client worker thread.  start() does nifm bring-up
     // first (must run on an nn-aware thread, which this is -- we're inside
@@ -2499,12 +2521,42 @@ uint64_t ContainerAReader::Callback(long gmd, uint32_t* out_value,
     return result;
 }
 
+// SMBWAP_HOOK_MASK bit definitions.  Each bit gates one logical group of
+// install calls in exl_main below.  Default mask (CMake) is 0x3F = all
+// groups enabled, which matches behavior before this commit.
+//
+// Bisect cookbook (real-hardware boot failures):
+//   1. Build with -DSMBWAP_HOOK_MASK=0x01.  Only CORE_INIT installs.
+//      If the game still boots, our event/grant/probe hooks are the
+//      problem.  If it still crashes at nninitStartup like the
+//      2026-05-26 22:26 report, the issue is npdm/memory layout, not
+//      hook installation.
+//   2. Add bits in pair (0x03, 0x07, 0x0F, 0x1F, 0x3F).  Each successful
+//      boot narrows the offending group.
+//   3. Within a failing group, expand the if-bit blocks below into
+//      per-hook sub-bits if needed.
+#define SMBWAP_HOOK_BIT_CORE_INIT   (1u << 0)  // CreateRootHeap, CreateFileDeviceMgr, GameFrameworkInitialize
+#define SMBWAP_HOOK_BIT_M1_EVENTS   (1u << 1)  // NerveActivateOnce, SetCourseClearFlagExecute, GameGoalReachedExecute
+#define SMBWAP_HOOK_BIT_PLAYREPORT  (1u << 2)  // PlayReport ctor + SetEventId + IPC SaveReport pair
+#define SMBWAP_HOOK_BIT_GRANTS      (1u << 3)  // GmdContainerAWriter, GmdBoolWriter
+#define SMBWAP_HOOK_BIT_PROBES      (1u << 4)  // GmdC2BitReader, GmdContainerDWriter, SaveDeserializerHook, WorldUnlockCheck, SeedBitfieldRead, ContainerAReader, PlayerTickLatch
+#define SMBWAP_HOOK_BIT_FSHACKS     (1u << 5)  // InitActorPlacementInfo, pe::installFSHacks()
+
+#ifndef SMBWAP_HOOK_MASK
+#  define SMBWAP_HOOK_MASK 0x3Fu  // all enabled — fallback if CMake didn't set
+#endif
+
+constexpr bool kHookEnabled(unsigned bit) {
+    return (SMBWAP_HOOK_MASK & bit) != 0;
+}
+
 extern "C" void exl_main(void* x0, void* x1)
 {
     // Trace every step so we can identify which call kills the JIT.
     // svcOutputDebugString is callable before exl::hook::Initialize, so
     // this line proves we entered exl_main at all.
     SMBWAP_LOG_INFO("smbwap: exl_main entered (pre-init)");
+    SMBWAP_LOG_INFO("smbwap: SMBWAP_HOOK_MASK = 0x%02x", (unsigned)SMBWAP_HOOK_MASK);
 
     exl::hook::Initialize();
     SMBWAP_LOG_INFO("smbwap: exl::hook::Initialize() returned");
@@ -2512,17 +2564,21 @@ extern "C" void exl_main(void* x0, void* x1)
     using Patcher = exl::patch::CodePatcher;
     using namespace exl::patch::inst;
 
-    SMBWAP_LOG_INFO("smbwap: installing InitActorPlacementInfo @ 0x5815c");
-    InitActorPlacementInfo::InstallAtOffset(0x0005815c);
+    if constexpr (kHookEnabled(SMBWAP_HOOK_BIT_FSHACKS)) {
+        SMBWAP_LOG_INFO("smbwap: installing InitActorPlacementInfo @ 0x5815c");
+        InitActorPlacementInfo::InstallAtOffset(0x0005815c);
+    }
 
-    SMBWAP_LOG_INFO("smbwap: installing CreateRootHeap @ 0x5a66f8");
-    CreateRootHeap::InstallAtOffset(0x005a66f8);
+    if constexpr (kHookEnabled(SMBWAP_HOOK_BIT_CORE_INIT)) {
+        SMBWAP_LOG_INFO("smbwap: installing CreateRootHeap @ 0x5a66f8");
+        CreateRootHeap::InstallAtOffset(0x005a66f8);
 
-    SMBWAP_LOG_INFO("smbwap: installing CreateFileDeviceMgr @ 0x5a6110");
-    CreateFileDeviceMgr::InstallAtOffset(0x005a6110);
+        SMBWAP_LOG_INFO("smbwap: installing CreateFileDeviceMgr @ 0x5a6110");
+        CreateFileDeviceMgr::InstallAtOffset(0x005a6110);
 
-    SMBWAP_LOG_INFO("smbwap: installing GameFrameworkInitialize @ 0x5a5cfc");
-    GameFrameworkInitialize::InstallAtOffset(0x005a5cfc);
+        SMBWAP_LOG_INFO("smbwap: installing GameFrameworkInitialize @ 0x5a5cfc");
+        GameFrameworkInitialize::InstallAtOffset(0x005a5cfc);
+    }
 
     // M4: nn::socket::Initialize now runs INSIDE GameFrameworkInitialize::Callback
     // (pre-Orig) with a static 768 KiB pool.  Old commented block kept here
@@ -2538,8 +2594,10 @@ extern "C" void exl_main(void* x0, void* x1)
     // nvnImGui::InstallHooks();
     // nvnImGui::addDrawFunc(drawDbgGui);
 
-    SMBWAP_LOG_INFO("smbwap: installing pe::FSHacks");
-    pe::installFSHacks();
+    if constexpr (kHookEnabled(SMBWAP_HOOK_BIT_FSHACKS)) {
+        SMBWAP_LOG_INFO("smbwap: installing pe::FSHacks");
+        pe::installFSHacks();
+    }
 
     // GoalDispatcher disabled — turned out to be a level-load registration
     // handler, not a touch event. See its callback comment.
@@ -2548,26 +2606,28 @@ extern "C" void exl_main(void* x0, void* x1)
     // M1.3 Wonder Seed event hook — abandoned (see WonderSeedExecute comment).
     // WonderSeedExecute::InstallAtOffset(0x00562fb4);
 
-    // M1.3 shared Nerve-one-shot-activate hook. Catches every event Nerve
-    // activation (Wonder Seed, Goal touched, etc.) by intercepting the
-    // shared inner helper they all call. We filter by reading the nerve's
-    // vtable at Callback entry.
-    SMBWAP_LOG_INFO("smbwap: installing NerveActivateOnce @ 0x559f7c");
-    NerveActivateOnce::InstallAtOffset(0x00559f7c);
+    if constexpr (kHookEnabled(SMBWAP_HOOK_BIT_M1_EVENTS)) {
+        // M1.3 shared Nerve-one-shot-activate hook. Catches every event Nerve
+        // activation (Wonder Seed, Goal touched, etc.) by intercepting the
+        // shared inner helper they all call. We filter by reading the nerve's
+        // vtable at Callback entry.
+        SMBWAP_LOG_INFO("smbwap: installing NerveActivateOnce @ 0x559f7c");
+        NerveActivateOnce::InstallAtOffset(0x00559f7c);
 
-    // M1.3 Goal hook — direct trampoline on the SetCourseClearFlagToGameData
-    // Nerve execute (slot 8). Fires when the engine writes the "course
-    // cleared" flag to save data, which happens only on successful clear.
-    SMBWAP_LOG_INFO("smbwap: installing SetCourseClearFlagExecute @ 0x1bf28cc");
-    SetCourseClearFlagExecute::InstallAtOffset(0x001bf28cc);
+        // M1.3 Goal hook — direct trampoline on the SetCourseClearFlagToGameData
+        // Nerve execute (slot 8). Fires when the engine writes the "course
+        // cleared" flag to save data, which happens only on successful clear.
+        SMBWAP_LOG_INFO("smbwap: installing SetCourseClearFlagExecute @ 0x1bf28cc");
+        SetCourseClearFlagExecute::InstallAtOffset(0x001bf28cc);
 
-    // M3.7 Game-completion goal hook — direct trampoline on the
-    // SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss Nerve execute
-    // (slot 8 of vtable +0x3363330).  Fires once per save the first time
-    // the player defeats final Bowser.  See the hook definition above for
-    // discovery notes.
-    SMBWAP_LOG_INFO("smbwap: installing GameGoalReachedExecute @ 0x15b77a8");
-    GameGoalReachedExecute::InstallAtOffset(0x0015b77a8);
+        // M3.7 Game-completion goal hook — direct trampoline on the
+        // SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss Nerve execute
+        // (slot 8 of vtable +0x3363330).  Fires once per save the first time
+        // the player defeats final Bowser.  See the hook definition above for
+        // discovery notes.
+        SMBWAP_LOG_INFO("smbwap: installing GameGoalReachedExecute @ 0x15b77a8");
+        GameGoalReachedExecute::InstallAtOffset(0x0015b77a8);
+    }
 
     // M2.4 — nn::prepo::PlayReport instrumentation.
     //
@@ -2601,16 +2661,18 @@ extern "C" void exl_main(void* x0, void* x1)
     // M2.4 bisect step 4 — drop the PlayReport::Save hooks (they crashed
     // gmd::SaveDataMgr), keep the safe ctor + SetEventId, and probe the IPC
     // client layer below the PlayReport class for buffer extraction.
-    SMBWAP_LOG_INFO("smbwap: installing ctor + SetEventId + IPC SaveReport (M2.4 bisect step 4)");
-    PlayReportCtor::InstallAtSymbol("_ZN2nn5prepo10PlayReportC2EPKc");
-    PlayReportSetEventId::InstallAtSymbol("_ZN2nn5prepo10PlayReport10SetEventIdEPKc");
-    // Save hooks rolled back — these crash the SDK on a delayed audit:
-    // PlayReportSave::InstallAtSymbol("_ZN2nn5prepo10PlayReport4SaveEv");
-    // PlayReportSaveUid::InstallAtSymbol("_ZN2nn5prepo10PlayReport4SaveERKNS_7account3UidE");
-    PrepoIpcSaveReport::InstallAtSymbol(
-        "_ZN2nn2sf4cmif6client6detail13CmifProxyImplINS_5prepo6detail3ipc13IPrepoServiceENS2_19CmifDomainProxyKindINS0_4hipc6client38Hipc2ClientSessionManagedProxyKindBaseINSB_18Hipc2ProxyKindBaseILNSA_6detail11MessageTypeE6EEEEEEENS0_30MemoryResourceAllocationPolicyES8_NS3_19ProcessModifierImplINS2_21DefaultProxyFilterTagEEEE22_nn_sf_sync_SaveReportERKNS0_7InArrayIcEERKNS0_8InBufferEm");
-    PrepoIpcSaveReportWithUser::InstallAtSymbol(
-        "_ZN2nn2sf4cmif6client6detail13CmifProxyImplINS_5prepo6detail3ipc13IPrepoServiceENS2_19CmifDomainProxyKindINS0_4hipc6client38Hipc2ClientSessionManagedProxyKindBaseINSB_18Hipc2ProxyKindBaseILNSA_6detail11MessageTypeE6EEEEEEENS0_30MemoryResourceAllocationPolicyES8_NS3_19ProcessModifierImplINS2_21DefaultProxyFilterTagEEEE30_nn_sf_sync_SaveReportWithUserERKNS_7account3UidERKNS0_7InArrayIcEERKNS0_8InBufferEm");
+    if constexpr (kHookEnabled(SMBWAP_HOOK_BIT_PLAYREPORT)) {
+        SMBWAP_LOG_INFO("smbwap: installing ctor + SetEventId + IPC SaveReport (M2.4 bisect step 4)");
+        PlayReportCtor::InstallAtSymbol("_ZN2nn5prepo10PlayReportC2EPKc");
+        PlayReportSetEventId::InstallAtSymbol("_ZN2nn5prepo10PlayReport10SetEventIdEPKc");
+        // Save hooks rolled back — these crash the SDK on a delayed audit:
+        // PlayReportSave::InstallAtSymbol("_ZN2nn5prepo10PlayReport4SaveEv");
+        // PlayReportSaveUid::InstallAtSymbol("_ZN2nn5prepo10PlayReport4SaveERKNS_7account3UidE");
+        PrepoIpcSaveReport::InstallAtSymbol(
+            "_ZN2nn2sf4cmif6client6detail13CmifProxyImplINS_5prepo6detail3ipc13IPrepoServiceENS2_19CmifDomainProxyKindINS0_4hipc6client38Hipc2ClientSessionManagedProxyKindBaseINSB_18Hipc2ProxyKindBaseILNSA_6detail11MessageTypeE6EEEEEEENS0_30MemoryResourceAllocationPolicyES8_NS3_19ProcessModifierImplINS2_21DefaultProxyFilterTagEEEE22_nn_sf_sync_SaveReportERKNS0_7InArrayIcEERKNS0_8InBufferEm");
+        PrepoIpcSaveReportWithUser::InstallAtSymbol(
+            "_ZN2nn2sf4cmif6client6detail13CmifProxyImplINS_5prepo6detail3ipc13IPrepoServiceENS2_19CmifDomainProxyKindINS0_4hipc6client38Hipc2ClientSessionManagedProxyKindBaseINSB_18Hipc2ProxyKindBaseILNSA_6detail11MessageTypeE6EEEEEEENS0_30MemoryResourceAllocationPolicyES8_NS3_19ProcessModifierImplINS2_21DefaultProxyFilterTagEEEE30_nn_sf_sync_SaveReportWithUserERKNS_7account3UidERKNS0_7InArrayIcEERKNS0_8InBufferEm");
+    }
     // PlayReportAddInt::InstallAtSymbol("_ZN2nn5prepo10PlayReport3AddEPKcl");
     // PlayReportAddStr::InstallAtSymbol("_ZN2nn5prepo10PlayReport3AddEPKcS3_");
     // PlayReportAddBool::InstallAtSymbol("_ZN2nn5prepo10PlayReport3AddEPKcb");
@@ -2619,12 +2681,29 @@ extern "C" void exl_main(void* x0, void* x1)
     // StructAddInt::InstallAtSymbol("_ZN2nn5prepo6Struct3AddEPKcl");
     // StructAddBool::InstallAtSymbol("_ZN2nn5prepo6Struct3AddEPKcb");
 
-    // M1: wondar's "just dont crash, idiot" SDK patch — hardcoded to a
-    // specific NSO layout. Disabled while we determine whether it's the
-    // crash source on this user's v1.0.0 build. Re-enable if needed once
-    // the rest of boot is verified.
-    // exl::util::RwPages a(exl::util::GetSdkModuleInfo().m_Total.m_Start + 0x00399790, 4);
-    // *reinterpret_cast<u32*>(a.GetRw()) = 0xD65F03C0;
+    // M5 real-hardware: wondar's "just dont crash, idiot" SDK patch.
+    // Writes `ret` (0xD65F03C0) at nnSdk + 0x00399790 (inside the
+    // `nn::oe::GpuErrorHandler` region, between GpuErrorHandler @+0x399770
+    // and SetupGpuErrorHandler @+0x3997a0).  Upstream wondar
+    // (fruityloops1/wondar) ships this in baseline exl_main with the
+    // comment "just dont crash, idiot" — i.e., this is a known mitigation
+    // for a real-hardware crash that Ryujinx doesn't reproduce.
+    //
+    // It was commented out before our M1 work without ever being tested
+    // on real hw; the 2026-05-26 22:26 + 22:57 Atmosphere crash reports
+    // (both PC=nnSdk+0x133da8 = SetHeapSize+0x78, called from
+    // nninitStartup+0x24) are the cost of that — without the patch, real
+    // Switch faults during the very first heap setup before the game's
+    // .text even runs.  Putting it back at the END of exl_main, in the
+    // same position upstream wondar has it, so any ordering invariant
+    // upstream relied on is preserved.
+    SMBWAP_LOG_INFO("smbwap: applying wondar SDK ret-patch @ sdk+0x399790");
+    {
+        exl::util::RwPages a(
+            exl::util::GetSdkModuleInfo().m_Total.m_Start + 0x00399790, 4);
+        *reinterpret_cast<u32*>(a.GetRw()) = 0xD65F03C0;
+    }
+    SMBWAP_LOG_INFO("smbwap: wondar SDK ret-patch applied");
 
     // M3.2 probe hooks — see comment block above the hook definitions.
     // Iteration 2 (after run #13 hook fires showed no badge-specific writer):
@@ -2632,72 +2711,89 @@ extern "C" void exl_main(void* x0, void* x1)
     // dumper that runs on every writer fire.  The dumper logs ONLY on changed
     // bitfields, so the badge purchase event will produce ONE "dump_C CHANGE"
     // line per bitfield that flipped — naming the badge hash directly.
-    SMBWAP_LOG_INFO("smbwap: M3.2 probe — installing GmdContainerAWriter @ 0x49f648");
-    GmdContainerAWriter::InstallAtOffset(0x0049f648);
+    if constexpr (kHookEnabled(SMBWAP_HOOK_BIT_GRANTS)) {
+        SMBWAP_LOG_INFO("smbwap: M3.2 probe — installing GmdContainerAWriter @ 0x49f648");
+        GmdContainerAWriter::InstallAtOffset(0x0049f648);
 
-    SMBWAP_LOG_INFO("smbwap: M3.2 probe — installing GmdBoolWriter @ 0x1f263fc");
-    GmdBoolWriter::InstallAtOffset(0x01f263fc);
+        SMBWAP_LOG_INFO("smbwap: M3.2 probe — installing GmdBoolWriter @ 0x1f263fc");
+        GmdBoolWriter::InstallAtOffset(0x01f263fc);
+    }
 
     // GmdContainerCBitReader hook intentionally NOT installed — replaced by
     // the inline container-C diff dumper called from each writer's Callback.
 
-    // Iteration 3 — install the SECOND per-bit reader (FUN_71001242d4).  Save
-    // diff confirmed the badge bitfield is u64 at file offset 0x0EA0 but is
-    // NOT in container C (no matching value among 156 captured entries).
-    // So it lives in gmd+0x68 which this reader probes FIRST.  Successful
-    // hits with bit set will surface the badge ownership hash.
-    SMBWAP_LOG_INFO("smbwap: M3.2 probe — installing GmdC2BitReader @ 0x1242d4");
-    GmdC2BitReader::InstallAtOffset(0x001242d4);
+    if constexpr (kHookEnabled(SMBWAP_HOOK_BIT_PROBES)) {
+        // Iteration 3 — install the SECOND per-bit reader (FUN_71001242d4).  Save
+        // diff confirmed the badge bitfield is u64 at file offset 0x0EA0 but is
+        // NOT in container C (no matching value among 156 captured entries).
+        // So it lives in gmd+0x68 which this reader probes FIRST.  Successful
+        // hits with bit set will surface the badge ownership hash.
+        SMBWAP_LOG_INFO("smbwap: M3.2 probe — installing GmdC2BitReader @ 0x1242d4");
+        GmdC2BitReader::InstallAtOffset(0x001242d4);
 
-    // M3.3 — Container-D writer probe.  Logs every (hash, course_index, value)
-    // tuple FUN_7101F2B354 is called with.  Required for hash-discovery: play
-    // through one course of each type and the log will name every per-course
-    // bitfield's hash + the course_index <-> course mapping.  See
-    // docs/static-analysis-findings.md M3.3 round-2 for the discovery details.
-    SMBWAP_LOG_INFO("smbwap: M3.3 probe — installing GmdContainerDWriter @ 0x1f2b354");
-    GmdContainerDWriter::InstallAtOffset(0x001f2b354);
+        // M3.3 — Container-D writer probe.  Logs every (hash, course_index, value)
+        // tuple FUN_7101F2B354 is called with.  Required for hash-discovery: play
+        // through one course of each type and the log will name every per-course
+        // bitfield's hash + the course_index <-> course mapping.  See
+        // docs/static-analysis-findings.md M3.3 round-2 for the discovery details.
+        SMBWAP_LOG_INFO("smbwap: M3.3 probe — installing GmdContainerDWriter @ 0x1f2b354");
+        GmdContainerDWriter::InstallAtOffset(0x001f2b354);
 
-    // M3.3 Phase B -- capture the live save struct pointer (heap-alloc'd
-    // 0x3E40 bytes inside FUN_71003e33b4, passed as param_1 to
-    // FUN_71003e8e30).  Lets /dump_save_field read from the right
-    // address without chasing a manager singleton chain.
-    SMBWAP_LOG_INFO("smbwap: M3.3 Phase B -- installing SaveDeserializerHook @ 0x3e8e30");
-    SaveDeserializerHook::InstallAtOffset(0x003e8e30);
+        // M3.3 Phase B -- capture the live save struct pointer (heap-alloc'd
+        // 0x3E40 bytes inside FUN_71003e33b4, passed as param_1 to
+        // FUN_71003e8e30).  Lets /dump_save_field read from the right
+        // address without chasing a manager singleton chain.
+        SMBWAP_LOG_INFO("smbwap: M3.3 Phase B -- installing SaveDeserializerHook @ 0x3e8e30");
+        SaveDeserializerHook::InstallAtOffset(0x003e8e30);
 
-    // 2026-05-26: Wonder Seed gate observability — LOGGING ONLY.  See the
-    // hook definitions above and docs/wonder-seed-observability-hook-prompt.md.
-    SMBWAP_LOG_INFO("smbwap: observability — installing WorldUnlockCheck @ 0x935ce0");
-    WorldUnlockCheck::InstallAtOffset(0x00935ce0);
-    SMBWAP_LOG_INFO("smbwap: observability — installing SeedBitfieldRead @ 0x124134 (filtered on hash=0x60458608)");
-    SeedBitfieldRead::InstallAtOffset(0x00124134);
-    SMBWAP_LOG_INFO("smbwap: observability — installing ContainerAReader @ 0x12ae94 (cbz-prologue; per-hash budget=5)");
-    ContainerAReader::InstallAtOffset(0x0012ae94);
+        // 2026-05-26: Wonder Seed gate observability — LOGGING ONLY.  See the
+        // hook definitions above and docs/wonder-seed-observability-hook-prompt.md.
+        SMBWAP_LOG_INFO("smbwap: observability — installing WorldUnlockCheck @ 0x935ce0");
+        WorldUnlockCheck::InstallAtOffset(0x00935ce0);
+        SMBWAP_LOG_INFO("smbwap: observability — installing SeedBitfieldRead @ 0x124134 (filtered on hash=0x60458608)");
+        SeedBitfieldRead::InstallAtOffset(0x00124134);
+        SMBWAP_LOG_INFO("smbwap: observability — installing ContainerAReader @ 0x12ae94 (cbz-prologue; per-hash budget=5)");
+        ContainerAReader::InstallAtOffset(0x0012ae94);
 
-    // M3.8 -- PlayerTickLatch (trampoline hook on FUN_7100273868 entry,
-    // NSO +0x273868).  Replaces the abandoned PlayerHpStructLatch
-    // inline hook at +0x2743BC which crashed Ryujinx silently when the
-    // patched region was reached (R-2026-05-25 08-53-58 log: hook
-    // installed but never fired before termination; even though
-    // exlaunch's relocator nominally handles cbz/b.le, something in the
-    // patch window corrupted the path).  Trampoline hooks on function
-    // entries are simpler -- no relocator concerns, just a single
-    // function-pointer indirection per call -- and the player tick
-    // function is called every frame, so the latch captures within a
-    // frame of entering a level.
-    //
-    // Callback replicates the dereference chain at +0x2743A0..+0x2743B8
-    // to find the HP-bearing struct from param_1.
-    constexpr bool kEnableLiveBaseLatch = true;
-    if (kEnableLiveBaseLatch) {
-        SMBWAP_LOG_INFO("smbwap: M3.8 — installing PlayerTickLatch @ 0x273868 (FUN_7100273868 entry)");
-        PlayerTickLatch::InstallAtOffset(0x00273868);
-    } else {
-        SMBWAP_LOG_INFO(
-            "smbwap: M3.8 — PlayerTickLatch DISABLED (kEnableLiveBaseLatch=false). "
-            "synthKill will no-op until enabled.");
+        // M3.8 -- PlayerTickLatch (trampoline hook on FUN_7100273868 entry,
+        // NSO +0x273868).  Replaces the abandoned PlayerHpStructLatch
+        // inline hook at +0x2743BC which crashed Ryujinx silently when the
+        // patched region was reached (R-2026-05-25 08-53-58 log: hook
+        // installed but never fired before termination; even though
+        // exlaunch's relocator nominally handles cbz/b.le, something in the
+        // patch window corrupted the path).  Trampoline hooks on function
+        // entries are simpler -- no relocator concerns, just a single
+        // function-pointer indirection per call -- and the player tick
+        // function is called every frame, so the latch captures within a
+        // frame of entering a level.
+        //
+        // Callback replicates the dereference chain at +0x2743A0..+0x2743B8
+        // to find the HP-bearing struct from param_1.
+        constexpr bool kEnableLiveBaseLatch = true;
+        if (kEnableLiveBaseLatch) {
+            SMBWAP_LOG_INFO("smbwap: M3.8 — installing PlayerTickLatch @ 0x273868 (FUN_7100273868 entry)");
+            PlayerTickLatch::InstallAtOffset(0x00273868);
+        } else {
+            SMBWAP_LOG_INFO(
+                "smbwap: M3.8 — PlayerTickLatch DISABLED (kEnableLiveBaseLatch=false). "
+                "synthKill will no-op until enabled.");
+        }
     }
 
     SMBWAP_LOG_INFO("smbwap: exl_main returning normally");
+
+    // M5 real-hardware: SD drain is intentionally NOT called from exl_main.
+    // At this point in boot, nn::fs internal state may not be initialized
+    // (fsp-srv reachable but FileSystemDriver instance not constructed),
+    // and a faulting nn::fs::* call would crash the subsdk before any
+    // hooks fire.  The smo_archipelago project went through that pain.
+    // Drain happens later in GameFrameworkInitialize::Callback once the
+    // framework + sead + heap + file device mgr are all up.  Tradeoff:
+    // if the game crashes BEFORE that hook fires (as in the 2026-05-26
+    // SetHeapSize crash chain), we get no SD log — only Atmosphere's own
+    // crash report.  That's an acceptable cost: a misfired drain here
+    // could itself be the crash source, whereas the Atmosphere report
+    // is always produced regardless.
 }
 
 extern "C" NORETURN void exl_exception_entry()

@@ -27,6 +27,20 @@ add_compile_definitions(
     DISCOVERY_PORT_VALUE=17776
 )
 
+## M5 real-hardware bisect: each hook group has its own bit so a real-hw
+## build can be reduced to a minimal set without commenting code.  See
+## main.cpp::exl_main and the SMBWAP_HOOK_BIT_* macros below for the
+## per-bit groupings.  Default 0x3F = all six groups enabled (matches
+## previous behavior).  For a minimal first-boot probe on real hardware,
+## pass `-DSMBWAP_HOOK_MASK=0x01` (CORE_INIT only — installs only the
+## boot-time framework hooks needed to drain the in-memory log ring to
+## sd:/smbwap_boot.log via CreateFileDeviceMgr::Callback).
+if(NOT DEFINED SMBWAP_HOOK_MASK)
+    set(SMBWAP_HOOK_MASK "0x3F")
+endif()
+add_compile_definitions(SMBWAP_HOOK_MASK=${SMBWAP_HOOK_MASK})
+message(STATUS "SMBWAP_HOOK_MASK = ${SMBWAP_HOOK_MASK}")
+
 set(NN_SDK_MAJOR 16) # idk
 set(NN_SDK_MINOR 0) # idk
 set(NN_SDK_PATCH 0) # idk
