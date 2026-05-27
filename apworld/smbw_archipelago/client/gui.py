@@ -13,8 +13,8 @@ Subclasses CommonClient's GameManager, which provides:
 
 We add ONE custom tab ("SMBW") split 50/50 horizontally:
   * left  -- at-a-glance bridge state (Switch connection, current
-             course, emitted checks count, deaths, badge mask, recent
-             items received)
+             course, emitted checks count, deaths, per-world Wonder/
+             Royal Seed table, owned badges)
   * right -- UILog tailing logger ``"SMBW"`` (lan_server, processor,
              context all log under that name)
 
@@ -32,22 +32,58 @@ of frame budget for Kivy.
 from __future__ import annotations
 
 import logging
+import os.path
 import typing
 
 # kvui MUST be imported before any kivy.* module -- kvui asserts
 # `"kivy" not in sys.modules` at module top for frozen-build compat.
 from kvui import GameManager, UILog  # type: ignore
 
+from kivy import kivy_data_dir  # type: ignore
 from kivy.clock import Clock  # type: ignore
+from kivy.core.text import LabelBase  # type: ignore
+from kivy.metrics import dp  # type: ignore
 from kivy.uix.boxlayout import BoxLayout  # type: ignore
 from kivy.uix.label import Label  # type: ignore
 from kivy.uix.scrollview import ScrollView  # type: ignore
+
+from . import badge_table, royal_seed_table, wonder_seed_table
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     from .context import SMBWContext
 
 
 _REFRESH_INTERVAL_SEC = 1.5
+
+
+# Per-world labels for the at-a-glance Wonder/Royal Seed table.  Indexed
+# by ``wonder_seed_table`` bucket (0..7).  Royal Seeds only exist for
+# W1..W6 (bucket 0..5); Petal Isles and Special World rows show a
+# placeholder dash in the Royal column.
+_WORLD_LABELS = (
+    "W1 Pipe-Rock Plateau",
+    "W2 Fluff-Puff Peaks",
+    "W3 Shining Falls",
+    "W4 Sunbaked Desert",
+    "W5 Fungi Mines",
+    "W6 Deep Magma Bog",
+    "Petal Isles",
+    "Special World",
+)
+
+
+# Register Kivy's bundled monospace font under a short alias so the
+# per-world seed table can use [font=RobotoMono] markup to keep columns
+# lined up under Kivy's proportional default font.  Mirrors the same
+# trick smo_archipelago uses for its per-kingdom moons table -- see
+# that module for the long-form rationale on why resource_find fails
+# at module-import time.  _MONO_OK gates the [font=...] markup so a
+# custom Kivy build that strips the bundled fonts degrades to the
+# proportional default instead of crashing.
+_MONO_FONT_PATH = os.path.join(kivy_data_dir, "fonts", "RobotoMono-Regular.ttf")
+_MONO_OK = os.path.isfile(_MONO_FONT_PATH)
+if _MONO_OK:
+    LabelBase.register(name="RobotoMono", fn_regular=_MONO_FONT_PATH)
 
 
 class SMBWManager(GameManager):
@@ -98,7 +134,13 @@ class SMBWManager(GameManager):
     # ---- Status tab construction --------------------------------------
 
     def _build_status_panel(self):
-        """Vertical box of labels updated by `_refresh_status`."""
+        """Vertical box of labels updated by `_refresh_status`.
+
+        Header lines (Switch / AP / course / checks / deaths / goal)
+        are short single-line labels; the per-world seed table and the
+        owned-badges list are multi-line labels rendered with
+        [font=RobotoMono] markup so their columns line up.
+        """
         outer = BoxLayout(orientation="vertical", padding=8, spacing=6)
         scroll = ScrollView(do_scroll_x=False, do_scroll_y=True)
         inner = BoxLayout(orientation="vertical", size_hint_y=None, spacing=4)
@@ -110,11 +152,8 @@ class SMBWManager(GameManager):
         self._lbl_checks = self._mk_label(inner, "Emitted checks: 0")
         self._lbl_deaths = self._mk_label(inner, "Deaths: 0")
         self._lbl_goal = self._mk_label(inner, "Goal: not yet")
-        self._lbl_badges = self._mk_label(inner, "Badge mask: 0x0")
-        self._lbl_items = self._mk_label(
-            inner, "Items received: 0",
-            multiline=True,
-        )
+        self._lbl_seeds = self._mk_label(inner, "", multiline=True)
+        self._lbl_badges = self._mk_label(inner, "", multiline=True)
 
         scroll.add_widget(inner)
         outer.add_widget(scroll)
@@ -124,12 +163,19 @@ class SMBWManager(GameManager):
         lbl = Label(
             text=text,
             size_hint_y=None,
-            height=24 if not multiline else 200,
             text_size=(None, None),
             halign="left",
             valign="top",
             markup=True,
         )
+        if multiline:
+            # Grow height with content so the seed table and badge list
+            # never clip; the ScrollView above scrolls the union of all
+            # rows once their combined height exceeds the viewport.
+            lbl.bind(texture_size=lambda inst, sz: setattr(
+                inst, "height", sz[1] + dp(4)))
+        else:
+            lbl.height = dp(24)
         # Bind text_size to width so wrapping kicks in on resize.
         def _resize(_inst, w):
             lbl.text_size = (w, None)
@@ -155,8 +201,7 @@ class SMBWManager(GameManager):
             if ctx.server else "disconnected"
         self._lbl_ap.text = (
             f"AP: {ap_state}  "
-            f"slot=[b]{ctx.auth or '?'}[/b]  "
-            f"seed={ctx.seed_name or '?'}"
+            f"slot=[b]{ctx.auth or '?'}[/b]"
         )
 
         if state and state.current_course:
@@ -179,21 +224,66 @@ class SMBWManager(GameManager):
             else "Goal: not yet"
         )
 
-        try:
-            mask = ctx._recompute_badge_mask()
-        except Exception:
-            mask = 0
-        self._lbl_badges.text = f"Badge mask: [b]0x{mask:x}[/b]"
+        self._lbl_seeds.text = _format_seed_table(ctx)
+        self._lbl_badges.text = _format_badge_list(ctx)
 
-        items = getattr(ctx, "items_received", None) or []
-        item_lines = [f"Items received: [b]{len(items)}[/b]"]
-        for it in items[-12:]:
-            try:
-                item_id = getattr(it, "item", None) or (
-                    it.get("item") if isinstance(it, dict) else None
-                )
-                name = ctx.item_names.lookup_in_game(int(item_id)) if item_id else "?"
-                item_lines.append(f"  - {name}")
-            except Exception:
-                continue
-        self._lbl_items.text = "\n".join(item_lines)
+
+def _format_seed_table(ctx: "SMBWContext") -> str:
+    """Per-world Wonder Seed + Royal Seed table.
+
+    Layout mirrors smo_archipelago's per-kingdom moons table: name
+    column left-justified to the widest world label, count column
+    right-justified, Royal Seed column shows ``[Y]`` / ``[ ]`` / ``-``
+    (the last for Petal Isles / Special which have no Royal Seed).
+    """
+    try:
+        seeds = ctx._recompute_wonder_seed_counts()
+    except Exception:
+        seeds = [0] * wonder_seed_table.WORLD_COUNT
+    try:
+        royal_mask = ctx._recompute_royal_seed_mask()
+    except Exception:
+        royal_mask = 0
+
+    name_w = max(len(n) for n in _WORLD_LABELS)
+    count_w = max(len(str(c)) for c in seeds) if seeds else 1
+
+    rows: list[str] = []
+    for i, name in enumerate(_WORLD_LABELS):
+        count = seeds[i] if i < len(seeds) else 0
+        if i < royal_seed_table.WORLD_COUNT:
+            owned = bool(royal_mask & (1 << i))
+            royal = "[Y]" if owned else "[ ]"
+        else:
+            royal = " - "
+        label = f"{name}:".ljust(name_w + 1)
+        rows.append(f"  {label} {count:>{count_w}}   {royal}")
+    table = "\n".join(rows)
+    header = "[b]Seeds by world[/b]    [i]Wonder / Royal[/i]"
+    body = f"[font=RobotoMono]{table}[/font]" if _MONO_OK else table
+    return f"{header}\n{body}"
+
+
+def _format_badge_list(ctx: "SMBWContext") -> str:
+    """Owned-badge list, sorted alphabetically by AP item name.
+
+    Reads the bridge's canonical badge mask (same as what's pushed to
+    the Switch) and reverse-looks-up each set bit via
+    ``badge_table.name_for_internal_id``.  Bits without a known
+    mapping are shown as ``bit N`` so probe-mode results stay visible.
+    """
+    try:
+        mask = ctx._recompute_badge_mask()
+    except Exception:
+        mask = 0
+    if mask == 0:
+        return "[b]Badges owned[/b]\n  [i](none yet)[/i]"
+    names: list[str] = []
+    for bit in range(64):
+        if not (mask & (1 << bit)):
+            continue
+        name = badge_table.name_for_internal_id(bit)
+        names.append(name if name is not None else f"bit {bit}")
+    names.sort()
+    body = "\n".join(f"  - {n}" for n in names)
+    return f"[b]Badges owned[/b] ([b]{len(names)}[/b])\n{body}"
