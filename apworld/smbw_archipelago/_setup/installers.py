@@ -56,7 +56,6 @@ from .prereqs import (
     llvm_portable_root,
     repo_root,
     resolved_python_bin,
-    pyelftools_marker_path,
 )
 
 # Suppress per-child console window under windowed Launcher
@@ -688,6 +687,8 @@ def install_pyelftools(on_line: ProgressFn | None = None) -> InstallResult:
     The resolved Python (prepended to PATH by _compose_build_env) must have
     pyelftools installed for the cmake build to succeed.
     """
+    from .prereqs import pyelftools_marker_path
+
     py = resolved_python_bin() or sys.executable
     result = _stream_subprocess(
         [py, "-m", "pip", "install", "--user", "--disable-pip-version-check", "pyelftools"],
