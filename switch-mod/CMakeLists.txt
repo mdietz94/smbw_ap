@@ -24,16 +24,40 @@ if(SMBWAP_DEBUG_SD_LOG)
     add_compile_definitions(SMBWAP_DEBUG_SD_LOG=1)
 endif()
 
-# Phase 1 source list — explicit, NOT GLOB_RECURSE. The legacy exlaunch
-# source tree at src/program/, src/lib/, lib/{imgui,sead,NintendoSDK} is
-# intentionally orphaned from the build; Phase 2 will pull individual files
-# back in as they get ported to hakkun.
+# Source list — explicit, NOT GLOB_RECURSE. The legacy exlaunch source
+# tree at src/program/, src/lib/, lib/{imgui,sead,NintendoSDK} is
+# intentionally orphaned from the build; we pull individual files back in
+# as they get ported to hakkun. Phase 2f brings the ap/ subsystem (LAN
+# bridge + protocol) back online; its files moved from src/program/ap/
+# to src/ap/ to fit the new tree.
 set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/main.cpp
     ${PROJECT_SOURCE_DIR}/src/util/Log.cpp
+    ${PROJECT_SOURCE_DIR}/src/util/Json.cpp
+    ${PROJECT_SOURCE_DIR}/src/ap/ApClient.cpp
+    ${PROJECT_SOURCE_DIR}/src/ap/ApDiscovery.cpp
+    ${PROJECT_SOURCE_DIR}/src/ap/ApFrameBridge.cpp
+    ${PROJECT_SOURCE_DIR}/src/ap/ApProtocol.cpp
+    ${PROJECT_SOURCE_DIR}/src/ap/ApState.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/ContainerA.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/ContainerB.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/ContainerC.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/DeathLink.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/Diagnostics.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/Gates.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/PerCourse.cpp
 )
 add_executable(${PROJECT_NAME} ${SOURCES_CXX})
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
+
+# nn::os / nn::nifm / nn::socket / malloc / free / aligned_alloc are
+# undefined at link time -- they're resolved at module-load via nnrtld
+# walking the AutoLoadList (the .data anchor at `_ZN2nn2ro6detail15g_pAutoLoadListE`
+# which our subsdk exports). With USE_SAIL=FALSE we don't have sail's
+# fakesymbols.so to satisfy these at link time, so tell lld to leave them
+# as dynamic relocations.
+target_link_options(${PROJECT_NAME} PRIVATE
+    -Wl,--unresolved-symbols=ignore-all)
 
 include(sys/cmake/module.cmake)
 include(sys/cmake/deploy.cmake)
