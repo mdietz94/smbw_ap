@@ -59,9 +59,7 @@ bool dumpSaveField(std::uint32_t /*base_nso_offset*/,
     return logStub<7>("dumpSaveField");
 }
 
-bool synthKill() {
-    return logStub<8>("synthKill");
-}
+// synthKill moved to DeathLink.cpp in Phase 2g commit 6.
 
 // isSaveLoaded() + isInSceneTransitionWindow() moved to Gates.cpp in
 // Phase 2g commit 1 -- both are now driven by real game-thread signals
