@@ -1241,7 +1241,7 @@ bool setBadgeBitfieldAbsolute(uint64_t bits)
                    // be written for in-game inventory UI consistency.
     data[3] = hi;
 
-    static std::atomic<uint32_t> log_budget{16};
+    static std::atomic<int32_t> log_budget{16};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
             "SetBadgesAbsolute: addr=%p bits=0x%016llx before=0x%08x%08x "
@@ -1314,7 +1314,7 @@ bool setContainerCBit(uint32_t hash, uint32_t bit_index, bool value)
     const uint32_t after = value ? (before | mask) : (before & ~mask);
     data[word_idx] = after;
 
-    static std::atomic<uint32_t> log_budget{32};
+    static std::atomic<int32_t> log_budget{32};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
             "SetContainerCBit: hash=0x%08x bit=%u value=%d addr=%p "
@@ -1531,7 +1531,7 @@ bool grantContainerACounter(uint32_t hash, uint32_t value)
     auto fn = reinterpret_cast<GmdSetCounterFn>(base + 0x0049F648);
     fn(gmd, value, hash);
 
-    static std::atomic<uint32_t> log_budget{16};
+    static std::atomic<int32_t> log_budget{16};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
             "GrantHashKeyed: hash=0x%08x value=%u gmd=%p",
@@ -1580,7 +1580,7 @@ void pushWonderSeedOverride(uint32_t value)
         fn(gmd, value, h);
     }
 
-    static std::atomic<uint32_t> log_budget{8};
+    static std::atomic<int32_t> log_budget{8};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
             "pushWonderSeedOverride: wrote value=%u to all 5 per-world hashes",
@@ -1781,7 +1781,7 @@ bool incrementContainerACounter(uint32_t hash, int32_t delta)
         slot->shadow_value = next;
     }
 
-    static std::atomic<uint32_t> log_budget{16};
+    static std::atomic<int32_t> log_budget{16};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
             "IncrementHashKeyed: hash=0x%08x persistent=%u effective=%u "
@@ -1866,16 +1866,47 @@ bool grantContainerBBool(uint32_t hash, uint32_t value)
     //   NerveActivateOnce::Callback and SetCourseClearFlagExecute::Callback
     //   per ApFrameBridge.hpp), so this cache is single-producer/
     //   single-consumer and needs no synchronization.
+    //
+    // Periodic reset (every 60 s) preserves AP-authoritative re-enforcement
+    // semantics.  Without a reset, a natural in-game seed acquisition (e.g.,
+    // player defeats a world boss and the game's Nerve sets bool=1)
+    // between our overwrites would persist indefinitely because the cache
+    // would say "we wrote 0 last, skip" forever.  The 60 s reset bounds
+    // the authority-enforcement lag at one minute in the worst case while
+    // still cutting the write rate by ~150x vs. no-dedup (from ~14 writes/s
+    // to ~0.1/s for the SetRoyalSeedsAbsolute mask=0 pattern), which is well
+    // below the audit accumulator's apparent crash threshold.  Full fix
+    // (hook the natural seed-acquisition Nerve and invalidate the affected
+    // hash immediately) is M5 work -- "suppress in-game grants entirely".
     struct CacheEntry { uint32_t hash; uint32_t value; };
     static constexpr size_t kCacheCap = 12;  // 8 bool hashes + headroom
     static CacheEntry s_cache[kCacheCap] = {};
     static size_t s_cache_size = 0;
+    static uint64_t s_cache_reset_tick = 0;
+
+    constexpr uint64_t kCacheResetIntervalTicks =
+        60ULL * 19'200'000ULL;  // 60 s @ 19.2 MHz tick rate
+    const uint64_t now_tick = svcGetSystemTick();
+    if (s_cache_reset_tick == 0
+        || now_tick - s_cache_reset_tick >= kCacheResetIntervalTicks) {
+        s_cache_reset_tick = now_tick;
+        if (s_cache_size > 0) {
+            static std::atomic<int32_t> reset_log_budget{8};
+            if (reset_log_budget.fetch_sub(1) > 0) {
+                SMBWAP_LOG_INFO(
+                    "GrantHashKeyedBool cache reset (%zu entries cleared) "
+                    "-- next call per hash will re-enforce AP authority",
+                    s_cache_size);
+            }
+            s_cache_size = 0;
+        }
+    }
 
     bool hash_seen = false;
     for (size_t i = 0; i < s_cache_size; ++i) {
         if (s_cache[i].hash == hash) {
             if (s_cache[i].value == value) {
-                static std::atomic<uint32_t> skip_log_budget{16};
+                static std::atomic<int32_t> skip_log_budget{16};
                 if (skip_log_budget.fetch_sub(1) > 0) {
                     SMBWAP_LOG_INFO(
                         "GrantHashKeyedBool dedup-skip: hash=0x%08x value=%u",
@@ -1896,7 +1927,7 @@ bool grantContainerBBool(uint32_t hash, uint32_t value)
     auto fn = reinterpret_cast<GmdSetBoolFn>(base + 0x0049EA24);
     fn(gmd, value, hash);
 
-    static std::atomic<uint32_t> log_budget{16};
+    static std::atomic<int32_t> log_budget{16};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
             "GrantHashKeyedBool: hash=0x%08x value=%u gmd=%p",
@@ -1968,7 +1999,7 @@ bool setPerCourseBitfieldAbsolute(uint32_t hash, uint32_t course_index,
     auto fn = reinterpret_cast<GmdSetPerCourseFn>(base + 0x001F2B354);
     fn(gmd, bitmask, hash, course_index);
 
-    static std::atomic<uint32_t> log_budget{32};
+    static std::atomic<int32_t> log_budget{32};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
             "SetPerCourseBitfield: hash=0x%08x course=%u value=0x%08x gmd=%p",
@@ -2211,7 +2242,7 @@ uint64_t GmdC2BitReader::Callback(long gmd, uint8_t* out,
     // bit_idx is in plausible badge range (u64 = 64 bits).  Skips the
     // bulk of UI-noise queries where the bit is 0 or out of badge range.
     if ((result & 1) && out && *out == 1 && bit_idx < 64) {
-        static std::atomic<uint32_t> log_budget{2000};
+        static std::atomic<int32_t> log_budget{2000};
         if (log_budget.fetch_sub(1) > 0) {
             SMBWAP_LOG_INFO("gmd.C2_hit hash=0x%08x bit=%u", hash, bit_idx);
         }
@@ -2573,7 +2604,7 @@ uint64_t ContainerAReader::Callback(long gmd, uint32_t* out_value,
                 smbwap::ap::getWonderSeedCount(bucket);
             const uint32_t game_value = *out_value;
             if (game_value != ap_count) {
-                static std::atomic<uint32_t> sub_log_budget{32};
+                static std::atomic<int32_t> sub_log_budget{32};
                 if (sub_log_budget.fetch_sub(1) > 0) {
                     SMBWAP_LOG_INFO(
                         "WS read substitute hash=0x%08x world=%u "
