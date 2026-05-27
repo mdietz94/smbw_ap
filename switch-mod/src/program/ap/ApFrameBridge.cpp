@@ -134,6 +134,21 @@ void drainInbound() {
         return;
     }
 
+    // Observability (2026-05-26 follow-up to the level-entry abort): log
+    // EVERY entry that actually drains a message, so a post-mortem can
+    // see how many messages flushed in this batch and whether the gate
+    // happened to NOT engage at the relevant moment.  By construction
+    // we're past the !isInSceneTransitionWindow() early-return, so any
+    // log line here means the gate was not engaged at entry.
+    const auto pending_at_entry = inboundRing().pendingApprox();
+    if (pending_at_entry > 0) {
+        SMBWAP_LOG_INFO(
+            "[grant] drainInbound RUN: pending=%zu  "
+            "(gate was OPEN at entry; if a crash follows in the next few "
+            "frames, this is the bracket that bypassed the scene gate)",
+            pending_at_entry);
+    }
+
     InboundMsg msg;
     int drained = 0;
     while (inboundRing().pop(msg)) {
@@ -254,15 +269,26 @@ void drainInbound() {
             }
             case InboundKind::SetWonderSeedCounts: {
                 // AP-authoritative per-world Wonder Seed gate override.
-                // Cache the 8 counts, then actively push the current
-                // world's bucket value to all 5 mirror hashes.  The
-                // GmdContainerAWriter interceptor in main.cpp catches
-                // game-initiated writes to those hashes, but the game
-                // only writes them on world/area transitions -- so AP
-                // grants received mid-area wouldn't reach the gate
-                // predicate until the next transition.  This proactive
-                // push closes that gap on every HelloMsg replay,
-                // ReceivedItems, and the bridge's 2 s periodic tick.
+                // Cache the 8 counts; ContainerAReader::Callback in main.cpp
+                // substitutes the AP-authoritative value on every read of
+                // the 3 safe-substituted mirror hashes (gate + 2 UI
+                // mirrors).  No proactive container write -- the previous
+                // pushWonderSeedOverrideCurrentWorld() call here raced
+                // with the game's secondary-container mutations during
+                // scene transitions PR #40's gate didn't catch (notably
+                // level-entry transitions), and aborted inside
+                // FUN_710049F750.  Stack-trace forensics:
+                // Ryujinx_1.3.3_2026-05-26_19-29-05.log (user report,
+                // crash on entering a level).
+                //
+                // The reader-side substitution provides the SAME visible
+                // behavior as the old proactive push:
+                //   * Gate predicate (FUN_71001787b40) reads 0x390eb960
+                //     -> substituted on every read.
+                //   * In-course HUD reads 0x21f89ab1 or 0x8c20ccb7
+                //     -> substituted on every read.
+                // Without the race surface of writing to container A from
+                // our thread during a transition.
                 for (std::uint32_t i = 0; i < kWorldCount; ++i) {
                     g_wonder_seed_counts[i].store(
                         msg.set_wonder_seed_counts.counts[i],
@@ -279,7 +305,10 @@ void drainInbound() {
                     msg.set_wonder_seed_counts.counts[5],
                     msg.set_wonder_seed_counts.counts[6],
                     msg.set_wonder_seed_counts.counts[7]);
-                probe::pushWonderSeedOverrideCurrentWorld();
+                // NOTE: previously called probe::pushWonderSeedOverrideCurrentWorld()
+                // here.  Removed -- see comment block above.  The function
+                // and its helper pushWonderSeedOverride() are now
+                // unreferenced and kept only for archaeology / re-use.
                 break;
             }
             case InboundKind::Kill: {

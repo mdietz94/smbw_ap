@@ -420,6 +420,43 @@ void NerveActivateOnce::Callback(void* nerve)
                         s_fires, nerve, (unsigned long long)vt_off);
     }
 
+    // Distinct-vtable survey (2026-05-26 follow-up to the level-entry abort):
+    // log the FIRST time we see each unique vt_off so the operator can
+    // identify Nerves we're not currently latching as scene transitions.
+    // The kVtableOff_SceneTransition gate at 0x33fd9a8 doesn't appear to
+    // fire for level-entry (FUN_710049F750 abort observed during level
+    // entry on v0.2.2-alpha) -- if a new vt_off appears in the log right
+    // before an abort, that's our missing scene-transition Nerve.  Small
+    // fixed table to avoid heap usage; 64 slots is ample for the
+    // ~20-30 distinct Nerves observed in steady-state play.
+    if (vt_off != 0) {
+        constexpr size_t kVtSeenSlots = 64;
+        static std::atomic<std::uint64_t> s_vt_seen[kVtSeenSlots] = {};
+        static std::atomic<std::uint32_t> s_vt_seen_count{0};
+        bool already_seen = false;
+        const auto cnt = s_vt_seen_count.load(std::memory_order_acquire);
+        for (std::uint32_t i = 0; i < cnt && i < kVtSeenSlots; ++i) {
+            if (s_vt_seen[i].load(std::memory_order_relaxed)
+                == static_cast<std::uint64_t>(vt_off)) {
+                already_seen = true;
+                break;
+            }
+        }
+        if (!already_seen) {
+            // Atomically claim a slot.  Races between threads are fine --
+            // worst case the same vt_off gets logged twice.
+            const auto slot = s_vt_seen_count.fetch_add(
+                1, std::memory_order_acq_rel);
+            if (slot < kVtSeenSlots) {
+                s_vt_seen[slot].store(static_cast<std::uint64_t>(vt_off),
+                                      std::memory_order_release);
+                SMBWAP_LOG_INFO(
+                    "NERVE_NEW_VT: slot=%u vt_off=NSO+0x%llx fire=%d",
+                    slot, (unsigned long long)vt_off, s_fires);
+            }
+        }
+    }
+
     // Target match: log unconditionally when the Wonder Seed Nerve activates.
     // This is THE per-pickup signal we've been trying to find — fires exactly
     // once when the player collects the Wonder Seed at the end of the Wonder
