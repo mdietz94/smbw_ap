@@ -50,11 +50,7 @@ bool logStub(const char* name) {
 
 // grantContainerBBool moved to ContainerB.cpp in Phase 2g commit 3.
 
-bool setPerCourseBitfieldAbsolute(std::uint32_t /*hash*/,
-                                  std::uint32_t /*course_index*/,
-                                  std::uint32_t /*bitmask*/) {
-    return logStub<5>("setPerCourseBitfieldAbsolute");
-}
+// setPerCourseBitfieldAbsolute moved to PerCourse.cpp in Phase 2g commit 5.
 
 // setContainerCBit moved to ContainerC.cpp in Phase 2g commit 4.
 
@@ -72,11 +68,7 @@ bool synthKill() {
 // (markSaveLoaded from gmd writer hooks; latchSceneTransitionTick from
 // the SceneTransition Nerve callback).
 
-void pushWonderSeedOverride(std::uint32_t /*value*/) {
-    (void)logStub<10>("pushWonderSeedOverride");
-}
-void pushWonderSeedOverrideCurrentWorld() {
-    (void)logStub<11>("pushWonderSeedOverrideCurrentWorld");
-}
+// pushWonderSeedOverride + pushWonderSeedOverrideCurrentWorld moved to
+// PerCourse.cpp in Phase 2g commit 5.
 
 }  // namespace probe
