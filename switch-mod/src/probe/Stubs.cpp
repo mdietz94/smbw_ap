@@ -50,9 +50,7 @@ bool setBadgeBitfieldAbsolute(std::uint64_t /*bits*/) {
 // grantContainerACounter + incrementContainerACounter moved to
 // ContainerA.cpp in Phase 2g commit 2.
 
-bool grantContainerBBool(std::uint32_t /*hash*/, std::uint32_t /*value*/) {
-    return logStub<4>("grantContainerBBool");
-}
+// grantContainerBBool moved to ContainerB.cpp in Phase 2g commit 3.
 
 bool setPerCourseBitfieldAbsolute(std::uint32_t /*hash*/,
                                   std::uint32_t /*course_index*/,
