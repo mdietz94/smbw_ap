@@ -654,6 +654,32 @@ def install_switch_mod_submodule(on_line: ProgressFn | None = None) -> InstallRe
 # Archipelago pip deps
 # ---------------------------------------------------------------------------
 
+def install_lz4(on_line: ProgressFn | None = None) -> InstallResult:
+    """`pip install --user lz4` into the resolved Python.
+
+    LibHakkun's deploy.cmake calls `python deploy.py` which imports
+    lz4.block. The resolved Python (prepended to PATH by _compose_build_env)
+    must have lz4 installed for the cmake build to succeed.
+    """
+    from .prereqs import lz4_marker_path
+
+    py = resolved_python_bin() or sys.executable
+    result = _stream_subprocess(
+        [py, "-m", "pip", "install", "--user", "--disable-pip-version-check", "lz4"],
+        on_line=on_line,
+        timeout=120.0,
+    )
+    if result.ok:
+        marker = lz4_marker_path()
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("ok\n", encoding="utf-8")
+        except OSError as e:
+            if on_line:
+                on_line(f"[lz4] could not write marker {marker}: {e}")
+    return result
+
+
 def install_archipelago_deps(on_line: ProgressFn | None = None) -> InstallResult:
     """`pip install -r vendor/Archipelago/requirements.txt` into the
     resolved Python 3.11+.
@@ -707,6 +733,7 @@ INSTALLERS: dict[str, Callable[[ProgressFn | None], InstallResult]] = {
     "archipelago_submodule": install_archipelago_submodule,
     "switch_mod_submodule": install_switch_mod_submodule,
     "archipelago_deps": install_archipelago_deps,
+    "lz4": install_lz4,
 }
 
 # Order the wizard's "Install all missing" walker uses. Dependencies feed
@@ -724,6 +751,7 @@ INSTALL_ORDER: tuple[str, ...] = (
     "archipelago_submodule",
     "switch_mod_submodule",
     "archipelago_deps",
+    "lz4",
 )
 
 

@@ -443,6 +443,61 @@ def test_check_all_returns_ordered_results() -> None:
     assert "switch_mod_submodule" in keys
     assert "archipelago_deps" in keys
     assert "ryujinx" in keys
+    assert "lz4" in keys
     # exlaunch-era keys should be retired entirely:
     assert "devkitpro" not in keys
     assert "switch_dev" not in keys
+
+
+# ---------------------------------------------------------------------------
+# check_lz4
+# ---------------------------------------------------------------------------
+
+def test_check_lz4_marker_short_circuits(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """If the marker file exists, skip the import probe entirely."""
+    marker = tmp_path / "lz4.ok"
+    marker.write_text("ok\n", encoding="utf-8")
+    monkeypatch.setattr(P, "lz4_marker_path", lambda: marker)
+
+    def boom(*_a, **_kw):
+        raise AssertionError("import probe must not run when marker exists")
+    monkeypatch.setattr(P, "_safe_run", boom)
+
+    r = P.check_lz4()
+    assert r.ok is True
+    assert r.auto_installable is True
+
+
+def test_check_lz4_ok_via_import(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """No marker but lz4 is importable: check returns ok and writes marker."""
+    marker = tmp_path / "lz4.ok"
+    monkeypatch.setattr(P, "lz4_marker_path", lambda: marker)
+    monkeypatch.setattr(P, "_resolved_python_bin", "/usr/bin/python3")
+
+    def fake_run(cmd):
+        assert "import lz4.block" in " ".join(cmd)
+        return (0, "", "")
+    monkeypatch.setattr(P, "_safe_run", fake_run)
+
+    r = P.check_lz4()
+    assert r.ok is True
+    assert marker.is_file()
+
+
+def test_check_lz4_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """lz4 not installed: check returns ok=False with auto_installable."""
+    marker = tmp_path / "lz4.ok"
+    monkeypatch.setattr(P, "lz4_marker_path", lambda: marker)
+    monkeypatch.setattr(P, "_resolved_python_bin", "/usr/bin/python3")
+    monkeypatch.setattr(P, "_safe_run", lambda _cmd: (1, "", "ModuleNotFoundError: No module named 'lz4'"))
+
+    r = P.check_lz4()
+    assert r.ok is False
+    assert r.auto_installable is True
+    assert not marker.exists()
