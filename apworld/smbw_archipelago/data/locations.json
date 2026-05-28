@@ -915,7 +915,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   {
-    "name": "W1: Pipe-Rock Plateau Palace - 10 Coin #1 ",
+    "name": "W1: Pipe-Rock Plateau Palace - 10 Coin #1",
     "region": "W1 14 Seeds",
     "category": [
       "World 1",
