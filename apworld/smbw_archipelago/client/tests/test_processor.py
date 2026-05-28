@@ -1009,13 +1009,47 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
 
     def test_palace_companion_emits_no_ten_coin(self):
-        # world_mother_seed=True early-return must keep us out of the
-        # TEN_COIN code path entirely.
+        # PALACE_COURSE_RESULT has _in == _out for big_flower_coin so
+        # the 10-coin diff naturally yields zero emits.  Exit-type emit
+        # is suppressed by the _PALACE_STAGE_KEYS branch separately;
+        # see test_palace_with_new_ten_coins_emits_them for the case
+        # where _out has newly-True entries.
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=PALACE_COURSE_RESULT))
         self.assertEqual(emitted, [])
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
+
+    def test_palace_with_new_ten_coins_emits_them(self):
+        """Regression: a palace clear that picks up new 10-coins must
+        still emit TEN_COIN AP checks.  Pre-fix, the palace exit-type
+        suppression returned [] before the 10-coin diff ran, so the
+        three palace 10-coin AP locations were silently dropped on
+        every palace clear."""
+        state = BridgeState()
+        fields = {
+            "stage_info": {
+                "stage_key": PIPEROCK_PALACE_STAGE_KEY,
+                "world_no": 1,
+                "course_no": 8,
+            },
+            "course_result": 1,
+            "goal_id": 0,
+            "touch_goal_top_result": False,
+            "world_mother_seed": True,
+            "total_get_finish_seed_count": 0,
+            "big_flower_coin_course_in":  [False, False, False],
+            "big_flower_coin_course_out": [True,  True,  True],
+        }
+        emitted = _handle_course_result(state, fields)
+        # No NORMAL_EXIT (palace suppression); three TEN_COIN checks.
+        self.assertEqual(
+            [c.kind for c in emitted],
+            [CheckKind.TEN_COIN, CheckKind.TEN_COIN, CheckKind.TEN_COIN])
+        self.assertEqual(
+            sorted(c.metadata["coin_index"] for c in emitted), [0, 1, 2])
+        self.assertFalse(
+            state.has_emitted(CheckKind.NORMAL_EXIT, PIPEROCK_PALACE_STAGE_KEY))
 
 
 # ---------------------------------------------------------------------------
