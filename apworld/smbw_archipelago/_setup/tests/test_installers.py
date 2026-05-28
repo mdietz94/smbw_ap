@@ -104,6 +104,10 @@ def test_disk_space_precheck_allows_when_enough(monkeypatch: pytest.MonkeyPatch,
 
 
 def test_check_winget_missing_returns_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The winget preflight on Windows surfaces a clear "install App
+    Installer" error when winget isn't on PATH. Linux takes a different
+    branch (covered by `test_check_winget_on_linux_is_not_applicable`)."""
+    monkeypatch.setattr(I.sys, "platform", "win32")
     monkeypatch.setattr(I.shutil, "which", lambda name: None if name == "winget" else "/usr/bin/" + name)
     lines: list[str] = []
     r = I.check_winget(lines.append)
@@ -113,6 +117,7 @@ def test_check_winget_missing_returns_clear_error(monkeypatch: pytest.MonkeyPatc
 
 
 def test_check_winget_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(I.sys, "platform", "win32")
     monkeypatch.setattr(I.shutil, "which", lambda _n: "/usr/local/bin/winget")
     r = I.check_winget(lambda _line: None)
     assert r.ok is True

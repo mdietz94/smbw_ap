@@ -40,6 +40,18 @@ def patch_run(monkeypatch: pytest.MonkeyPatch):
     return responses
 
 
+@pytest.fixture
+def force_windows(monkeypatch: pytest.MonkeyPatch):
+    """Pretend we're on Windows for tests that exercise Windows-only
+    behavior (winget hints, msys2 cmake rejection, portable LLVM probe,
+    `python3.exe` shim). Without this, the same tests fail on a Linux
+    CI runner where the platform-branching detectors take the
+    "package-manager" path instead."""
+    monkeypatch.setattr(P, "_is_windows", lambda: True)
+    monkeypatch.setattr(P.sys, "platform", "win32")
+    return monkeypatch
+
+
 def test_check_git_success(patch_run: dict[str, Any]) -> None:
     patch_run["git"] = (0, "git version 2.43.0", "")
     r = P.check_git()
@@ -47,7 +59,7 @@ def test_check_git_success(patch_run: dict[str, Any]) -> None:
     assert "git version" in r.detail
 
 
-def test_check_git_missing(patch_run: dict[str, Any]) -> None:
+def test_check_git_missing(force_windows, patch_run: dict[str, Any]) -> None:
     patch_run["git"] = None
     r = P.check_git()
     assert r.ok is False
@@ -75,9 +87,9 @@ def test_check_cmake_accepts_recent(patch_run: dict[str, Any], monkeypatch: pyte
     assert "3.30.5" in r.detail
 
 
-def test_check_cmake_rejects_msys2_bare_name(patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+def test_check_cmake_rejects_msys2_bare_name(force_windows, patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
     """msys2's cmake mangles drive-letter paths. Even when version-good,
-    the bare-name PATH fallback must reject it."""
+    the bare-name PATH fallback must reject it. Windows-only behavior."""
     patch_run["cmake"] = (0, "cmake version 3.30.5\n", "")
     P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
     monkeypatch.setattr(P.shutil, "which", lambda _x: "C:/msys64/usr/bin/cmake.exe")
@@ -107,11 +119,14 @@ def test_check_python311_uses_sys_executable(monkeypatch: pytest.MonkeyPatch, pa
     assert "3.12.0" in r.detail
 
 
-def test_check_llvm19_missing(monkeypatch: pytest.MonkeyPatch,
+def test_check_llvm19_missing(force_windows,
+                              monkeypatch: pytest.MonkeyPatch,
                               tmp_path: Path,
                               patch_run: dict[str, Any]) -> None:
     """No portable install, no canonical install, no `clang` on PATH →
-    fail with auto-install available."""
+    fail with auto-install available. Windows-only (the auto-install
+    tarball is the MSVC build); the Linux equivalent is covered by
+    `test_check_llvm19_missing_on_linux_skips_portable_probe`."""
     monkeypatch.setattr(P, "llvm_portable_root", lambda: tmp_path / "noexist")
     monkeypatch.setattr(P, "_LLVM_DEFAULT_PATHS", ())
     patch_run["clang"] = None
@@ -121,11 +136,13 @@ def test_check_llvm19_missing(monkeypatch: pytest.MonkeyPatch,
     assert r.auto_installable is True
 
 
-def test_check_llvm19_accepts_portable_19(monkeypatch: pytest.MonkeyPatch,
+def test_check_llvm19_accepts_portable_19(force_windows,
+                                          monkeypatch: pytest.MonkeyPatch,
                                           tmp_path: Path,
                                           patch_run: dict[str, Any]) -> None:
     """Synthesize a portable LLVM 19.1.7 install and verify the detector
-    picks it up + caches the bin dir."""
+    picks it up + caches the bin dir. Portable install is a Windows-only
+    concept (the wizard's auto-installer only populates it on Windows)."""
     P._resolved_llvm_bin = None  # type: ignore[attr-defined]
     root = tmp_path / "llvm"
     bin_dir = root / "bin"
@@ -141,7 +158,8 @@ def test_check_llvm19_accepts_portable_19(monkeypatch: pytest.MonkeyPatch,
     assert P.resolved_llvm_bin() == str(bin_dir)
 
 
-def test_check_llvm19_accepts_canonical_install(monkeypatch: pytest.MonkeyPatch,
+def test_check_llvm19_accepts_canonical_install(force_windows,
+                                                monkeypatch: pytest.MonkeyPatch,
                                                 tmp_path: Path,
                                                 patch_run: dict[str, Any]) -> None:
     """Probe finds LLVM 19 at the canonical `C:\\Program Files\\LLVM\\bin\\`
@@ -201,7 +219,7 @@ def test_check_llvm19_rejects_wrong_major(monkeypatch: pytest.MonkeyPatch,
     assert "19" in r.detail
 
 
-def test_ensure_python3_shim_creates_copy(tmp_path: Path) -> None:
+def test_ensure_python3_shim_creates_copy(force_windows, tmp_path: Path) -> None:
     src = tmp_path / "python.exe"
     src.write_text("fake interpreter", encoding="utf-8")
     P.ensure_python3_shim(src)
@@ -210,7 +228,7 @@ def test_ensure_python3_shim_creates_copy(tmp_path: Path) -> None:
     assert shim.read_text(encoding="utf-8") == "fake interpreter"
 
 
-def test_ensure_python3_shim_idempotent(tmp_path: Path) -> None:
+def test_ensure_python3_shim_idempotent(force_windows, tmp_path: Path) -> None:
     src = tmp_path / "python.exe"
     src.write_text("v1", encoding="utf-8")
     shim = tmp_path / "python3.exe"

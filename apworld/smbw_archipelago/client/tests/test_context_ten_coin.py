@@ -50,9 +50,16 @@ class TestContextTenCoin(unittest.IsolatedAsyncioTestCase):
         self._CheckEmitted = CheckEmitted
         self._CheckKind = CheckKind
 
+        # CommonContext.__init__ reads `network_data_package["games"][game]`
+        # to seed its checksums dict; in a pytest run our world may not
+        # have been registered before AP built the data package (depends on
+        # pytest-xdist worker load order), so stub the entry to avoid
+        # KeyError. Mirrors the pattern in test_context_deathlink.py. The
+        # key MUST be the full game name (`SMBWContext.game`), not the
+        # short slug.
         import CommonClient  # type: ignore
         CommonClient.network_data_package["games"].setdefault(
-            "SMBWonder",
+            "Super Mario Bros Wonder",
             {"checksum": "", "item_name_to_id": {}, "location_name_to_id": {}})
 
         self.state = BridgeState()
