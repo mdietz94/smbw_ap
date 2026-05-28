@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+import ssl
 import subprocess
 import sys
 import tarfile
@@ -118,6 +119,82 @@ def check_winget(on_line: ProgressFn | None = None) -> InstallResult:
     return InstallResult(True, 0, exe, exe)
 
 
+# Common Linux/macOS system CA bundle locations. Probed in order; first
+# existing file wins. Steam Deck / SteamOS hits the Arch path; most
+# desktop distros hit one of these too. Used only as a fallback when
+# certifi isn't installed and Python's default context can't find any
+# trust store on its own (the SteamOS failure mode).
+_SYSTEM_CA_BUNDLE_CANDIDATES: tuple[str, ...] = (
+    "/etc/ssl/certs/ca-certificates.crt",  # Debian, Ubuntu, Arch, SteamOS
+    "/etc/pki/tls/certs/ca-bundle.crt",    # RHEL, Fedora, CentOS
+    "/etc/ssl/ca-bundle.pem",              # openSUSE
+    "/etc/ssl/cert.pem",                   # Alpine, macOS (post-12)
+)
+
+
+def _resolve_ca_bundle() -> str | None:
+    """Return a path to a CA bundle, or None to let ssl use defaults.
+
+    Resolution order:
+      1. ``SSL_CERT_FILE`` env var (user override, always wins).
+      2. ``certifi.where()`` if importable.
+      3. First existing path from ``_SYSTEM_CA_BUNDLE_CANDIDATES``.
+      4. ``None`` — caller should fall through to ``ssl.create_default_context()``.
+
+    This exists because some Python installs (notably SteamOS's, where
+    /usr is read-only and Python's default CA path doesn't map to the
+    system bundle) ship with no working trust store, so every HTTPS
+    call fails with ``CERTIFICATE_VERIFY_FAILED``. The user sees
+    "no internet" even though they have it.
+    """
+    override = os.environ.get("SSL_CERT_FILE")
+    if override and os.path.isfile(override):
+        return override
+    try:
+        import certifi
+        path = certifi.where()
+        if os.path.isfile(path):
+            return path
+    except ImportError:
+        pass
+    for candidate in _SYSTEM_CA_BUNDLE_CANDIDATES:
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
+def _build_ssl_context() -> ssl.SSLContext:
+    """SSL context for wizard HTTPS requests.
+
+    Uses ``_resolve_ca_bundle()`` when the default trust store would
+    otherwise be empty / unreachable, so users on systems with broken
+    Python CA config (most notably SteamOS) don't get spurious
+    "no internet" errors from the preflight or download steps.
+    """
+    cafile = _resolve_ca_bundle()
+    if cafile is not None:
+        return ssl.create_default_context(cafile=cafile)
+    return ssl.create_default_context()
+
+
+def _is_ssl_cert_error(exc: BaseException) -> bool:
+    """True if ``exc`` is (or wraps) an SSL certificate verification error.
+
+    ``urlopen`` re-raises SSL errors wrapped inside ``URLError``
+    (the SSL exception lands on ``URLError.reason``), so direct
+    ``isinstance`` checks miss them.
+    """
+    cur: BaseException | None = exc
+    while cur is not None:
+        if isinstance(cur, ssl.SSLCertVerificationError):
+            return True
+        reason = getattr(cur, "reason", None)
+        if isinstance(reason, ssl.SSLCertVerificationError):
+            return True
+        cur = cur.__cause__ or cur.__context__
+    return False
+
+
 def check_internet(on_line: ProgressFn | None = None) -> InstallResult:
     """Single connectivity probe before bulk install.
 
@@ -125,6 +202,13 @@ def check_internet(on_line: ProgressFn | None = None) -> InstallResult:
     we care that *some* HTTPS host responds, because every auto-
     installer pulls from a https URL. One clear "no internet" error
     beats N timeouts deep inside per-tool installers.
+
+    Distinguishes SSL certificate-verification failures from real
+    connectivity failures: the user reaching us *can* be online but
+    have a Python install that can't validate HTTPS (no certifi, no
+    system CA bundle on the default search path — common on SteamOS).
+    Misreporting that as "no internet" sends the user chasing a router
+    bug they don't have.
     """
     msg_ok = "internet reachable"
     msg_fail = (
@@ -132,14 +216,25 @@ def check_internet(on_line: ProgressFn | None = None) -> InstallResult:
         "Connect to the internet and click Install all missing again, "
         "or switch to Manual mode."
     )
+    msg_ssl = (
+        "SSL certificate verification failed reaching https://github.com — "
+        "you ARE online, but this Python can't validate HTTPS certs. "
+        "Fix: `pip install --user certifi` and re-run, or set "
+        "SSL_CERT_FILE to a CA bundle "
+        "(SteamOS: /etc/ssl/certs/ca-certificates.crt)."
+    )
     try:
         req = urllib.request.Request("https://github.com", method="HEAD")
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=10, context=_build_ssl_context()) as resp:
             if 200 <= resp.status < 400:
                 if on_line:
                     on_line(f"[net] {msg_ok} ({resp.status})")
                 return InstallResult(True, 0, str(resp.status), msg_ok)
     except (urllib.error.URLError, OSError) as e:
+        if _is_ssl_cert_error(e):
+            if on_line:
+                on_line(f"[net] {msg_ssl} ({e})")
+            return InstallResult(False, 1, f"{type(e).__name__}: {e}", msg_ssl)
         if on_line:
             on_line(f"[net] {msg_fail} ({e})")
         return InstallResult(False, 1, f"{type(e).__name__}: {e}", msg_fail)
@@ -445,7 +540,7 @@ def _download_with_progress(
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "smbwap-setup/1.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=_build_ssl_context()) as resp:
             total = int(resp.headers.get("Content-Length", "0") or 0)
             written = 0
             next_threshold = 0

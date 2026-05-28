@@ -130,7 +130,7 @@ def test_check_internet_success(monkeypatch: pytest.MonkeyPatch) -> None:
         def __enter__(self): return self
         def __exit__(self, *a): pass
 
-    def fake_open(_req, timeout=10):  # noqa: ARG001
+    def fake_open(_req, timeout=10, context=None):  # noqa: ARG001
         return FakeResp()
 
     monkeypatch.setattr(I.urllib.request, "urlopen", fake_open)
@@ -139,13 +139,111 @@ def test_check_internet_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_check_internet_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_open(_req, timeout=10):  # noqa: ARG001
+    def fake_open(_req, timeout=10, context=None):  # noqa: ARG001
         raise OSError("no network")
 
     monkeypatch.setattr(I.urllib.request, "urlopen", fake_open)
     r = I.check_internet(lambda _line: None)
     assert r.ok is False
     assert "no internet" in r.detail.lower() or "no network" in r.log.lower()
+
+
+def test_check_internet_ssl_cert_failure_is_classified_separately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An SSL cert-verification failure must NOT be reported as
+    "no internet". The SteamOS failure mode is exactly this: HTTPS
+    is reachable, but Python can't validate the cert. Misreporting
+    sends users chasing a router bug they don't have."""
+    import ssl
+    import urllib.error
+
+    ssl_err = ssl.SSLCertVerificationError(
+        1, "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed"
+    )
+
+    def fake_open(_req, timeout=10, context=None):  # noqa: ARG001
+        raise urllib.error.URLError(ssl_err)
+
+    monkeypatch.setattr(I.urllib.request, "urlopen", fake_open)
+    lines: list[str] = []
+    r = I.check_internet(lines.append)
+    assert r.ok is False
+    assert "ssl" in r.detail.lower()
+    assert "certifi" in r.detail.lower() or "ssl_cert_file" in r.detail.lower()
+    assert "no internet" not in r.detail.lower()
+    assert any("ssl" in ln.lower() for ln in lines)
+
+
+def test_is_ssl_cert_error_detects_direct_and_wrapped() -> None:
+    import ssl
+    import urllib.error
+
+    direct = ssl.SSLCertVerificationError(1, "x")
+    wrapped = urllib.error.URLError(direct)
+    other = OSError("unrelated")
+
+    assert I._is_ssl_cert_error(direct) is True
+    assert I._is_ssl_cert_error(wrapped) is True
+    assert I._is_ssl_cert_error(other) is False
+
+
+def test_resolve_ca_bundle_prefers_env_override(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """SSL_CERT_FILE env var, when it points to an existing file, must
+    take precedence over certifi / system bundle probing — users
+    explicitly setting it are debugging or pinning a custom bundle."""
+    custom = tmp_path / "custom-ca.pem"
+    custom.write_text("# pretend cert\n")
+    monkeypatch.setenv("SSL_CERT_FILE", str(custom))
+    assert I._resolve_ca_bundle() == str(custom)
+
+
+def test_resolve_ca_bundle_falls_back_to_system_candidate_on_linux(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """When certifi isn't importable and SSL_CERT_FILE isn't set, the
+    first existing path from _SYSTEM_CA_BUNDLE_CANDIDATES wins. This
+    is the SteamOS auto-heal path."""
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+    fake_bundle = tmp_path / "ca-certificates.crt"
+    fake_bundle.write_text("# pretend cert\n")
+
+    import builtins
+    real_import = builtins.__import__
+
+    def no_certifi(name, *a, **kw):
+        if name == "certifi":
+            raise ImportError("no certifi")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", no_certifi)
+    monkeypatch.setattr(I, "_SYSTEM_CA_BUNDLE_CANDIDATES", (str(fake_bundle),))
+    assert I._resolve_ca_bundle() == str(fake_bundle)
+
+
+def test_resolve_ca_bundle_returns_none_when_nothing_found(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """No env, no certifi, no system bundle → return None so the caller
+    falls through to ssl.create_default_context() (Python's native
+    default — what we had before this fix)."""
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+
+    import builtins
+    real_import = builtins.__import__
+
+    def no_certifi(name, *a, **kw):
+        if name == "certifi":
+            raise ImportError("no certifi")
+        return real_import(name, *a, **kw)
+
+    monkeypatch.setattr(builtins, "__import__", no_certifi)
+    monkeypatch.setattr(
+        I, "_SYSTEM_CA_BUNDLE_CANDIDATES", (str(tmp_path / "nope.crt"),)
+    )
+    assert I._resolve_ca_bundle() is None
 
 
 def test_winget_install_without_winget_fails_fast(monkeypatch: pytest.MonkeyPatch) -> None:
