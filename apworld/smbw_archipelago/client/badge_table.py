@@ -99,12 +99,12 @@ _ID_TO_NAME: Final[dict[int, str]] = {bit: name for name, bit, _ in _BADGES}
 
 def grant_internal_id_for_item(item_name: str) -> int | None:
     """Look up the badge bit for an AP item name.  Returns ``None`` if
-    the name isn't a known badge (the caller should log + drop)."""
-    bit = _NAME_TO_ID.get(item_name)
-    if bit is None:
-        log.debug("badge_table: no internal_id for item %r", item_name)
-        return None
-    return bit
+    the name isn't a known badge -- the caller is expected to silently
+    drop and route the item elsewhere (Royal Seed table, Wonder Seed
+    counter, etc.).  Called per-item on every 2 s absolute-sync tick,
+    so this stays log-free by design -- any per-call log here would
+    multiply by ``items_received`` size and tick rate."""
+    return _NAME_TO_ID.get(item_name)
 
 
 def name_for_internal_id(internal_id: int) -> str | None:
