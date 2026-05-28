@@ -560,7 +560,10 @@ _populate_badge_entries()
 #     AP "W4"  → PlayReport world_no=5
 #     AP "W5"  → PlayReport world_no=6
 #     AP "W6"  → PlayReport world_no=7
-#     AP "Special" → TBD
+#     AP "Special" → PlayReport world_no=9
+#       (world_no=8 is "Castle"/Bowser, not a player overworld; the
+#        Special-World jump from 7→9 was confirmed 2026-05-28 from a
+#        live course_in PlayReport)
 #
 # Always use the PlayReport's world_no (from the bridge log's
 # "general_shop_result → shop_seed at (world=X, npc=Y, slot=Z)" line)

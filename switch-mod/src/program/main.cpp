@@ -1605,7 +1605,7 @@ void pushWonderSeedOverrideCurrentWorld()
     getfn(gmd, &world_val, 0x9f5ead3c);
     // Same in-game world index → AP bucket mapping as the
     // GmdContainerAWriter interceptor.  Keep in sync if either ever changes.
-    static constexpr int8_t kWorldValToBucket[9] = {
+    static constexpr int8_t kWorldValToBucket[10] = {
         -1,  // 0: unused
          0,  // 1: W1
          6,  // 2: Petal Isles
@@ -1614,11 +1614,13 @@ void pushWonderSeedOverrideCurrentWorld()
          3,  // 5: W4
          4,  // 6: W5
          5,  // 7: W6
-         7,  // 8: Special World
+        -1,  // 8: "Castle" (Bowser; not a player overworld)
+         7,  // 9: Special World (corrected 2026-05-28 from val=8)
     };
-    if (world_val < 1 || world_val > 8) return;
-    const uint32_t bucket =
-        static_cast<uint32_t>(kWorldValToBucket[world_val]);
+    if (world_val < 1 || world_val > 9) return;
+    const int8_t mapped = kWorldValToBucket[world_val];
+    if (mapped < 0) return;
+    const uint32_t bucket = static_cast<uint32_t>(mapped);
     const uint32_t ap_count = smbwap::ap::getWonderSeedCount(bucket);
     pushWonderSeedOverride(ap_count);
 }
@@ -2487,10 +2489,13 @@ uint64_t ContainerAReader::Callback(long gmd, uint32_t* out_value,
         && !probe::isInSceneTransitionWindow()) {
         uint32_t world_val = 0;
         Orig(gmd, &world_val, 0x9f5ead3c);
-        static constexpr int8_t kWorldValToBucket[9] = {
-            -1, 0, 6, 1, 2, 3, 4, 5, 7,
+        // 1=W1, 2=Petal Isles, 3-7=W2-W6, 8="Castle" (no AP bucket),
+        // 9=Special.  Corrected 2026-05-28 from val=8 for Special.
+        static constexpr int8_t kWorldValToBucket[10] = {
+            -1, 0, 6, 1, 2, 3, 4, 5, -1, 7,
         };
-        if (world_val >= 1 && world_val <= 8) {
+        if (world_val >= 1 && world_val <= 9
+            && kWorldValToBucket[world_val] >= 0) {
             const uint32_t bucket =
                 static_cast<uint32_t>(kWorldValToBucket[world_val]);
             const uint32_t ap_count =
