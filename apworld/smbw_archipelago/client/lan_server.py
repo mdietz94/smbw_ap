@@ -241,6 +241,19 @@ class LanServer:
         # every session install/drop so deltas never cross sessions.
         self._pending_increments: dict[int, int] = {}
 
+        # Last-logged absolute-state payloads for the periodic-tick
+        # send_set_* methods.  The 2 s tick re-pushes the same value
+        # most of the time; logging every push produced ~3000 redundant
+        # INFO lines per minute.  We log only on first enqueue per
+        # session and on payload change -- so a transition (badge
+        # granted, seed unlocked, wonder seed count advanced) shows up
+        # while idle ticks stay silent.  Reset on _install_client and
+        # _drop_active_client_locked so reconnect re-logs the first
+        # absolute push.
+        self._last_logged_badges_bits: int | None = None
+        self._last_logged_royal_seeds_mask: int | None = None
+        self._last_logged_wonder_seed_counts: tuple[int, ...] | None = None
+
     # ---- Lifecycle ----------------------------------------------------
 
     async def start(self, host: str = "0.0.0.0", port: int = 17777) -> None:
@@ -305,8 +318,10 @@ class LanServer:
             return
         try:
             self._send_queue.put_nowait(msg)
-            log.debug(
-                "send_set_badges_absolute: enqueued bits=0x%x", bits)
+            if self._last_logged_badges_bits != bits:
+                log.debug(
+                    "send_set_badges_absolute: enqueued bits=0x%x", bits)
+                self._last_logged_badges_bits = bits
         except asyncio.QueueFull:
             log.error(
                 "send_set_badges_absolute(bits=0x%x): outbound queue "
@@ -334,8 +349,10 @@ class LanServer:
             return
         try:
             self._send_queue.put_nowait(msg)
-            log.debug(
-                "send_set_royal_seeds_absolute: enqueued mask=0x%x", mask)
+            if self._last_logged_royal_seeds_mask != mask:
+                log.debug(
+                    "send_set_royal_seeds_absolute: enqueued mask=0x%x", mask)
+                self._last_logged_royal_seeds_mask = mask
         except asyncio.QueueFull:
             log.error(
                 "send_set_royal_seeds_absolute(mask=0x%x): outbound queue "
@@ -395,9 +412,12 @@ class LanServer:
             return
         try:
             self._send_queue.put_nowait(msg)
-            log.debug(
-                "send_set_wonder_seed_counts: enqueued counts=%s",
-                counts)
+            counts_t = tuple(counts)
+            if self._last_logged_wonder_seed_counts != counts_t:
+                log.debug(
+                    "send_set_wonder_seed_counts: enqueued counts=%s",
+                    counts)
+                self._last_logged_wonder_seed_counts = counts_t
         except asyncio.QueueFull:
             log.error(
                 "send_set_wonder_seed_counts(counts=%s): outbound queue "
@@ -688,6 +708,13 @@ class LanServer:
             # client drop) are stale -- the Switch has restarted and
             # would have no context for them.
             self._pending_increments = {}
+            # Forget last-logged absolute-state payloads so the new
+            # session's first SetBadges/SetRoyalSeeds/SetWonderSeeds
+            # push logs (matters when a Switch reconnects and we need
+            # to see the initial sync land).
+            self._last_logged_badges_bits = None
+            self._last_logged_royal_seeds_mask = None
+            self._last_logged_wonder_seed_counts = None
             self._writer_task = asyncio.create_task(
                 self._writer_loop(writer, self._send_queue),
                 name="lan-writer",
@@ -732,6 +759,11 @@ class LanServer:
         # the Switch is gone, drop them so a future reconnect starts
         # from a clean slate (matches the per-session queue drop above).
         self._pending_increments = {}
+        # Match the per-session reset done in _install_client so the
+        # next session's first absolute-state push logs.
+        self._last_logged_badges_bits = None
+        self._last_logged_royal_seeds_mask = None
+        self._last_logged_wonder_seed_counts = None
 
     # ---- Badge sync ---------------------------------------------------
 
@@ -841,6 +873,13 @@ class LanServer:
     ) -> None:
         """Drain the outbound queue into the socket.  Runs until cancelled
         or the writer fails."""
+        # Per-connection last-logged absolute-state values, so the
+        # `-> set_*` lines emit only on payload change (or first send).
+        # Naturally scoped: a new connection spawns a new _writer_loop
+        # task with these reset to None, so the initial sync logs.
+        last_badges_bits: int | None = None
+        last_royal_seeds_mask: int | None = None
+        last_wonder_seed_counts: tuple[int, ...] | None = None
         try:
             while True:
                 msg = await queue.get()
@@ -887,18 +926,20 @@ class LanServer:
                     writer.write(wire.encode(msg))
                     await writer.drain()
                     if isinstance(msg, wire.SetBadgesAbsoluteMsg):
-                        # Suppress the empty-mask periodic-tick spam; only
-                        # log when there's an actual badge state to push.
-                        if msg.bits:
+                        # Log only on payload change.  Subsumes the
+                        # previous "skip empty mask" rule (the initial
+                        # all-zero mask is logged once, then suppressed
+                        # until something flips) and also silences the
+                        # steady-state replays of any non-zero mask.
+                        if msg.bits != last_badges_bits:
                             log.info("-> set_badges_absolute bits=0x%x", msg.bits)
+                            last_badges_bits = msg.bits
                     elif isinstance(msg, wire.SetRoyalSeedsAbsoluteMsg):
-                        # Same empty-mask spam-suppression as
-                        # SetBadgesAbsolute -- the periodic tick fires
-                        # the empty mask before any seed is granted.
-                        if msg.mask:
+                        if msg.mask != last_royal_seeds_mask:
                             log.info(
                                 "-> set_royal_seeds_absolute mask=0x%x",
                                 msg.mask)
+                            last_royal_seeds_mask = msg.mask
                     elif isinstance(msg, wire.GrantHashKeyedMsg):
                         log.info(
                             "-> grant_hash_keyed hash=0x%08x value=%d",
@@ -908,9 +949,12 @@ class LanServer:
                             "-> increment_hash_keyed hash=0x%08x delta=%d",
                             msg.hash, msg.delta)
                     elif isinstance(msg, wire.SetWonderSeedCountsMsg):
-                        log.info(
-                            "-> set_wonder_seed_counts counts=%s",
-                            list(msg.counts))
+                        counts_t = tuple(msg.counts)
+                        if counts_t != last_wonder_seed_counts:
+                            log.info(
+                                "-> set_wonder_seed_counts counts=%s",
+                                list(msg.counts))
+                            last_wonder_seed_counts = counts_t
                     elif isinstance(msg, wire.KillMsg):
                         log.info(
                             "-> kill source=%r cause=%r",

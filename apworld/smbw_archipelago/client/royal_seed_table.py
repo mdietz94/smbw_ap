@@ -121,12 +121,10 @@ def is_royal_seed_item(item_name: str) -> bool:
 def bit_for_item(item_name: str) -> int | None:
     """Return the mask-bit position for ``item_name`` (0 = W1, ..., 5 = W6),
     or ``None`` if the name isn't a known Royal Seed.  The absolute-mask
-    path uses this to OR the bit into the AP-derived mask."""
-    bit = _NAME_TO_BIT.get(item_name)
-    if bit is None:
-        log.debug("royal_seed_table: no bit for item %r", item_name)
-        return None
-    return bit
+    path uses this to OR the bit into the AP-derived mask.  Called
+    per-item on every 2 s absolute-sync tick, so this stays log-free
+    by design (mirror of badge_table.grant_internal_id_for_item)."""
+    return _NAME_TO_BIT.get(item_name)
 
 
 def hash_for_item(item_name: str) -> int | None:

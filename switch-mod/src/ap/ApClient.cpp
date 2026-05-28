@@ -421,12 +421,74 @@ bool ApClient::popLine(char* out, std::size_t& out_len) {
     return true;
 }
 
+namespace {
+
+// Burst-suppress the "[ring] inbound full; dropping ..." WARN family.
+// Drops happen when the game thread's drainInbound stalls long enough
+// for the bridge's 2 s periodic absolute-state tick to saturate the
+// inbound ring (steady state ~3 messages / 2 s once a session is
+// active).  We've seen this hit ~1.5 drops/s during long scene-gated
+// windows (cutscenes, world map sits) lasting up to 11 minutes
+// continuously -- ~1000 identical WARN lines per such window.
+//
+// The first drop in a burst is the actionable signal (marks the
+// start of an abnormally-long gated window); the rest are noise.  We
+// log the first drop and a single "burst ended" summary when
+// drainInbound catches back up (detected as the next successful push
+// after a burst started).  WARN level is preserved -- the events
+// remain interesting at a glance.
+//
+// Atomic flags so the network rx thread (this file) doesn't race with
+// itself across consecutive messages; the game thread only ever
+// pop()s from the ring, never push()es, so no cross-thread coord.
+std::atomic<bool>     g_drop_burst_active{false};
+std::atomic<uint64_t> g_drop_burst_count{0};
+
+// Returns true iff the push succeeded.  Closes any active drop burst
+// on success.  Call this in place of `inboundRing().push(msg)`.
+bool tryPushInbound(const InboundMsg& msg) {
+    if (!inboundRing().push(msg)) return false;
+    if (g_drop_burst_active.exchange(false, std::memory_order_relaxed)) {
+        const auto count = g_drop_burst_count.exchange(
+            0, std::memory_order_relaxed);
+        SMBWAP_LOG_WARN(
+            "[ring] inbound burst ended: %llu drop(s) total since first WARN",
+            static_cast<unsigned long long>(count));
+    }
+    return true;
+}
+
+// Returns true iff this is the first drop of a new burst (caller logs
+// its kind-specific WARN); subsequent drops in the burst are counted
+// silently and surfaced by the burst-ended summary above.
+bool shouldLogDrop() {
+    const bool was_active = g_drop_burst_active.exchange(
+        true, std::memory_order_relaxed);
+    g_drop_burst_count.fetch_add(1, std::memory_order_relaxed);
+    return !was_active;
+}
+
+}  // namespace
+
 void ApClient::handleLine(char* line, std::size_t len) {
     InboundMsg msg;
     if (!decodeInbound(line, len, msg)) {
         SMBWAP_LOG_WARN("[conn] decode failed: %.80s", line);
         return;
     }
+    // Per-session dedupe for the absolute-state "[grant] received Set*"
+    // log lines: the bridge re-pushes the same triplet every 2 s as
+    // its idempotent backstop, producing thousands of identical INFO
+    // lines.  Track last-logged payloads and skip the log when nothing
+    // changed.  Reset in the HelloAck arm so a fresh bridge session
+    // re-logs the initial sync (matches the bridge-side dedupe in
+    // lan_server.py _writer_loop).
+    static bool        s_have_badges  = false;
+    static std::uint64_t s_last_badges  = 0;
+    static bool        s_have_seeds   = false;
+    static std::uint8_t  s_last_seeds   = 0;
+    static bool        s_have_counts  = false;
+    static std::uint32_t s_last_counts[8] = {0};
     switch (msg.kind) {
         case InboundKind::HelloAck:
             SMBWAP_LOG_INFO(
@@ -436,27 +498,37 @@ void ApClient::handleLine(char* line, std::size_t len) {
             if (!msg.hello_ack.ok && msg.hello_ack.reason[0]) {
                 SMBWAP_LOG_WARN("[conn] HELLO refused: %s", msg.hello_ack.reason);
             }
+            // New session -> re-log initial absolute-state pushes.
+            s_have_badges = false;
+            s_have_seeds  = false;
+            s_have_counts = false;
             return;
-        case InboundKind::SetBadgesAbsolute:
-            SMBWAP_LOG_INFO(
-                "[grant] received SetBadgesAbsolute(bits=0x%016llx), enqueued",
-                static_cast<unsigned long long>(msg.set_badges_absolute.bits));
+        case InboundKind::SetBadgesAbsolute: {
+            const std::uint64_t bits = msg.set_badges_absolute.bits;
+            if (!s_have_badges || bits != s_last_badges) {
+                SMBWAP_LOG_INFO(
+                    "[grant] received SetBadgesAbsolute(bits=0x%016llx), enqueued",
+                    static_cast<unsigned long long>(bits));
+                s_last_badges = bits;
+                s_have_badges = true;
+            }
             // Forward to the game thread via the inbound ring;
             // ApFrameBridge::drainInbound applies it via
             // setBadgeBitfieldAbsolute.
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping SetBadgesAbsolute(bits=0x%016llx)",
-                    static_cast<unsigned long long>(msg.set_badges_absolute.bits));
+                    static_cast<unsigned long long>(bits));
             }
             return;
+        }
         case InboundKind::GrantHashKeyed:
             SMBWAP_LOG_INFO(
                 "[grant] received GrantHashKeyed(hash=0x%08x, value=%u), enqueued",
                 msg.grant_hash_keyed.hash, msg.grant_hash_keyed.value);
             // Forward to game thread; drainInbound applies via
             // probe::grantContainerACounter -> FUN_710049F648.
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping GrantHashKeyed(hash=0x%08x)",
                     msg.grant_hash_keyed.hash);
@@ -470,7 +542,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
             // Forward to game thread; drainInbound applies via
             // probe::incrementContainerACounter (saturating RMW on
             // FUN_710012AE94 + FUN_710049F648).
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping IncrementHashKeyed(hash=0x%08x)",
                     msg.increment_hash_keyed.hash);
@@ -482,7 +554,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 msg.kill.source, msg.kill.cause);
             // Forward to game thread; drainInbound applies via
             // probe::synthKill (HP=0 int16 write at live_base + 0x38).
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping Kill(source=%s)",
                     msg.kill.source);
@@ -497,7 +569,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 msg.set_per_course_bitfield.bitmask);
             // Forward to game thread; drainInbound applies via
             // probe::setPerCourseBitfieldAbsolute -> FUN_7101F2B354.
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping SetPerCourseBitfield"
                     "(hash=0x%08x, course=%u)",
@@ -511,7 +583,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 "offset=0x%x), enqueued",
                 msg.dump_save_field.base_nso_offset,
                 msg.dump_save_field.field_offset);
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping DumpSaveField"
                     "(base=NSO+0x%x, offset=0x%x)",
@@ -528,7 +600,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 static_cast<unsigned>(msg.set_container_c_bit.value));
             // Forward to game thread; drainInbound applies via
             // probe::setContainerCBit -> direct container-C memory write.
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping SetContainerCBit"
                     "(hash=0x%08x, bit=%u)",
@@ -536,40 +608,52 @@ void ApClient::handleLine(char* line, std::size_t len) {
                     msg.set_container_c_bit.bit_index);
             }
             return;
-        case InboundKind::SetRoyalSeedsAbsolute:
-            SMBWAP_LOG_INFO(
-                "[grant] received SetRoyalSeedsAbsolute(mask=0x%02x), enqueued",
-                static_cast<unsigned>(msg.set_royal_seeds_absolute.mask));
+        case InboundKind::SetRoyalSeedsAbsolute: {
+            const std::uint8_t mask = msg.set_royal_seeds_absolute.mask;
+            if (!s_have_seeds || mask != s_last_seeds) {
+                SMBWAP_LOG_INFO(
+                    "[grant] received SetRoyalSeedsAbsolute(mask=0x%02x), enqueued",
+                    static_cast<unsigned>(mask));
+                s_last_seeds = mask;
+                s_have_seeds = true;
+            }
             // Forward to game thread; drainInbound loops the 6 Royal
             // Seed hashes and grants/clears each per bit via
             // probe::grantContainerBBool.
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping SetRoyalSeedsAbsolute"
                     "(mask=0x%02x)",
-                    static_cast<unsigned>(msg.set_royal_seeds_absolute.mask));
+                    static_cast<unsigned>(mask));
             }
             return;
-        case InboundKind::SetWonderSeedCounts:
-            SMBWAP_LOG_INFO(
-                "[grant] received SetWonderSeedCounts counts="
-                "[%u,%u,%u,%u,%u,%u,%u,%u], enqueued",
-                msg.set_wonder_seed_counts.counts[0],
-                msg.set_wonder_seed_counts.counts[1],
-                msg.set_wonder_seed_counts.counts[2],
-                msg.set_wonder_seed_counts.counts[3],
-                msg.set_wonder_seed_counts.counts[4],
-                msg.set_wonder_seed_counts.counts[5],
-                msg.set_wonder_seed_counts.counts[6],
-                msg.set_wonder_seed_counts.counts[7]);
+        }
+        case InboundKind::SetWonderSeedCounts: {
+            const auto& counts = msg.set_wonder_seed_counts.counts;
+            bool changed = !s_have_counts;
+            if (!changed) {
+                for (int i = 0; i < 8; ++i) {
+                    if (counts[i] != s_last_counts[i]) { changed = true; break; }
+                }
+            }
+            if (changed) {
+                SMBWAP_LOG_INFO(
+                    "[grant] received SetWonderSeedCounts counts="
+                    "[%u,%u,%u,%u,%u,%u,%u,%u], enqueued",
+                    counts[0], counts[1], counts[2], counts[3],
+                    counts[4], counts[5], counts[6], counts[7]);
+                for (int i = 0; i < 8; ++i) s_last_counts[i] = counts[i];
+                s_have_counts = true;
+            }
             // Forward to game thread; drainInbound caches into the
             // static g_wonder_seed_counts[8] atomic array used by
             // NerveActivateOnce's per-current-world override tick.
-            if (!inboundRing().push(msg)) {
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping SetWonderSeedCounts");
             }
             return;
+        }
         case InboundKind::Err:
             SMBWAP_LOG_WARN("[conn] bridge reports err: %s", msg.err.reason);
             return;

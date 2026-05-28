@@ -23,6 +23,7 @@
 // pointer-to-stack-temp). No sead/nn headers needed.
 
 #include <atomic>
+#include <cstdint>
 
 #include "hk/hook/Trampoline.h"
 #include "hk/ro/RoUtil.h"
@@ -642,9 +643,18 @@ HkTrampoline<unsigned long long, long, unsigned*, unsigned>
                         smbwap::ap::getWonderSeedCount(bucket);
                     const unsigned game_value = *out_value;
                     if (game_value != ap_count) {
-                        static std::atomic<unsigned> sub_log_budget{32};
-                        if (sub_log_budget.fetch_sub(
-                                1, std::memory_order_relaxed) > 0) {
+                        // Signed counter so the budget actually caps -- the
+                        // earlier `std::atomic<unsigned>` wrapped to UINT_MAX
+                        // after 32 decrements and kept logging for billions
+                        // of calls (300 MB session log, 215K of these
+                        // lines).  Saturating-stop at 0 with CAS.
+                        static std::atomic<int32_t> sub_log_budget{32};
+                        int32_t b = sub_log_budget.load(
+                            std::memory_order_relaxed);
+                        while (b > 0 && !sub_log_budget.compare_exchange_weak(
+                                b, b - 1, std::memory_order_relaxed)) {
+                        }
+                        if (b > 0) {
                             SMBWAP_LOG_INFO(
                                 "WS read substitute hash=0x%08x world=%u "
                                 "bucket=%u game_value=%u -> ap_count=%u",
