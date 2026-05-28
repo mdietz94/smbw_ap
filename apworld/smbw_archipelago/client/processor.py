@@ -470,13 +470,19 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
     # Operation Poplin Rescue (goal_id == 1) still fires normally.
     # See _PALACE_STAGE_KEYS docstring for the history of the previous
     # world_mother_seed-based gate, which was a false positive.
+    #
+    # Suppression is exit-type only: kinds = [] keeps the NORMAL_EXIT
+    # branch from firing but lets execution fall through to the 10-coin
+    # diff and badge emit below, so the three palace 10-coin AP checks
+    # still go out.  Returning early here previously dropped them all.
     if stage_key in _PALACE_STAGE_KEYS and goal_id == 0:
         log.debug(
             "course_result at palace stage_key=0x%08x goal_id=0; "
-            "deferring to koopajr_result",
+            "deferring exit-type emit to koopajr_result "
+            "(10-coin diff still runs)",
             stage_key)
-        return []
-    if (stage_key in _HUB_HOUSE_STAGE_KEYS
+        kinds = []
+    elif (stage_key in _HUB_HOUSE_STAGE_KEYS
             or stage_key in _BREAK_TIME_STAGE_KEYS):
         # Hub-house and Break Time! exits route to the WONDER_SEED AP
         # location -- these stages have no flagpole and the seed IS
