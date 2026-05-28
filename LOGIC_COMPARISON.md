@@ -9,7 +9,7 @@ This was a multi-round diff against the community-maintained logic PDF.  After a
 ### Missing locations (8 new entries, both wired through the in-game hook)
 6 KO Arena "Normal Exit" / Level-Clear entries (W1 Pipe-Rock Rumble, W2 Fluff-Puff Kerfuff, W4 Sunbaked Skirmish, W5 Fungi Funk, W6 Magma Flare-Up, PI Petal Meddle) — these already fire as `course_result(goal_id=0)` so no client-side change was needed beyond the locations.json + location_table.py entries.
 
-7 "Top of Secret Flag" entries (W1 Piranha Plants, Bulrush Coming Through, Bulrush Express; W2 Outmaway Valley; W4 Shova Mansion; W6 Where the Rrrumbas Rule, Hot-Hot Hot) — required a new `CheckKind.TOP_OF_SECRET_FLAG` plus a processor change to emit it alongside `SECRET_EXIT` when `touch_goal_top_result == True`.
+7 "Top of Secret Flag" entries (W1 Piranha Plants, Bulrush Coming Through, Bulrush Express; W2 Outmaway Valley; W4 Shova Mansion; W6 Where the Rrrumbas Rule, Hot-Hot Hot) were briefly added as a separate `CheckKind.TOP_OF_SECRET_FLAG`, then **collapsed back into `TOP_OF_FLAG`** — topping either the normal-exit or secret-exit flagpole now fires the same per-course `TOP_OF_FLAG` check.
 
 ### Region-gate bugs (regions.json)
 - `W1 3 Seeds`: dropped spurious `|Parachute Cap Badge|` (was gating 5 normal levels behind a badge they don't need).
@@ -27,7 +27,7 @@ This was a multi-round diff against the community-maintained logic PDF.  After a
 - `Post-Badge` requires: rewritten to model the Badge Marathon roadblock as all-seed-counts + Royal Seeds: `|W1 Wonder Seed:14| AND |W2 Wonder Seed:14| AND |W3 Wonder Seed:10| AND |W4 Wonder Seed:15| AND |W5 Wonder Seed:11| AND |W6 Wonder Seed:25| AND |Petal Isles Wonder Seed:15| AND |Special World Wonder Seed:16| AND |@Royal Seed:6|`.
 
 ### Test updates
-3 processor tests updated to reflect the new dual-emit behavior (`SECRET_EXIT` + `TOP_OF_SECRET_FLAG`).  All 411 client tests pass.
+3 processor tests updated to reflect the dual-emit behavior (`SECRET_EXIT` + `TOP_OF_FLAG` for secret-flag tops).  All 411 client tests pass.
 
 ---
 

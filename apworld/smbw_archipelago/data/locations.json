@@ -68,15 +68,6 @@
     "requires": "{OptOne(|Y Button|)} AND {OptOne(|ZL Button/Down|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Flower|)}"
   },
   {
-    "name": "W1: Piranha Plants on Parade - Top of Secret Flag",
-    "region": "W1 Start",
-    "category": [
-      "World 1",
-      "Gold Flag"
-    ],
-    "requires": "{OptOne(|Y Button|)} AND {OptOne(|ZL Button/Down|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Flower|)}"
-  },
-  {
     "name": "W1: Piranha Plants on Parade - Wonder Seed",
     "region": "W1 Start",
     "category": [
@@ -193,15 +184,6 @@
     "region": "W1 3 Seeds",
     "category": [
       "World 1"
-    ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
-  },
-  {
-    "name": "W1: Bulrush Coming Through! - Top of Secret Flag",
-    "region": "W1 3 Seeds",
-    "category": [
-      "World 1",
-      "Gold Flag"
     ],
     "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
@@ -554,15 +536,6 @@
     "region": "W1 10 Seeds",
     "category": [
       "World 1"
-    ],
-    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND |Elephant Fruit| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
-  },
-  {
-    "name": "W1: Bulrush Express - Top of Secret Flag",
-    "region": "W1 10 Seeds",
-    "category": [
-      "World 1",
-      "Gold Flag"
     ],
     "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND |Elephant Fruit| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
@@ -1202,15 +1175,6 @@
     "region": "W2 Start",
     "category": [
       "World 2"
-    ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
-  },
-  {
-    "name": "W2: Outmaway Valley - Top of Secret Flag",
-    "region": "W2 Start",
-    "category": [
-      "World 2",
-      "Gold Flag"
     ],
     "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
@@ -3098,15 +3062,6 @@
     "requires": []
   },
   {
-    "name": "W4: Secrets of Shova Mansion - Top of Secret Flag",
-    "region": "W4 Start",
-    "category": [
-      "World 4",
-      "Gold Flag"
-    ],
-    "requires": []
-  },
-  {
     "name": "W4: Secrets of Shova Mansion - Wonder Seed",
     "region": "W4 Start",
     "category": [
@@ -4519,15 +4474,6 @@
     "requires": "|Drill Mushroom|"
   },
   {
-    "name": "W6: Where the Rrrumbas Rule - Top of Secret Flag",
-    "region": "W6 Start",
-    "category": [
-      "World 6",
-      "Gold Flag"
-    ],
-    "requires": "|Drill Mushroom|"
-  },
-  {
     "name": "W6: Where the Rrrumbas Rule - Wonder Seed",
     "region": "W6 Start",
     "category": [
@@ -4731,15 +4677,6 @@
     "region": "W6 Start",
     "category": [
       "World 6"
-    ],
-    "requires": []
-  },
-  {
-    "name": "W6: Hot-Hot Hot! - Top of Secret Flag",
-    "region": "W6 Start",
-    "category": [
-      "World 6",
-      "Gold Flag"
     ],
     "requires": []
   },
