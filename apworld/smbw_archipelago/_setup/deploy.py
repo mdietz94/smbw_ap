@@ -46,25 +46,66 @@ class DeployResult:
     error: str = ""
 
 
-def detect_ryujinx_path() -> Path | None:
-    """Return `%APPDATA%/Ryujinx/` if it exists, else None.
+def _linux_ryujinx_candidates() -> list[Path]:
+    """Return the Linux Ryujinx config directories worth probing.
 
-    Matches the location Ryujinx itself defaults to on Windows. The
-    wizard's Deploy page also lets the user browse to a non-default
-    install; this function is just the auto-detect hint.
+    Order matches user expectation:
+      1. ``$XDG_CONFIG_HOME/Ryujinx`` — respects an explicit override.
+      2. ``~/.config/Ryujinx``       — Ryujinx Linux default.
+      3. ``~/.local/share/Ryujinx``  — older AppImage / portable installs.
     """
-    if sys.platform != "win32":
-        # Non-Windows: best-effort. Tests can monkeypatch.
+    candidates: list[Path] = []
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        candidates.append(Path(xdg) / "Ryujinx")
+    home = Path.home()
+    candidates.append(home / ".config" / "Ryujinx")
+    candidates.append(home / ".local" / "share" / "Ryujinx")
+    return candidates
+
+
+def ryujinx_primary_default() -> Path | None:
+    """Return the platform's primary Ryujinx config root (even if it
+    doesn't exist yet). Used when the wizard wants to *describe* the
+    deploy target before the user has installed Ryujinx.
+
+    On Windows that's ``%APPDATA%/Ryujinx``; on Linux it's
+    ``$XDG_CONFIG_HOME/Ryujinx`` if XDG_CONFIG_HOME is set, otherwise
+    ``~/.config/Ryujinx``.
+    """
+    if sys.platform == "win32":
         appdata = os.environ.get("APPDATA")
-        if appdata:
-            p = Path(appdata) / "Ryujinx"
-            return p if p.is_dir() else None
-        return None
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
-        return None
-    p = Path(appdata) / "Ryujinx"
-    return p if p.is_dir() else None
+        if not appdata:
+            return None
+        return Path(appdata) / "Ryujinx"
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    if xdg:
+        return Path(xdg) / "Ryujinx"
+    return Path.home() / ".config" / "Ryujinx"
+
+
+def detect_ryujinx_path() -> Path | None:
+    """Return the first existing Ryujinx config root, else None.
+
+    Platform-specific search order:
+      * Windows: ``%APPDATA%/Ryujinx``
+      * Linux:   ``$XDG_CONFIG_HOME/Ryujinx`` → ``~/.config/Ryujinx``
+                 → ``~/.local/share/Ryujinx``
+
+    The deploy phase writes to ``<root>/mods/contents/<TITLE_ID>/smbwap/
+    exefs/`` — Ryujinx itself uses the same layout on both platforms, so
+    once we have the root the rest is identical.
+    """
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if not appdata:
+            return None
+        p = Path(appdata) / "Ryujinx"
+        return p if p.is_dir() else None
+    for p in _linux_ryujinx_candidates():
+        if p.is_dir():
+            return p
+    return None
 
 
 def detect_sd_candidates() -> list[Path]:

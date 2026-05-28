@@ -91,7 +91,19 @@ def check_winget(on_line: ProgressFn | None = None) -> InstallResult:
     but LTSC images and stripped Win11 setups can lack it. Surface a
     single "install App Installer" error instead of N confusing
     winget-not-found errors in a row.
+
+    Non-Windows: winget doesn't exist and won't be invoked by any of
+    the cross-platform installers. The wizard's prereq detectors set
+    ``auto_installable=False`` for the winget-driven system tools on
+    Linux, so the install walker shouldn't even ask — but if it does,
+    return a clear "not applicable" result instead of a confusing
+    "winget not found".
     """
+    if sys.platform != "win32":
+        msg = "winget preflight skipped (not applicable on non-Windows)"
+        if on_line:
+            on_line(msg)
+        return InstallResult(True, 0, msg, msg)
     exe = shutil.which("winget")
     if exe is None:
         msg = (
@@ -256,8 +268,37 @@ def winget_install(
 # Per-tool installers
 # ---------------------------------------------------------------------------
 
+def _manual_install_result(
+    tool: str,
+    package_hint: str,
+    *,
+    on_line: ProgressFn | None = None,
+) -> InstallResult:
+    """Surfaced when an installer is called on a platform it can't service.
+
+    Non-Windows: the wizard's prereq detectors flip
+    ``auto_installable=False`` for winget-driven tools so the install
+    walker normally skips them. This is the safety net: if a caller
+    invokes the installer directly, return a clear "install with your
+    package manager" message instead of falling through to a winget
+    invocation that would explode with ``FileNotFoundError``.
+    """
+    msg = (
+        f"{tool} can't be auto-installed on this platform. "
+        f"Install via your distro's package manager (e.g. {package_hint}) "
+        f"and re-run the wizard."
+    )
+    if on_line:
+        on_line(f"[install] {msg}")
+    return InstallResult(False, 1, msg, msg)
+
+
 def install_git(on_line: ProgressFn | None = None) -> InstallResult:
     """winget-install Git for Windows."""
+    if sys.platform != "win32":
+        return _manual_install_result(
+            "git", "apt install git / dnf install git / pacman -S git",
+            on_line=on_line)
     r = winget_install("Git.Git", on_line=on_line)
     if not r.ok:
         return r
@@ -280,6 +321,11 @@ def install_git(on_line: ProgressFn | None = None) -> InstallResult:
 
 def install_cmake(on_line: ProgressFn | None = None) -> InstallResult:
     """winget-install Kitware CMake and prepend its install dir to PATH."""
+    if sys.platform != "win32":
+        return _manual_install_result(
+            "CMake 3.24+",
+            "apt install cmake / dnf install cmake / pacman -S cmake",
+            on_line=on_line)
     r = winget_install("Kitware.CMake", on_line=on_line)
     if not r.ok:
         return r
@@ -300,6 +346,11 @@ def install_cmake(on_line: ProgressFn | None = None) -> InstallResult:
 
 def install_ninja(on_line: ProgressFn | None = None) -> InstallResult:
     """winget-install Ninja and prepend its install dir to PATH."""
+    if sys.platform != "win32":
+        return _manual_install_result(
+            "Ninja",
+            "apt install ninja-build / dnf install ninja-build / pacman -S ninja",
+            on_line=on_line)
     r = winget_install("Ninja-build.Ninja", on_line=on_line)
     if not r.ok:
         return r
@@ -317,6 +368,11 @@ def install_ninja(on_line: ProgressFn | None = None) -> InstallResult:
 
 def install_python311(on_line: ProgressFn | None = None) -> InstallResult:
     """winget-install Python 3.11."""
+    if sys.platform != "win32":
+        return _manual_install_result(
+            "Python 3.11+",
+            "apt install python3.11 / dnf install python3.11 / pacman -S python",
+            on_line=on_line)
     r = winget_install("Python.Python.3.11", on_line=on_line)
     if not r.ok:
         return r
@@ -519,7 +575,14 @@ def install_llvm19(on_line: ProgressFn | None = None) -> InstallResult:
             on_line(msg)
 
     if sys.platform != "win32":
-        msg = "install_llvm19 is Windows-only (the pinned tarball is the MSVC build)."
+        msg = (
+            "LLVM 19.1.x can't be auto-installed on this platform "
+            "(the bundled tarball is the Windows-MSVC build). Install "
+            "via your distro's package manager — e.g. `clang-19 lld-19` "
+            "on Debian/Ubuntu via https://apt.llvm.org/, `clang` on "
+            "Arch/Fedora — or download the upstream Linux 19.1.7 build "
+            f"from {LLVM_URL.rsplit('/', 1)[0]}/, then re-run the wizard."
+        )
         emit(f"[llvm] {msg}")
         return InstallResult(False, 1, msg, msg)
 
