@@ -56,10 +56,11 @@
 >   6. [main.cpp](../switch-mod/src/program/main.cpp) NerveActivateOnce
 >      tick (~2 s cadence under normal play) replaces the iteration-5
 >      hard-coded ``pushWonderSeedOverride(99)`` smoke with: read
->      container-A hash ``0x9f5ead3c`` (live current-world index, 1..8),
->      map to bucket index (0..7), call
+>      container-A hash ``0x9f5ead3c`` (live current-world index, 1..9),
+>      map to bucket index (0..7) via ``kWorldValToBucket``, call
 >      ``probe::pushWonderSeedOverride(getWonderSeedCount(bucket))``.
->      Values outside [1, 8] preserve the game's natural state.
+>      Values outside [1, 9] or that map to bucket -1 ("Castle"=8)
+>      preserve the game's natural state.
 >
 > AP becomes the sole authority over Wonder Seed gating: any in-game
 > pickup (Wonder phase grab, flag-pole goal seed, 10-coin reward) and
@@ -70,11 +71,14 @@
 > ``kWorldValToBucket`` map in ``main.cpp``; bridge bucket layout is
 > in ``wonder_seed_table.py``).  Corrected 2026-05-26 after a live
 > bug where W2 grants landed in Petal Isles and W3 grants landed in
-> W2: the in-game world index is
-> ``1=W1, 2=Petal Isles, 3=W2, 4=W3, 5=W4, 6=W5, 7=W6, 8=Special``
-> (Petal Isles is the 2nd region, not the 7th).  AP bucket layout is
-> unchanged: ``W1..W6 = 0..5, Petal Isles = 6, Special = 7``; the
-> Switch table now does the explicit remap.
+> W2, and again 2026-05-28 after Special World seeds didn't sync
+> (Special World slot is val=9, not val=8 — slot 8 is "Castle"
+> per the .rodata internal-name table; live PlayReport confirms
+> ``world_no=9`` for Special World ``course_in``).  Current
+> in-game world index:
+> ``1=W1, 2=Petal Isles, 3=W2, 4=W3, 5=W4, 6=W5, 7=W6, 8=Castle (no AP bucket), 9=Special``.
+> AP bucket layout is unchanged: ``W1..W6 = 0..5, Petal Isles = 6,
+> Special = 7``; the Switch table now does the explicit remap.
 >
 > **Scope caveat — gate override only, not per-course storage**:
 > ``pushWonderSeedOverride`` makes gates pass for the *current world*

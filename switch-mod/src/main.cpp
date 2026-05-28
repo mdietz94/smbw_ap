@@ -625,12 +625,17 @@ HkTrampoline<unsigned long long, long, unsigned*, unsigned>
                 unsigned world_val = 0;
                 containerAReaderHook.orig(gmd, &world_val, 0x9f5ead3cu);
                 // In-game world index -> AP bucket.  In-game order is
-                // 1=W1, 2=Petal Isles, 3=W2..7=W6, 8=Special.  AP buckets
-                // are 0=W1..5=W6, 6=Petal Isles, 7=Special.
-                static constexpr signed char kWorldValToBucket[9] = {
-                    -1, 0, 6, 1, 2, 3, 4, 5, 7,
+                // 1=W1, 2=Petal Isles, 3=W2..7=W6, 8="Castle" (Bowser;
+                // not a player overworld), 9=Special.  AP buckets are
+                // 0=W1..5=W6, 6=Petal Isles, 7=Special.  Corrected
+                // 2026-05-28 from val=8 for Special after a live
+                // PlayReport showed world_no=9 on Special World course_in
+                // (matches .rodata internal-name table "Himitu"=9).
+                static constexpr signed char kWorldValToBucket[10] = {
+                    -1, 0, 6, 1, 2, 3, 4, 5, -1, 7,
                 };
-                if (world_val >= 1 && world_val <= 8) {
+                if (world_val >= 1 && world_val <= 9
+                    && kWorldValToBucket[world_val] >= 0) {
                     const unsigned bucket =
                         static_cast<unsigned>(kWorldValToBucket[world_val]);
                     const unsigned ap_count =

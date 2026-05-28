@@ -49,9 +49,12 @@ live "current world index") to a bucket index; the bridge ships the
 8-tuple via ``SetWonderSeedCountsMsg``.
 
 **Per-world routing in the Switch**: container-A hash ``0x9f5ead3c``
-holds the current world index.  Live-observed ordering (corrected
-2026-05-26 after seeing W2 grants land in Petal Isles and W3 grants
-land in W2):
+holds the current world index.  Live-observed ordering (W1..W6 and
+Petal Isles validated 2026-05-26 after seeing W2 grants land in
+Petal Isles and W3 grants land in W2; Special World validated
+2026-05-28 from a live PlayReport ``course_in`` payload showing
+``world_no=9``, matching the .rodata internal-name table
+"Himitu"=9):
 
   world_val 1 = W1 Pipe-Rock Plateau          -> bucket 0
   world_val 2 = Petal Isles (the 2nd region)  -> bucket 6
@@ -60,12 +63,15 @@ land in W2):
   world_val 5 = W4 Sunbaked Desert            -> bucket 3
   world_val 6 = W5 Fungi Mines                -> bucket 4
   world_val 7 = W6 Deep Magma Bog             -> bucket 5
-  world_val 8 = Special World                 -> bucket 7
+  world_val 8 = "Castle" (Bowser; no player overworld)
+  world_val 9 = Special World                 -> bucket 7
 
 The remap lives in ``main.cpp`` (``kWorldValToBucket``).  Earlier
 notes that said ``W2 = 2`` / ``W3 = 3`` were misreadings -- the
 player was actually in Petal Isles and W2 respectively at the time
-of those observations.
+of those observations.  Earlier notes that said ``Special = 8`` were
+extrapolations from the W1..W6 + Petal Isles span; the Special World
+slot wasn't directly observed until the 2026-05-28 capture.
 """
 
 from __future__ import annotations

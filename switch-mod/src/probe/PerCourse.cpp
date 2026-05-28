@@ -83,8 +83,14 @@ constexpr std::uint32_t kWonderSeedMirrorHashes[5] = {
 //   5           | W4           | 3
 //   6           | W5           | 4
 //   7           | W6           | 5
-//   8           | Special      | 7
-constexpr std::int8_t kWorldValToBucket[9] = {
+//   8           | "Castle"     | -1 (Bowser-related, aliased to slot 2
+//                                    per .rodata internal-name table;
+//                                    not seen on the player overworld)
+//   9           | Special      | 7 (corrected 2026-05-28 from val=8;
+//                                   evidence: live PlayReport world_no=9
+//                                   on Special World course_in + .rodata
+//                                   "Himitu"=9 in the internal name table)
+constexpr std::int8_t kWorldValToBucket[10] = {
     -1,  // 0: unused
      0,  // 1: W1
      6,  // 2: Petal Isles
@@ -93,7 +99,8 @@ constexpr std::int8_t kWorldValToBucket[9] = {
      3,  // 5: W4
      4,  // 6: W5
      5,  // 7: W6
-     7,  // 8: Special World
+    -1,  // 8: "Castle" (Bowser; not a player overworld)
+     7,  // 9: Special World
 };
 
 }  // namespace
@@ -141,9 +148,10 @@ void pushWonderSeedOverrideCurrentWorld() {
         mainBase() + kContainerAReaderOffset);
     std::uint32_t world_val = 0;
     getfn(gmd, &world_val, 0x9f5ead3c);
-    if (world_val < 1 || world_val > 8) return;
-    const std::uint32_t bucket =
-        static_cast<std::uint32_t>(kWorldValToBucket[world_val]);
+    if (world_val < 1 || world_val > 9) return;
+    const std::int8_t mapped = kWorldValToBucket[world_val];
+    if (mapped < 0) return;  // "Castle" (world_val=8) has no AP bucket.
+    const std::uint32_t bucket = static_cast<std::uint32_t>(mapped);
     const std::uint32_t ap_count = smbwap::ap::getWonderSeedCount(bucket);
     pushWonderSeedOverride(ap_count);
 }
