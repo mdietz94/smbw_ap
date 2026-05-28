@@ -556,3 +556,156 @@ def test_check_pyelftools_missing(
     assert r.ok is False
     assert r.auto_installable is True
     assert not marker.exists()
+
+
+# ---------------------------------------------------------------------------
+# Linux branch — system tools become detect-only (no winget, no
+# auto-install). Tests force `_is_windows` False so they pass on any
+# host. The reverse (forcing True) covers the Windows branch on a
+# Linux CI runner; the host-native tests above already cover Windows
+# on a Windows runner.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def force_linux(monkeypatch: pytest.MonkeyPatch):
+    """Pretend we're on Linux for the duration of the test.
+
+    Patches both `_is_windows` (the helper every detector branches on)
+    and `sys.platform` (so any deeper code that checks platform agrees).
+    """
+    monkeypatch.setattr(P, "_is_windows", lambda: False)
+    monkeypatch.setattr(P.sys, "platform", "linux")
+    return monkeypatch
+
+
+def test_check_git_missing_on_linux_is_not_auto_installable(
+    force_linux, patch_run: dict[str, Any],
+) -> None:
+    """On Linux, missing git surfaces as detect-only with package-manager
+    hints — `winget` must not appear in the note."""
+    patch_run["git"] = None
+    r = P.check_git()
+    assert r.ok is False
+    assert r.auto_installable is False
+    assert "winget" not in r.note.lower()
+    assert "apt" in r.note or "package manager" in r.note.lower()
+
+
+def test_check_git_present_on_linux_is_not_auto_installable(
+    force_linux, patch_run: dict[str, Any],
+) -> None:
+    """Even when git IS present, the row's auto_installable flag stays
+    False on Linux so the wizard doesn't surface an Auto-install button
+    that would do nothing useful."""
+    patch_run["git"] = (0, "git version 2.43.0", "")
+    r = P.check_git()
+    assert r.ok is True
+    assert r.auto_installable is False
+
+
+def test_check_cmake_missing_on_linux_skips_winget_note(
+    force_linux, patch_run: dict[str, Any],
+) -> None:
+    patch_run["cmake"] = None
+    P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
+    r = P.check_cmake()
+    assert r.ok is False
+    assert r.auto_installable is False
+    assert "winget" not in r.note.lower()
+
+
+def test_check_ninja_missing_on_linux_skips_winget_probe(
+    force_linux, monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """The _winget_ninja_paths probe must not even run on Linux; the
+    detector falls straight to `shutil.which`."""
+    def boom() -> list[Path]:
+        raise AssertionError("_winget_ninja_paths must not be called on Linux")
+    monkeypatch.setattr(P, "_winget_ninja_paths", boom)
+    patch_run["ninja"] = None
+    r = P.check_ninja()
+    assert r.ok is False
+    assert r.auto_installable is False
+    assert "winget" not in r.note.lower()
+
+
+def test_check_python311_missing_on_linux_skips_py_launcher(
+    force_linux, monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """The Windows-only `py -3.x` launcher candidates must not be probed
+    on Linux."""
+    seen: list[list[str]] = []
+
+    def recording_safe_run(cmd: list[str]) -> tuple[int, str, str] | None:
+        seen.append(cmd)
+        return None  # everything missing
+    monkeypatch.setattr(P, "_safe_run", recording_safe_run)
+    # Force sys.executable to a path that's_safe_run will return None for.
+    monkeypatch.setattr(P, "sys", P.sys)  # no-op, but keeps lints quiet
+    r = P.check_python311()
+    assert r.ok is False
+    assert r.auto_installable is False
+    assert "winget" not in r.note.lower()
+    # The `py` launcher must not appear in the probed-commands list.
+    assert not any(cmd and cmd[0] == "py" for cmd in seen), \
+        f"py launcher was probed on Linux: {seen}"
+
+
+def test_check_llvm19_missing_on_linux_skips_portable_probe(
+    force_linux, monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """On Linux, the portable + canonical Windows install probes must
+    be skipped — only the PATH probe runs."""
+    def boom() -> Path:
+        raise AssertionError("llvm_portable_root must not be called on Linux")
+    monkeypatch.setattr(P, "llvm_portable_root", boom)
+    # _LLVM_DEFAULT_PATHS still set; the gate is the platform branch,
+    # not the path set being empty.
+    patch_run["clang"] = None
+    r = P.check_llvm19()
+    assert r.ok is False
+    assert r.auto_installable is False
+    assert "winget" not in r.note.lower()
+    assert "package manager" in r.note.lower() or "apt" in r.note
+
+
+def test_check_llvm19_accepts_path_clang_on_linux(
+    force_linux, patch_run: dict[str, Any],
+) -> None:
+    """A distro `clang version 19.1.7` (or even `(Ubuntu …) clang version
+    19.1.7`) on PATH should be accepted on Linux."""
+    P._resolved_llvm_bin = None  # type: ignore[attr-defined]
+    patch_run["clang"] = (0, "Ubuntu clang version 19.1.7", "")
+    r = P.check_llvm19()
+    assert r.ok is True
+    assert "19.1.7" in r.detail
+
+
+def test_ensure_python3_shim_is_noop_on_linux(
+    force_linux, tmp_path: Path,
+) -> None:
+    """The python3.exe shim trick is Windows-only — never create a shim
+    on Linux even if asked."""
+    src = tmp_path / "python"
+    src.write_text("fake interpreter", encoding="utf-8")
+    P.ensure_python3_shim(src)
+    # No python3.exe (or python3) shim should appear next to it.
+    assert not (tmp_path / "python3.exe").exists()
+    assert not (tmp_path / "python3").exists() or (tmp_path / "python3") == src
+
+
+def test_install_urls_swap_for_linux_at_import_time() -> None:
+    """The git / python311 entries in INSTALL_URLS swap to OS-neutral
+    landing pages on non-Windows; the test platform decides which
+    entries are live."""
+    git_url = P.INSTALL_URLS["git"]
+    python_url = P.INSTALL_URLS["python311"]
+    if sys.platform == "win32":
+        assert "/download/win" in git_url
+        assert "python-3119" in python_url
+    else:
+        assert "/download/linux" in git_url
+        # The Linux URL is the generic landing page, not the 3.11.9
+        # release-specific anchor.
+        assert "release/python-3119" not in python_url

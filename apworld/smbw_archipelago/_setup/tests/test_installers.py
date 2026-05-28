@@ -457,3 +457,81 @@ def test_install_pyelftools_pip_failure_no_marker(
     r = I.install_pyelftools()
     assert r.ok is False
     assert not marker.exists()
+
+
+# ---------------------------------------------------------------------------
+# Linux branch — system-tool installers must NOT shell out to winget,
+# and check_winget must report "not applicable" rather than failing.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def force_linux(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(I.sys, "platform", "linux")
+    return monkeypatch
+
+
+def test_check_winget_on_linux_is_not_applicable(force_linux) -> None:
+    """winget preflight should return ok=True with a clear message on
+    Linux — the install walker shouldn't even ask, but a defensive call
+    must not surface a confusing "winget not found" error."""
+    r = I.check_winget(lambda _line: None)
+    assert r.ok is True
+    assert "not applicable" in r.detail.lower() or "skipped" in r.detail.lower()
+
+
+def test_install_git_on_linux_returns_manual_install_result(
+    force_linux, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """install_git must never invoke winget on Linux."""
+    def boom(*_a, **_kw):
+        raise AssertionError("winget_install must not be called on Linux")
+    monkeypatch.setattr(I, "winget_install", boom)
+    r = I.install_git()
+    assert r.ok is False
+    assert "package manager" in r.detail.lower()
+
+
+def test_install_cmake_on_linux_returns_manual_install_result(
+    force_linux, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*_a, **_kw):
+        raise AssertionError("winget_install must not be called on Linux")
+    monkeypatch.setattr(I, "winget_install", boom)
+    r = I.install_cmake()
+    assert r.ok is False
+    assert "package manager" in r.detail.lower()
+
+
+def test_install_ninja_on_linux_returns_manual_install_result(
+    force_linux, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*_a, **_kw):
+        raise AssertionError("winget_install must not be called on Linux")
+    monkeypatch.setattr(I, "winget_install", boom)
+    r = I.install_ninja()
+    assert r.ok is False
+    assert "package manager" in r.detail.lower()
+
+
+def test_install_python311_on_linux_returns_manual_install_result(
+    force_linux, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def boom(*_a, **_kw):
+        raise AssertionError("winget_install must not be called on Linux")
+    monkeypatch.setattr(I, "winget_install", boom)
+    r = I.install_python311()
+    assert r.ok is False
+    assert "package manager" in r.detail.lower()
+
+
+def test_install_llvm19_on_linux_points_at_distro_install(
+    force_linux,
+) -> None:
+    """install_llvm19 was already gated on Windows-only; the message
+    should explicitly point at the distro package / upstream Linux
+    tarball, not the bare "Windows-only" string."""
+    r = I.install_llvm19()
+    assert r.ok is False
+    low = r.detail.lower()
+    assert "package manager" in low or "apt" in low or "linux" in low

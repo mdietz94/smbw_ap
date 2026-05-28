@@ -56,7 +56,16 @@ _AP_SAMPLE_IMPORTS = ("websockets", "bsdiff4", "certifi", "kvui")
 LLVM_MAJOR = 19
 
 # Install pages surfaced by the wizard's "Install..." fallback link when
-# auto-install isn't available.
+# auto-install isn't available. The git / python311 entries swap to
+# OS-neutral landing pages on non-Windows; the rest are OS-agnostic.
+_INSTALL_URLS_WINDOWS = {
+    "git": "https://git-scm.com/download/win",
+    "python311": "https://www.python.org/downloads/release/python-3119/#files",
+}
+_INSTALL_URLS_LINUX = {
+    "git": "https://git-scm.com/download/linux",
+    "python311": "https://www.python.org/downloads/",
+}
 INSTALL_URLS = {
     "dev_mode": "ms-settings:developers",
     "git": "https://git-scm.com/download/win",
@@ -71,6 +80,21 @@ INSTALL_URLS = {
     "lz4": "",
     "pyelftools": "",
 }
+if sys.platform != "win32":
+    INSTALL_URLS.update(_INSTALL_URLS_LINUX)
+
+
+def _is_windows() -> bool:
+    """Single source of truth for the platform branch.
+
+    Windows is the primary target — winget auto-install, the LLVM-MSVC
+    tarball download, `mklink /J` junctions, and the `python3.exe`
+    shim all apply only here. Non-Windows (Linux/macOS) takes the
+    detect-only path: prereq probes still work (everything lives on
+    PATH), but auto-install for system tools is disabled because we
+    won't try to dispatch apt/pacman/brew/etc.
+    """
+    return sys.platform == "win32"
 
 
 @dataclass
@@ -329,20 +353,30 @@ def check_dev_mode() -> PrereqResult:
 def check_git() -> PrereqResult:
     r = _safe_run(["git", "--version"])
     if r is None or r[0] != 0:
-        return PrereqResult(
-            "git", "Git", False, "not found on PATH",
-            INSTALL_URLS["git"],
-            note=(
+        if _is_windows():
+            note = (
                 "Easiest install on Windows:\n"
                 "    winget install Git.Git\n"
                 "Or click Auto-install. PATH changes don't reach a running "
                 "process, so the wizard re-probes Git's winget install dir "
                 "on Re-check."
-            ),
-            auto_installable=True,
+            )
+        else:
+            note = (
+                "Install git via your distro's package manager:\n"
+                "    apt install git    (Debian/Ubuntu)\n"
+                "    dnf install git    (Fedora/RHEL)\n"
+                "    pacman -S git      (Arch)\n"
+                "Then click Re-check."
+            )
+        return PrereqResult(
+            "git", "Git", False, "not found on PATH",
+            INSTALL_URLS["git"],
+            note=note,
+            auto_installable=_is_windows(),
         )
     ver = (r[1] or r[2]).strip()
-    return PrereqResult("git", "Git", True, ver, auto_installable=True)
+    return PrereqResult("git", "Git", True, ver, auto_installable=_is_windows())
 
 
 # ---------------------------------------------------------------------------
@@ -396,9 +430,11 @@ def check_cmake() -> PrereqResult:
     global _resolved_cmake
 
     candidates: list[str] = []
-    for default in _CMAKE_DEFAULT_PATHS:
-        if default.exists():
-            candidates.append(str(default))
+    # `C:/Program Files/...` probes only apply on Windows.
+    if _is_windows():
+        for default in _CMAKE_DEFAULT_PATHS:
+            if default.exists():
+                candidates.append(str(default))
     candidates.append("cmake")
 
     saw_msys2_path_fallback = False
@@ -411,7 +447,8 @@ def check_cmake() -> PrereqResult:
             continue
         if (ver[0], ver[1]) < MIN_CMAKE:
             continue
-        if cand == "cmake":
+        # msys2's cmake mangles drive-letter paths — Windows-only concern.
+        if _is_windows() and cand == "cmake":
             resolved_path = shutil.which(cand)
             if _is_msys2_cmake(resolved_path):
                 saw_msys2_path_fallback = True
@@ -420,7 +457,7 @@ def check_cmake() -> PrereqResult:
         return PrereqResult(
             "cmake", f"CMake {MIN_CMAKE[0]}.{MIN_CMAKE[1]}+", True,
             f"{ver[0]}.{ver[1]}.{ver[2]} ({cand})",
-            auto_installable=True,
+            auto_installable=_is_windows(),
         )
 
     if saw_msys2_path_fallback:
@@ -440,16 +477,27 @@ def check_cmake() -> PrereqResult:
             ),
             auto_installable=True,
         )
+    if _is_windows():
+        note = (
+            "Easiest install on Windows:\n"
+            "    winget install Kitware.CMake\n"
+            "Or click Auto-install above."
+        )
+    else:
+        note = (
+            f"Install CMake {MIN_CMAKE[0]}.{MIN_CMAKE[1]}+ via your "
+            "distro's package manager:\n"
+            "    apt install cmake     (Debian/Ubuntu)\n"
+            "    dnf install cmake     (Fedora/RHEL)\n"
+            "    pacman -S cmake       (Arch)\n"
+            "Then click Re-check."
+        )
     return PrereqResult(
         "cmake", f"CMake {MIN_CMAKE[0]}.{MIN_CMAKE[1]}+", False,
         "not found on PATH",
         INSTALL_URLS["cmake"],
-        note=(
-            "Easiest install on Windows:\n"
-            "    winget install Kitware.CMake\n"
-            "Or click Auto-install above."
-        ),
-        auto_installable=True,
+        note=note,
+        auto_installable=_is_windows(),
     )
 
 
@@ -478,34 +526,46 @@ def _winget_ninja_paths() -> list[Path]:
 def check_ninja() -> PrereqResult:
     global _resolved_ninja_bin
 
-    for candidate in _winget_ninja_paths():
-        r = _safe_run([str(candidate), "--version"])
-        if r is None or r[0] != 0:
-            continue
-        _prepend_path(candidate.parent)
-        _resolved_ninja_bin = str(candidate.parent)
-        ver = (r[1] or r[2]).strip()
-        return PrereqResult("ninja", "Ninja", True,
-                            f"{ver} ({candidate})", auto_installable=True)
+    # The winget deterministic-install probe only applies on Windows.
+    if _is_windows():
+        for candidate in _winget_ninja_paths():
+            r = _safe_run([str(candidate), "--version"])
+            if r is None or r[0] != 0:
+                continue
+            _prepend_path(candidate.parent)
+            _resolved_ninja_bin = str(candidate.parent)
+            ver = (r[1] or r[2]).strip()
+            return PrereqResult("ninja", "Ninja", True,
+                                f"{ver} ({candidate})", auto_installable=True)
     r = _safe_run(["ninja", "--version"])
     if r is None or r[0] != 0:
-        return PrereqResult(
-            "ninja", "Ninja", False, "not found on PATH",
-            INSTALL_URLS["ninja"],
-            note=(
+        if _is_windows():
+            note = (
                 "Easiest install on Windows:\n"
                 "    winget install Ninja-build.Ninja\n"
                 "Or click Auto-install above. The wizard probes winget's "
                 "install dir directly on Re-check, so no shell restart "
                 "needed."
-            ),
-            auto_installable=True,
+            )
+        else:
+            note = (
+                "Install Ninja via your distro's package manager:\n"
+                "    apt install ninja-build   (Debian/Ubuntu)\n"
+                "    dnf install ninja-build   (Fedora/RHEL)\n"
+                "    pacman -S ninja           (Arch)\n"
+                "Then click Re-check."
+            )
+        return PrereqResult(
+            "ninja", "Ninja", False, "not found on PATH",
+            INSTALL_URLS["ninja"],
+            note=note,
+            auto_installable=_is_windows(),
         )
     resolved = shutil.which("ninja")
     if resolved:
         _resolved_ninja_bin = str(Path(resolved).parent)
     ver = (r[1] or r[2]).strip()
-    return PrereqResult("ninja", "Ninja", True, ver, auto_installable=True)
+    return PrereqResult("ninja", "Ninja", True, ver, auto_installable=_is_windows())
 
 
 # ---------------------------------------------------------------------------
@@ -546,10 +606,14 @@ def check_python311() -> PrereqResult:
     cur = sys.executable
     if cur:
         candidates.append([cur, "--version"])
+    # `py -3.x` is the Windows Python launcher; doesn't exist on Linux.
+    if _is_windows():
+        candidates += [
+            ["py", "-3.11", "--version"],
+            ["py", "-3.12", "--version"],
+            ["py", "-3.13", "--version"],
+        ]
     candidates += [
-        ["py", "-3.11", "--version"],
-        ["py", "-3.12", "--version"],
-        ["py", "-3.13", "--version"],
         ["python3.11", "--version"],
         ["python3", "--version"],
         ["python", "--version"],
@@ -573,26 +637,37 @@ def check_python311() -> PrereqResult:
         if Path(interp).is_file():
             _resolved_python_bin = interp
             _prepend_path(Path(interp).parent)
-            # Drop a `python3.exe` copy alongside so LibHakkun's bare
-            # `python3` shellouts (setup_libcxx_prepackaged.py) resolve
-            # to the same interpreter, not the Microsoft Store stub.
-            ensure_python3_shim(Path(interp))
+            # `python3.exe` shim is a Windows-only workaround — Linux
+            # already has `python3` on PATH from any standard install.
+            if _is_windows():
+                ensure_python3_shim(Path(interp))
         return PrereqResult(
             "python311", f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+", True,
             f"{ver[0]}.{ver[1]}.{ver[2]} ({cmd[0]})",
-            auto_installable=True,
+            auto_installable=_is_windows(),
+        )
+    if _is_windows():
+        note = (
+            "Easiest install on Windows:\n"
+            "    winget install Python.Python.3.11\n"
+            "Or click Auto-install. Archipelago's CommonClient + kvui "
+            f"need Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+."
+        )
+    else:
+        note = (
+            f"Install Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ via your "
+            "distro's package manager:\n"
+            "    apt install python3.11    (Debian/Ubuntu)\n"
+            "    dnf install python3.11    (Fedora/RHEL)\n"
+            "    pacman -S python          (Arch — ships current 3.x)\n"
+            "Then click Re-check."
         )
     return PrereqResult(
         "python311", f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+", False,
         f"no Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+ found",
         INSTALL_URLS["python311"],
-        note=(
-            "Easiest install on Windows:\n"
-            "    winget install Python.Python.3.11\n"
-            "Or click Auto-install. Archipelago's CommonClient + kvui "
-            f"need Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+."
-        ),
-        auto_installable=True,
+        note=note,
+        auto_installable=_is_windows(),
     )
 
 
@@ -679,67 +754,84 @@ def check_llvm19() -> PrereqResult:
     """
     global _resolved_llvm_bin
 
-    portable_clang = llvm_portable_root() / "bin" / "clang.exe"
-    if portable_clang.is_file():
-        r = _safe_run([str(portable_clang), "--version"])
-        if r and r[0] == 0:
-            ver = _parse_clang_version(r[1] or r[2])
-            if ver is not None:
-                reason = _llvm_gate_version(ver)
-                if reason is None:
-                    _resolved_llvm_bin = str(portable_clang.parent)
+    # Portable install + canonical Windows paths only apply on Windows
+    # (the auto-installer can only populate `llvm_portable_root` on
+    # Windows, and `C:/Program Files/LLVM/` is the Windows MSI path).
+    if _is_windows():
+        portable_clang = llvm_portable_root() / "bin" / "clang.exe"
+        if portable_clang.is_file():
+            r = _safe_run([str(portable_clang), "--version"])
+            if r and r[0] == 0:
+                ver = _parse_clang_version(r[1] or r[2])
+                if ver is not None:
+                    reason = _llvm_gate_version(ver)
+                    if reason is None:
+                        _resolved_llvm_bin = str(portable_clang.parent)
+                        return PrereqResult(
+                            "llvm19", "LLVM 19.1.x", True,
+                            f"{ver[0]}.{ver[1]}.{ver[2]} ({portable_clang}) [portable]",
+                            auto_installable=True,
+                        )
                     return PrereqResult(
-                        "llvm19", "LLVM 19.1.x", True,
-                        f"{ver[0]}.{ver[1]}.{ver[2]} ({portable_clang}) [portable]",
+                        "llvm19", "LLVM 19.1.x", False,
+                        f"portable install at {portable_clang.parent} has wrong "
+                        f"version: {reason}",
+                        INSTALL_URLS["llvm19"],
+                        note=(
+                            "Delete %LOCALAPPDATA%\\SMBWArchipelago\\llvm\\ "
+                            "and click Auto-install to re-fetch LLVM 19.1.7."
+                        ),
                         auto_installable=True,
                     )
-                return PrereqResult(
-                    "llvm19", "LLVM 19.1.x", False,
-                    f"portable install at {portable_clang.parent} has wrong "
-                    f"version: {reason}",
-                    INSTALL_URLS["llvm19"],
-                    note=(
-                        "Delete %LOCALAPPDATA%\\SMBWArchipelago\\llvm\\ "
-                        "and click Auto-install to re-fetch LLVM 19.1.7."
-                    ),
-                    auto_installable=True,
-                )
 
-    # Canonical official-installer paths. We only accept a 19.1.x match
-    # here — a wrong-version system install is NOT a hard failure (the
-    # PATH fallback below or a portable install can still succeed).
-    for default_clang in _LLVM_DEFAULT_PATHS:
-        if not default_clang.is_file():
-            continue
-        r = _safe_run([str(default_clang), "--version"])
-        if r is None or r[0] != 0:
-            continue
-        ver = _parse_clang_version(r[1] or r[2])
-        if ver is None:
-            continue
-        if _llvm_gate_version(ver) is not None:
-            continue
-        _resolved_llvm_bin = str(default_clang.parent)
-        return PrereqResult(
-            "llvm19", "LLVM 19.1.x", True,
-            f"{ver[0]}.{ver[1]}.{ver[2]} ({default_clang})",
-            auto_installable=True,
-        )
+        # Canonical official-installer paths. We only accept a 19.1.x match
+        # here — a wrong-version system install is NOT a hard failure (the
+        # PATH fallback below or a portable install can still succeed).
+        for default_clang in _LLVM_DEFAULT_PATHS:
+            if not default_clang.is_file():
+                continue
+            r = _safe_run([str(default_clang), "--version"])
+            if r is None or r[0] != 0:
+                continue
+            ver = _parse_clang_version(r[1] or r[2])
+            if ver is None:
+                continue
+            if _llvm_gate_version(ver) is not None:
+                continue
+            _resolved_llvm_bin = str(default_clang.parent)
+            return PrereqResult(
+                "llvm19", "LLVM 19.1.x", True,
+                f"{ver[0]}.{ver[1]}.{ver[2]} ({default_clang})",
+                auto_installable=True,
+            )
 
     r = _safe_run(["clang", "--version"])
     if r is None or r[0] != 0:
-        return PrereqResult(
-            "llvm19", "LLVM 19.1.x", False,
-            "not found (LibHakkun's toolchain.cmake hardcodes clang/clang++)",
-            INSTALL_URLS["llvm19"],
-            note=(
+        if _is_windows():
+            note = (
                 "Click Auto-install to download LLVM 19.1.7 (~806 MB, "
                 "~3.3 GB on disk) into "
                 "%LOCALAPPDATA%\\SMBWArchipelago\\llvm\\. Your system "
                 "LLVM (if any) stays untouched — the wizard scopes its "
                 "PATH prepend to the build subprocess."
-            ),
-            auto_installable=True,
+            )
+        else:
+            note = (
+                "Install LLVM 19.1.x via your distro's package manager:\n"
+                "    apt install clang-19 lld-19   (Debian/Ubuntu — see https://apt.llvm.org/)\n"
+                "    dnf install clang             (Fedora — verify version is 19.1.x)\n"
+                "    pacman -S clang lld           (Arch — current is 19.x)\n"
+                "Or download the upstream Linux build from:\n"
+                "    https://github.com/llvm/llvm-project/releases/tag/llvmorg-19.1.7\n"
+                "LibHakkun's toolchain.cmake hardcodes `clang`/`clang++`; "
+                "ensure they're on PATH and report 19.1.x."
+            )
+        return PrereqResult(
+            "llvm19", "LLVM 19.1.x", False,
+            "not found (LibHakkun's toolchain.cmake hardcodes clang/clang++)",
+            INSTALL_URLS["llvm19"],
+            note=note,
+            auto_installable=_is_windows(),
         )
     ver = _parse_clang_version(r[1] or r[2])
     if ver is None:
@@ -747,20 +839,30 @@ def check_llvm19() -> PrereqResult:
             "llvm19", "LLVM 19.1.x", False,
             "found on PATH but couldn't parse `clang --version` output",
             INSTALL_URLS["llvm19"],
-            auto_installable=True,
+            auto_installable=_is_windows(),
         )
     reason = _llvm_gate_version(ver)
     if reason is not None:
+        if _is_windows():
+            note = (
+                "Your system-installed LLVM stays untouched. Click "
+                "Auto-install to add a parallel LLVM 19.1.7 under "
+                "%LOCALAPPDATA%\\SMBWArchipelago\\llvm\\."
+            )
+        else:
+            note = (
+                "Install a 19.1.x build via your distro's package "
+                "manager (apt/dnf/pacman) — e.g. `clang-19` on "
+                "Debian/Ubuntu (https://apt.llvm.org/) — or download "
+                "the upstream Linux 19.1.7 tarball, and put its bin/ "
+                "dir ahead of your current clang on PATH."
+            )
         return PrereqResult(
             "llvm19", "LLVM 19.1.x", False,
             f"PATH has LLVM {ver[0]}.{ver[1]}.{ver[2]} — {reason}",
             INSTALL_URLS["llvm19"],
-            note=(
-                "Your system-installed LLVM stays untouched. Click "
-                "Auto-install to add a parallel LLVM 19.1.7 under "
-                "%LOCALAPPDATA%\\SMBWArchipelago\\llvm\\."
-            ),
-            auto_installable=True,
+            note=note,
+            auto_installable=_is_windows(),
         )
     path_clang = shutil.which("clang")
     if path_clang:
@@ -768,7 +870,7 @@ def check_llvm19() -> PrereqResult:
     return PrereqResult(
         "llvm19", "LLVM 19.1.x", True,
         f"{ver[0]}.{ver[1]}.{ver[2]} (PATH)",
-        auto_installable=True,
+        auto_installable=_is_windows(),
     )
 
 
@@ -786,7 +888,13 @@ def ensure_python3_shim(python_exe: Path) -> None:
 
     Copy (not symlink) because Windows symlinks need admin or Dev Mode.
     Idempotent: skips if ``python3.exe`` already exists.
+
+    No-op on non-Windows: Linux/macOS Python installs already provide
+    `python3` on PATH from the package itself; there is no Store-stub
+    to shadow it.
     """
+    if not _is_windows():
+        return
     if not python_exe.is_file():
         return
     shim = python_exe.with_name("python3.exe")
@@ -1122,35 +1230,45 @@ def check_pyelftools() -> PrereqResult:
 # ---------------------------------------------------------------------------
 # Ryujinx — emulator install detection. Warn-only: the user may install
 # Ryujinx after running /setup, and the deploy phase can recover by
-# creating the mod dir tree under %APPDATA%\Ryujinx\.
+# creating the mod dir tree under the platform's default Ryujinx root.
 # ---------------------------------------------------------------------------
 
 def ryujinx_default_root() -> Path | None:
-    appdata = os.environ.get("APPDATA")
-    if not appdata:
-        return None
-    return Path(appdata) / "Ryujinx"
+    """Return the first existing Ryujinx config root for this platform,
+    or the platform's primary default if none exist yet.
+
+    Delegates to `deploy.detect_ryujinx_path()` for the actual probing
+    so this and the deploy phase agree on which directory to target.
+    """
+    # Local import: deploy.py imports prereqs symbols, so avoid the
+    # module-level cycle.
+    from .deploy import detect_ryujinx_path, ryujinx_primary_default
+    found = detect_ryujinx_path()
+    if found is not None:
+        return found
+    return ryujinx_primary_default()
 
 
 def check_ryujinx() -> PrereqResult:
     root = ryujinx_default_root()
     if root is None:
-        return PrereqResult("ryujinx", "Ryujinx", True, "skipped (no APPDATA)",
+        return PrereqResult("ryujinx", "Ryujinx", True,
+                            "skipped (no platform default known)",
                             warn_only=True)
     if root.is_dir():
         return PrereqResult(
             "ryujinx", "Ryujinx", True,
-            f"%APPDATA%\\Ryujinx detected ({root})",
+            f"Ryujinx config detected ({root})",
         )
     return PrereqResult(
         "ryujinx", "Ryujinx", False,
         f"no Ryujinx config at {root} (deploy will create mod dir)",
         INSTALL_URLS["ryujinx"],
         note=(
-            "Ryujinx isn't strictly required for the build, but Deploy "
-            "targets %APPDATA%\\Ryujinx\\mods\\contents\\010015100b514000\\"
-            "smbwap\\exefs by default. If you install Ryujinx later, "
-            "/setup's Deploy step will create the directory tree."
+            f"Ryujinx isn't strictly required for the build, but Deploy "
+            f"targets {root}/mods/contents/010015100b514000/smbwap/exefs "
+            f"by default. If you install Ryujinx later, /setup's Deploy "
+            f"step will create the directory tree."
         ),
         warn_only=True,
     )

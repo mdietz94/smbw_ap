@@ -99,10 +99,18 @@ Ryujinx with the SMBW mod.
 ## Daily dev loop
 
 Prereqs (drive these via `/setup` from SMBW Client for a guided install):
-LLVM 19.1.x (clang on PATH), CMake 3.24+, Ninja, Python 3.11+ with a
-`python3.exe` shim alongside (LibHakkun's `toolchain.cmake` shells out
-to bare `python3` for `setup_libcxx_prepackaged.py`). devkitPro is **not**
+LLVM 19.1.x (clang on PATH), CMake 3.24+, Ninja, Python 3.11+. On
+Windows the wizard also drops a `python3.exe` shim alongside the
+interpreter because LibHakkun's `toolchain.cmake` shells out to bare
+`python3` for `setup_libcxx_prepackaged.py`; on Linux/macOS that's a
+no-op since `python3` is the default name there. devkitPro is **not**
 used anywhere — hakkun's toolchain hardcodes clang/clang++.
+
+The wizard auto-installs the system tools on Windows (via winget + a
+pinned LLVM 19.1.7 download). On Linux it prints the missing
+dependencies and leaves install to the user's package manager
+(`apt`/`dnf`/`pacman`/etc.); the `pip` and `git submodule` install
+steps still run automatically.
 
 PowerShell. Build + deploy:
 
@@ -139,6 +147,35 @@ Get-Content -Wait $latest.FullName | Select-String '\[smbwap'
 ```
 
 Our log lines are prefixed `[smbwap inf]` / `[smbwap dbg]`. Ryujinx writes them with embedded NUL bytes; offline parsing wants `tr -d '\0'` first.
+
+### Linux equivalent
+
+Same toolchain, different paths. Bash. Build + deploy:
+
+```bash
+cmake --build "$HOME/smwonder_archipelago/switch-mod/build"
+
+dst="${XDG_CONFIG_HOME:-$HOME/.config}/Ryujinx/mods/contents/010015100b514000/smbwap/exefs"
+mkdir -p "$dst"
+cp "$HOME/smwonder_archipelago/switch-mod/build/subsdk9"      "$dst/"
+cp "$HOME/smwonder_archipelago/switch-mod/build/subsdk9.npdm" "$dst/main.npdm"
+```
+
+First-time configure:
+
+```bash
+cmake \
+    -S "$HOME/smwonder_archipelago/switch-mod" \
+    -B "$HOME/smwonder_archipelago/switch-mod/build" \
+    -G Ninja
+```
+
+Tail the live game log:
+
+```bash
+ls -t "$HOME/.config/Ryujinx/Logs/Ryujinx_"*.log | head -1 |
+    xargs -I{} tail -F {} | tr -d '\0' | grep '\[smbwap'
+```
 
 ## Game artifacts
 

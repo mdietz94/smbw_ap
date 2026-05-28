@@ -29,12 +29,17 @@ from __future__ import annotations
 
 import json
 import logging
+import sys
 import threading
 from pathlib import Path
 from typing import Any
 
 from . import appdata_root, setup_state_path
-from .deploy import detect_ryujinx_path, detect_sd_candidates
+from .deploy import (
+    detect_ryujinx_path,
+    detect_sd_candidates,
+    ryujinx_primary_default,
+)
 from .wizard_cli import (
     ALL_PHASES, PipelineOptions, run_pipeline,
 )
@@ -197,7 +202,11 @@ def run_setup_wizard() -> bool:
     # card (Atmosphere layout); custom defaults to empty.
     def _default_deploy_path(target: str) -> str:
         if target == "ryujinx":
-            p = detect_ryujinx_path()
+            # Prefer the existing install location; fall back to the
+            # platform default so the user always sees where deploy
+            # *would* write (the grayed-out field would otherwise be
+            # blank if Ryujinx isn't installed yet).
+            p = detect_ryujinx_path() or ryujinx_primary_default()
             return str(p) if p is not None else ""
         if target == "sd":
             sds = detect_sd_candidates()
@@ -243,17 +252,24 @@ def run_setup_wizard() -> bool:
                 state["auto_install"] = bool(value)
             ai_cb.bind(active=_ai_change)
             ai_row.add_widget(ai_cb)
+            ai_label = (
+                "Auto-install missing prerequisites (winget + LLVM 19 + git submodules)"
+                if sys.platform == "win32"
+                else "Auto-install missing prerequisites (git submodules + pip deps; system tools shown for manual install)"
+            )
             ai_row.add_widget(Label(
-                text="Auto-install missing prerequisites (winget + LLVM 19 + git submodules)",
+                text=ai_label,
                 halign="left", valign="middle",
             ))
             opts.add_widget(ai_row)
 
-            # Deploy target selector: dropdown + path field side-by-side.
-            # The path field's editability follows the dropdown -- Ryujinx
-            # defaults to auto-detected %APPDATA%\Ryujinx (editable in case
-            # the user has a non-default install), SD/Custom require an
-            # explicit path, None disables the field entirely.
+            # Deploy target selector: dropdown + path field + Browse
+            # side-by-side. The path field is grayed out unless the
+            # target is "Custom folder" -- Ryujinx and SD show the
+            # auto-detected path read-only so the user can see what
+            # the deploy step will use, but accidental keystrokes
+            # can't push them off the canonical path. Only "Custom"
+            # unlocks both the text field and the Browse button.
             deploy_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=36, spacing=8)
             deploy_row.add_widget(Label(
                 text="Deploy target:", halign="left", valign="middle",
@@ -269,26 +285,60 @@ def run_setup_wizard() -> bool:
                 multiline=False,
                 size_hint_x=1,
             )
+            browse_btn = Button(text="Browse...", size_hint_x=None, width=110)
+
+            def _apply_path_editability() -> None:
+                """Sync the path field + Browse button enabled-state to
+                the currently selected deploy target."""
+                editable = state["deploy_target"] == "custom"
+                self.deploy_path_input.disabled = not editable
+                browse_btn.disabled = not editable
+
             def _deploy_target_change(_inst, value):
                 key = _DEPLOY_KEYS.get(value, "none")
                 state["deploy_target"] = key
-                # Reset the path field to the new target's default. The
-                # user can still edit it afterward -- this is just a
-                # convenience nudge so switching Ryujinx -> SD doesn't
-                # leave a stale Ryujinx path in the box.
+                # Reset the path field to the new target's default
+                # so switching Ryujinx -> SD doesn't leave a stale
+                # path in the box. Custom preserves whatever the user
+                # last typed / browsed to (via setup_state.json).
                 new_default = _default_deploy_path(key)
                 self.deploy_path_input.text = new_default
                 state["deploy_path"] = new_default
-                # "None" target has no meaningful path; lock the field so
-                # an accidental keystroke can't surface as a confusing
-                # "deploy-path supplied but target=none" warning later.
-                self.deploy_path_input.disabled = (key == "none")
+                _apply_path_editability()
             spinner.bind(text=_deploy_target_change)
             self.deploy_path_input.bind(
                 text=lambda _i, v: state.update(deploy_path=v))
-            self.deploy_path_input.disabled = (state["deploy_target"] == "none")
+
+            def _open_folder_picker(_btn) -> None:
+                """Tk's askdirectory is the cleanest cross-platform folder
+                picker -- Kivy's FileChooserListView is file-oriented and
+                awkward for picking dirs. Tk is stdlib so no extra dep.
+                Mirrors the smo_archipelago wizard pattern."""
+                try:
+                    import tkinter
+                    import tkinter.filedialog
+                    tkroot = tkinter.Tk()
+                    tkroot.withdraw()
+                    # Always-on-top so it isn't hidden behind the Kivy window.
+                    tkroot.attributes("-topmost", True)
+                    initial = self.deploy_path_input.text or ""
+                    chosen = tkinter.filedialog.askdirectory(
+                        title="Select custom deploy folder",
+                        parent=tkroot,
+                        initialdir=initial if initial else None,
+                    )
+                    tkroot.destroy()
+                    if chosen:
+                        self.deploy_path_input.text = chosen
+                        state["deploy_path"] = chosen
+                except Exception as e:
+                    self._log(f"folder picker failed: {e!r}")
+            browse_btn.bind(on_release=_open_folder_picker)
+
+            _apply_path_editability()
             deploy_row.add_widget(spinner)
             deploy_row.add_widget(self.deploy_path_input)
+            deploy_row.add_widget(browse_btn)
             opts.add_widget(deploy_row)
 
             # Per-target hint line so the user knows what they're committing

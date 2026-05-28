@@ -268,9 +268,11 @@ def install_junction(
             f"created junction: {target} -> {source}",
         )
 
-    # POSIX fallback — symlink. Production users are on Windows; this
-    # branch exists so the test suite can roundtrip junction creation
-    # in CI without a Windows runner.
+    # POSIX symlink — the production path on Linux/macOS, and also
+    # what the test suite uses to roundtrip junction creation in CI
+    # without a Windows runner. AP Launcher resolves symlinked
+    # ``custom_worlds/`` entries identically to junctions, so the
+    # downstream code path is unchanged.
     try:
         os.symlink(source, target, target_is_directory=True)
     except OSError as e:
