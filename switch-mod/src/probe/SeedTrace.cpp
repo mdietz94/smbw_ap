@@ -187,10 +187,10 @@ HkTrampoline<std::uint64_t, void*, std::uint8_t*, std::uint32_t,
                 perCourseBitReaderHook.orig(gmd, out_bit, hash, bit_index);
             probe::dumpSeedPersistenceMapOnce();
             sampleContainerDQueue("D_read");
-            // triggerSeedPersistWriteTestOnce() intentionally NOT called:
-            // the write-test confirmed container-D writes persist + flow
-            // into the count (W1 16->19), so it has served its purpose and
-            // is disabled to stop modifying the save on every boot.
+            // DIRECT-write test (gmd+0x800, bypasses the cap=2 deferred
+            // queue).  One-shot; writes W6 data[0]=0x7 to verify direct
+            // writes land + read back + persist + target a non-current world.
+            probe::triggerSeedPersistWriteTestOnce();
             const bool is_target =
                 (hash == kWonderSeedBitfieldHash)
                 || (hash == kPerCourseStateHash);
@@ -469,6 +469,70 @@ void dumpSeedPersistenceMapOnce() {
     }
 }
 
+// Direct accessor for the LIVE container-D data array at gmd+0x800 (the
+// primary container FUN_71000e258c reads; gmd+0x788 is the cap=2 deferred
+// queue we deliberately bypass).  Mirrors findContainerCData but at the
+// container-D offsets:
+//   bucket = *(gmd+0x800)   bucket_count = *(gmd+0x80c)
+//   objs   = *(gmd+0x7f8)   obj_limit    = *(gmd+0x7f0)
+//   typed_obj = objs + idx*0x40;  element_count = *(typed_obj+0x20);
+//   data (u32[]) = *(typed_obj+0x28)
+// Holds ALL worlds' per-course bitmasks keyed by per-world hash, so writes
+// here can target any world.  Returns the data pointer + element count, or
+// nullptr if the hash isn't registered / gmd looks uninitialized.
+std::uint32_t* findContainerDData(void* gmd_v, std::uint32_t hash,
+                                  std::uint32_t* out_count) {
+    auto* gmd = reinterpret_cast<unsigned char*>(gmd_v);
+    if (gmd == nullptr) return nullptr;
+    auto d8 = [&](std::size_t o) {
+        return *reinterpret_cast<std::uintptr_t*>(gmd + o);
+    };
+    auto d4 = [&](std::size_t o) {
+        return *reinterpret_cast<std::uint32_t*>(gmd + o);
+    };
+    const std::uintptr_t bucket = d8(0x800);
+    const std::uint32_t bucket_count = d4(0x80c);
+    const std::uint32_t obj_limit = d4(0x7f0);
+    const std::uintptr_t objs = d8(0x7f8);
+    if (bucket == 0 || bucket_count == 0 || bucket_count > 4096 ||
+        objs == 0 || obj_limit > 4096) {
+        return nullptr;
+    }
+    std::uint32_t initial = hash % bucket_count;
+    std::uint32_t cur = initial;
+    do {
+        const std::uintptr_t entry = bucket + static_cast<std::uintptr_t>(cur) * 8;
+        const std::uint32_t key = *reinterpret_cast<std::uint32_t*>(entry);
+        if (key == hash) {
+            std::uint32_t idx = *reinterpret_cast<std::uint32_t*>(entry + 4);
+            if (idx >= obj_limit) idx = 0;
+            const std::uintptr_t obj =
+                objs + static_cast<std::uintptr_t>(idx) * 0x40;
+            if (out_count != nullptr) {
+                *out_count = *reinterpret_cast<std::uint32_t*>(obj + 0x20);
+            }
+            return *reinterpret_cast<std::uint32_t**>(obj + 0x28);
+        }
+        if (key == 0) return nullptr;
+        cur = (cur + 1) % bucket_count;
+    } while (cur != initial);
+    return nullptr;
+}
+
+// Direct overwrite of container-D[hash][index] = value (no deferred queue,
+// no Abort risk).  Bounds-checked against the typed object's element count.
+bool setContainerDWordDirect(std::uint32_t hash, std::uint32_t index,
+                             std::uint32_t value) {
+    void* gmd = probe::gmdSingleton();
+    if (gmd == nullptr) return false;
+    std::uint32_t count = 0;
+    std::uint32_t* data = findContainerDData(gmd, hash, &count);
+    if (data == nullptr) return false;
+    if (index >= count) return false;  // OOB guard
+    data[index] = value;
+    return true;
+}
+
 void triggerSeedPersistWriteTestOnce() {
     static std::atomic<bool> s_done{false};
     bool expected = false;
@@ -482,36 +546,36 @@ void triggerSeedPersistWriteTestOnce() {
         return;
     }
 
-    using DWriteFn =
-        void (*)(void*, std::uint32_t, std::uint32_t, std::uint32_t);
     using DReadFn =
         std::uint32_t (*)(void*, std::uint32_t*, std::uint32_t, std::uint32_t);
-    const auto dwrite =
-        reinterpret_cast<DWriteFn>(probe::mainBase() + 0x001F2B354);
     const auto dread =
         reinterpret_cast<DReadFn>(probe::mainBase() + 0x000e258c);
 
-    // W6 regular-seed-bitmask hash (per-world descriptor table; W6 == 0 in
-    // the loaded save, so any nonzero here is unambiguously ours).
+    // W6 regular-seed-bitmask hash; W6 == 0 in the loaded save, so any
+    // nonzero here is unambiguously ours.  W6 is NOT the current world (we
+    // load into W1) -- this also tests cross-world targeting via gmd+0x800.
     constexpr std::uint32_t kW6Reg = 0x2542d582u;
 
+    std::uint32_t count = 0;
+    std::uint32_t* data = findContainerDData(gmd, kW6Reg, &count);
     SMBWAP_LOG_INFO(
-        "[seed-persist] WRITE TEST: writing W6 reg[0]=0x7 reg[1]=0x7 "
-        "(hash=0x%08x) -- expect W6 count==6 on entry. *** SAVE WILL BE "
-        "MODIFIED IF YOU SAVE -- back up game_data.sav ***",
-        kW6Reg);
+        "[seed-persist] DIRECT WRITE TEST: W6 reg hash=0x%08x data=%p "
+        "element_count=%u -- writing data[0]=0x7. *** SAVE MODIFIED IF YOU "
+        "SAVE -- back up game_data.sav ***",
+        kW6Reg, data, count);
 
-    dwrite(gmd, 0x7u, kW6Reg, 0);
-    dwrite(gmd, 0x7u, kW6Reg, 1);
+    const bool ok = setContainerDWordDirect(kW6Reg, 0, 0x7u);
 
-    std::uint32_t r0 = 0, r1 = 0;
-    const std::uint32_t rc0 = dread(gmd, &r0, kW6Reg, 0) & 1u;
-    const std::uint32_t rc1 = dread(gmd, &r1, kW6Reg, 1) & 1u;
+    // Read back via BOTH the raw data pointer (immediate) and the game's
+    // reader FUN_71000e258c (should now agree -- no flush delay since this
+    // is a direct write to the live container).
+    std::uint32_t raw = (data != nullptr) ? data[0] : 0xffffffffu;
+    std::uint32_t via_reader = 0;
+    const std::uint32_t rc = dread(gmd, &via_reader, kW6Reg, 0) & 1u;
     SMBWAP_LOG_INFO(
-        "[seed-persist] WRITE TEST read-back: reg[0]=0x%08x(rc=%u) "
-        "reg[1]=0x%08x(rc=%u)  (want 0x7/0x7; live total pop=%d)",
-        r0, rc0, r1, rc1,
-        __builtin_popcount(r0) + __builtin_popcount(r1));
+        "[seed-persist] DIRECT WRITE TEST read-back: ok=%d  raw data[0]=0x%08x"
+        "  reader[0]=0x%08x(rc=%u)  (want 0x7/0x7)",
+        ok ? 1 : 0, raw, via_reader, rc);
 }
 
 void dumpGmdSubstructsOnce(const char* via) {
