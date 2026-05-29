@@ -499,7 +499,7 @@ The plan document the project started from: `C:\Users\maxwe\.claude\plans\rustli
 
 ## Build + deploy (the daily dev loop)
 
-Prereqs: LLVM 19.1.x (clang on PATH), CMake 3.24+, Ninja, Python 3.11+
+Prereqs: LLVM 19.1.x (clang on PATH), CMake 3.16+, Ninja, Python 3.11+
 with a `python3.exe` shim alongside (LibHakkun's `toolchain.cmake`
 shells out to bare `python3` for `setup_libcxx_prepackaged.py`). The
 wizard at `/setup` installs all of this. devkitPro is not used.

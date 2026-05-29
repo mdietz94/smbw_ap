@@ -34,11 +34,12 @@ from . import local_appdata_root
 # No-op on non-Windows.
 _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-# Hard min for cmake — LibHakkun's CMake (switch-mod/sys/cmake/) uses
-# features that landed in 3.24 (CMP0135, modern FetchContent semantics).
-# Kitware's Windows CMake is required; msys2's cmake mangles drive letters
-# and is rejected below.
-MIN_CMAKE = (3, 24)
+# Hard min for cmake — matches the floor declared by `cmake_minimum_required`
+# across the build. The outer switch-mod/CMakeLists.txt and all LibHakkun
+# addon CMakeLists.txt sit at 3.16; nothing in the tree uses CMP0135 or
+# FetchContent that would push the bar higher. Kitware's Windows CMake is
+# required; msys2's cmake mangles drive letters and is rejected below.
+MIN_CMAKE = (3, 16)
 
 # AP's CommonClient + kvui require Python 3.10+. We aim higher for headroom
 # and to match the AP launcher's bundled interpreter.
@@ -438,14 +439,21 @@ def check_cmake() -> PrereqResult:
     candidates.append("cmake")
 
     saw_msys2_path_fallback = False
+    too_old_version: tuple[int, int, int] | None = None
+    too_old_path: str | None = None
+    saw_unparseable = False
     for cand in candidates:
         r = _safe_run([cand, "--version"])
         if r is None or r[0] != 0:
             continue
         ver = _parse_cmake_version(r[1] or r[2])
         if ver is None:
+            saw_unparseable = True
             continue
         if (ver[0], ver[1]) < MIN_CMAKE:
+            if too_old_version is None or ver > too_old_version:
+                too_old_version = ver
+                too_old_path = shutil.which(cand) or cand
             continue
         # msys2's cmake mangles drive-letter paths — Windows-only concern.
         if _is_windows() and cand == "cmake":
@@ -492,9 +500,20 @@ def check_cmake() -> PrereqResult:
             "    pacman -S cmake       (Arch)\n"
             "Then click Re-check."
         )
+    if too_old_version is not None:
+        v = ".".join(str(p) for p in too_old_version)
+        where = f" ({too_old_path})" if too_old_path else ""
+        detail = (
+            f"CMake {v} found{where} but too old — "
+            f"{MIN_CMAKE[0]}.{MIN_CMAKE[1]}+ required"
+        )
+    elif saw_unparseable:
+        detail = "cmake found but `--version` output couldn't be parsed"
+    else:
+        detail = "not found on PATH"
     return PrereqResult(
         "cmake", f"CMake {MIN_CMAKE[0]}.{MIN_CMAKE[1]}+", False,
-        "not found on PATH",
+        detail,
         INSTALL_URLS["cmake"],
         note=note,
         auto_installable=_is_windows(),

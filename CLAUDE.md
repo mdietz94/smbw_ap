@@ -99,7 +99,7 @@ Ryujinx with the SMBW mod.
 ## Daily dev loop
 
 Prereqs (drive these via `/setup` from SMBW Client for a guided install):
-LLVM 19.1.x (clang on PATH), CMake 3.24+, Ninja, Python 3.11+. On
+LLVM 19.1.x (clang on PATH), CMake 3.16+, Ninja, Python 3.11+. On
 Windows the wizard also drops a `python3.exe` shim alongside the
 interpreter because LibHakkun's `toolchain.cmake` shells out to bare
 `python3` for `setup_libcxx_prepackaged.py`; on Linux/macOS that's a
