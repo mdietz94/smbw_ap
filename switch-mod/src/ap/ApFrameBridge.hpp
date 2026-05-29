@@ -171,12 +171,19 @@ bool setContainerCBit(std::uint32_t hash, std::uint32_t bit_index, bool value);
 // rebuilds (0x3632e88 = sub-singleton, 0x363f0f0 = gmd::sInstance).
 bool dumpSaveField(std::uint32_t base_nso_offset, std::uint32_t field_offset);
 
-// M3.8 -- inbound DeathLink apply.  Writes 0 to the latched live_base +
-// 0x1C (HP byte) and sets the synthetic_death_this_frame loop-guard so
-// the outbound DEATH_DETECTED echo gets suppressed in main.cpp's nerve
-// callback.  Returns false if live_base hasn't been latched yet (the
-// inline LiveBaseLatch hook on a cheat-anchor writer captures it).
+// M3.8 -- inbound DeathLink apply.  Writes 0 to the HP int16 at
+// live_base + 0x38 and arms the synthetic-death loop guard so the
+// outbound DEATH_DETECTED echo gets suppressed in main.cpp's nerve
+// callback.  Returns false if the player isn't currently in a killable
+// state (live_base unset or stale -- menu / world-map / scene teardown);
+// the caller should then arm requestPendingDeathLink() to retry.
 bool synthKill();
+
+// M3.8 -- queue an inbound DeathLink for retry.  Call when synthKill()
+// returned false: serviceDeathLink (per-frame player-tick hook) fires the
+// synthetic kill on the next killable frame, or expires the request after
+// ~30 s.  Avoids dropping deaths that arrive while in a menu / transition.
+void requestPendingDeathLink();
 
 // M4.5 save-loaded gate.  drainInbound checks this before applying any
 // grant -- pre-save-select the gmd singleton points at title-screen

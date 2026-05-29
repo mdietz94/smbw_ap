@@ -242,10 +242,41 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
                             static_cast<unsigned>(s_fires));
                     }
                 }
-                // Other state_words (controlled exit / Wonder-Seed
-                // cleanup / etc) intentionally drop without log to
-                // avoid flooding -- the scene-transition gate still
-                // engages because we latched the tick above.
+                else {
+                    // Other state_words (controlled exit / Wonder-Seed
+                    // cleanup / world-map travel / etc) are dropped --
+                    // the scene-transition gate still engaged via the
+                    // latch above.  But the death whitelist is a SINGLE
+                    // value, so a death variant with a different
+                    // discriminator (lava / crush / drown / time-up?)
+                    // would silently never reach AP.  Log each DISTINCT
+                    // unmatched value once at DEBUG (off by default) so we
+                    // can spot a missing death type without per-fire spam.
+                    constexpr unsigned kStateSeenSlots = 24;
+                    static std::atomic<unsigned long long>
+                        s_state_seen[kStateSeenSlots] = {};
+                    static std::atomic<unsigned> s_state_seen_count{0};
+                    bool seen = false;
+                    const unsigned cnt =
+                        s_state_seen_count.load(std::memory_order_acquire);
+                    for (unsigned i = 0; i < cnt && i < kStateSeenSlots; ++i) {
+                        if (s_state_seen[i].load(std::memory_order_relaxed)
+                            == state_word) { seen = true; break; }
+                    }
+                    if (!seen) {
+                        const unsigned slot = s_state_seen_count.fetch_add(
+                            1, std::memory_order_acq_rel);
+                        if (slot < kStateSeenSlots) {
+                            s_state_seen[slot].store(
+                                state_word, std::memory_order_release);
+                            SMBWAP_LOG_DEBUG(
+                                "SCENE_TRANSITION_STATE (non-death) "
+                                "state=0x%016llx (fire #%d)",
+                                static_cast<unsigned long long>(state_word),
+                                s_fires);
+                        }
+                    }
+                }
             }
         }
 
@@ -279,13 +310,15 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 // though hakkun's / exlaunch's relocator nominally handle cbz/b.le.
 // Function-entry trampoline avoids the relocator entirely.
 //
-// First non-null walk captures the HP-bearing struct so probe::synthKill
-// can write HP=0 on inbound DeathLink.  Once latched, subsequent calls
-// short-circuit on an atomic load.  See probe/DeathLink.cpp for the
-// dereference chain (replicates the game's own walk at +0x2743A0).
+// Every frame we re-walk to the HP-bearing struct and refresh
+// probe::g_live_base (the struct is re-allocated per scene, so a one-time
+// latch goes stale and synthKill would write to freed memory).  The same
+// call also retries any pending inbound DeathLink now that the player tick
+// is running.  See probe/DeathLink.cpp for the dereference chain
+// (replicates the game's own walk at +0x2743A0).
 HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
     [](void* param_1, void* param_2) -> void {
-        probe::tryLatchPlayerHpStruct(param_1);
+        probe::serviceDeathLink(param_1);
         playerTickLatchHook.orig(param_1, param_2);
     });
 
