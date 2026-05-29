@@ -418,7 +418,7 @@ def install_cmake(on_line: ProgressFn | None = None) -> InstallResult:
     """winget-install Kitware CMake and prepend its install dir to PATH."""
     if sys.platform != "win32":
         return _manual_install_result(
-            "CMake 3.24+",
+            "CMake 3.16+",
             "apt install cmake / dnf install cmake / pacman -S cmake",
             on_line=on_line)
     r = winget_install("Kitware.CMake", on_line=on_line)

@@ -73,7 +73,9 @@ def test_check_cmake_rejects_too_old(patch_run: dict[str, Any]) -> None:
     P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
     r = P.check_cmake()
     assert r.ok is False
-    assert "too old" in r.detail or "not found" in r.detail
+    # Distinguish too-old from not-found; surface the actual version.
+    assert "too old" in r.detail
+    assert "3.10.0" in r.detail
 
 
 def test_check_cmake_accepts_recent(patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
