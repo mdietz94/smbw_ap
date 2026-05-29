@@ -281,6 +281,31 @@ struct WireSetWonderSeedCounts {
     std::uint32_t counts[kWorldCount] = {};
 };
 
+// AP-authoritative per-course Wonder Seed bitfield (2026-05-29).  Same
+// idempotent absolute-overwrite pattern as WireSetBadgesAbsolute, but
+// for container-C hash 0x60458608 -- the per-course Wonder Seed
+// bitfield surfaced by FUN_7100124134 (reader) and FUN_710066E548 (per-
+// course UI populator).  Storage is uint32_t[4] = 128 bits, each
+// representing one course (vanilla SMBW: bits 0..80 are populated, the
+// other 47 are reserved).
+//
+// Split as two u64s because each AP "world bucket" of WS items may
+// produce >>32 bits in extreme configurations; using 4 u32s on the wire
+// would be more memory-efficient but the badge precedent uses a single
+// u64 and we follow the same shape.  The Switch decoder accepts each
+// half as an int64 in [0, 2**63) (top bit reserved); typical AP
+// scenarios put 0..16 bits per world bucket so the masks fit comfortably.
+//
+// Sent by the bridge on the same triggers as WireSetBadgesAbsolute:
+// every ReceivedItems, every HelloMsg (replay-on-reconnect), and the
+// periodic ~2 s tick.  Switch dispatch in ApFrameBridge::drainInbound
+// dedups within a drain call and applies via
+// probe::setWonderSeedBitfieldAbsolute(bits_lo, bits_hi).
+struct WireSetWonderSeedsAbsolute {
+    std::uint64_t bits_lo = 0;
+    std::uint64_t bits_hi = 0;
+};
+
 // M3.8 -- DeathLink inbound apply.  Sent when AP bounces a DeathLink for
 // our slot.  `source` is the originating AP slot name; `cause` is the
 // free-form reason (typically "mario_died").  Sizes MUST match KillMsg
@@ -323,6 +348,7 @@ enum class InboundKind : std::uint8_t {
     DumpSaveField = 10,
     SetWonderSeedCounts = 11,
     SetRoyalSeedsAbsolute = 12,
+    SetWonderSeedsAbsolute = 13,
 };
 
 struct InboundMsg {
@@ -340,6 +366,7 @@ struct InboundMsg {
         WireDumpSaveField dump_save_field;
         WireSetWonderSeedCounts set_wonder_seed_counts;
         WireSetRoyalSeedsAbsolute set_royal_seeds_absolute;
+        WireSetWonderSeedsAbsolute set_wonder_seeds_absolute;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

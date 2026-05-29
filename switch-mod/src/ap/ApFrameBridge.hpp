@@ -117,6 +117,16 @@ namespace probe {
 // grantBadgeBit primitive (deleted).
 bool setBadgeBitfieldAbsolute(std::uint64_t bits);
 
+// 2026-05-29 -- AP-authoritative per-course Wonder Seed bitfield sync.
+// Overwrites the entire 128-bit container-C bitfield at hash 0x60458608
+// to the absolute value (bits_lo, bits_hi).  Bit N = Wonder Seed for
+// course with internal index N.  Vanilla SMBW has ~81 courses so bits
+// 0..80 are meaningful; bits 81..127 are reserved.  Same idempotent
+// absolute-overwrite triggers as badges: ReceivedItems, HelloMsg
+// (replay-on-reconnect), and the periodic ~2 s tick.
+bool setWonderSeedBitfieldAbsolute(std::uint64_t bits_lo,
+                                   std::uint64_t bits_hi);
+
 // M3.3 -- container-A counter writer.  Calls FUN_710049F648 via
 // function pointer with the live gmd singleton.  Used for counters
 // (flower_coin, regular_coin); typed and silently no-ops on bool

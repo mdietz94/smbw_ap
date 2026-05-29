@@ -170,4 +170,59 @@ bool setContainerCBit(std::uint32_t hash, std::uint32_t bit_index, bool value) {
     return true;
 }
 
+// 2026-05-29.  Per-course Wonder Seed bitfield AP-authoritative
+// absolute-set, mirror of `setBadgeBitfieldAbsolute` but for hash
+// 0x60458608.
+//
+// Distinct from the badge case: badges use uint32_t[4] with u32[0..1] =
+// real owned bits and u32[2..3] = a hardware-required mirror written
+// by setBadgeBitfieldAbsolute.  For Wonder Seeds, the 2026-05-29 smoke
+// test confirmed `setContainerCBit(0x60458608, 70, true)` wrote to
+// data[2] (word_idx=2) and the write reached live memory -- meaning
+// u32[2] is a REAL data slot for WS, NOT a mirror.  So we treat all
+// 4 u32s as distinct: data[0..3] hold bits 0..127.
+//
+// Each course occupies one bit.  Vanilla SMBW has ~81 courses (per the
+// FUN_71003D4110 lookup table), so bits 0..80 are populated; bits
+// 81..127 are reserved.  Bridge derivation packs per-world ranges --
+// see _recompute_wonder_seed_bits() in apworld/.../context.py.
+//
+// Triggers identical to badges: ReceivedItems, HelloMsg, periodic
+// ~2 s tick.  Idempotent absolute-overwrite -- same input always
+// produces the same final state, so a missed tick is silently
+// recovered by the next one.
+bool setWonderSeedBitfieldAbsolute(std::uint64_t bits_lo, std::uint64_t bits_hi) {
+    constexpr std::uint32_t kWonderSeedBitfieldHash = 0x60458608u;
+    std::uint32_t* data = findContainerCData(kWonderSeedBitfieldHash);
+    if (data == nullptr) return false;
+
+    const std::uint32_t lo_a = static_cast<std::uint32_t>(bits_lo & 0xFFFFFFFFu);
+    const std::uint32_t lo_b = static_cast<std::uint32_t>((bits_lo >> 32) & 0xFFFFFFFFu);
+    const std::uint32_t hi_a = static_cast<std::uint32_t>(bits_hi & 0xFFFFFFFFu);
+    const std::uint32_t hi_b = static_cast<std::uint32_t>((bits_hi >> 32) & 0xFFFFFFFFu);
+
+    const std::uint32_t before_0 = data[0];
+    const std::uint32_t before_1 = data[1];
+    const std::uint32_t before_2 = data[2];
+    const std::uint32_t before_3 = data[3];
+
+    data[0] = lo_a;
+    data[1] = lo_b;
+    data[2] = hi_a;
+    data[3] = hi_b;
+
+    static std::atomic<std::uint32_t> log_budget{16};
+    if (log_budget.fetch_sub(1) > 0) {
+        SMBWAP_LOG_INFO(
+            "SetWonderSeedsAbsolute: addr=%p bits_lo=0x%016llx bits_hi=0x%016llx "
+            "before=[0x%08x,0x%08x,0x%08x,0x%08x] after=[0x%08x,0x%08x,0x%08x,0x%08x]",
+            data,
+            static_cast<unsigned long long>(bits_lo),
+            static_cast<unsigned long long>(bits_hi),
+            before_0, before_1, before_2, before_3,
+            lo_a, lo_b, hi_a, hi_b);
+    }
+    return true;
+}
+
 }  // namespace probe

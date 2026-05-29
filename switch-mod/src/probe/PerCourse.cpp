@@ -141,9 +141,39 @@ void pushWonderSeedOverride(std::uint32_t value) {
 }
 
 void pushWonderSeedOverrideCurrentWorld() {
+    // 2026-05-29 -- re-enabled with safety gates.  User hypothesis:
+    // PR #40's crash inside FUN_710049F750 was caused by the bitfield-
+    // counter inconsistency tripping an internal game assertion (not
+    // the container-A writer call itself being unsafe).  Now that we
+    // own the bitfield via SetWonderSeedsAbsolute, owning the counter
+    // here keeps both consistent and the assertion should never fire.
+    //
+    // Belt-and-suspenders against the original race PR #40 also hit:
+    //   * isSaveLoaded() -- gmd singleton fully deserialized
+    //   * !isInSceneTransitionWindow() -- 3 s gate from the SceneTransition
+    //     Nerve hook (vt 0x33fd9a8) so the game's scene-transition
+    //     recompute has finished writing the mirror hashes before we
+    //     overwrite them
+    //   * checkContainerA() backpressure refusal -- avoids the dirty-
+    //     queue overflow that aborts inside FUN_710049F750 when the
+    //     ring is near cap
     void* gmd = gmdSingleton();
     if (gmd == nullptr) return;
     if (!isSaveLoaded()) return;
+    if (isInSceneTransitionWindow()) return;
+
+    const auto bp = checkContainerA();
+    if (bp.refuse) {
+        static std::atomic<std::uint32_t> defer_budget{16};
+        if (defer_budget.fetch_sub(1) > 0) {
+            SMBWAP_LOG_WARN(
+                "[backpressure] pushWonderSeedOverrideCurrentWorld refused: "
+                "%s at %u%% of cap (>= %u%%)",
+                bp.tightest_ring, bp.max_pct, kBackpressureRefusePct);
+        }
+        return;
+    }
+
     const auto getfn = reinterpret_cast<GmdGetCounterFn>(
         mainBase() + kContainerAReaderOffset);
     std::uint32_t world_val = 0;

@@ -230,12 +230,15 @@ void drainInbound() {
     InboundMsg last_badges{};
     InboundMsg last_seeds{};
     InboundMsg last_wsc{};
+    InboundMsg last_wsa{};
     bool has_badges = false;
     bool has_seeds = false;
     bool has_wsc = false;
+    bool has_wsa = false;
     int dedup_badges_skipped = 0;
     int dedup_seeds_skipped = 0;
     int dedup_wsc_skipped = 0;
+    int dedup_wsa_skipped = 0;
 
     InboundMsg msg;
     int drained = 0;
@@ -339,6 +342,12 @@ void drainInbound() {
                 has_wsc = true;
                 break;
             }
+            case InboundKind::SetWonderSeedsAbsolute: {
+                if (has_wsa) ++dedup_wsa_skipped;
+                last_wsa = msg;
+                has_wsa = true;
+                break;
+            }
             case InboundKind::Kill: {
                 // M3.8 DeathLink inbound apply.  synthKill writes 0 to
                 // the latched live_base + 0x1C (HP byte) and sets the
@@ -414,7 +423,41 @@ void drainInbound() {
             granted, static_cast<unsigned>(kRoyalSeedCount));
     }
 
+    if (has_wsa) {
+        // 2026-05-29 -- AP-authoritative per-course Wonder Seed bitfield
+        // sync.  Direct overwrite of all 128 bits at container-C hash
+        // 0x60458608.  Idempotent (same input always produces the same
+        // final state).  See probe::setWonderSeedBitfieldAbsolute.
+        const auto lo = last_wsa.set_wonder_seeds_absolute.bits_lo;
+        const auto hi = last_wsa.set_wonder_seeds_absolute.bits_hi;
+        const bool ok = probe::setWonderSeedBitfieldAbsolute(lo, hi);
+        const char* verb = coalesceVerb(
+            dedup_suffix, sizeof(dedup_suffix), dedup_wsa_skipped);
+        SMBWAP_LOG_INFO(
+            "[grant] %s SetWonderSeedsAbsolute(lo=0x%016llx hi=0x%016llx)%s -> "
+            "setWonderSeedBitfieldAbsolute returned %s",
+            verb,
+            static_cast<unsigned long long>(lo),
+            static_cast<unsigned long long>(hi),
+            dedup_suffix,
+            ok ? "true" : "false");
+    }
+
     if (has_wsc) {
+        // 2026-05-29 -- counter write re-enabled.  See user request
+        // "let's also attack the counter -- I think the crash was due
+        // to these disagreeing, I think if we consistently own every
+        // counter and stage fact we will be able to control this".
+        // pushWonderSeedOverrideCurrentWorld() has its own internal
+        // safety gates (isSaveLoaded + isInSceneTransitionWindow +
+        // backpressure refusal) so this call is safe even if
+        // drainInbound's top-level gates are too coarse.  No-ops if
+        // any gate fails.  Order: cache the counts FIRST so the
+        // reader-side override has fresh data even if the writer
+        // refuses on backpressure or transition window, then write
+        // the counter.
+        // -----
+        // OLD behavior (cache only):
         // AP-authoritative per-world Wonder Seed gate override.  Cache
         // the 8 counts; ContainerAReader::Callback in main.cpp
         // substitutes the AP-authoritative value on every read of the
@@ -454,6 +497,10 @@ void drainInbound() {
             last_wsc.set_wonder_seed_counts.counts[5],
             last_wsc.set_wonder_seed_counts.counts[6],
             last_wsc.set_wonder_seed_counts.counts[7]);
+
+        // 2026-05-29 -- now write the counter too, after the cache is
+        // fresh.  See "counter write re-enabled" comment above.
+        probe::pushWonderSeedOverrideCurrentWorld();
     }
 
     if (drained > 0) {

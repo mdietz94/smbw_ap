@@ -144,6 +144,18 @@ RoyalSeedMaskProvider = Callable[[], int]
 WonderSeedCountsProvider = Callable[[], list[int]]
 
 
+# Synchronous callable returning the absolute 128-bit per-course Wonder
+# Seed bitfield AP has granted, as a ``(bits_lo, bits_hi)`` tuple of
+# two u64s.  Switch overwrites container-C hash ``0x60458608`` to match
+# on every HelloMsg / ReceivedItems / 2 s tick -- same idempotent
+# absolute-overwrite pattern as :data:`BadgeMaskProvider`.  Returning
+# ``(0, 0)`` is fine and means "AP has no Wonder Seeds yet -- clobber
+# the Switch's per-course bitfield to empty".  See
+# :meth:`SMBWContext._recompute_wonder_seed_bits` for the bit
+# derivation.  (2026-05-29)
+WonderSeedBitsProvider = Callable[[], tuple[int, int]]
+
+
 class _DrainIncrementsSentinel:
     """Internal sentinel posted by :meth:`LanServer.send_increment_hash_keyed`
     to wake the writer loop.  When the writer pops one of these, it
@@ -183,6 +195,7 @@ GrantMsg = (
     | wire.GrantHashKeyedMsg
     | wire.IncrementHashKeyedMsg
     | wire.SetWonderSeedCountsMsg
+    | wire.SetWonderSeedsAbsoluteMsg
     | wire.KillMsg
     | _DrainIncrementsSentinel
 )
@@ -212,6 +225,7 @@ class LanServer:
         badge_mask_provider: BadgeMaskProvider | None = None,
         royal_seed_mask_provider: RoyalSeedMaskProvider | None = None,
         wonder_seed_counts_provider: WonderSeedCountsProvider | None = None,
+        wonder_seed_bits_provider: WonderSeedBitsProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
@@ -220,6 +234,7 @@ class LanServer:
         self._badge_mask_provider = badge_mask_provider
         self._royal_seed_mask_provider = royal_seed_mask_provider
         self._wonder_seed_counts_provider = wonder_seed_counts_provider
+        self._wonder_seed_bits_provider = wonder_seed_bits_provider
 
         self._server: asyncio.base_events.Server | None = None
 
@@ -253,6 +268,7 @@ class LanServer:
         self._last_logged_badges_bits: int | None = None
         self._last_logged_royal_seeds_mask: int | None = None
         self._last_logged_wonder_seed_counts: tuple[int, ...] | None = None
+        self._last_logged_wonder_seed_bits: tuple[int, int] | None = None
 
     # ---- Lifecycle ----------------------------------------------------
 
@@ -485,6 +501,41 @@ class LanServer:
                 "pending entry (new total %d)",
                 hash_, delta, new_total)
 
+    def send_set_wonder_seeds_absolute(self, bits_lo: int, bits_hi: int) -> None:
+        """Enqueue a SetWonderSeedsAbsolute (per-course Wonder Seed
+        bitfield AP-authoritative sync, 2026-05-29) to the active Switch
+        client.  ``bits_lo`` and ``bits_hi`` together form an absolute
+        128-bit bitfield -- bit N = Wonder Seed for course with internal
+        index N.  Switch overwrites the entire container-C bitfield at
+        hash ``0x60458608`` to match.
+
+        Same drop semantics as :meth:`send_set_badges_absolute`.  The
+        next HelloMsg triggers a fresh send via
+        :meth:`_push_wonder_seed_bits_now`, so any dropped tick is
+        reliably recovered on reconnect.
+        """
+        msg = wire.SetWonderSeedsAbsoluteMsg(bits_lo=bits_lo, bits_hi=bits_hi)
+        if self._send_queue is None:
+            log.warning(
+                "send_set_wonder_seeds_absolute(lo=0x%x, hi=0x%x): no "
+                "Switch client connected; dropping",
+                bits_lo, bits_hi)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            tup = (bits_lo, bits_hi)
+            if self._last_logged_wonder_seed_bits != tup:
+                log.debug(
+                    "send_set_wonder_seeds_absolute: enqueued "
+                    "bits_lo=0x%x bits_hi=0x%x",
+                    bits_lo, bits_hi)
+                self._last_logged_wonder_seed_bits = tup
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_wonder_seeds_absolute(lo=0x%x, hi=0x%x): "
+                "outbound queue full; dropping",
+                bits_lo, bits_hi)
+
     def send_grant_hash_keyed(self, hash_: int, value: int) -> None:
         """Enqueue a GrantHashKeyed (container-A counter or container-B
         bool write, routed Switch-side by ``isBoolHash`` in
@@ -598,6 +649,12 @@ class LanServer:
             # bridge holds the canonical AP-derived count and clobbers
             # the Switch's lifetime counter to match on every handshake.
             self._push_wonder_seeds_now()
+            # 2026-05-29 -- AP-authoritative per-course Wonder Seed
+            # bitfield (container-C hash 0x60458608).  Same handshake-
+            # replay so a Switch reconnect (or save-load that wipes
+            # live state) re-applies AP's canonical bitfield within
+            # one round-trip.
+            self._push_wonder_seed_bits_now()
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -715,6 +772,7 @@ class LanServer:
             self._last_logged_badges_bits = None
             self._last_logged_royal_seeds_mask = None
             self._last_logged_wonder_seed_counts = None
+            self._last_logged_wonder_seed_bits = None
             self._writer_task = asyncio.create_task(
                 self._writer_loop(writer, self._send_queue),
                 name="lan-writer",
@@ -827,6 +885,28 @@ class LanServer:
             return
         self.send_set_wonder_seed_counts(counts)
 
+    def _push_wonder_seed_bits_now(self) -> None:
+        """Pull the AP-known 128-bit per-course Wonder Seed bitfield from
+        the provider and enqueue a ``SetWonderSeedsAbsoluteMsg``.  No-op
+        if no provider was wired (e.g. unit tests that don't care about
+        seeds) or no client is connected.  Same idempotent absolute-
+        overwrite pattern as badges: AP holds the canonical 128-bit
+        bitfield derived from ``items_received``; any in-game Wonder Seed
+        grab gets clobbered back to AP's view within ~2 s.  Called from
+        HelloMsg dispatch, per-ReceivedItems push (via
+        :meth:`send_set_wonder_seeds_absolute` directly in
+        ``SMBWContext._handle_received_items``), and the periodic tick.
+        (2026-05-29)"""
+        if self._wonder_seed_bits_provider is None:
+            return
+        try:
+            bits_lo, bits_hi = self._wonder_seed_bits_provider()
+        except Exception:
+            log.exception(
+                "wonder_seed_bits_provider raised; skipping sync")
+            return
+        self.send_set_wonder_seeds_absolute(int(bits_lo), int(bits_hi))
+
     async def _idempotent_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
         current AP-known badge mask, Royal Seed mask, AND per-world
@@ -845,6 +925,7 @@ class LanServer:
                 self._push_badge_sync_now()
                 self._push_royal_seeds_now()
                 self._push_wonder_seeds_now()
+                self._push_wonder_seed_bits_now()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -880,6 +961,7 @@ class LanServer:
         last_badges_bits: int | None = None
         last_royal_seeds_mask: int | None = None
         last_wonder_seed_counts: tuple[int, ...] | None = None
+        last_wonder_seed_bits: tuple[int, int] | None = None
         try:
             while True:
                 msg = await queue.get()
@@ -940,6 +1022,14 @@ class LanServer:
                                 "-> set_royal_seeds_absolute mask=0x%x",
                                 msg.mask)
                             last_royal_seeds_mask = msg.mask
+                    elif isinstance(msg, wire.SetWonderSeedsAbsoluteMsg):
+                        tup = (msg.bits_lo, msg.bits_hi)
+                        if tup != last_wonder_seed_bits:
+                            log.info(
+                                "-> set_wonder_seeds_absolute "
+                                "bits_lo=0x%x bits_hi=0x%x",
+                                msg.bits_lo, msg.bits_hi)
+                            last_wonder_seed_bits = tup
                     elif isinstance(msg, wire.GrantHashKeyedMsg):
                         log.info(
                             "-> grant_hash_keyed hash=0x%08x value=%d",

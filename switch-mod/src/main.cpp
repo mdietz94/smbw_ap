@@ -37,6 +37,7 @@
 #include "probe/DeathLink.hpp"
 #include "probe/Gates.hpp"
 #include "probe/Gmd.hpp"
+#include "probe/SeedTrace.hpp"
 #include "util/Log.hpp"
 
 namespace nn::socket {
@@ -269,6 +270,13 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
         static int s_fires = 0;
         ++s_fires;
         SMBWAP_LOG_INFO("COURSE_CLEARED: nerve=%p (fire #%d)", nerve, s_fires);
+
+        // One-shot smoke test removed 2026-05-29 -- the AP-driven
+        // SetWonderSeedsAbsolute push (ApFrameBridge.cpp drainInbound
+        // dispatch -> probe::setWonderSeedBitfieldAbsolute) supersedes
+        // it.  probe::triggerWonderSeedSmokeTest remains in SeedTrace
+        // for ad-hoc developer use.
+
         setCourseClearFlagExecuteHook.orig(nerve);
     });
 
@@ -732,6 +740,13 @@ extern "C" void hkMain() {
     // WONDER SEED GATE OVERRIDE (reader-side substitution)
     installHook("ContainerAReader",    0x0012ae94,
                 containerAReaderHook.installAtMainOffset(0x0012ae94));
+
+    // SEED-TRACE OBSERVABILITY (Wonder Seed RE re-open, 2026-05-28).
+    // 3 new trampolines targeting the suspected per-course Wonder Seed
+    // write path (hash 0x60458608 + 4-arg overload of FUN_710049EA24).
+    // Logging-only -- no state mutation.  See probe/SeedTrace.cpp and
+    // docs/wonder-seed-re-reopen-2026-05-28.md for rationale.
+    probe::installSeedTraceHooks();
 
     SMBWAP_LOG_INFO("=== smbwap hkMain END ===");
 }

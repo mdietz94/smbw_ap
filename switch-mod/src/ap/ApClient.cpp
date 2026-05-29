@@ -489,6 +489,10 @@ void ApClient::handleLine(char* line, std::size_t len) {
     static std::uint8_t  s_last_seeds   = 0;
     static bool        s_have_counts  = false;
     static std::uint32_t s_last_counts[8] = {0};
+    // 2026-05-29 -- per-course Wonder Seed bitfield dedup.
+    static bool        s_have_ws_bits = false;
+    static std::uint64_t s_last_ws_lo  = 0;
+    static std::uint64_t s_last_ws_hi  = 0;
     switch (msg.kind) {
         case InboundKind::HelloAck:
             SMBWAP_LOG_INFO(
@@ -502,6 +506,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
             s_have_badges = false;
             s_have_seeds  = false;
             s_have_counts = false;
+            s_have_ws_bits = false;
             return;
         case InboundKind::SetBadgesAbsolute: {
             const std::uint64_t bits = msg.set_badges_absolute.bits;
@@ -625,6 +630,31 @@ void ApClient::handleLine(char* line, std::size_t len) {
                     "[ring] inbound full; dropping SetRoyalSeedsAbsolute"
                     "(mask=0x%02x)",
                     static_cast<unsigned>(mask));
+            }
+            return;
+        }
+        case InboundKind::SetWonderSeedsAbsolute: {
+            // 2026-05-29 -- AP-authoritative per-course Wonder Seed
+            // bitfield (container-C hash 0x60458608).  drainInbound
+            // dedups + applies via probe::setWonderSeedBitfieldAbsolute.
+            const std::uint64_t lo = msg.set_wonder_seeds_absolute.bits_lo;
+            const std::uint64_t hi = msg.set_wonder_seeds_absolute.bits_hi;
+            if (!s_have_ws_bits || lo != s_last_ws_lo || hi != s_last_ws_hi) {
+                SMBWAP_LOG_INFO(
+                    "[grant] received SetWonderSeedsAbsolute"
+                    "(lo=0x%016llx, hi=0x%016llx), enqueued",
+                    static_cast<unsigned long long>(lo),
+                    static_cast<unsigned long long>(hi));
+                s_last_ws_lo = lo;
+                s_last_ws_hi = hi;
+                s_have_ws_bits = true;
+            }
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
+                SMBWAP_LOG_WARN(
+                    "[ring] inbound full; dropping SetWonderSeedsAbsolute"
+                    "(lo=0x%016llx, hi=0x%016llx)",
+                    static_cast<unsigned long long>(lo),
+                    static_cast<unsigned long long>(hi));
             }
             return;
         }

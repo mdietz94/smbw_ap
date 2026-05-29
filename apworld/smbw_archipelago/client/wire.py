@@ -518,6 +518,75 @@ class SetWonderSeedCountsMsg:
 
 
 @dataclass(frozen=True)
+class SetWonderSeedsAbsoluteMsg:
+    """Bridge -> Switch.  AP-authoritative per-course Wonder Seed
+    bitfield sync (2026-05-29).
+
+    ``bits_lo`` and ``bits_hi`` together carry an absolute 128-bit
+    bitfield that the Switch writes to container-C hash ``0x60458608``.
+    Bit N == Wonder Seed for course with internal index N.  Vanilla
+    SMBW has ~81 courses so bits 0..80 are meaningful; bits 81..127 are
+    reserved.
+
+    Switch-side: ``ApFrameBridge::drainInbound`` dedups within a drain
+    call (last-write-wins) and applies via
+    ``probe::setWonderSeedBitfieldAbsolute(bits_lo, bits_hi)`` -- a
+    direct overwrite of all 4 u32s in the underlying container-C
+    storage.  Same idempotent absolute-overwrite pattern as
+    :class:`SetBadgesAbsoluteMsg`.
+
+    Sent by the bridge on three triggers:
+      1. Every AP ``ReceivedItems`` update -- recompute bits + send.
+      2. Every Switch ``HelloMsg`` (replay-on-reconnect) so the
+         bitfield survives save/reload and Switch restarts.
+      3. A periodic ~2 s tick to revert any in-game pickup (Wonder
+         phase grab) that bypasses AP.
+
+    Bit derivation lives in
+    :meth:`SMBWContext._recompute_wonder_seed_bits`: 16 bits per world
+    bucket (W1=bits 0..15, W2=16..31, ..., Special=112..127), with the
+    lowest ``count_for_world`` bits set in each range.  Indices are
+    NOT semantically tied to specific in-game courses yet; this
+    primitive sets a deterministic AP-derived bitfield that the
+    persistence-test workflow can verify against the saved file.
+    Refining the bit-to-course mapping requires additional RE of
+    FUN_71003D4110 (Murmur3 course-name -> course-index lookup).
+
+    Range per field is ``[0, 2**64)``; the wire decoder accepts each
+    half as an int64 (top bit reserved -- typical AP scenarios put
+    0..16 bits per world bucket so the masks fit comfortably).
+    """
+
+    T = "set_wonder_seeds_absolute"
+
+    bits_lo: int = 0
+    bits_hi: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "bits_lo": self.bits_lo, "bits_hi": self.bits_hi}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetWonderSeedsAbsoluteMsg:
+        raw_lo = d.get("bits_lo")
+        raw_hi = d.get("bits_hi")
+        if not isinstance(raw_lo, int) or isinstance(raw_lo, bool):
+            raise ProtocolError(
+                f"set_wonder_seeds_absolute.bits_lo must be int, got {raw_lo!r}")
+        if not isinstance(raw_hi, int) or isinstance(raw_hi, bool):
+            raise ProtocolError(
+                f"set_wonder_seeds_absolute.bits_hi must be int, got {raw_hi!r}")
+        if not (0 <= raw_lo < (1 << 64)):
+            raise ProtocolError(
+                f"set_wonder_seeds_absolute.bits_lo out of range "
+                f"[0, 2**64): {raw_lo}")
+        if not (0 <= raw_hi < (1 << 64)):
+            raise ProtocolError(
+                f"set_wonder_seeds_absolute.bits_hi out of range "
+                f"[0, 2**64): {raw_hi}")
+        return cls(bits_lo=raw_lo, bits_hi=raw_hi)
+
+
+@dataclass(frozen=True)
 class IncrementHashKeyedMsg:
     """Bridge -> Switch.  Saturating add/sub on a container-A counter.
 
@@ -748,6 +817,7 @@ WireMsg = (
     | GrantHashKeyedMsg
     | IncrementHashKeyedMsg
     | SetWonderSeedCountsMsg
+    | SetWonderSeedsAbsoluteMsg
     | KillMsg
     | ErrMsg
     | PingMsg
@@ -770,6 +840,7 @@ _FROM_WIRE: dict[str, Any] = {
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,
     SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,
+    SetWonderSeedsAbsoluteMsg.T: SetWonderSeedsAbsoluteMsg.from_wire,
     KillMsg.T: KillMsg.from_wire,
     ErrMsg.T: ErrMsg.from_wire,
     PingMsg.T: PingMsg.from_wire,
