@@ -613,8 +613,16 @@ def check_python311() -> PrereqResult:
     Probe order:
       1. The currently-running interpreter (`sys.executable`) — if the
          wizard was launched under 3.11+, we already have what we need.
+         (No-op when the wizard runs from the AP frozen build, where
+         `sys.executable` is the launcher EXE rather than a real
+         interpreter and `--version` doesn't print "Python X.Y.Z".)
       2. `py -3.11` / `py -3.12` / `py -3.13` (Windows Python launcher).
-      3. Plain `python3.11` / `python3` / `python`.
+      3. Plain `python3` / `python` / `python3.11`. The generic names
+         go first so PATH ordering (and any update-alternatives setup)
+         wins — any 3.11+ interpreter satisfies the floor, so there's
+         no reason to prefer the exact 3.11 binary over a newer one.
+         `python3.11` stays as a last-resort fallback for systems
+         where the user installed it without wiring up `python3`.
 
     Side effect: caches the resolved interpreter path so installers.py
     can `pip install` into the SAME interpreter without re-probing.
@@ -633,9 +641,9 @@ def check_python311() -> PrereqResult:
             ["py", "-3.13", "--version"],
         ]
     candidates += [
-        ["python3.11", "--version"],
         ["python3", "--version"],
         ["python", "--version"],
+        ["python3.11", "--version"],
     ]
     for cmd in candidates:
         r = _safe_run(cmd)

@@ -121,6 +121,48 @@ def test_check_python311_uses_sys_executable(monkeypatch: pytest.MonkeyPatch, pa
     assert "3.12.0" in r.detail
 
 
+def test_check_python311_prefers_path_over_version_suffixed(
+    force_linux, monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """When `sys.executable --version` doesn't yield a Python version
+    (the AP frozen-build case — `sys.executable` is the launcher EXE,
+    not an interpreter), the PATH probes must prefer the generic
+    `python3` over the version-suffixed `python3.11`. Otherwise a user
+    with `python3` → 3.12 on PATH still gets 3.11 picked, which is
+    surprising and forces them into an older interpreter for no reason
+    (any 3.11+ satisfies the floor)."""
+    # sys.executable returns nothing parseable — simulates the frozen
+    # launcher EXE swallowing or no-op'ing `--version`.
+    patch_run[sys.executable] = (0, "", "")
+    # Both `python3` (PATH default) and `python3.11` exist, with the
+    # PATH default being a NEWER interpreter than the suffixed one.
+    patch_run["python3"] = (0, "Python 3.12.5\n", "")
+    patch_run["python3.11"] = (0, "Python 3.11.9\n", "")
+    monkeypatch.setattr(P.Path, "is_file", lambda self: True)
+    r = P.check_python311()
+    assert r.ok is True
+    # PATH-default wins; the version-suffixed fallback must not steal it.
+    assert "3.12.5" in r.detail, f"expected PATH `python3` to win, got: {r.detail}"
+    assert "3.11.9" not in r.detail
+
+
+def test_check_python311_falls_back_to_python311_when_no_generic(
+    force_linux, monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """When `python3` / `python` aren't on PATH but `python3.11` is
+    (e.g. a system where the user installed 3.11 without wiring up
+    update-alternatives), the version-suffixed fallback must still
+    pick it up — it's the last-resort entry, not removed entirely."""
+    patch_run[sys.executable] = (0, "", "")
+    patch_run["python3"] = None
+    patch_run["python"] = None
+    patch_run["python3.11"] = (0, "Python 3.11.9\n", "")
+    monkeypatch.setattr(P.Path, "is_file", lambda self: True)
+    r = P.check_python311()
+    assert r.ok is True
+    assert "3.11.9" in r.detail
+
+
 def test_check_llvm19_missing(force_windows,
                               monkeypatch: pytest.MonkeyPatch,
                               tmp_path: Path,
