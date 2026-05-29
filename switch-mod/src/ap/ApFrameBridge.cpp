@@ -501,6 +501,17 @@ void drainInbound() {
         // 2026-05-29 -- now write the counter too, after the cache is
         // fresh.  See "counter write re-enabled" comment above.
         probe::pushWonderSeedOverrideCurrentWorld();
+
+        // 2026-05-29 -- PERSISTENCE: write each world's per-course seed
+        // bitmask into the live container-D (gmd+0x800) so the per-world
+        // count survives save/reload (the recompute on world entry reads
+        // container-D).  Direct write -- bypasses the cap=2 deferred queue,
+        // no Abort risk.  Only runs here (SetWonderSeedCounts arrival), so
+        // it never fires while AP is disconnected (would otherwise wipe the
+        // save's real seeds to 0).  Belt-and-suspenders with the reader-
+        // substitute + counter override which keep display/gate correct
+        // while connected; this layer makes the SAVED state correct too.
+        probe::pushWonderSeedContainerDCounts();
     }
 
     if (drained > 0) {

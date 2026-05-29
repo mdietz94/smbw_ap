@@ -226,4 +226,18 @@ void pushWonderSeedOverride(std::uint32_t value);
 // so AP grants take effect immediately, without waiting for the game to
 // re-write the mirror hashes on the next area transition.
 void pushWonderSeedOverrideCurrentWorld();
+
+// 2026-05-29 -- PERSISTENCE: write each AP world's per-course Wonder Seed
+// bitmask into the LIVE container-D (gmd+0x800) so the recomputed per-world
+// count survives save/reload.  For each AP bucket reads the cached count
+// (smbwap::ap::getWonderSeedCount) and encodes it as `count` low-bits across
+// `count` distinct course slots of that world's regular-seed hash (1 bit per
+// slot -> popcount sum == count; bit 0 of each course is always a valid
+// seed, dodging the per-course serializer strip), zeroing the regular tail
+// and the entire special-seed hash.  Direct write via findContainerDData --
+// no deferred queue, no Abort.  Diffs against the last written count per
+// world so a steady state is a no-op.  AP-authoritative: overwrites the
+// game's per-course seed detail (cosmetic) to make the world total match AP.
+// Defined in SeedTrace.cpp.
+void pushWonderSeedContainerDCounts();
 }
