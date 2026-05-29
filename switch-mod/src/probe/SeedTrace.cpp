@@ -150,7 +150,10 @@ HkTrampoline<std::uint64_t, void*, std::uint8_t*, std::uint32_t,
             const auto rc =
                 perCourseBitReaderHook.orig(gmd, out_bit, hash, bit_index);
             probe::dumpSeedPersistenceMapOnce();
-            probe::triggerSeedPersistWriteTestOnce();
+            // triggerSeedPersistWriteTestOnce() intentionally NOT called:
+            // the write-test confirmed container-D writes persist + flow
+            // into the count (W1 16->19), so it has served its purpose and
+            // is disabled to stop modifying the save on every boot.
             const bool is_target =
                 (hash == kWonderSeedBitfieldHash)
                 || (hash == kPerCourseStateHash);
