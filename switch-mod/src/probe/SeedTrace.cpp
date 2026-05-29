@@ -81,6 +81,42 @@ bool noteDistinct(DistinctTable& t,
 }
 
 // ---------------------------------------------------------------------------
+// Container-D queue-depth sampler (2026-05-29).
+//
+// Logs the gmd+0x788 deferred-write ring depth on each new high-water mark
+// and every ~1024th call, so a normal play session reveals whether the
+// queue backs up -- and WHEN.  Hypothesis (per user): like the container-A/B
+// overflow, it only accumulates while parked on the overworld (the save
+// flusher doesn't tick there); entering a course drains it.  Pure
+// observation -- no writes.  This is what tells us whether AP-driven
+// container-D writes are safe behind the 50% backpressure gate.
+// ---------------------------------------------------------------------------
+void sampleContainerDQueue(const char* via) {
+    const auto q = probe::readQueueD();
+    if (q.cap == 0) return;
+    const std::uint32_t pct = probe::depthPct(q);
+    static std::atomic<std::uint32_t> s_max{0};
+    static std::atomic<std::uint32_t> s_calls{0};
+
+    std::uint32_t prev = s_max.load(std::memory_order_relaxed);
+    bool new_max = false;
+    while (pct > prev) {
+        if (s_max.compare_exchange_weak(prev, pct,
+                                        std::memory_order_relaxed)) {
+            new_max = true;
+            break;
+        }
+    }
+    const std::uint32_t n = s_calls.fetch_add(1, std::memory_order_relaxed);
+    if (new_max || (n & 0x3FFu) == 0) {
+        SMBWAP_LOG_INFO(
+            "[seed-persist] qD depth=%u cap=%u pct=%u%% (max=%u%%) via=%s",
+            q.depth(), q.cap, pct,
+            new_max ? pct : s_max.load(std::memory_order_relaxed), via);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Hook A: ContainerBWrapper4Arg @ NSO +0x49EA24.
 //
 // Currently called by probe::grantContainerBBool() as 3-arg
@@ -150,6 +186,7 @@ HkTrampoline<std::uint64_t, void*, std::uint8_t*, std::uint32_t,
             const auto rc =
                 perCourseBitReaderHook.orig(gmd, out_bit, hash, bit_index);
             probe::dumpSeedPersistenceMapOnce();
+            sampleContainerDQueue("D_read");
             // triggerSeedPersistWriteTestOnce() intentionally NOT called:
             // the write-test confirmed container-D writes persist + flow
             // into the count (W1 16->19), so it has served its purpose and
@@ -205,6 +242,7 @@ HkTrampoline<void, void*, std::uint32_t, std::uint32_t, std::uint32_t>
                     fire, hash, course_index, value, gmd,
                     is_new ? 1 : 0, is_target ? 1 : 0);
             }
+            sampleContainerDQueue("D_write");
             perCourseBitfieldWriterHook.orig(gmd, value, hash, course_index);
         });
 

@@ -110,15 +110,38 @@ bool setPerCourseBitfieldAbsolute(std::uint32_t hash,
                                   std::uint32_t bitmask) {
     void* gmd = gmdSingleton();
     if (gmd == nullptr) return false;
+
+    // Container-D writes (FUN_7101F2B354 -> FUN_7101f2b140) push into the
+    // gmd+0x788 deferred-write ring, which Aborts on overflow exactly like
+    // container-A/B.  Refuse at >= 50% (kBackpressureRefusePctD) so a
+    // parked-on-overworld backlog can never reach the Abort.  Idempotent
+    // absolute-set callers retry on the next tick once drain catches up.
+    const auto bp = checkContainerD();
+    if (bp.refuse) {
+        static std::atomic<std::uint32_t> defer_budget{32};
+        if (defer_budget.fetch_sub(1) > 0) {
+            SMBWAP_LOG_WARN(
+                "[backpressure] setPerCourseBitfieldAbsolute refused: "
+                "qD at %u%% of cap (>= %u%%)  hash=0x%08x course=%u",
+                bp.max_pct, kBackpressureRefusePctD, hash, course_index);
+        }
+        return false;
+    }
+
     const auto fn = reinterpret_cast<GmdSetPerCourseFn>(
         mainBase() + kPerCourseWriterOffset);
+    const auto q_before = readQueueD();
     fn(gmd, bitmask, hash, course_index);
+    const auto q_after = readQueueD();
 
-    static std::atomic<std::uint32_t> log_budget{32};
+    static std::atomic<std::uint32_t> log_budget{64};
     if (log_budget.fetch_sub(1) > 0) {
         SMBWAP_LOG_INFO(
-            "SetPerCourseBitfield: hash=0x%08x course=%u value=0x%08x gmd=%p",
-            hash, course_index, bitmask, gmd);
+            "SetPerCourseBitfield: hash=0x%08x course=%u value=0x%08x gmd=%p "
+            "qD depth %u->%u / cap %u (%u%%)",
+            hash, course_index, bitmask, gmd,
+            q_before.depth(), q_after.depth(), q_after.cap,
+            depthPct(q_after));
     }
     return true;
 }
