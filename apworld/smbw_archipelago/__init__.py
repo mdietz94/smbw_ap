@@ -326,28 +326,6 @@ class SMBWonderWorld(World):
 
         return slot_data
 
-    def generate_output(self, output_directory: str):
-        # `.smbwap` is the only per-player artifact this apworld ships. It's
-        # the entry point the Launcher routes to launch_smbw_client when
-        # double-clicked, expanding `slot_name` (and optionally
-        # `server_address` / `password`) into SMBW Client CLI overrides so
-        # the Connect bar lands pre-filled. See _setup/smbwap_file.py for
-        # the on-disk schema.
-        #
-        # server_address is intentionally empty: the generator doesn't
-        # know where the user will host (local, archipelago.gg, a
-        # friend's box, ...). SMBW Client prompts via the GUI Connect
-        # bar when it's empty; the user can manually edit the file
-        # post-gen for a perpetual default.
-        base = self.multiworld.get_out_file_name_base(self.player)
-        from ._setup.smbwap_file import SmbwapFile
-        smbwap = SmbwapFile(
-            slot_name=self.multiworld.get_player_name(self.player),
-            seed_name=str(getattr(self.multiworld, "seed_name", "") or ""),
-            server_address="",
-        )
-        smbwap.write(Path(output_directory) / f"{base}.smbwap")
-
     def write_spoiler(self, spoiler_handle):
         before_write_spoiler(self, self.multiworld, spoiler_handle)
 
