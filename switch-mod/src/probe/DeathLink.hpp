@@ -1,13 +1,15 @@
 // M3.8 DeathLink helpers exposed to main.cpp.
 //
 // The PlayerTickLatch trampoline in main.cpp (NSO +0x273868) calls
-// `tryLatchPlayerHpStruct` on first entry to capture the live HP-bearing
-// struct.  The SceneTransition branch in NerveActivateOnce calls
+// `serviceDeathLink` every frame to (a) refresh the live HP-bearing struct
+// and (b) retry a pending inbound DeathLink once the player is back in a
+// killable state.  The SceneTransition branch in NerveActivateOnce calls
 // `consumeSyntheticDeathThisFrame` to suppress the outbound DEATH_DETECTED
-// echo when the death was caused by our own probe::synthKill (loop guard).
+// echo when the death was our own probe::synthKill (loop guard).
 //
-// All implementations live in DeathLink.cpp; this header only exposes the
-// two helpers main.cpp needs.
+// `synthKill` / `requestPendingDeathLink` live in ApFrameBridge.hpp (called
+// from drainInbound's Kill case).  All implementations live in
+// DeathLink.cpp; this header exposes only the two helpers main.cpp needs.
 
 #pragma once
 
@@ -15,20 +17,23 @@
 
 namespace probe {
 
-// Called once per frame from PlayerTickLatch trampoline with param_1 (=
-// the scene/manager root the player tick walks from).  Walks the same
-// dereference chain the game's internal death-check would (replicates
-// the body of FUN_7100273868 at +0x2743A0..+0x2743B8) to land at the HP
-// struct, then CAS-installs it into the static g_live_base atomic.
-// Once latched, subsequent calls are an atomic load + branch.  No-op
-// if param_1 == 0 or any deref in the chain hits null.
-void tryLatchPlayerHpStruct(void* param_1);
+// Called once per frame from the PlayerTickLatch trampoline with param_1
+// (= the scene/manager root the player tick walks from).  Re-walks the
+// same dereference chain the game's death-check uses (FUN_7100273868 at
+// +0x2743A0..+0x2743B8) to the HP struct and refreshes g_live_base + its
+// freshness tick EVERY frame -- the struct is re-allocated per scene, so a
+// one-time latch goes stale.  Also services a pending inbound DeathLink:
+// if one is queued and the player is now in a killable state, it fires the
+// synthetic kill here.  No-op on the parts whose preconditions aren't met
+// (null param_1 / null deref / no pending kill).
+void serviceDeathLink(void* param_1);
 
-// Atomically test-and-clear the synthetic-death loop guard.  Returns
-// true exactly once per probe::synthKill() fire -- the next
-// SceneTransition Nerve callback should drop its DEATH_DETECTED enqueue
-// (the death IS our doing).  Subsequent calls return false until the
-// next synthKill.
+// Atomically test-and-clear the synthetic-death loop guard.  Returns true
+// iff a probe::synthKill fired within the last ~1 s (kSynthGuardTicks) --
+// in which case the caller (the death-discriminator branch) should drop
+// its DEATH_DETECTED enqueue because the death is our own.  An armed but
+// EXPIRED guard returns false (and warns): the synthetic kill never landed
+// a timely death, so this fire is a later genuine death and must be sent.
 bool consumeSyntheticDeathThisFrame();
 
 }  // namespace probe

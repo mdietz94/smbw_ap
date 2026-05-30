@@ -320,13 +320,15 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 // though hakkun's / exlaunch's relocator nominally handle cbz/b.le.
 // Function-entry trampoline avoids the relocator entirely.
 //
-// First non-null walk captures the HP-bearing struct so probe::synthKill
-// can write HP=0 on inbound DeathLink.  Once latched, subsequent calls
-// short-circuit on an atomic load.  See probe/DeathLink.cpp for the
-// dereference chain (replicates the game's own walk at +0x2743A0).
+// Every frame we re-walk to the HP-bearing struct and refresh
+// probe::g_live_base (the struct is re-allocated per scene, so a one-time
+// latch goes stale and synthKill would write to freed memory).  The same
+// call also retries any pending inbound DeathLink now that the player tick
+// is running.  See probe/DeathLink.cpp for the dereference chain
+// (replicates the game's own walk at +0x2743A0).
 HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
     [](void* param_1, void* param_2) -> void {
-        probe::tryLatchPlayerHpStruct(param_1);
+        probe::serviceDeathLink(param_1);
         playerTickLatchHook.orig(param_1, param_2);
     });
 

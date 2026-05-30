@@ -349,20 +349,24 @@ void drainInbound() {
                 break;
             }
             case InboundKind::Kill: {
-                // M3.8 DeathLink inbound apply.  synthKill writes 0 to
-                // the latched live_base + 0x1C (HP byte) and sets the
-                // loop-guard atomic so the outbound DEATH_DETECTED that
-                // fires as a consequence gets suppressed by the nerve
-                // callback in main.cpp.  Returns false if live_base
-                // hasn't been latched yet -- expected on first run
-                // before the player has grabbed a purple coin (or
-                // before the LiveBaseLatch hook is enabled).
+                // M3.8 DeathLink inbound apply.  synthKill writes 0 to the
+                // HP int16 at live_base + 0x38 and arms the loop guard so
+                // the resulting DEATH_DETECTED is suppressed (not echoed
+                // back to AP).  If the player isn't in a killable state
+                // right now (menu / transition / pre-first-level), it
+                // returns false and we queue a pending retry instead of
+                // dropping the death -- serviceDeathLink fires it on the
+                // next gameplay frame.  Not deduplicated: multiple piled
+                // kills collapse naturally because the pending retry is a
+                // single slot and HP=0 is idempotent within a frame.
                 const bool ok = probe::synthKill();
+                if (!ok) probe::requestPendingDeathLink();
                 SMBWAP_LOG_INFO(
-                    "[deathlink in] source=%s cause=%s -> synthKill "
-                    "returned %s",
+                    "[deathlink in] source=%s cause=%s -> %s",
                     msg.kill.source, msg.kill.cause,
-                    ok ? "true" : "false");
+                    ok ? "applied immediately"
+                       : "deferred (not killable; will retry on return "
+                         "to gameplay)");
                 break;
             }
             case InboundKind::HelloAck:
