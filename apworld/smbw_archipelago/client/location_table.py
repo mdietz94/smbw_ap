@@ -646,12 +646,15 @@ _SHOP_SEED_WILDCARD_TABLE: Final[dict[tuple[int, int], str]] = {
 
 
 # (stage_key, coin_index) -> AP location name for TEN_COIN checks.
-# Each non-palace course has three "10 Coin" AP locations named
-# #1/#2/#3.  The PlayReport ``big_flower_coin_course_in/out`` arrays
-# carry per-course coin state at indices 0/1/2; whether those align
-# with the apworld's #1/#2/#3 numbering is unverified — see
-# docs/m2.2-runbook.md "Open question: array index vs apworld # numbering"
-# for the blind-mapping MVP choice (index N → #N+1).
+# Every course with hidden 10-coin rooms has three "10 Coin" AP
+# locations named #1/#2/#3 -- this includes the four palaces that ship
+# them in locations.json (W1 Pipe-Rock Plateau, W2 Fluff-Puff Peaks,
+# W4 Sunbaked Desert, W6 Deep Magma Bog).  The PlayReport
+# ``big_flower_coin_course_in/out`` arrays carry per-course coin state
+# at indices 0/1/2; whether those align with the apworld's #1/#2/#3
+# numbering is unverified — see docs/m2.2-runbook.md
+# "Open question: array index vs apworld # numbering" for the
+# blind-mapping MVP choice (index N → #N+1).
 _TEN_COIN_TABLE: Final[dict[tuple[int, int], str]] = {
     (_STAGE_WELCOME_TO_THE_FLOWER_KINGDOM, 0): "W1: Welcome to the Flower Kingdom! - 10 Coin #1",
     (_STAGE_WELCOME_TO_THE_FLOWER_KINGDOM, 1): "W1: Welcome to the Flower Kingdom! - 10 Coin #2",
@@ -947,6 +950,18 @@ _TEN_COIN_TABLE: Final[dict[tuple[int, int], str]] = {
     (_STAGE_BADGE_MARATHON, 0): "Special: Badge Marathon - 10 Coin #1",
     (_STAGE_BADGE_MARATHON, 1): "Special: Badge Marathon - 10 Coin #2",
     (_STAGE_BADGE_MARATHON, 2): "Special: Badge Marathon - 10 Coin #3",
+    (_STAGE_PIPE_ROCK_PLATEAU_PALACE, 0): "W1: Pipe-Rock Plateau Palace - 10 Coin #1",
+    (_STAGE_PIPE_ROCK_PLATEAU_PALACE, 1): "W1: Pipe-Rock Plateau Palace - 10 Coin #2",
+    (_STAGE_PIPE_ROCK_PLATEAU_PALACE, 2): "W1: Pipe-Rock Plateau Palace - 10 Coin #3",
+    (_STAGE_FLUFF_PUFF_PEAKS_PALACE, 0): "W2: Fluff-Puff Peaks Palace - 10 Coin #1",
+    (_STAGE_FLUFF_PUFF_PEAKS_PALACE, 1): "W2: Fluff-Puff Peaks Palace - 10 Coin #2",
+    (_STAGE_FLUFF_PUFF_PEAKS_PALACE, 2): "W2: Fluff-Puff Peaks Palace - 10 Coin #3",
+    (_STAGE_SUNBAKED_DESERT_PALACE, 0): "W4: Sunbaked Desert Palace - 10 Coin #1",
+    (_STAGE_SUNBAKED_DESERT_PALACE, 1): "W4: Sunbaked Desert Palace - 10 Coin #2",
+    (_STAGE_SUNBAKED_DESERT_PALACE, 2): "W4: Sunbaked Desert Palace - 10 Coin #3",
+    (_STAGE_DEEP_MAGMA_BOG_PALACE, 0): "W6: Deep Magma Bog Palace - 10 Coin #1",
+    (_STAGE_DEEP_MAGMA_BOG_PALACE, 1): "W6: Deep Magma Bog Palace - 10 Coin #2",
+    (_STAGE_DEEP_MAGMA_BOG_PALACE, 2): "W6: Deep Magma Bog Palace - 10 Coin #3",
 }
 # ---- end generated ----
 
