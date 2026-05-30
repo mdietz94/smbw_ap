@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import appdata_root
+from .patch_hakkun import apply_patches as _apply_hakkun_patches
 from .prereqs import (
     is_dev_clone,
     repo_root,
@@ -621,6 +622,12 @@ def cmake_configure(
             f"LibHakkun submodule missing: {sys_module} (run "
             f"`git submodule update --init switch-mod/sys` from the repo root)",
         )
+
+    # Patch upstream LibHakkun in-place. Without this, Python 3.14 users
+    # crash at cmake POST_BUILD time inside `sys/tools/nso.py` (the no-arg
+    # `NsoHeader()` ctor relies on a Struct.__new__ shape that 3.14
+    # removed). See patch_hakkun.py for the full why.
+    _apply_hakkun_patches(src, on_line=on_line)
 
     bd.mkdir(parents=True, exist_ok=True)
 
