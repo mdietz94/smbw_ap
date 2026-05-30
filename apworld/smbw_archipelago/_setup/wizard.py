@@ -371,16 +371,17 @@ def run_setup_wizard() -> bool:
             root.add_widget(scroll)
 
             # --- Buttons
-            btn_row = BoxLayout(
+            self._btn_row = BoxLayout(
                 orientation="horizontal", size_hint_y=None, height=48, spacing=8,
             )
             self.run_btn = Button(text="Run setup")
             self.run_btn.bind(on_release=lambda _i: self._start_run())
             self.close_btn = Button(text="Close")
             self.close_btn.bind(on_release=lambda _i: App.get_running_app().stop())
-            btn_row.add_widget(self.run_btn)
-            btn_row.add_widget(self.close_btn)
-            root.add_widget(btn_row)
+            self._btn_row.add_widget(self.run_btn)
+            self._btn_row.add_widget(self.close_btn)
+            self._root = root
+            root.add_widget(self._btn_row)
 
             return root
 
@@ -452,9 +453,28 @@ def run_setup_wizard() -> bool:
                 state["running"] = False
 
                 def _reset_btn(_dt: float) -> None:
-                    self.run_btn.disabled = False
-                    self.run_btn.text = "Run setup again"
                     self.close_btn.disabled = False
+                    if state["ok"]:
+                        # Replace button row with a success banner + Close only.
+                        self._btn_row.clear_widgets()
+                        self._root.remove_widget(self._btn_row)
+                        success_label = Label(
+                            text="[size=18][b][color=44cc44]Installation successful.[/color][/b][/size]",
+                            markup=True,
+                            size_hint_y=None,
+                            height=48,
+                        )
+                        close_only_row = BoxLayout(
+                            orientation="horizontal", size_hint_y=None, height=48, spacing=8,
+                        )
+                        close_btn2 = Button(text="Close")
+                        close_btn2.bind(on_release=lambda _i: App.get_running_app().stop())
+                        close_only_row.add_widget(close_btn2)
+                        self._root.add_widget(success_label)
+                        self._root.add_widget(close_only_row)
+                    else:
+                        self.run_btn.disabled = False
+                        self.run_btn.text = "Run setup again"
                 Clock.schedule_once(_reset_btn, 0)
 
     WizardApp().run()
