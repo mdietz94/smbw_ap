@@ -628,14 +628,6 @@
     "requires": "{OptOne(|Y Button|)}"
   },
   {
-    "name": "W1: Pipe-Rock Rumble - Normal Exit",
-    "region": "W1 10 Seeds",
-    "category": [
-      "World 1"
-    ],
-    "requires": []
-  },
-  {
     "name": "W1: Pipe-Rock Rumble - Wonder Seed",
     "region": "W1 10 Seeds",
     "category": [
@@ -1541,14 +1533,6 @@
       "10 Coin"
     ],
     "requires": "{OptOne(|Y Button|)}"
-  },
-  {
-    "name": "W2: Fluff-Puff Kerfuff - Normal Exit",
-    "region": "W2 4 Seeds",
-    "category": [
-      "World 2"
-    ],
-    "requires": []
   },
   {
     "name": "W2: Fluff-Puff Kerfuff - Wonder Seed",
@@ -3290,14 +3274,6 @@
     "requires": []
   },
   {
-    "name": "W4: Sunbaked Skirmish - Normal Exit",
-    "region": "W4 Start",
-    "category": [
-      "World 4"
-    ],
-    "requires": []
-  },
-  {
     "name": "W4: Sunbaked Skirmish - Wonder Seed",
     "region": "W4 Start",
     "category": [
@@ -3741,14 +3717,6 @@
   },
   {
     "name": "PI: Spelunking! - Wonder Seed",
-    "region": "PI 8 Seeds",
-    "category": [
-      "Petal Isles"
-    ],
-    "requires": []
-  },
-  {
-    "name": "PI: Petal Meddle - Normal Exit",
     "region": "PI 8 Seeds",
     "category": [
       "Petal Isles"
@@ -4253,14 +4221,6 @@
       "10 Coin"
     ],
     "requires": "{OptOne(|R Button|)}"
-  },
-  {
-    "name": "W5: Fungi Funk - Normal Exit",
-    "region": "W5 Post-Swaying",
-    "category": [
-      "World 5"
-    ],
-    "requires": []
   },
   {
     "name": "W5: Fungi Funk - Wonder Seed",
@@ -4959,14 +4919,6 @@
       "10 Coin"
     ],
     "requires": "{OptOne(|R Button|)}"
-  },
-  {
-    "name": "W6: Magma Flare-Up - Normal Exit",
-    "region": "W6 Start",
-    "category": [
-      "World 6"
-    ],
-    "requires": []
   },
   {
     "name": "W6: Magma Flare-Up - Wonder Seed",
