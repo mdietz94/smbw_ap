@@ -219,11 +219,19 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
 
             constexpr std::ptrdiff_t kDeathDiscriminator_Off = 0x18;
             constexpr std::uint64_t  kDeathDiscriminator_Val = 0x00ff000600000004ull;
+            // PhaseA finding: state 0x00ff003700000084 (player-
+            // controlled exit) fires on player-decided scene transitions
+            // — course-in, world-map travel, palace, Poplin shop entry.
+            // Aborting this Nerve activation does NOT block course-in
+            // (entry has multiple driving Nerves; this one is just a
+            // notification).  See docs/royal-seed-phase-a-findings.md
+            // for the full negative result.
             if (nerve) {
                 const auto state_word =
                     *reinterpret_cast<const std::uint64_t*>(
                         reinterpret_cast<const std::uint8_t*>(nerve)
                         + kDeathDiscriminator_Off);
+
                 if (state_word == kDeathDiscriminator_Val) {
                     if (probe::consumeSyntheticDeathThisFrame()) {
                         // Loop guard: synthKill just fired from an
@@ -351,6 +359,205 @@ HkTrampoline<void, void*> gameGoalReachedExecuteHook = hk::hook::trampoline(
             static_cast<unsigned>(s_fires));
         gameGoalReachedExecuteHook.orig(nerve);
     });
+
+// =========================================================================
+// FLOWER LOCK GATE — Phase A observability (REVERTED from force-lock)
+// =========================================================================
+//
+// PHASE A NEGATIVE RESULT (2026-05-30): this Nerve only fires for the
+// small subset of Wonder-Seed-locked course-points on the current
+// world (3 cycling keys per world).  Forcing the lock byte to 0
+// successfully blocks press-A on THOSE course-points, but regular
+// courses and palaces have no equivalent gate Nerve — they enter
+// freely.  Force-lock mode is therefore reverted to observability-only
+// to avoid blocking the Wonder-Seed-locked-courses gameplay path.
+// See docs/royal-seed-phase-a-findings.md.
+//
+// The hook stays installed so the course-key extraction
+// remains available as a Phase B starting point if/when the engine-
+// wide gate is found.  Calls Orig normally; just logs course keys.
+//
+// Original force-lock comment block preserved below for context:
+//
+// Phase A of the AP-controlled course-entry gating effort (see
+// docs/royal-seed-gate-entry-design.md).  Trampolines on
+// FUN_7100383418 (NSO +0x383418), the body shared by the two execute
+// slots of the IsDisplayFlowerLockUI Nerve (vtable at NSO +0x33c1ad8).
+//
+// The decompile (docs/royal-seed-gate-entry-design.md) shows the body
+// always returns 1 in normal operation — the lock decision lives in
+// a side-effect byte at *((this+0x20) & ~3).  Phase A unconditionally
+// writes 0 to that byte (= locked) and returns 1 without calling
+// Orig, to verify that:
+//
+//   1. We can safely intercept the function (prologue is clean — five
+//      sub/stp instructions, no PC-relative loads per CLAUDE.md
+//      gotcha #2 — so the trampoline relocation is safe).
+//   2. Forcing the lock byte to 0 actually blocks course-point entry
+//      (the consumer of that byte is the gating decision; if entry is
+//      blocked, Phase B can build the course → AP-index map and
+//      Phase C wires it to a bridge-controlled bitfield).
+//
+// What we expect to see in Ryujinx after this lands:
+//   * Boot to the world map.
+//   * Every course point on every world shows locked / refuses
+//     press-A entry.
+//   * Log line "PhaseA flower_lock force-locked" fires repeatedly
+//     (the UI tick polls the gate Nerve continuously).
+//   * The first 30 fires also dump the extracted course key from
+//     the [+8]→[+8]→[+0x1f8]→[+0x350]→[+0x108] walk — Phase B
+//     reuses that walk to build the course → AP-index map.
+//
+// What the Nerve's two execute wrappers do with the return value:
+//   * FUN_71003833dc (default-fail): state = bits 30+31, then
+//     `if ((ret & 1) != 0) state = bit 31 only` — so return 1 ⇒
+//     SUCCESS state (bit 31 set, bit 30 cleared).
+//   * FUN_710085134c (default-success): state = bit 31, then
+//     `if ((ret & 1) == 0) state = bits 30+31` — so return 1 ⇒
+//     SUCCESS state.
+// Both wrappers treat return=1 as "Nerve processing complete,
+// proceed to next state" — exactly what we want.
+HkTrampoline<unsigned long long, void*> flowerLockGateBodyHook =
+    hk::hook::trampoline(
+        [](void* nerve) -> unsigned long long {
+            // Bail (let Orig run normally) if the Nerve `this` is null —
+            // we'd just be replicating the function's own null-pointer
+            // fast-fail path that returns 0.  Note: returning 0 here
+            // would make the wrappers see "failure" state, which has no
+            // bearing on the lock byte but might confuse the Nerve
+            // scheduler if it special-cases bit 30.
+            if (!nerve) {
+                return flowerLockGateBodyHook.orig(nerve);
+            }
+
+            // Walk the pointer chain to the course key for Phase B
+            // observability.  Bail (defer to Orig) if any link is null —
+            // that means we're earlier in init than the Phase A guarantee
+            // assumes, and forcing the lock byte without a valid course
+            // context could hide a real engine init bug.
+            std::uint64_t course_key = 0;
+            do {
+                auto* p0 = *reinterpret_cast<void**>(
+                    static_cast<std::uint8_t*>(nerve) + 8);
+                if (!p0) break;
+                auto* p1 = *reinterpret_cast<void**>(
+                    static_cast<std::uint8_t*>(p0) + 8);
+                if (!p1) break;
+                auto* p2 = *reinterpret_cast<void**>(
+                    static_cast<std::uint8_t*>(p1) + 0x1f8);
+                if (!p2) break;
+                auto* p3 = *reinterpret_cast<void**>(
+                    static_cast<std::uint8_t*>(p2) + 0x350);
+                if (!p3) break;
+                course_key = *reinterpret_cast<std::uint64_t*>(
+                    static_cast<std::uint8_t*>(p3) + 0x108);
+            } while (false);
+
+            // PhaseA REVERTED: was force-writing 0 to the lock byte
+            // at *((nerve+0x20) & ~3).  That works (verified
+            // Ryujinx_..._14-43-14.log) but only for Wonder-Seed-
+            // locked course-points which are a narrow subset.  Now
+            // observability-only: read packed but don't write.
+            const std::uint64_t packed = *reinterpret_cast<std::uint64_t*>(
+                static_cast<std::uint8_t*>(nerve) + 0x20);
+            char* lock_byte = reinterpret_cast<char*>(packed & ~3ULL);
+            (void)lock_byte;  // available for future Phase B work
+
+            // Bounded log.  The world-map UI ticks the gate Nerves
+            // continuously while the player sits on the world map;
+            // unbounded logging would flood the ring.  First 30 fires
+            // verbose, then every 256th.
+            static std::atomic<int> s_fires{0};
+            const int n = s_fires.fetch_add(1, std::memory_order_relaxed)
+                          + 1;
+            if (n <= 5) {
+                SMBWAP_LOG_INFO(
+                    "PhaseA flower_lock observed (no-op): nerve=%p "
+                    "course_key=0x%016llx packed=0x%016llx "
+                    "lock_byte=%p (fire #%d)",
+                    nerve,
+                    static_cast<unsigned long long>(course_key),
+                    static_cast<unsigned long long>(packed),
+                    lock_byte, n);
+            }
+
+            // Call Orig — let the original gate logic run.
+            return flowerLockGateBodyHook.orig(nerve);
+        });
+
+// =========================================================================
+// NEED-BADGE-ID — Phase A observability (REVERTED from hijack)
+// =========================================================================
+//
+// PHASE A NEGATIVE RESULT (2026-05-30): the
+// GetNeedBadgeIdEnterCourseForDirectCourseIn Nerve never fires for
+// regular courses or palaces in normal play (zero fires observed in
+// Ryujinx_..._14-53-11.log).  It's narrow to badge-challenge courses
+// only.  Hijacking it can't gate the courses we care about.
+// Hook stays installed for observability — if it ever fires, we'd
+// want to know.  Reverted from overwriting 0x20 to call-Orig + log
+// only.  See docs/royal-seed-phase-a-findings.md.
+//
+// Original hijack comment block preserved below for context:
+//
+// Second Phase A probe (see royal-seed-gate-entry-design.md).  The
+// flower-lock probe above turned out to only affect the
+// IsDisplayFlowerLockUI Nerves — which control the seed-bar Wonder Seed
+// lock on specific course points (the "needs N Wonder Seeds to unlock
+// this course" UI), NOT every course-point's entry gate.  Locking them
+// blocks crossing those particular seed-locked course points but leaves
+// every unlocked course directly enterable.
+//
+// This probe trampolines the OTHER candidate identified during RE:
+// FUN_7101bffe94 (NSO +0x1bffe94), slot 8 execute of the
+// `GetNeedBadgeIdEnterCourseForDirectCourseIn` Nerve (vtable at
+// NSO +0x34b9300).  In vanilla operation that Nerve writes -1 to its
+// output slot (`*(this+0x20) & ~3` — same packed-pointer pattern as
+// the flower-lock Nerve), meaning "no badge required".  The engine's
+// existing badge-challenge gate consumes this value and refuses
+// press-A entry if the player doesn't own the named badge.
+//
+// We call Orig (so the standard TLS/state init runs and -1 is written
+// as a fallback), then overwrite the output slot with `0x42` — a
+// badge ID the player almost certainly doesn't own on a fresh save.
+// Three possible outcomes:
+//
+//   1. Press-A entry blocked + "you need badge ???" UI: the Nerve
+//      output IS the badge-challenge gate input, our hook works,
+//      Phase A is confirmed for per-course entry gating.  Phase C
+//      can wire this to an AP-controlled per-course bitfield.
+//
+//   2. Press-A entry blocked, weird/silent UI: gate works but UI
+//      doesn't render unknown badge IDs cleanly.  Acceptable for a
+//      proof-of-concept; final design would pick a real but
+//      always-locked badge or extend the badge UI.
+//
+//   3. Press-A entry still works: the Nerve only fires for
+//      badge-CHALLENGE courses (a small subset of the world's
+//      course-points), not regular courses or palaces.  Negative
+//      result → we need a third hook target.  Likely candidates if
+//      this falls through: the WipeCourseIn entry Nerve, the
+//      NotifyStartCourseIn execute (NSO +0x88 75c4), or the input
+//      handler on WorldMapPlayerControl.
+HkTrampoline<void, void*> needBadgeIdEnterCourseExecuteHook =
+    hk::hook::trampoline(
+        [](void* nerve) -> void {
+            // PhaseA REVERTED: was overwriting [+0x20] with fake
+            // badge ID 0x42 to force-block via the badge-challenge
+            // UI.  In testing this Nerve never fired for the courses
+            // we care about, so the hijack had no effect.  Now
+            // observability-only: call Orig + log if it ever fires.
+            needBadgeIdEnterCourseExecuteHook.orig(nerve);
+
+            static std::atomic<int> s_fires{0};
+            const int n = s_fires.fetch_add(1, std::memory_order_relaxed)
+                          + 1;
+            if (n <= 30) {
+                SMBWAP_LOG_INFO(
+                    "PhaseA need_badge_id observed (no-op): nerve=%p "
+                    "(fire #%d)", nerve, n);
+            }
+        });
 
 // =========================================================================
 // PLAYREPORT (Phase 2c)
@@ -735,7 +942,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2g: 13 hooks + ap/ subsystem + real probe:: grants + WS reader override");
+    SMBWAP_LOG_INFO("Phase 2g + PhaseA observability probes: 15 hooks + ap/ subsystem + real probe:: grants + WS reader override");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -775,6 +982,20 @@ extern "C" void hkMain() {
     // WONDER SEED GATE OVERRIDE (reader-side substitution)
     installHook("ContainerAReader",    0x0012ae94,
                 containerAReaderHook.installAtMainOffset(0x0012ae94));
+
+    // PhaseA observability hooks.  Both probes are REVERTED from
+    // active force-lock/hijack to log-only after the negative results
+    // documented in docs/royal-seed-phase-a-findings.md:
+    //   * FlowerLockGateBody only gates Wonder-Seed-locked course
+    //     points (narrow subset, not a per-course-entry gate).
+    //   * NeedBadgeId never fires for regular courses or palaces.
+    // The hooks stay installed so the course-key walk and Nerve
+    // signatures are available as a Phase B starting point if the
+    // engine-wide entry gate is found in a later session.
+    installHook("FlowerLockGateBody",            0x00383418,
+                flowerLockGateBodyHook.installAtMainOffset(0x00383418));
+    installHook("NeedBadgeIdEnterCourseExecute", 0x01bffe94,
+                needBadgeIdEnterCourseExecuteHook.installAtMainOffset(0x01bffe94));
 
     SMBWAP_LOG_INFO("=== smbwap hkMain END ===");
 }
