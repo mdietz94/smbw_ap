@@ -78,6 +78,35 @@ ranked list **and** is xref'd by #1's seed-like string list **and**
 shows up as a GATE-CANDIDATE in #3 is a high-confidence hit (≥3 of
 plan Section-4 evidence criteria).
 
+### Wonder Seed RE re-open (2026-05-28) — persistence + crash-avoidance
+
+Pivot: the gate-RE work shipped a read-side override that lets gates
+pass via AP, but the underlying per-course bitfield (hash `0x60458608`,
+container D) is never written, so the count resets on save/reload.
+Static-analysis sprint 2 noted a 4-arg overload of `FUN_710049EA24`
+that allegedly writes individual bits at hash `0x60458608` indexed by
+a `bit_index` 4th arg, but it was never tested.  This script set drives
+that hypothesis and discovers any other unmapped containers we missed.
+Plan + protocol in [docs/wonder-seed-re-reopen-2026-05-28.md](../../docs/wonder-seed-re-reopen-2026-05-28.md).
+
+| # | Script | Purpose | Phase |
+|---|---|---|---|
+| 1 | `find_hash_immediate_loads.py` | Given a list of 32-bit literals (seeded with `0x60458608`, the 5 WS mirror hashes, container-C badge hashes, etc.), find every function that materializes each literal via `mov`/`movz`/`movk`/`movn`.  Inverts `walk_hash_writer_xrefs.py`: that script harvests callers of known accessors, this finds every loader regardless of accessor.  Inter-literal correlation table at the end surfaces aggregator functions (those touching ≥2 seeded literals). | WS persistence |
+| 2 | `walk_gmd_field_access.py` | For every `gmd::GameDataMgr::sInstance` dereference site, walk forward N insns and tally `(gmd+0xXX, ldr/str variant)` accesses.  Output is a histogram of substruct usage with "DOCUMENTED" vs "NEW" tags.  Surfaces unmapped containers (D/E/F) and pins the substruct anchor used by per-course writers vs container-B writers. | WS persistence |
+| 3 | `decompile_container_chain.py` | Decompile `FUN_710049EA24` + delegates + `FUN_7101F2B354` + `FUN_7100124134` + the gate predicate `FUN_71001787B40` + suspected per-world gate `FUN_7100935CE0`.  Places `INVESTIGATE-WS:` plate comments at chain entry points and inner call sites so Ghidra navigation has the rationale inline.  Idempotent comment merging. | WS persistence |
+| 4 | `find_wonder_seed_acquisition_chain.py` | BFS from the WonderSeedAwarded Nerve vtable's execute slot (NSO+0x3345728+0x40), depth-limited, flagging hits on the known writer offsets (`+0x49F648`, `+0x49EA24`, `+0x1F2B354`, etc.).  Output is an indented call tree + a "writer-target hits" summary listing every chain that reaches a primitive.  Combined with the live SeedTrace hooks, this gives both the static AND dynamic picture of the natural seed-grant pipeline. | WS persistence |
+
+#### Companion host-side script
+
+[`brute_seed_field_hashes.py`](brute_seed_field_hashes.py) —
+Murmur3-32 (plus FNV-1a, CRC-32) brute force over Wonder Seed /
+per-course / world / Japanese-romaji candidate names against the 10
+unknown seed hashes.  Run before any deep static work; a hit names
+the field directly and might short-circuit weeks of decompile.
+Mirror of `brute_badge_field_hashes.py` (which produced zero hits,
+i.e. expect the same here — but the negative result is itself useful
+for the docs).
+
 Companion Phase-1 manual pass (no new script needed): decompile the
 HamletDuFromage Fast-Travel cheat anchors at NSO `+0x48A528`,
 `+0x5D9F58`, `+0x935E10`, and `+0x48A818` (Top-of-Flag), walk

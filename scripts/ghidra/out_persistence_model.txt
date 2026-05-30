@@ -1,0 +1,1214 @@
+SMBW Archipelago: decompile_persistence_model.py
+  image base: 0x7100000000
+
+===== FUN_71006b5d6c @ 71006b5d6c =====
+  role: world-entry handler: loads container-D per-world seed bitmasks -> current-world bitfields -> base -> recompute
+  decompile: 7535 chars (at end)
+
+===== FUN_710048332c @ 710048332c =====
+  role: base-count computer (writes 0x21f89ab1)
+  decompile: 2988 chars (at end)
+
+===== FUN_71000d33e0 @ 71000d33e0 =====
+  role: descriptor accessor (returns lVar9 = per-world seed-info entry with hashes at +0x10/+0x14)
+  decompile: 1566 chars (at end)
+
+===== FUN_710021fda0 @ 710021fda0 =====
+  role: descriptor/iterator builder
+  decompile: 7317 chars (at end)
+
+===== FUN_7100584ba0 @ 7100584ba0 =====
+  role: descriptor/iterator builder variant
+  decompile: 3501 chars (at end)
+
+===== FUN_71000e258c @ 71000e258c =====
+  role: container-D u32 reader (gmd+0x788)
+  decompile: 1764 chars (at end)
+
+===== FUN_71000d3524 @ 71000d3524 =====
+  role: iterator helper (used in base calc)
+  decompile: 445 chars (at end)
+
+===== FUN_71000d3640 @ 71000d3640 =====
+  role: iterator helper
+  decompile: 2589 chars (at end)
+
+===== FUN_71000d3830 @ 71000d3830 =====
+  role: iterator helper
+  decompile: 2688 chars (at end)
+
+
+============================================================
+===== data dumps =====
+============================================================
+
+  data dump 0x71029f0a00 .. 0x71029f1600 (u32 LE, 4/line):
+    0x71029f0a00: 00000000  00000000  00000000  00000000
+    0x71029f0a10: 00000000  00000000  00010000  00000000
+    0x71029f0a20: 00000000  ffffffff  00000000  00000000
+    0x71029f0a30: 00000000  00000000  00000000  00000004
+    0x71029f0a40: 00000000  00000000  00000000  00000100
+    0x71029f0a50: 00000000  00000001  00000000  00000000
+    0x71029f0a60: 00000000  00000001  00000000  00000001
+    0x71029f0a70: 00000000  00000000  ffffffff  00000000
+    0x71029f0a80: ffffffff  00000000  00000000  00000000
+    0x71029f0a90: 00000000  00000010  3f800000  00000002
+    0x71029f0aa0: 00000005  3f000000  00000000  00000000
+    0x71029f0ab0: 000002bc  00000003  00000005  00000000
+    0x71029f0ac0: 00000000  00000000  00000000  00000000
+    0x71029f0ad0: 00000000  3f800000  40800000  00000000
+    0x71029f0ae0: 00000000  00000000  00000000  00000000
+    0x71029f0af0: 00000000  00000000  3f000000  00000000
+    0x71029f0b00: 00000000  00000000  00000101  00000000
+    0x71029f0b10: 00000000  00000000  00000000  00000000
+    0x71029f0b20: c0600000  00000000  43fa0000  43480000
+    0x71029f0b30: 00000000  00000000  00000000  00000000
+    0x71029f0b40: 00000000  00000000  00000000  00000000
+    0x71029f0b50: 00000000  00000000  00000000  00000000
+    0x71029f0b60: 00000000  00000000  00000000  00000000
+    0x71029f0b70: 00000000  00000000  00000000  00000000
+    0x71029f0b80: 00000000  00000000  00000000  00000000
+    0x71029f0b90: 00000000  00000000  00000000  00000000
+    0x71029f0ba0: 00000000  0235d948  6303c6d1  d8163612
+    0x71029f0bb0: eb41ddd5  a6140d7c  6f9dfc59  e7773731
+    0x71029f0bc0: 406f7425  f3d3849c  a4dbcac9  b465ad47
+    0x71029f0bd0: 6d1b5c25  cea26ca1  48e0dec7  72128f1d
+    0x71029f0be0: f1c0ef95  4f262e62  6d2e5a9f  7ae70f64
+    0x71029f0bf0: 43318285  55815859  64fe8cc4  fc951a99
+    0x71029f0c00: 6af4303e  05015b41  df9a528a  5db62877
+    0x71029f0c10: 2c51d948  03722209  e1f4956f  48c27a6f
+    0x71029f0c20: 2309a645  46721422  b161b8ab  57af904b
+    0x71029f0c30: 7b90402e  d1a71cb7  4ebb08c0  7bfbb80c
+    0x71029f0c40: bcc1ef0e  cdf8173d  7438dcd6  41f33e2d
+    0x71029f0c50: 017e885e  d727e6c6  0f1260d3  601ad072
+    0x71029f0c60: ee6b32b0  1f711478  8fee49fc  fc998f47
+    0x71029f0c70: 3db2938d  bad4c480  e93a7808  e5cdcbd6
+    0x71029f0c80: 3da75ac4  6486ee21  1acdef12  e8f0029c
+    0x71029f0c90: 3c420b13  4cbd45f6  cdd48384  2f0b10b9
+    0x71029f0ca0: 9ec77a1a  09bfe967  0e079bd1  f052cf51
+    0x71029f0cb0: 6cf0be20  57a2c8f4  5bd1c9a9  ad281095
+    0x71029f0cc0: 5fab7f7d  84b51cc0  1abddd26  5acdeded
+    0x71029f0cd0: eb5da755  49abba86  06fa9d91  daeb15b2
+    0x71029f0ce0: b994f3f9  745217bc  81407b66  9cf94a91
+    0x71029f0cf0: 9ceeac14  b0c3ae80  572a8a58  cce21270
+    0x71029f0d00: 787cd345  ce0879ed  5aaa3cf1  ad40b6a8
+    0x71029f0d10: bd28afdc  57df969b  76c6ed9e  96c7819a
+    0x71029f0d20: f36452ef  d7685bc3  e3711c54  afa77daa
+    0x71029f0d30: 4e4223d7  65dfac30  cffab3be  2ffa30f5
+    0x71029f0d40: 63dac5fb  b550d8d6  8e91f82b  336d9b3d
+    0x71029f0d50: c050ac61  cb07e4d6  f0a6d155  5714d62f
+    0x71029f0d60: 5ca69b2b  ef8f7386  b7de5a55  132b4523
+    0x71029f0d70: dcbf17af  008c08fe  d9031404  53f5d292
+    0x71029f0d80: cb80b52e  9d25ce3b  6daa7028  df5d1c76
+    0x71029f0d90: 97ac7703  3942f397  141e5eec  4c80b30f
+    0x71029f0da0: 9e77fa3b  05983371  0eb24da9  0f469c6e
+    0x71029f0db0: 27f84ee6  1dcf7f6e  a9befc7b  f53c6d43
+    0x71029f0dc0: e53c17b8  b4865d93  38757057  bf40af4f
+    0x71029f0dd0: a6ce080b  aeb9e677  7a283b2d  82fc7ca5
+    0x71029f0de0: 9851c31e  95a3ed25  9afd6f27  783caba6
+    0x71029f0df0: 0e8baca5  40c00dd7  2c5ab3e2  9d9cfe11
+    0x71029f0e00: f5411212  3c034e3f  83834483  58ef919f
+    0x71029f0e10: 52536691  a782c25e  75946d2b  44c77ad2
+    0x71029f0e20: a45048b6  0d5a3e00  4a015c3e  9b046eae
+    0x71029f0e30: 93af7dfc  61d80d2f  a2ff2858  bd222b7c
+    0x71029f0e40: a6e6ce4b  44bda143  e2193823  a3fef061
+    0x71029f0e50: eb5d33c1  2542d582  e0ce1f69  9a346070
+    0x71029f0e60: a75a8d4f  52781dfd  7278166a  9202d71b
+    0x71029f0e70: c7c77616  e9feb29f  125b21a6  935ed60c
+    0x71029f0e80: de6f7bf2  98450d1a  f9975da6  7d6c5ec2
+    0x71029f0e90: 9d7052ad  d4660d2b  c33a5821  1bc6545d
+    0x71029f0ea0: c89f302b  8ab5b4f4  b46e4bbe  fecc126b
+    0x71029f0eb0: 6a7aa43e  dbc2c66f  ab53a72b  f8bdcbe0
+    0x71029f0ec0: 89a22391  122217a2  92d1845a  df886c5e
+    0x71029f0ed0: 5ac090b4  c6c396e1  9f6b1bcb  b606a219
+    0x71029f0ee0: f1cd17b9  5c6273d5  81a37735  8fae08e6
+    0x71029f0ef0: c63dc719  872c55b9  ec128af0  884d2433
+    0x71029f0f00: 81d2bffc  0e5c2d3d  329f18bc  e39725af
+    0x71029f0f10: 7ca196b7  e75d103e  20cc6633  44c540f1
+    0x71029f0f20: f65f89be  e4897294  776ba6e8  efe46736
+    0x71029f0f30: 627deda7  9878250f  8ba1cb58  3500ccb3
+    0x71029f0f40: e007c86e  066ff740  1f2d0da0  918911a6
+    0x71029f0f50: 2ab52cdc  4fc5fa63  6be856b5  90bac7ef
+    0x71029f0f60: 85a5d6fc  18daa705  afbbc635  0df2e5e9
+    0x71029f0f70: d88a9ece  cfa26ba6  248e926d  ca634368
+    0x71029f0f80: 03745f51  e5ab847c  0856f851  7fff318b
+    0x71029f0f90: 4624d954  00000000  00000000  00000000
+    0x71029f0fa0: 00000000  00000000  00000000  00000000
+    0x71029f0fb0: 00000000  00000000  00000000  00000000
+    0x71029f0fc0: 00000000  00000000  00000000  00000000
+    0x71029f0fd0: 00000000  00000000  00000000  00000000
+    0x71029f0fe0: 00000000  00000000  00000000  00000000
+    0x71029f0ff0: 00000000  00000000  00000000  00000000
+    0x71029f1000: 00000000  00000000  00000000  00000000
+    0x71029f1010: 00000000  00000000  00000000  00000000
+    0x71029f1020: 00000000  00000000  00000000  00000000
+    0x71029f1030: 00000000  00000000  00000000  00000000
+    0x71029f1040: 00000000  00000000  00000000  00000000
+    0x71029f1050: 00000000  00000000  00000000  00000000
+    0x71029f1060: 00000000  00000000  00000000  00000000
+    0x71029f1070: 00000000  00000000  00000000  00000000
+    0x71029f1080: 00000000  00000000  00000000  00000000
+    0x71029f1090: 00000000  00000000  00000000  00000000
+    0x71029f10a0: 00000000  00000000  00000000  00000000
+    0x71029f10b0: 00000000  00000000  00000000  00000000
+    0x71029f10c0: 00000000  00000000  00000000  00000000
+    0x71029f10d0: 00000000  00000000  00000000  00000000
+    0x71029f10e0: 00000000  00000000  00000000  00000000
+    0x71029f10f0: 00000000  00000000  00000000  00000000
+    0x71029f1100: 00000000  00000000  00000000  00000000
+    0x71029f1110: 00000000  00000000  00000000  00000000
+    0x71029f1120: 00000000  00000000  00000000  00000000
+    0x71029f1130: 00000000  00000000  00000000  00000000
+    0x71029f1140: 00000000  00000000  00000000  00000000
+    0x71029f1150: 00000000  00000000  00000000  00000000
+    0x71029f1160: 00000000  00000000  00000000  00000000
+    0x71029f1170: 00000000  00000000  00000000  00000000
+    0x71029f1180: 00000000  00000000  00000000  00000000
+    0x71029f1190: 00000000  00000000  00000000  00000000
+    0x71029f11a0: 00000000  00000000  00000000  00000000
+    0x71029f11b0: 00000000  00000000  00000000  00000000
+    0x71029f11c0: 00000000  00000000  00000000  00000000
+    0x71029f11d0: 00000000  00000000  00000000  00000000
+    0x71029f11e0: 00000000  00000000  00000000  00000000
+    0x71029f11f0: 00000000  00000000  00000000  00000000
+    0x71029f1200: 00000000  00000000  00000000  00000000
+    0x71029f1210: 00000000  00000000  00000000  00000000
+    0x71029f1220: 00000000  00000000  00000000  00000000
+    0x71029f1230: 00000000  00000000  00000000  00000000
+    0x71029f1240: 00000000  00000000  00000000  00000000
+    0x71029f1250: 00000000  00000000  00000000  00000000
+    0x71029f1260: 00000000  00000000  00000000  00000000
+    0x71029f1270: 00000000  00000000  00000000  00000000
+    0x71029f1280: 00000000  00000000  00000000  00000000
+    0x71029f1290: 00000000  00000000  00000000  00000000
+    0x71029f12a0: 00000000  00000000  00000000  00000000
+    0x71029f12b0: 00000000  00000000  00000000  00000000
+    0x71029f12c0: 00000000  00000000  00000000  00000000
+    0x71029f12d0: 00000000  00000000  00000000  00000000
+    0x71029f12e0: 00000000  00000000  00000000  00000000
+    0x71029f12f0: 00000000  00000000  00000000  00000000
+    0x71029f1300: 00000000  00000000  00000000  00000000
+    0x71029f1310: 00000000  00000000  00000000  00000000
+    0x71029f1320: 00000000  00000000  00000000  00000000
+    0x71029f1330: 00000000  00000000  00000000  00000000
+    0x71029f1340: 00000000  00000000  00000000  00000000
+    0x71029f1350: 00000000  00000000  00000000  00000000
+    0x71029f1360: 00000000  00000000  00000000  00000000
+    0x71029f1370: 00000000  00000000  00000000  00000000
+    0x71029f1380: 00000000  00000000  00000000  00000000
+    0x71029f1390: 00000000  00000000  00000000  00000000
+    0x71029f13a0: 00000000  00000000  00000000  00000000
+    0x71029f13b0: 00000000  00000000  00000000  00000000
+    0x71029f13c0: 00000000  00000000  00000000  00000000
+    0x71029f13d0: 00000000  00000000  00000000  00000000
+    0x71029f13e0: 00000000  00000000  00000000  00000000
+    0x71029f13f0: 00000000  00000000  00000000  00000000
+    0x71029f1400: 00000000  00000000  00000000  00000000
+    0x71029f1410: 00000000  00000000  00000000  00000000
+    0x71029f1420: 00000000  00000000  00000000  00000000
+    0x71029f1430: 00000000  00000000  00000000  00000000
+    0x71029f1440: 00000000  00000000  00000000  00000000
+    0x71029f1450: 00000000  00000000  00000000  00000000
+    0x71029f1460: 00000000  00000000  ffffffff  00000002
+    0x71029f1470: 00000000  00000001  00000004  00000002
+    0x71029f1480: 00000003  00000002  00000002  00000008
+    0x71029f1490: 00000008  00000008  00000000  00000001
+    0x71029f14a0: 00000001  00000002  00000001  00000001
+    0x71029f14b0: 00000001  00000001  00000001  00000001
+    0x71029f14c0: 00000001  00000001  00000000  00000000
+    0x71029f14d0: 00000001  00000001  00000002  00000001
+    0x71029f14e0: 00000001  00000001  00000001  00000001
+    0x71029f14f0: 00000001  00000001  00000001  00000000
+    0x71029f1500: 00000003  00000007  00000006  00000006
+    0x71029f1510: 00000006  00000007  00000000  00000001
+    0x71029f1520: 00000001  00000002  00000001  00000001
+    0x71029f1530: 00000001  00000001  00000001  00000001
+    0x71029f1540: 00000003  00000004  00000000  fffffffd
+    0x71029f1550: ffffffdf  ffffff7f  00000100  00000010
+    0x71029f1560: 00000020  ffffffff  1faf41e5  b9bd745d
+    0x71029f1570: 00000000  00000000  00000000  ffffffff
+    0x71029f1580: ffffffff  00000000  ffffffff  ffffffff
+    0x71029f1590: 00000000  00000000  00000000  00000000
+    0x71029f15a0: ffffffff  ffffffff  00000000  00000001
+    0x71029f15b0: 00000001  00000000  40700000  41700000
+    0x71029f15c0: 3f900000  c0700000  c1700000  bf900000
+    0x71029f15d0: 000000b4  00000000  00000001  00000000
+    0x71029f15e0: 00000000  00000000  00000000  00000000
+    0x71029f15f0: 00000000  00000000  00000000  00000000
+
+============================================================
+===== decompile bodies =====
+============================================================
+
+----- FUN_71006b5d6c @ 71006b5d6c -----
+  
+  /* WARNING: Restarted to delay deadcode elimination for space: stack */
+  
+  void FUN_71006b5d6c(void)
+  
+  {
+    uint uVar1;
+    uint uVar2;
+    char cVar3;
+    bool bVar4;
+    long lVar5;
+    int iVar6;
+    uint uVar7;
+    undefined4 uVar8;
+    long lVar9;
+    ulong uVar10;
+    undefined ***pppuVar11;
+    uint *puVar12;
+    long lVar13;
+    undefined **ppuVar14;
+    undefined ***pppuVar15;
+    undefined8 *puVar16;
+    uint uVar17;
+    uint uVar18;
+    uint uVar19;
+    undefined **ppuStack_b0;
+    undefined1 *puStack_a8;
+    undefined8 uStack_a0;
+    undefined8 uStack_98;
+    undefined4 uStack_90;
+    long lStack_88;
+    ulong uStack_80;
+    undefined4 uStack_78;
+    undefined2 uStack_74;
+    byte bStack_72;
+    undefined8 uStack_6c;
+    undefined4 uStack_64;
+    
+    uStack_90 = 0;
+    uStack_a0 = 0;
+    uStack_98 = 0;
+    lStack_88 = 0;
+    uStack_78 = 0xffffffff;
+    uStack_74 = 0;
+    bStack_72 = 0;
+    uStack_80 = 0xffffffff;
+    ppuStack_b0 = &PTR_FUN_71034f0a00;
+    puStack_a8 = &DAT_7102a408ac;
+    FUN_710021fda0(&ppuStack_b0);
+    if ((((DAT_7103628398 != 0) && (*(long *)(DAT_7103628398 + 0x30) != 0)) &&
+        (puVar12 = *(uint **)(*(long *)(DAT_7103628398 + 0x30) + 8), puVar12 != (uint *)0x0)) &&
+       (*(long *)(*(long *)(puVar12 + 2) + (ulong)(1 < *puVar12) * 8) != 0)) {
+      uStack_80 = uStack_80 & 0xffffffff00000000;
+      bStack_72 = bStack_72 | 1;
+    }
+    lVar9 = FUN_71000d33e0(&ppuStack_b0);
+    pppuVar11 = &ppuStack_b0;
+    do {
+      pppuVar15 = pppuVar11;
+      if ((((*(byte *)((long)pppuVar15 + 0x3e) & 1) != 0) || (pppuVar15[2] == (undefined **)0x0)) ||
+         ((ppuVar14 = pppuVar15[3], ppuVar14 == (undefined **)0x0 ||
+          ((*(int *)((long)ppuVar14 + 0xc) != *(int *)(pppuVar15 + 4) ||
+           (puVar16 = (undefined8 *)*ppuVar14, puVar16 == (undefined8 *)0x0)))))) break;
+      FUN_7100263494();
+      pppuVar11 = (undefined ***)(**(code **)*puVar16)(puVar16,&DAT_7103631338);
+    } while (pppuVar11 != (undefined ***)0x0);
+    lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+    uVar7 = 0;
+    if (*(int *)(lVar9 + 0x10) == 0) {
+      uVar19 = 0;
+    }
+    else {
+      iVar6 = *(int *)(pppuVar15 + 6);
+      if (iVar6 < 0) {
+        uVar19 = 0;
+      }
+      else {
+        uVar19 = 0;
+        if (*(int *)(lVar9 + 0x14) != 0) {
+          if (_ZN3gmd11GameDataMgr9sInstanceE == 0) goto LAB_71006b60b4;
+          uStack_6c = 0;
+          FUN_71000e258c(_ZN3gmd11GameDataMgr9sInstanceE,(long)&uStack_6c + 4,*(int *)(lVar9 + 0x10),
+                         iVar6);
+          FUN_71000e258c(lVar5,&uStack_6c,*(undefined4 *)(lVar9 + 0x14),iVar6);
+          uVar7 = (uint)uStack_6c;
+          uVar19 = uStack_6c._4_4_;
+        }
+      }
+    }
+    lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+    if (_ZN3gmd11GameDataMgr9sInstanceE != 0) {
+      lVar13 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x80);
+      if (lVar13 != 0) {
+        uVar18 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x8c);
+        if (uVar18 != 0) {
+          uVar17 = 0;
+          if (uVar18 != 0) {
+            uVar17 = 0x1faf41e5 / uVar18;
+          }
+          uVar17 = 0x1faf41e5 - uVar17 * uVar18;
+          uVar2 = uVar17;
+          do {
+            iVar6 = *(int *)(lVar13 + (-(ulong)(uVar2 >> 0x1f) & 0xfffffff800000000 |
+                                      (ulong)uVar2 << 3));
+            if (iVar6 == 0x1faf41e5) {
+              uVar18 = *(uint *)(lVar13 + (long)(int)uVar2 * 8 + 4);
+              if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x70) <= uVar18) {
+                uVar18 = 0;
+              }
+              iVar6 = (**(code **)(*(long *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x78) +
+                                            (long)(int)uVar18 * 0x40) + 0x20))();
+              uVar18 = iVar6 - 1;
+              if (0 < iVar6) {
+                uVar17 = 0;
+                if (0x1c < uVar18) {
+                  uVar18 = 0x1d;
+                }
+                do {
+                  lVar13 = _ZN3gmd11GameDataMgr9sInstanceE;
+                  uVar2 = 1 << (ulong)(uVar17 & 0x1f) & uVar19;
+                  uVar10 = FUN_710049ea78(_ZN3gmd11GameDataMgr9sInstanceE + 0x68,uVar2 != 0,0x1faf41e5
+                                          ,uVar17);
+                  if ((uVar10 & 1) == 0) {
+                    FUN_7101f263fc(lVar13 + 8,uVar2 != 0,0x1faf41e5);
+                  }
+                  uVar17 = uVar17 + 1;
+                } while (uVar18 + 1 != uVar17);
+              }
+              break;
+            }
+            if (iVar6 == 0) break;
+            uVar1 = 0;
+            if ((int)(uVar2 + 1) < (int)uVar18) {
+              uVar1 = uVar2 + 1;
+            }
+            uVar2 = uVar1;
+          } while (uVar1 != uVar17);
+        }
+        lVar13 = *(long *)(lVar5 + 0x80);
+        if ((lVar13 != 0) && (uVar19 = *(uint *)(lVar5 + 0x8c), uVar19 != 0)) {
+          uVar18 = 0;
+          if (uVar19 != 0) {
+            uVar18 = 0xb9bd745d / uVar19;
+          }
+          uVar18 = 0xb9bd745d - uVar18 * uVar19;
+          uVar17 = uVar18;
+          do {
+            iVar6 = *(int *)(lVar13 + (-(ulong)(uVar17 >> 0x1f) & 0xfffffff800000000 |
+                                      (ulong)uVar17 << 3));
+            if (iVar6 == -0x46428ba3) {
+              uVar19 = *(uint *)(lVar13 + (long)(int)uVar17 * 8 + 4);
+              if (*(uint *)(lVar5 + 0x70) <= uVar19) {
+                uVar19 = 0;
+              }
+              iVar6 = (**(code **)(*(long *)(*(long *)(lVar5 + 0x78) + (long)(int)uVar19 * 0x40) +
+                                  0x20))();
+              uVar19 = iVar6 - 1;
+              if (0 < iVar6) {
+                uVar18 = 0;
+                if (0x1c < uVar19) {
+                  uVar19 = 0x1d;
+                }
+                do {
+                  lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+                  uVar17 = 1 << (ulong)(uVar18 & 0x1f) & uVar7;
+                  uVar10 = FUN_710049ea78(_ZN3gmd11GameDataMgr9sInstanceE + 0x68,uVar17 != 0,
+                                          0xb9bd745d,uVar18);
+                  if ((uVar10 & 1) == 0) {
+                    FUN_7101f263fc(lVar5 + 8,uVar17 != 0,0xb9bd745d);
+                  }
+                  uVar18 = uVar18 + 1;
+                } while (uVar19 + 1 != uVar18);
+              }
+              break;
+            }
+            if (iVar6 == 0) break;
+            uVar2 = 0;
+            if ((int)(uVar17 + 1) < (int)uVar19) {
+              uVar2 = uVar17 + 1;
+            }
+            uVar17 = uVar2;
+          } while (uVar2 != uVar18);
+        }
+      }
+      lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+      lVar13 = FUN_71006b61d0(*(undefined8 *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x7a0),
+                              *(undefined4 *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x7ac),0x39a3fdde);
+      if (lVar13 == 0) {
+        FUN_7101f2b5ec(lVar5 + 0x7e8);
+      }
+      else {
+        uStack_6c = CONCAT44(1,(uint)uStack_6c);
+        uStack_64 = 0x39a3fdde;
+        FUN_71006b622c(lVar5 + 0x788,(long)&uStack_6c + 4);
+      }
+    }
+  LAB_71006b60b4:
+    uVar7 = FUN_7100597a80(&ppuStack_b0);
+    FUN_7100472be4(_ZN3gmd11GameDataMgr9sInstanceE,uVar7 & 1,0xbcbd7);
+    uVar8 = FUN_710048332c(&ppuStack_b0,lVar9,&ppuStack_b0,0,1);
+    FUN_710049f648(_ZN3gmd11GameDataMgr9sInstanceE,uVar8,0x21f89ab1);
+    FUN_7100499f14();
+    lVar9 = lStack_88;
+    ppuStack_b0 = &PTR_LAB_710350f340;
+    if (lStack_88 != 0) {
+      do {
+        if (lVar9 != lStack_88) goto LAB_71006b6118;
+        cVar3 = '\x01';
+        bVar4 = (bool)ExclusiveMonitorPass(&lStack_88,0x10);
+        if (bVar4) {
+          lStack_88 = 0;
+          cVar3 = ExclusiveMonitorsStatus();
+        }
+      } while (cVar3 != '\0');
+      FUN_7101dcc870();
+    }
+  LAB_71006b6118:
+    FUN_710000e2ac(&uStack_a0);
+    return;
+  }
+  
+  
+
+----- FUN_710048332c @ 710048332c -----
+  
+  int FUN_710048332c(long param_1,undefined8 param_2,undefined8 param_3,uint param_4,uint param_5)
+  
+  {
+    char cVar1;
+    bool bVar2;
+    int iVar3;
+    int iVar4;
+    undefined4 *puVar5;
+    long lVar6;
+    int *piVar7;
+    undefined8 uVar8;
+    long lVar9;
+    undefined8 *puVar10;
+    undefined **local_90;
+    undefined1 *local_88;
+    undefined8 uStack_80;
+    undefined8 local_78;
+    undefined4 local_70;
+    long local_68;
+    undefined8 local_60;
+    undefined4 local_58;
+    undefined2 local_54;
+    undefined local_52;
+    
+    local_78 = 0;
+    local_88 = &DAT_7102a408ac;
+    uStack_80 = 0;
+    local_70 = 0;
+    local_68 = 0;
+    local_58 = 0xffffffff;
+    local_54 = 0;
+    local_60 = 0xffffffff;
+    local_90 = &PTR_FUN_71034f0a00;
+    local_52 = 0;
+    lVar9 = param_1;
+    do {
+      lVar6 = lVar9;
+      if (((((*(byte *)(lVar6 + 0x3c) & 1) != 0) || (*(long *)(lVar6 + 0x10) == 0)) ||
+          (puVar10 = *(undefined8 **)(lVar6 + 0x18), puVar10 == (undefined8 *)0x0)) ||
+         ((*(int *)((long)puVar10 + 0xc) != *(int *)(lVar6 + 0x20) ||
+          (puVar10 = (undefined8 *)*puVar10, puVar10 == (undefined8 *)0x0)))) break;
+      FUN_7100263494();
+      lVar9 = (**(code **)*puVar10)(puVar10,&DAT_7103631338);
+    } while (lVar9 != 0);
+    local_54 = CONCAT11(local_54._1_1_,1);
+    local_60 = CONCAT44(*(undefined4 *)(lVar6 + 0x34),(undefined4)local_60);
+    puVar5 = (undefined4 *)FUN_71000d3524(param_1);
+    local_58 = *puVar5;
+    local_54 = CONCAT11(1,(undefined)local_54);
+    lVar9 = param_1;
+    do {
+      lVar6 = lVar9;
+      if ((((*(byte *)(lVar6 + 0x3e) & 1) != 0) || (*(long *)(lVar6 + 0x10) == 0)) ||
+         ((puVar10 = *(undefined8 **)(lVar6 + 0x18), puVar10 == (undefined8 *)0x0 ||
+          ((*(int *)((long)puVar10 + 0xc) != *(int *)(lVar6 + 0x20) ||
+           (puVar10 = (undefined8 *)*puVar10, puVar10 == (undefined8 *)0x0)))))) break;
+      FUN_7100263494();
+      lVar9 = (**(code **)*puVar10)(puVar10,&DAT_7103631338);
+    } while (lVar9 != 0);
+    local_52 = 1;
+    local_60 = CONCAT44(local_60._4_4_,*(undefined4 *)(lVar6 + 0x30));
+    iVar3 = FUN_7100483574(&local_90,param_2,param_3,param_4 & 1);
+    if ((param_5 & 1) != 0) {
+      piVar7 = (int *)FUN_71000d3524(param_1);
+      if (*piVar7 == 2) {
+        local_58 = 8;
+      }
+      else {
+        piVar7 = (int *)FUN_71000d3524(param_1);
+        if (*piVar7 != 8) goto LAB_7100483434;
+        local_58 = 2;
+      }
+      local_54 = local_54 | 0x100;
+      uVar8 = FUN_71000d33e0(&local_90);
+      iVar4 = FUN_7100483574(&local_90,uVar8,0,param_4 & 1);
+      iVar3 = iVar4 + iVar3;
+    }
+  LAB_7100483434:
+    lVar9 = local_68;
+    local_90 = &PTR_LAB_710350f340;
+    if (local_68 != 0) {
+      do {
+        if (lVar9 != local_68) goto LAB_7100483448;
+        cVar1 = '\x01';
+        bVar2 = (bool)ExclusiveMonitorPass(&local_68,0x10);
+        if (bVar2) {
+          local_68 = 0;
+          cVar1 = ExclusiveMonitorsStatus();
+        }
+      } while (cVar1 != '\0');
+      FUN_7101dcc870();
+    }
+  LAB_7100483448:
+    FUN_710000e2ac(&uStack_80);
+    return iVar3;
+  }
+  
+  
+
+----- FUN_71000d33e0 @ 71000d33e0 -----
+  
+  undefined * FUN_71000d33e0(long param_1)
+  
+  {
+    int iVar1;
+    long lVar2;
+    uint *puVar3;
+    long lVar4;
+    undefined8 *puVar5;
+    undefined *puVar6;
+    
+    lVar4 = param_1;
+    do {
+      lVar2 = lVar4;
+      if (((((*(byte *)(lVar2 + 0x3e) & 1) != 0) || (*(long *)(lVar2 + 0x10) == 0)) ||
+          (puVar5 = *(undefined8 **)(lVar2 + 0x18), puVar5 == (undefined8 *)0x0)) ||
+         ((*(int *)((long)puVar5 + 0xc) != *(int *)(lVar2 + 0x20) ||
+          (puVar5 = (undefined8 *)*puVar5, puVar5 == (undefined8 *)0x0)))) break;
+      FUN_7100263494();
+      lVar4 = (**(code **)*puVar5)(puVar5,&DAT_7103631338);
+    } while (lVar4 != 0);
+    lVar4 = param_1;
+    if (-1 < *(int *)(lVar2 + 0x30)) {
+      do {
+        lVar2 = lVar4;
+        if ((((*(byte *)(lVar2 + 0x3c) & 1) != 0) || (*(long *)(lVar2 + 0x10) == 0)) ||
+           ((puVar5 = *(undefined8 **)(lVar2 + 0x18), puVar5 == (undefined8 *)0x0 ||
+            ((*(int *)((long)puVar5 + 0xc) != *(int *)(lVar2 + 0x20) ||
+             (puVar5 = (undefined8 *)*puVar5, puVar5 == (undefined8 *)0x0)))))) break;
+        FUN_7100263494();
+        lVar4 = (**(code **)*puVar5)(puVar5,&DAT_7103631338);
+      } while (lVar4 != 0);
+      iVar1 = *(int *)(lVar2 + 0x34);
+      puVar3 = (uint *)FUN_71000d3524(param_1);
+      if (0xfffffff6 < *puVar3 - 10) {
+        if (iVar1 == 0) {
+          puVar6 = &DAT_71029f0b34;
+        }
+        else {
+          if (iVar1 != 1) goto LAB_71000d3434;
+          puVar6 = &DAT_71029f0f94;
+        }
+        return puVar6 + (ulong)*puVar3 * 0x70;
+      }
+    }
+  LAB_71000d3434:
+    return &DAT_71029f13f4;
+  }
+  
+  
+
+----- FUN_710021fda0 @ 710021fda0 -----
+  
+  void FUN_710021fda0(long param_1)
+  
+  {
+    uint uVar1;
+    uint uVar2;
+    uint uVar3;
+    uint uVar4;
+    long lVar5;
+    int iVar6;
+    int iVar7;
+    ulong uVar8;
+    undefined4 *puVar9;
+    int *piVar10;
+    long lVar11;
+    long lVar12;
+    uint *puVar13;
+    undefined4 local_68 [2];
+    int local_48;
+    undefined4 local_44;
+    
+    lVar12 = _ZN3gmd11GameDataMgr9sInstanceE;
+    if (_ZN3gmd11GameDataMgr9sInstanceE != 0) {
+      if (((DAT_7103631190 & 1) == 0) && (iVar7 = __cxa_guard_acquire(&DAT_7103631190), iVar7 != 0)) {
+        FUN_71007c3590();
+        __cxa_guard_release(&DAT_7103631190);
+      }
+      lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+      if (DAT_7103631180 == 1) {
+        lVar11 = 0;
+        do {
+          if (*(int *)(DAT_7103631188 + lVar11 * 4) == 0) goto LAB_710021fe14;
+          lVar11 = lVar11 + 1;
+        } while (lVar11 != 0x51);
+      }
+      lVar11 = 0;
+  LAB_710021fe14:
+      local_48 = (int)lVar11;
+      local_68[0] = 0;
+      lVar11 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x260);
+      if ((lVar11 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x26c), uVar2 != 0)) {
+        uVar3 = 0;
+        if (uVar2 != 0) {
+          uVar3 = 0xdf82e9ab / uVar2;
+        }
+        uVar3 = 0xdf82e9ab - uVar3 * uVar2;
+        uVar4 = uVar3;
+        do {
+          iVar7 = *(int *)(lVar11 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3)
+                          );
+          if (iVar7 == -0x207d1655) {
+            uVar2 = *(uint *)(lVar11 + (long)(int)uVar4 * 8 + 4);
+            if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x250) <= uVar2) {
+              uVar2 = 0;
+            }
+            puVar9 = (undefined4 *)
+                     (*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 600) + (long)(int)uVar2 * 0x38 +
+                     0x1c);
+            goto LAB_710021fee0;
+          }
+          if (iVar7 == 0) break;
+          uVar1 = 0;
+          if ((int)(uVar4 + 1) < (int)uVar2) {
+            uVar1 = uVar4 + 1;
+          }
+          uVar4 = uVar1;
+        } while (uVar1 != uVar3);
+      }
+      lVar11 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2c0);
+      if ((lVar11 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2cc), uVar2 != 0)) {
+        uVar3 = 0;
+        if (uVar2 != 0) {
+          uVar3 = 0xdf82e9ab / uVar2;
+        }
+        uVar3 = 0xdf82e9ab - uVar3 * uVar2;
+        uVar4 = uVar3;
+        do {
+          iVar7 = *(int *)(lVar11 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3)
+                          );
+          if (iVar7 == -0x207d1655) {
+            puVar13 = (uint *)(lVar11 + (long)(int)uVar4 * 8 + 4);
+            uVar2 = *puVar13;
+            if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2b0) <= uVar2) {
+              uVar2 = 0;
+            }
+            iVar7 = (**(code **)(*(long *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2b8) +
+                                          (long)(int)uVar2 * 0x50) + 0x20))();
+            if (0 < iVar7) {
+              uVar2 = *puVar13;
+              if (*(uint *)(lVar5 + 0x2b0) <= uVar2) {
+                uVar2 = 0;
+              }
+              puVar9 = *(undefined4 **)(*(long *)(lVar5 + 0x2b8) + (long)(int)uVar2 * 0x50 + 0x28);
+  LAB_710021fee0:
+              FUN_71003d4110(*puVar9,&local_48);
+            }
+            break;
+          }
+          if (iVar7 == 0) break;
+          uVar1 = 0;
+          if ((int)(uVar4 + 1) < (int)uVar2) {
+            uVar1 = uVar4 + 1;
+          }
+          uVar4 = uVar1;
+        } while (uVar1 != uVar3);
+      }
+      lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+      lVar11 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x260);
+      if ((lVar11 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x26c), uVar2 != 0)) {
+        uVar3 = 0;
+        if (uVar2 != 0) {
+          uVar3 = 0x69ae57d4 / uVar2;
+        }
+        uVar3 = 0x69ae57d4 - uVar3 * uVar2;
+        uVar4 = uVar3;
+        do {
+          iVar7 = *(int *)(lVar11 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3)
+                          );
+          if (iVar7 == 0x69ae57d4) {
+            uVar2 = *(uint *)(lVar11 + (long)(int)uVar4 * 8 + 4);
+            if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x250) <= uVar2) {
+              uVar2 = 0;
+            }
+            piVar10 = (int *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 600) +
+                              (long)(int)uVar2 * 0x38 + 0x1c);
+            goto LAB_710021ffb0;
+          }
+          if (iVar7 == 0) break;
+          uVar1 = 0;
+          if ((int)(uVar4 + 1) < (int)uVar2) {
+            uVar1 = uVar4 + 1;
+          }
+          uVar4 = uVar1;
+        } while (uVar1 != uVar3);
+      }
+      lVar11 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2c0);
+      if ((lVar11 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2cc), uVar2 != 0)) {
+        uVar3 = 0;
+        if (uVar2 != 0) {
+          uVar3 = 0x69ae57d4 / uVar2;
+        }
+        uVar3 = 0x69ae57d4 - uVar3 * uVar2;
+        uVar4 = uVar3;
+        do {
+          iVar7 = *(int *)(lVar11 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3)
+                          );
+          if (iVar7 == 0x69ae57d4) {
+            puVar13 = (uint *)(lVar11 + (long)(int)uVar4 * 8 + 4);
+            uVar2 = *puVar13;
+            if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2b0) <= uVar2) {
+              uVar2 = 0;
+            }
+            iVar7 = (**(code **)(*(long *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2b8) +
+                                          (long)(int)uVar2 * 0x50) + 0x20))();
+            if (0 < iVar7) {
+              uVar2 = *puVar13;
+              if (*(uint *)(lVar5 + 0x2b0) <= uVar2) {
+                uVar2 = 0;
+              }
+              piVar10 = *(int **)(*(long *)(lVar5 + 0x2b8) + (long)(int)uVar2 * 0x50 + 0x28);
+  LAB_710021ffb0:
+              iVar7 = *piVar10;
+              iVar6 = FUN_710000e3e0(s_Default_71034de7c0);
+              if (iVar6 == iVar7) {
+                local_68[0] = 0;
+              }
+              else {
+                iVar6 = FUN_710000e3e0(&DAT_71034de7c9);
+                if (iVar6 == iVar7) {
+                  local_68[0] = 1;
+                }
+              }
+            }
+            break;
+          }
+          if (iVar7 == 0) break;
+          uVar1 = 0;
+          if ((int)(uVar4 + 1) < (int)uVar2) {
+            uVar1 = uVar4 + 1;
+          }
+          uVar4 = uVar1;
+        } while (uVar1 != uVar3);
+      }
+      local_44 = 0xffffffff;
+      FUN_710012ae94(lVar12,&local_44,0x9f5ead3c);
+      if ((DAT_7103628398 != 0) && (lVar12 = *(long *)(DAT_7103628398 + 0x48), lVar12 != 0)) {
+        if (((DAT_7103631190 & 1) == 0) && (iVar7 = __cxa_guard_acquire(&DAT_7103631190), iVar7 != 0))
+        {
+          FUN_71007c3590();
+          __cxa_guard_release(&DAT_7103631190);
+        }
+        uVar8 = (ulong)local_48;
+        if ((DAT_7103631180 & uVar8 < 0x51) == 0) {
+          uVar8 = 0;
+        }
+        if (*(int *)(DAT_7103631188 + uVar8 * 4) == 0) {
+          *(byte *)(param_1 + 0x3c) = *(byte *)(param_1 + 0x3c) | 1;
+          *(byte *)(param_1 + 0x3d) = *(byte *)(param_1 + 0x3d) | 1;
+          *(undefined4 *)(param_1 + 0x34) = local_68[0];
+          *(undefined4 *)(param_1 + 0x38) = local_44;
+        }
+        else {
+          FUN_71000d399c(*(undefined4 *)(lVar12 + 0x28),*(undefined8 *)(lVar12 + 0x30),param_1,
+                         local_68,&local_44,&local_48);
+        }
+      }
+    }
+    return;
+  }
+  
+  
+
+----- FUN_7100584ba0 @ 7100584ba0 -----
+  
+  void FUN_7100584ba0(long param_1)
+  
+  {
+    uint uVar1;
+    uint uVar2;
+    uint uVar3;
+    uint uVar4;
+    long lVar5;
+    int iVar6;
+    int iVar7;
+    int *piVar8;
+    long lVar9;
+    uint *puVar10;
+    undefined4 uStack_34;
+    
+    lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+    if (_ZN3gmd11GameDataMgr9sInstanceE != 0) {
+      lVar9 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x260);
+      if ((lVar9 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x26c), uVar2 != 0)) {
+        uVar3 = 0;
+        if (uVar2 != 0) {
+          uVar3 = 0x686838b7 / uVar2;
+        }
+        uVar3 = 0x686838b7 - uVar3 * uVar2;
+        uVar4 = uVar3;
+        do {
+          iVar7 = *(int *)(lVar9 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3))
+          ;
+          if (iVar7 == 0x686838b7) {
+            uVar2 = *(uint *)(lVar9 + (long)(int)uVar4 * 8 + 4);
+            if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x250) <= uVar2) {
+              uVar2 = 0;
+            }
+            piVar8 = (int *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 600) +
+                             (long)(int)uVar2 * 0x38 + 0x1c);
+            goto LAB_7100584c88;
+          }
+          if (iVar7 == 0) break;
+          uVar1 = 0;
+          if ((int)(uVar4 + 1) < (int)uVar2) {
+            uVar1 = uVar4 + 1;
+          }
+          uVar4 = uVar1;
+        } while (uVar1 != uVar3);
+      }
+      lVar9 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2c0);
+      if ((lVar9 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2cc), uVar2 != 0)) {
+        uVar3 = 0;
+        if (uVar2 != 0) {
+          uVar3 = 0x686838b7 / uVar2;
+        }
+        uVar3 = 0x686838b7 - uVar3 * uVar2;
+        uVar4 = uVar3;
+  LAB_7100584c30:
+        iVar7 = *(int *)(lVar9 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3));
+        if (iVar7 == 0x686838b7) {
+          puVar10 = (uint *)(lVar9 + (long)(int)uVar4 * 8 + 4);
+          uVar2 = *puVar10;
+          if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2b0) <= uVar2) {
+            uVar2 = 0;
+          }
+          iVar7 = (**(code **)(*(long *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2b8) +
+                                        (long)(int)uVar2 * 0x50) + 0x20))();
+          if (0 < iVar7) {
+            uVar2 = *puVar10;
+            if (*(uint *)(lVar5 + 0x2b0) <= uVar2) {
+              uVar2 = 0;
+            }
+            piVar8 = *(int **)(*(long *)(lVar5 + 0x2b8) + (long)(int)uVar2 * 0x50 + 0x28);
+  LAB_7100584c88:
+            iVar7 = *piVar8;
+            iVar6 = FUN_710000e3e0(s_Default_71034de7c0);
+            if ((iVar6 == iVar7) || (iVar6 = FUN_710000e3e0(&DAT_71034de7c9), iVar6 != iVar7))
+            goto LAB_7100584ca0;
+            iVar7 = 1;
+            goto LAB_7100584ca4;
+          }
+          goto LAB_7100584ca0;
+        }
+        if (iVar7 != 0) goto code_r0x007100584c48;
+        goto LAB_7100584ca4;
+      }
+  LAB_7100584ca0:
+      iVar7 = 0;
+  LAB_7100584ca4:
+      FUN_710012ae94(lVar5,&uStack_34,0xd6b9ce86);
+      *(undefined4 *)(param_1 + 0x30) = 0;
+      *(int *)(param_1 + 0x34) = iVar7;
+      *(undefined4 *)(param_1 + 0x38) = uStack_34;
+      *(byte *)(param_1 + 0x3c) = *(byte *)(param_1 + 0x3c) | 1;
+      *(byte *)(param_1 + 0x3d) = *(byte *)(param_1 + 0x3d) | 1;
+      *(byte *)(param_1 + 0x3e) = *(byte *)(param_1 + 0x3e) | 1;
+    }
+    return;
+  code_r0x007100584c48:
+    iVar7 = 0;
+    uVar1 = 0;
+    if ((int)(uVar4 + 1) < (int)uVar2) {
+      uVar1 = uVar4 + 1;
+    }
+    uVar4 = uVar1;
+    if (uVar1 == uVar3) goto LAB_7100584ca4;
+    goto LAB_7100584c30;
+  }
+  
+  
+
+----- FUN_71000e258c @ 71000e258c -----
+  
+  undefined8 FUN_71000e258c(long param_1,undefined4 *param_2,uint param_3,uint param_4)
+  
+  {
+    uint *puVar1;
+    uint uVar2;
+    uint uVar3;
+    uint uVar4;
+    uint uVar5;
+    int iVar6;
+    undefined8 uVar7;
+    long lVar8;
+    
+    if (((param_3 != 0) && (lVar8 = *(long *)(param_1 + 0x800), lVar8 != 0)) &&
+       (uVar2 = *(uint *)(param_1 + 0x80c), uVar2 != 0)) {
+      uVar4 = 0;
+      if (uVar2 != 0) {
+        uVar4 = param_3 / uVar2;
+      }
+      uVar4 = param_3 - uVar4 * uVar2;
+      uVar5 = uVar4;
+      do {
+        uVar3 = *(uint *)(lVar8 + (-(ulong)(uVar5 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar5 << 3));
+        if (uVar3 == param_3) {
+          if (-1 < (int)param_4) {
+            puVar1 = (uint *)(lVar8 + (long)(int)uVar5 * 8 + 4);
+            uVar2 = *puVar1;
+            if (*(uint *)(param_1 + 0x7f0) <= uVar2) {
+              uVar2 = 0;
+            }
+            iVar6 = (**(code **)(*(long *)(*(long *)(param_1 + 0x7f8) + (long)(int)uVar2 * 0x40) +
+                                0x20))();
+            if ((int)param_4 < iVar6) {
+              uVar2 = *puVar1;
+              if (*(uint *)(param_1 + 0x7f0) <= uVar2) {
+                uVar2 = 0;
+              }
+              lVar8 = *(long *)(param_1 + 0x7f8) + (long)(int)uVar2 * 0x40;
+              if (*(uint *)(lVar8 + 0x20) <= param_4) {
+                param_4 = 0;
+              }
+              *param_2 = *(undefined4 *)(*(long *)(lVar8 + 0x28) + (ulong)param_4 * 4);
+              return 1;
+            }
+          }
+          break;
+        }
+        if (uVar3 == 0) break;
+        uVar3 = 0;
+        if ((int)(uVar5 + 1) < (int)uVar2) {
+          uVar3 = uVar5 + 1;
+        }
+        uVar5 = uVar3;
+      } while (uVar3 != uVar4);
+    }
+    uVar7 = FUN_71000e26a8(param_1 + 0x788,param_2,param_3);
+    return uVar7;
+  }
+  
+  
+
+----- FUN_71000d3524 @ 71000d3524 -----
+  
+  long FUN_71000d3524(long param_1)
+  
+  {
+    long lVar1;
+    long lVar2;
+    long lVar3;
+    long extraout_x8;
+    
+    if ((*(byte *)(param_1 + 0x3d) & 1) == 0) {
+      lVar2 = FUN_7100484dac(param_1 + 0x10);
+      lVar3 = extraout_x8;
+      if (lVar2 != 0) {
+        lVar3 = FUN_71000d3524();
+      }
+      lVar1 = param_1 + 0x38;
+      if (lVar2 != 0) {
+        lVar1 = lVar3;
+      }
+    }
+    else {
+      lVar1 = param_1 + 0x38;
+    }
+    return lVar1;
+  }
+  
+  
+
+----- FUN_71000d3640 @ 71000d3640 -----
+  
+  undefined4 FUN_71000d3640(void)
+  
+  {
+    uint uVar1;
+    uint uVar2;
+    uint uVar3;
+    uint uVar4;
+    long lVar5;
+    int iVar6;
+    undefined4 *puVar7;
+    long lVar8;
+    uint *puVar9;
+    
+    lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+    lVar8 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0xe0);
+    if ((lVar8 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0xec), uVar2 != 0)) {
+      uVar3 = 0;
+      if (uVar2 != 0) {
+        uVar3 = 0x9f5ead3c / uVar2;
+      }
+      uVar3 = 0x9f5ead3c - uVar3 * uVar2;
+      uVar4 = uVar3;
+      do {
+        iVar6 = *(int *)(lVar8 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3));
+        if (iVar6 == -0x60a152c4) {
+          uVar2 = *(uint *)(lVar8 + (long)(int)uVar4 * 8 + 4);
+          if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0xd0) <= uVar2) {
+            uVar2 = 0;
+          }
+          puVar7 = (undefined4 *)
+                   (*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0xd8) + (long)(int)uVar2 * 0x28 + 0x1c
+                   );
+          goto LAB_71000d3718;
+        }
+        if (iVar6 == 0) break;
+        uVar1 = 0;
+        if ((int)(uVar4 + 1) < (int)uVar2) {
+          uVar1 = uVar4 + 1;
+        }
+        uVar4 = uVar1;
+      } while (uVar1 != uVar3);
+    }
+    lVar8 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x140);
+    if ((lVar8 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x14c), uVar2 != 0)) {
+      uVar3 = 0;
+      if (uVar2 != 0) {
+        uVar3 = 0x9f5ead3c / uVar2;
+      }
+      uVar3 = 0x9f5ead3c - uVar3 * uVar2;
+      uVar4 = uVar3;
+      do {
+        iVar6 = *(int *)(lVar8 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3));
+        if (iVar6 == -0x60a152c4) {
+          puVar9 = (uint *)(lVar8 + (long)(int)uVar4 * 8 + 4);
+          uVar2 = *puVar9;
+          if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x130) <= uVar2) {
+            uVar2 = 0;
+          }
+          iVar6 = (**(code **)(*(long *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x138) +
+                                        (long)(int)uVar2 * 0x40) + 0x20))();
+          if (iVar6 < 1) {
+            return 0;
+          }
+          uVar2 = *puVar9;
+          if (*(uint *)(lVar5 + 0x130) <= uVar2) {
+            uVar2 = 0;
+          }
+          puVar7 = *(undefined4 **)(*(long *)(lVar5 + 0x138) + (long)(int)uVar2 * 0x40 + 0x28);
+  LAB_71000d3718:
+          return *puVar7;
+        }
+        if (iVar6 == 0) {
+          return 0;
+        }
+        uVar1 = 0;
+        if ((int)(uVar4 + 1) < (int)uVar2) {
+          uVar1 = uVar4 + 1;
+        }
+        uVar4 = uVar1;
+      } while (uVar1 != uVar3);
+    }
+    return 0;
+  }
+  
+  
+
+----- FUN_71000d3830 @ 71000d3830 -----
+  
+  undefined8 FUN_71000d3830(void)
+  
+  {
+    uint uVar1;
+    uint uVar2;
+    uint uVar3;
+    uint uVar4;
+    long lVar5;
+    int iVar6;
+    int *piVar7;
+    long lVar8;
+    uint *puVar9;
+    
+    lVar5 = _ZN3gmd11GameDataMgr9sInstanceE;
+    lVar8 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x260);
+    if ((lVar8 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x26c), uVar2 != 0)) {
+      uVar3 = 0;
+      if (uVar2 != 0) {
+        uVar3 = 0x69ae57d4 / uVar2;
+      }
+      uVar3 = 0x69ae57d4 - uVar3 * uVar2;
+      uVar4 = uVar3;
+      do {
+        iVar6 = *(int *)(lVar8 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3));
+        if (iVar6 == 0x69ae57d4) {
+          uVar2 = *(uint *)(lVar8 + (long)(int)uVar4 * 8 + 4);
+          if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x250) <= uVar2) {
+            uVar2 = 0;
+          }
+          piVar7 = (int *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 600) + (long)(int)uVar2 * 0x38
+                          + 0x1c);
+          goto LAB_71000d3908;
+        }
+        if (iVar6 == 0) break;
+        uVar1 = 0;
+        if ((int)(uVar4 + 1) < (int)uVar2) {
+          uVar1 = uVar4 + 1;
+        }
+        uVar4 = uVar1;
+      } while (uVar1 != uVar3);
+    }
+    lVar8 = *(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2c0);
+    if ((lVar8 != 0) && (uVar2 = *(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2cc), uVar2 != 0)) {
+      uVar3 = 0;
+      if (uVar2 != 0) {
+        uVar3 = 0x69ae57d4 / uVar2;
+      }
+      uVar3 = 0x69ae57d4 - uVar3 * uVar2;
+      uVar4 = uVar3;
+      do {
+        iVar6 = *(int *)(lVar8 + (-(ulong)(uVar4 >> 0x1f) & 0xfffffff800000000 | (ulong)uVar4 << 3));
+        if (iVar6 == 0x69ae57d4) {
+          puVar9 = (uint *)(lVar8 + (long)(int)uVar4 * 8 + 4);
+          uVar2 = *puVar9;
+          if (*(uint *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2b0) <= uVar2) {
+            uVar2 = 0;
+          }
+          iVar6 = (**(code **)(*(long *)(*(long *)(_ZN3gmd11GameDataMgr9sInstanceE + 0x2b8) +
+                                        (long)(int)uVar2 * 0x50) + 0x20))();
+          if (iVar6 < 1) {
+            return 0;
+          }
+          uVar2 = *puVar9;
+          if (*(uint *)(lVar5 + 0x2b0) <= uVar2) {
+            uVar2 = 0;
+          }
+          piVar7 = *(int **)(*(long *)(lVar5 + 0x2b8) + (long)(int)uVar2 * 0x50 + 0x28);
+  LAB_71000d3908:
+          if (*piVar7 == 0x48db8265) {
+            return 0;
+          }
+          if (*piVar7 != 0x7556ca6) {
+            return 0;
+          }
+          return 1;
+        }
+        if (iVar6 == 0) {
+          return 0;
+        }
+        uVar1 = 0;
+        if ((int)(uVar4 + 1) < (int)uVar2) {
+          uVar1 = uVar4 + 1;
+        }
+        uVar4 = uVar1;
+      } while (uVar1 != uVar3);
+    }
+    return 0;
+  }
+  
+  
+
+Done.

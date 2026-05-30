@@ -37,6 +37,7 @@ set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/probe/Diagnostics.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/Gates.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/PerCourse.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/SeedTrace.cpp
 )
 add_executable(${PROJECT_NAME} ${SOURCES_CXX})
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)

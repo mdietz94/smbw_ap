@@ -117,6 +117,16 @@ namespace probe {
 // grantBadgeBit primitive (deleted).
 bool setBadgeBitfieldAbsolute(std::uint64_t bits);
 
+// 2026-05-29 -- AP-authoritative per-course Wonder Seed bitfield sync.
+// Overwrites the entire 128-bit container-C bitfield at hash 0x60458608
+// to the absolute value (bits_lo, bits_hi).  Bit N = Wonder Seed for
+// course with internal index N.  Vanilla SMBW has ~81 courses so bits
+// 0..80 are meaningful; bits 81..127 are reserved.  Same idempotent
+// absolute-overwrite triggers as badges: ReceivedItems, HelloMsg
+// (replay-on-reconnect), and the periodic ~2 s tick.
+bool setWonderSeedBitfieldAbsolute(std::uint64_t bits_lo,
+                                   std::uint64_t bits_hi);
+
 // M3.3 -- container-A counter writer.  Calls FUN_710049F648 via
 // function pointer with the live gmd singleton.  Used for counters
 // (flower_coin, regular_coin); typed and silently no-ops on bool
@@ -216,4 +226,18 @@ void pushWonderSeedOverride(std::uint32_t value);
 // so AP grants take effect immediately, without waiting for the game to
 // re-write the mirror hashes on the next area transition.
 void pushWonderSeedOverrideCurrentWorld();
+
+// 2026-05-29 -- PERSISTENCE: write each AP world's per-course Wonder Seed
+// bitmask into the LIVE container-D (gmd+0x800) so the recomputed per-world
+// count survives save/reload.  For each AP bucket reads the cached count
+// (smbwap::ap::getWonderSeedCount) and encodes it as `count` low-bits across
+// `count` distinct course slots of that world's regular-seed hash (1 bit per
+// slot -> popcount sum == count; bit 0 of each course is always a valid
+// seed, dodging the per-course serializer strip), zeroing the regular tail
+// and the entire special-seed hash.  Direct write via findContainerDData --
+// no deferred queue, no Abort.  Diffs against the last written count per
+// world so a steady state is a no-op.  AP-authoritative: overwrites the
+// game's per-course seed detail (cosmetic) to make the world total match AP.
+// Defined in SeedTrace.cpp.
+void pushWonderSeedContainerDCounts();
 }

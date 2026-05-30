@@ -327,6 +327,44 @@ class SMBWContext(CommonContext):
             counts[idx] += 1
         return counts
 
+    def _recompute_wonder_seed_bits(self) -> tuple[int, int]:
+        """Walk :attr:`items_received` and return the absolute 128-bit
+        per-course Wonder Seed bitfield as a ``(bits_lo, bits_hi)``
+        tuple of two u64s.  Bridge pushes this via
+        :class:`SetWonderSeedsAbsoluteMsg`; Switch overwrites container-C
+        hash ``0x60458608`` to match on every ReceivedItems / HelloMsg /
+        periodic tick.  (2026-05-29)
+
+        Bit derivation: 16 bits per world bucket.  World w occupies
+        bits ``[w*16, w*16+15]``.  For each world with cumulative AP
+        count ``N_w`` (capped at 16), set the lowest ``N_w`` bits in
+        that range.  This is a DETERMINISTIC AP-derived bitfield that
+        the Switch persistence-test workflow can verify against the
+        saved file; bit positions are NOT semantically tied to specific
+        in-game courses yet (refining the bit-to-course mapping
+        requires additional RE of the FUN_71003D4110 Murmur3 course-
+        name -> course-index lookup).
+
+        Returns ``(0, 0)`` when no Wonder Seeds are owned; that is
+        valid input to the Switch primitive and means "AP knows of no
+        seeds -- clobber the bitfield to empty".  16 bits per bucket
+        accommodates up to 16 seeds per world; vanilla SMBW worlds run
+        up to ~17 seeds (W6 has ~34 across multiple branches), so a
+        future refinement may either widen each bucket or remap to
+        course indices proper."""
+        counts = self._recompute_wonder_seed_counts()
+        BITS_PER_WORLD = 16
+        bits = 0
+        for w, count in enumerate(counts):
+            capped = min(count, BITS_PER_WORLD)
+            if capped <= 0:
+                continue
+            bucket_mask = (1 << capped) - 1
+            bits |= bucket_mask << (w * BITS_PER_WORLD)
+        bits_lo = bits & ((1 << 64) - 1)
+        bits_hi = (bits >> 64) & ((1 << 64) - 1)
+        return (bits_lo, bits_hi)
+
     def _recompute_royal_seed_mask(self) -> int:
         """Walk :attr:`items_received` and return the absolute 6-bit
         Royal Seed mask -- one bit per world (bit 0 = W1, ..., bit 5 =
@@ -364,11 +402,13 @@ class SMBWContext(CommonContext):
         new_mask = self._recompute_badge_mask()
         new_seed_counts = self._recompute_wonder_seed_counts()
         new_royal_seed_mask = self._recompute_royal_seed_mask()
+        new_ws_bits_lo, new_ws_bits_hi = self._recompute_wonder_seed_bits()
         if self.lan_server is not None:
             log.info(
                 "ReceivedItems: badge mask now 0x%x, royal_seed mask 0x%x, "
-                "wonder_seed counts=%s",
-                new_mask, new_royal_seed_mask, new_seed_counts)
+                "wonder_seed counts=%s, wonder_seed bits=(0x%x, 0x%x)",
+                new_mask, new_royal_seed_mask, new_seed_counts,
+                new_ws_bits_lo, new_ws_bits_hi)
             self.lan_server.send_set_badges_absolute(new_mask)
             # Idempotent absolute-overwrite: AP is the sole authority
             # over container-B Royal Seed bools (same pattern as
@@ -378,11 +418,19 @@ class SMBWContext(CommonContext):
             # over the per-world Wonder Seed counts (same pattern as
             # badges).  Switch routes via current-world hash 0x9f5ead3c.
             self.lan_server.send_set_wonder_seed_counts(new_seed_counts)
+            # 2026-05-29 -- AP-authoritative per-course Wonder Seed
+            # bitfield (container-C hash 0x60458608).  Same idempotent
+            # absolute-overwrite pattern -- Switch overwrites all 128
+            # bits to match.
+            self.lan_server.send_set_wonder_seeds_absolute(
+                new_ws_bits_lo, new_ws_bits_hi)
         else:
             log.debug(
                 "no lan_server bound; not forwarding badge mask 0x%x / "
-                "royal_seed mask 0x%x / wonder_seed counts=%s",
-                new_mask, new_royal_seed_mask, new_seed_counts)
+                "royal_seed mask 0x%x / wonder_seed counts=%s / "
+                "wonder_seed bits=(0x%x, 0x%x)",
+                new_mask, new_royal_seed_mask, new_seed_counts,
+                new_ws_bits_lo, new_ws_bits_hi)
 
         for it in items:
             item_id = it.get("item") if isinstance(it, dict) else None

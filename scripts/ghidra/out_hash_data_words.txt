@@ -1,0 +1,58 @@
+SMBW Archipelago: find_hash_data_words.py
+  memory blocks:
+    .text            7100000000 - 710200e83f  (init=True, r=True w=False x=True)
+    .plt             710200e840 - 710201287f  (init=True, r=True w=False x=False)
+    .rodata          7102013000 - 710201304f  (init=True, r=True w=False x=False)
+    .rela.dyn        7102013050 - 7102880e77  (init=True, r=True w=False x=False)
+    .rela.plt        7102880e78 - 7102886ed7  (init=True, r=True w=False x=False)
+    .hash            7102886ed8 - 710288943f  (init=True, r=True w=False x=False)
+    .gnu.hash        7102889440 - 7102889707  (init=True, r=True w=False x=False)
+    .dynsym          7102889708 - 7102890727  (init=True, r=True w=False x=False)
+    .dynstr          7102890728 - 710289d37b  (init=True, r=True w=False x=False)
+    .rodata.1        710289d37c - 7103208327  (init=True, r=True w=False x=False)
+    .data            7103209000 - 7103558327  (init=True, r=True w=True x=False)
+    .dynamic         7103558328 - 71035584a7  (init=True, r=True w=True x=False)
+    .got.plt         71035584a8 - 710355a4df  (init=True, r=True w=False x=False)
+    .got             710355a4e0 - 710356cc47  (init=True, r=True w=False x=False)
+    .init_array      710356cc48 - 7103579a2f  (init=True, r=True w=False x=False)
+    .data.1          7103579a30 - 710359cc27  (init=True, r=True w=True x=False)
+    .bss             710359cc40 - 7103644d7f  (init=False, r=True w=True x=False)
+    EXTERNAL         7103645008 - 710364729f  (init=False, r=True w=True x=False)
+
+============================================================
+0x60458608  per-course Wonder Seed bitfield (container C)
+============================================================
+  (no data-word occurrences found)
+
+============================================================
+0x105df820  badge owned bitfield (container C; ~59 bits, file 0x0EA0)
+============================================================
+  (no data-word occurrences found)
+
+============================================================
+0x6d1b5c25  badge UI-slot bitmap (container C aux; file 0x1204)
+============================================================
+  1 occurrence(s):
+
+  @ 71029f0bd0  block=.rodata.1
+    u32 words (offset relative to hash word @ +0x00):
+      -0x40: 00000000  00000000  00000000  00000000
+      -0x30: 00000000  0235d948  6303c6d1  d8163612
+      -0x20: eb41ddd5  a6140d7c  6f9dfc59  e7773731
+      -0x10: 406f7425  f3d3849c  a4dbcac9  b465ad47
+      +0x00: 6d1b5c25  cea26ca1  48e0dec7  72128f1d
+      +0x10: f1c0ef95  4f262e62  6d2e5a9f  7ae70f64
+      +0x20: 43318285  55815859  64fe8cc4  fc951a99
+      +0x30: 6af4303e  05015b41  df9a528a  5db62877
+
+============================================================
+0xe48a1168  second badge category (paired with 0x105df820 in reader)
+============================================================
+  (no data-word occurrences found)
+
+============================================================
+0x580b7eb4  per-course status enum (container D-ish, gmd+0x2c0)
+============================================================
+  (no data-word occurrences found)
+
+Done.

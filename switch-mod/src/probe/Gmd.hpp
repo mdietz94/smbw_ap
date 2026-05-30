@@ -125,6 +125,17 @@ inline QueueDepth readQueueB() {
     return readQueueAt(0x8 + 0x38, 0x8 + 0x28);
 }
 
+// Container-D per-course bitmask deferred-write queue.  Substruct at
+// gmd+0x788 (the per-course/per-world seed-bitmask container; lock at
+// gmd+0x7e8).  Decompiled 2026-05-29 from FUN_7101f2b140: head word at
+// substruct+0x38 (= gmd+0x7c0), cap at substruct+0x28 (= gmd+0x7b0),
+// ring at substruct+0x30 with 0xc-byte {value,key[,flag]} entries.  Same
+// overflow->Abort path (FUN_7100472cf0 == nn::diag::detail::AbortImpl) as
+// container-A/B, so writes here MUST honor backpressure.
+inline QueueDepth readQueueD() {
+    return readQueueAt(0x788 + 0x38, 0x788 + 0x28);
+}
+
 // -----------------------------------------------------------------------
 // Writer backpressure.
 //
@@ -197,6 +208,21 @@ inline BackpressureCheck checkContainerB() {
     evaluateBackpressure(r, depthPct(readQueueB()), "qB");
     r.warn   = r.max_pct >= kBackpressureWarnPct;
     r.refuse = r.max_pct >= kBackpressureRefusePct;
+    return r;
+}
+
+// Container-D refuses at a MORE conservative 50% (vs A/B's 80%): this is a
+// newly-characterized write path; per user direction (2026-05-29) we stop
+// at ~50% and add depth logging to discover the real drain pattern before
+// trusting it.  Hypothesis: like the A/B overflow, the queue only backs up
+// while parked on the overworld (no save-flusher tick); in-course drains it.
+inline constexpr std::uint32_t kBackpressureRefusePctD = 50;
+
+inline BackpressureCheck checkContainerD() {
+    BackpressureCheck r{};
+    evaluateBackpressure(r, depthPct(readQueueD()), "qD");
+    r.warn   = r.max_pct >= kBackpressureWarnPct;
+    r.refuse = r.max_pct >= kBackpressureRefusePctD;
     return r;
 }
 

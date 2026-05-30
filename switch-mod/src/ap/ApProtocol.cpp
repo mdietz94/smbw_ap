@@ -446,6 +446,42 @@ bool parseSetWonderSeedCounts(util::json::Reader& r,
     return saw_counts;
 }
 
+bool parseSetWonderSeedsAbsolute(util::json::Reader& r,
+                                 WireSetWonderSeedsAbsolute& out) {
+    // Cursor positioned just after "t":"set_wonder_seeds_absolute".  Two
+    // required u64 fields: "bits_lo" and "bits_hi".  Each accepted as
+    // int64 in [0, 2**63); top bit reserved (typical AP scenarios put
+    // 0..16 bits per world bucket so the masks fit comfortably).
+    std::string_view key;
+    bool saw_lo = false;
+    bool saw_hi = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "bits_lo")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0) return false;
+            out.bits_lo = static_cast<std::uint64_t>(v);
+            saw_lo = true;
+        } else if (sv_eq(key, "bits_hi")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0) return false;
+            out.bits_hi = static_cast<std::uint64_t>(v);
+            saw_hi = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_lo && saw_hi;
+}
+
 bool parseHelloAck(util::json::Reader& r, WireHelloAck& out) {
     std::string_view key;
     while (r.nextField(key)) {
@@ -581,6 +617,10 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::SetRoyalSeedsAbsolute;
         out.set_royal_seeds_absolute = WireSetRoyalSeedsAbsolute{};
         if (!parseSetRoyalSeedsAbsolute(r, out.set_royal_seeds_absolute)) return false;
+    } else if (std::strcmp(t_val, "set_wonder_seeds_absolute") == 0) {
+        out.kind = InboundKind::SetWonderSeedsAbsolute;
+        out.set_wonder_seeds_absolute = WireSetWonderSeedsAbsolute{};
+        if (!parseSetWonderSeedsAbsolute(r, out.set_wonder_seeds_absolute)) return false;
     } else if (std::strcmp(t_val, "kill") == 0) {
         out.kind = InboundKind::Kill;
         out.kill = WireKill{};

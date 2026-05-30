@@ -303,6 +303,13 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
         static int s_fires = 0;
         ++s_fires;
         SMBWAP_LOG_INFO("COURSE_CLEARED: nerve=%p (fire #%d)", nerve, s_fires);
+
+        // One-shot smoke test removed 2026-05-29 -- the AP-driven
+        // SetWonderSeedsAbsolute push (ApFrameBridge.cpp drainInbound
+        // dispatch -> probe::setWonderSeedBitfieldAbsolute) supersedes
+        // it.  probe::triggerWonderSeedSmokeTest remains in SeedTrace
+        // for ad-hoc developer use.
+
         setCourseClearFlagExecuteHook.orig(nerve);
     });
 
