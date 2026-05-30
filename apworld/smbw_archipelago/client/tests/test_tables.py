@@ -38,6 +38,7 @@ from ..royal_seed_table import (
     bit_for_item,
     hash_for_item,
     is_royal_seed_item,
+    palace_stage_key_for_item,
 )
 
 
@@ -395,20 +396,21 @@ class TestRoyalSeedTable(unittest.TestCase):
 
     def test_every_royal_seed_name_exists_in_items_json(self):
         item_names = _load_names(_ITEMS_JSON)
-        missing = [n for n, _, _ in _ROYAL_SEEDS if n not in item_names]
+        missing = [s[0] for s in _ROYAL_SEEDS if s[0] not in item_names]
         self.assertEqual(
             missing, [],
             f"royal seeds not found in items.json: {missing}")
 
     def test_all_six_worlds_present(self):
-        names = {n for n, _, _ in _ROYAL_SEEDS}
+        names = {s[0] for s in _ROYAL_SEEDS}
         self.assertEqual(
             names,
             {f"W{i} Royal Seed" for i in range(1, 7)})
 
     def test_no_duplicate_hashes(self):
         seen: dict[int, str] = {}
-        for name, h, _ in _ROYAL_SEEDS:
+        for entry in _ROYAL_SEEDS:
+            name, h = entry[0], entry[1]
             self.assertNotIn(
                 h, seen,
                 f"duplicate hash=0x{h:08x}: "
@@ -436,7 +438,7 @@ class TestRoyalSeedTable(unittest.TestCase):
         # disjoint.  If a badge name ever collides with a royal seed
         # name, the routing would silently misclassify.
         badge_names = {n for n, _, _ in _BADGES}
-        seed_names = {n for n, _, _ in _ROYAL_SEEDS}
+        seed_names = {s[0] for s in _ROYAL_SEEDS}
         overlap = badge_names & seed_names
         self.assertEqual(overlap, set())
 
@@ -467,6 +469,41 @@ class TestRoyalSeedTable(unittest.TestCase):
         self.assertEqual(ROYAL_SEED_HASHES[0], 0x55815859)  # W1
         self.assertEqual(ROYAL_SEED_HASHES[5], 0xD4660D2B)  # W6
 
+    def test_palace_stage_key_per_world(self):
+        # Spot-check: W3 is the "Royal Seed Mansion" odd-one-out, W5
+        # is "Operation Poplin Rescue", everyone else is a *_PALACE.
+        # Values mirror location_table's _STAGE_*_PALACE constants.
+        self.assertEqual(
+            palace_stage_key_for_item("W1 Royal Seed"), 0x89927C97)
+        self.assertEqual(
+            palace_stage_key_for_item("W3 Royal Seed"), 0xA5E2BB3A)
+        self.assertEqual(
+            palace_stage_key_for_item("W5 Royal Seed"), 0x87E6D263)
+        self.assertEqual(
+            palace_stage_key_for_item("W6 Royal Seed"), 0x7E523816)
+
+    def test_palace_stage_key_unknown_item_is_none(self):
+        self.assertIsNone(palace_stage_key_for_item("Made-up Seed"))
+        self.assertIsNone(palace_stage_key_for_item("Spring Feet Badge"))
+
+    def test_palace_stage_keys_resolve_in_location_table(self):
+        # Every Royal Seed item's palace stage_key MUST resolve to a
+        # "<World> ... - Royal Seed" entry under CheckKind.PALACE_CLEAR
+        # in the location table; otherwise the AP-grant auto-emit in
+        # context._handle_received_items would silently drop the check.
+        for item_name in (f"W{i} Royal Seed" for i in range(1, 7)):
+            sk = palace_stage_key_for_item(item_name)
+            self.assertIsNotNone(sk, f"no palace_stage_key for {item_name}")
+            check = CheckEmitted(
+                kind=CheckKind.PALACE_CLEAR, stage_key=sk)
+            name = lookup_name(check)
+            self.assertIsNotNone(
+                name,
+                f"{item_name} stage_key 0x{sk:08x} not in location table")
+            self.assertTrue(
+                name.endswith(" - Royal Seed"),
+                f"{item_name} resolved to non-seed location {name!r}")
+
 
 class TestCoinTable(unittest.TestCase):
 
@@ -494,7 +531,7 @@ class TestCoinTable(unittest.TestCase):
         # royal seed name ever collides with a coin name, routing would
         # silently misclassify the coin item.
         badge_names = {n for n, _, _ in _BADGES}
-        seed_names = {n for n, _, _ in _ROYAL_SEEDS}
+        seed_names = {s[0] for s in _ROYAL_SEEDS}
         coin_names = {n for n, _, _ in _COIN_ITEMS}
         self.assertEqual(coin_names & badge_names, set())
         self.assertEqual(coin_names & seed_names, set())
