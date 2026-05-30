@@ -474,6 +474,26 @@ class SMBWContext(CommonContext):
                 log.debug(
                     "royal seed item received: %r (id=%s) -- covered by "
                     "SetRoyalSeedsAbsolute push", item_name, item_id)
+                # Auto-resolve the matching "<World> Palace - Royal Seed"
+                # location at grant time.  Why: setting the container-B
+                # seed bool flips the world-map UI to "cleared", so the
+                # player has no in-game reason to re-enter the palace --
+                # the PALACE_CLEAR PlayReport that normally fires the
+                # check never arrives.  See
+                # ``docs/royal-seed-check-loss-re-plan.md`` for the RE
+                # plan to find a path that fires the check naturally;
+                # this is the short-term unblock that keeps the AP
+                # location resolvable.
+                stage_key = royal_seed_table.palace_stage_key_for_item(
+                    item_name)
+                if stage_key is not None:
+                    check = CheckEmitted(
+                        kind=CheckKind.PALACE_CLEAR,
+                        stage_key=stage_key,
+                        metadata={"source": "ap_grant"},
+                    )
+                    if self.bridge_state.emit_check(check):
+                        await self.handle_check_emitted(check)
                 continue
             if coin_table.is_coin_item(item_name):
                 grant = coin_table.grant_for_item(item_name)

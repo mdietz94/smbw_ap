@@ -59,28 +59,40 @@ log = logging.getLogger("SMBW")
 ROYAL_SEED_VALUE: Final[int] = 1
 
 
-# (item_name, hash, source) ordered W1..W6 -- list index IS the mask
-# bit position (W1 = bit 0, W2 = bit 1, ..., W6 = bit 5).  This
-# ordering is part of the wire contract with the Switch dispatch in
-# ``ApFrameBridge.cpp``: both ends iterate the same 6 hashes in the
-# same order, so bit N here MUST be bit N in the Switch's
-# ``kRoyalSeedHashes`` array.
+# (item_name, hash, palace_stage_key, source) ordered W1..W6 -- list
+# index IS the mask bit position (W1 = bit 0, W2 = bit 1, ..., W6 =
+# bit 5).  This ordering is part of the wire contract with the Switch
+# dispatch in ``ApFrameBridge.cpp``: both ends iterate the same 6
+# hashes in the same order, so bit N here MUST be bit N in the
+# Switch's ``kRoyalSeedHashes`` array.
 #
 # item_name MUST match ``manual_smbwonder_zim/data/items.json`` exactly
 # so the AP server's display string resolves cleanly.  All 6 entries
 # below were confirmed character-for-character against items.json.
 #
+# ``palace_stage_key`` is the 32-bit course-name hash of the palace
+# stage whose ``PALACE_CLEAR`` AP location corresponds to this Royal
+# Seed item.  Values mirror ``location_table.py``'s
+# ``_STAGE_*_PALACE`` constants (W3 uses ``_STAGE_ROYAL_SEED_MANSION``;
+# W5 uses ``_STAGE_OPERATION_POPLIN_RESCUE``).  Used by the AP-grant
+# auto-emit path in ``SMBWContext._handle_received_items`` to resolve
+# the matching location at item-receipt time -- see CLAUDE.md note on
+# why the natural ``PALACE_CLEAR`` PlayReport often doesn't fire once
+# the seed bool is already set (the in-game UI says "cleared" and the
+# player has no reason to re-enter).  ``docs/royal-seed-check-loss-re-plan.md``
+# tracks the RE work to find a path that fires the check naturally.
+#
 # ``source`` records where the hash came from -- ``live`` means
 # MemetendoYT-verified as the correct save-data hash AND the in-game
 # grant has been validated end-to-end (M3.3b smoke 2026-05-25:
 # save-diff confirmed pair-region byte flips for each).
-_ROYAL_SEEDS: Final[list[tuple[str, int, str]]] = [
-    ("W1 Royal Seed", 0x55815859, "live"),
-    ("W2 Royal Seed", 0x49ABBA86, "live"),
-    ("W3 Royal Seed", 0xB550D8D6, "live"),
-    ("W4 Royal Seed", 0x1DCF7F6E, "live"),
-    ("W5 Royal Seed", 0x0D5A3E00, "live"),
-    ("W6 Royal Seed", 0xD4660D2B, "live"),
+_ROYAL_SEEDS: Final[list[tuple[str, int, int, str]]] = [
+    ("W1 Royal Seed", 0x55815859, 0x89927C97, "live"),
+    ("W2 Royal Seed", 0x49ABBA86, 0xB2B07454, "live"),
+    ("W3 Royal Seed", 0xB550D8D6, 0xA5E2BB3A, "live"),
+    ("W4 Royal Seed", 0x1DCF7F6E, 0x1969941E, "live"),
+    ("W5 Royal Seed", 0x0D5A3E00, 0x87E6D263, "live"),
+    ("W6 Royal Seed", 0xD4660D2B, 0x7E523816, "live"),
 ]
 
 
@@ -95,14 +107,20 @@ ALL_MASK: Final[int] = (1 << WORLD_COUNT) - 1
 
 # Hashes in mask-bit order -- exported for the Switch-side iteration
 # contract.  Length == WORLD_COUNT.
-ROYAL_SEED_HASHES: Final[tuple[int, ...]] = tuple(h for _, h, _ in _ROYAL_SEEDS)
+ROYAL_SEED_HASHES: Final[tuple[int, ...]] = tuple(h for _, h, _, _ in _ROYAL_SEEDS)
 
 
 _NAME_TO_BIT: Final[dict[str, int]] = {
-    name: bit for bit, (name, _, _) in enumerate(_ROYAL_SEEDS)
+    name: bit for bit, (name, _, _, _) in enumerate(_ROYAL_SEEDS)
 }
 
-_NAME_TO_HASH: Final[dict[str, int]] = {name: h for name, h, _ in _ROYAL_SEEDS}
+_NAME_TO_HASH: Final[dict[str, int]] = {
+    name: h for name, h, _, _ in _ROYAL_SEEDS
+}
+
+_NAME_TO_PALACE_STAGE_KEY: Final[dict[str, int]] = {
+    name: sk for name, _, sk, _ in _ROYAL_SEEDS
+}
 
 
 def is_royal_seed_item(item_name: str) -> bool:
@@ -138,3 +156,22 @@ def hash_for_item(item_name: str) -> int | None:
         log.debug("royal_seed_table: no hash for item %r", item_name)
         return None
     return h
+
+
+def palace_stage_key_for_item(item_name: str) -> int | None:
+    """Look up the palace ``stage_key`` for a Royal Seed AP item name.
+
+    Returns the 32-bit course-name hash of the palace whose
+    ``PALACE_CLEAR`` AP location pairs with this seed item -- e.g.
+    ``"W1 Royal Seed"`` maps to Pipe-Rock Plateau Palace's stage_key
+    (0x89927C97).  ``None`` for unrecognized names.
+
+    Used by ``SMBWContext._handle_received_items`` to auto-emit the
+    matching location check at item-receipt time -- the natural
+    ``PALACE_CLEAR`` PlayReport often fails to fire once AP has already
+    set the seed bool (the world map shows the palace as cleared, so the
+    player has no in-game reason to re-enter).  Mirrors the badge
+    auto-resolve pattern where the same bit serves dual duty (Mario
+    equips from it AND the shop refuses to sell any bit it sees set).
+    """
+    return _NAME_TO_PALACE_STAGE_KEY.get(item_name)
