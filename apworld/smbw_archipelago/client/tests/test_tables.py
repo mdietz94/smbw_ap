@@ -352,14 +352,23 @@ class TestLocationTable(unittest.TestCase):
             metadata={"world_no": 9, "npc_id": 99, "item_value": 0})
         self.assertIsNone(lookup_name(check))
 
-    def test_lookup_ten_coin_palace_stage_returns_none(self):
-        # Palaces have no 10-coin locations; the apworld doesn't list any
-        # and we don't ship table entries for them.
-        check = CheckEmitted(
-            kind=CheckKind.TEN_COIN,
-            stage_key=2308078743,  # Pipe-Rock Plateau Palace
-            metadata={"coin_index": 0})
-        self.assertIsNone(lookup_name(check))
+    def test_lookup_ten_coin_palace_stage_resolves(self):
+        # The four palaces with hidden coin rooms (W1, W2, W4, W6) ship
+        # "10 Coin" AP locations in locations.json and the table must
+        # cover them.  Regression guard for the bug where palace clears
+        # logged "no AP location for ten_coin stage_key=..." despite
+        # the apworld listing the locations.
+        for stage_key, expected in [
+            (0x89927C97, "W1: Pipe-Rock Plateau Palace - 10 Coin #1"),
+            (0xB2B07454, "W2: Fluff-Puff Peaks Palace - 10 Coin #1"),
+            (0x1969941E, "W4: Sunbaked Desert Palace - 10 Coin #1"),
+            (0x7E523816, "W6: Deep Magma Bog Palace - 10 Coin #1"),
+        ]:
+            check = CheckEmitted(
+                kind=CheckKind.TEN_COIN,
+                stage_key=stage_key,
+                metadata={"coin_index": 0})
+            self.assertEqual(lookup_name(check), expected)
 
     def test_badge_locations_present_for_every_mapped_badge(self):
         """Every entry in badge_table._BADGES should resolve to SOME

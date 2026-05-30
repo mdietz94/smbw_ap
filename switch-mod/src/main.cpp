@@ -23,6 +23,7 @@
 // pointer-to-stack-temp). No sead/nn headers needed.
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 
 #include "hk/hook/Trampoline.h"
@@ -241,11 +242,44 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
                             smbwap::ap::NerveKind::DeathDetected,
                             static_cast<unsigned>(s_fires));
                     }
+                } else {
+                    // Other state_words cover controlled exit /
+                    // Wonder-Seed cleanup / world-map travel /
+                    // palace-clear / pause-quit / file-select etc, and
+                    // we drop them rather than emit DEATH_DETECTED.
+                    // BUT: a player session with zero outbound
+                    // DeathLinks despite the player dying tells us
+                    // either Mario never died OR our discriminator
+                    // misses a real death path -- and the original
+                    // silent-drop left no telemetry to tell the two
+                    // apart.  Log each NEW distinct state_word at
+                    // most once, capped at kMaxDistinctStates total,
+                    // so a post-mortem can spot a death path that
+                    // never matches kDeathDiscriminator_Val.  The
+                    // Nerve callback is single-threaded (same scope
+                    // as the non-atomic s_fires counter), so plain
+                    // static state is safe.
+                    constexpr std::size_t kMaxDistinctStates = 16;
+                    static std::uint64_t s_seen_states[kMaxDistinctStates] = {};
+                    static std::size_t s_seen_count = 0;
+                    bool already_seen = false;
+                    for (std::size_t i = 0; i < s_seen_count; ++i) {
+                        if (s_seen_states[i] == state_word) {
+                            already_seen = true;
+                            break;
+                        }
+                    }
+                    if (!already_seen && s_seen_count < kMaxDistinctStates) {
+                        s_seen_states[s_seen_count] = state_word;
+                        ++s_seen_count;
+                        SMBWAP_LOG_INFO(
+                            "scene_transition: new state=0x%016llx "
+                            "(fire #%d; %zu distinct non-death states "
+                            "seen this session)",
+                            static_cast<unsigned long long>(state_word),
+                            s_fires, s_seen_count);
+                    }
                 }
-                // Other state_words (controlled exit / Wonder-Seed
-                // cleanup / etc) intentionally drop without log to
-                // avoid flooding -- the scene-transition gate still
-                // engages because we latched the tick above.
             }
         }
 
