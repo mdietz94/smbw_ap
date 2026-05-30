@@ -253,6 +253,44 @@ def test_winget_install_without_winget_fails_fast(monkeypatch: pytest.MonkeyPatc
     assert "winget not on PATH" in r.log
 
 
+def test_winget_install_treats_already_installed_as_success(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """winget exits 0x8A15002B when `install` matches an already-installed
+    package and finds no upgrade. From the wizard's perspective the
+    package IS on the system, so this must not abort the install phase
+    (real-world failure with Git.Git on a user whose Launcher inherited
+    a PATH without `C:\\Program Files\\Git\\cmd\\`)."""
+    monkeypatch.setattr(I.shutil, "which", lambda _n: "C:/fake/winget.exe")
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda *_a, **_k: I.InstallResult(
+            False, I._WINGET_PACKAGE_ALREADY_INSTALLED,
+            "Found an existing package already installed.\n"
+            "No available upgrade found."))
+    lines: list[str] = []
+    r = I.winget_install("Git.Git", on_line=lines.append)
+    assert r.ok is True
+    assert r.returncode == 0
+    assert "already installed" in r.detail
+    assert any("already installed" in ln for ln in lines)
+
+
+def test_winget_install_propagates_other_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-zero exit codes that aren't the already-installed sentinel
+    still propagate as failure — we don't want to silently swallow a
+    real winget error (network failure, repo lookup miss, etc.)."""
+    monkeypatch.setattr(I.shutil, "which", lambda _n: "C:/fake/winget.exe")
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda *_a, **_k: I.InstallResult(False, 1, "network unreachable"))
+    r = I.winget_install("Git.Git")
+    assert r.ok is False
+    assert r.returncode == 1
+
+
 def test_stream_subprocess_propagates_returncode(monkeypatch: pytest.MonkeyPatch) -> None:
     """Lightweight sanity check that _stream_subprocess collects stdout
     and surfaces the underlying returncode through InstallResult."""

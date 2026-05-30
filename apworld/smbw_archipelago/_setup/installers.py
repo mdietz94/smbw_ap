@@ -330,6 +330,16 @@ def _stream_subprocess(
     return InstallResult(rc == 0, rc, "\n".join(log_lines))
 
 
+# winget exit code APPINSTALLER_CLI_ERROR_PACKAGE_ALREADY_INSTALLED.
+# Surfaced as "Found an existing package already installed. Trying to
+# upgrade the installed package... No available upgrade found." We treat
+# this as install success: the package is on the system, which is what
+# the install was meant to achieve. The caller's PATH-prepend / re-probe
+# step still runs and will surface a clear error if the binary isn't at
+# the expected canonical path.
+_WINGET_PACKAGE_ALREADY_INSTALLED = 0x8A15002B  # 2316632107
+
+
 def winget_install(
     package_id: str,
     *,
@@ -346,7 +356,7 @@ def winget_install(
     if wg is None:
         msg = "winget not on PATH (install App Installer from the Microsoft Store)"
         return InstallResult(False, 127, msg, msg)
-    return _stream_subprocess(
+    r = _stream_subprocess(
         [
             wg, "install",
             "-e", "--id", package_id,
@@ -357,6 +367,15 @@ def winget_install(
         ],
         on_line=on_line,
     )
+    if not r.ok and r.returncode == _WINGET_PACKAGE_ALREADY_INSTALLED:
+        msg = (
+            f"winget rc=0x{r.returncode:08X}: {package_id} already "
+            f"installed (no upgrade available) — treating as success"
+        )
+        if on_line:
+            on_line(f"[winget] {msg}")
+        return InstallResult(True, 0, r.log, msg)
+    return r
 
 
 # ---------------------------------------------------------------------------
