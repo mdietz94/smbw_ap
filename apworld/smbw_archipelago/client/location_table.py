@@ -228,7 +228,6 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     (CheckKind.WONDER_SEED, _STAGE_BULRUSH_EXPRESS): "W1: Bulrush Express - Wonder Seed",
     (CheckKind.NORMAL_EXIT, _STAGE_WALL_CLIMB_JUMP_I): "W1: Wall-Climb Jump I - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_WALL_CLIMB_JUMP_I): "W1: Wall-Climb Jump I - Top of Flag",
-    (CheckKind.NORMAL_EXIT, _STAGE_PIPE_ROCK_RUMBLE): "W1: Pipe-Rock Rumble - Normal Exit",
     (CheckKind.WONDER_SEED, _STAGE_PIPE_ROCK_RUMBLE): "W1: Pipe-Rock Rumble - Wonder Seed",
     (CheckKind.NORMAL_EXIT, _STAGE_SPROINGS_IN_THE_TWILIGHT_FOREST): "W1: Sproings in the Twilight Forest - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_SPROINGS_IN_THE_TWILIGHT_FOREST): "W1: Sproings in the Twilight Forest - Top of Flag",
@@ -279,7 +278,6 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     (CheckKind.WONDER_SEED, _STAGE_JUMP_JUMP_JUMP): "W2: Jump! Jump Jump! - Wonder Seed",
     (CheckKind.NORMAL_EXIT, _STAGE_FLOATING_HIGH_JUMP_I): "W2: Floating High Jump I - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_FLOATING_HIGH_JUMP_I): "W2: Floating High Jump I - Top of Flag",
-    (CheckKind.NORMAL_EXIT, _STAGE_FLUFF_PUFF_KERFUFF): "W2: Fluff-Puff Kerfuff - Normal Exit",
     (CheckKind.WONDER_SEED, _STAGE_FLUFF_PUFF_KERFUFF): "W2: Fluff-Puff Kerfuff - Wonder Seed",
     (CheckKind.WONDER_SEED, _STAGE_CLOUD_COVER): "W2: Cloud Cover - Wonder Seed",
     (CheckKind.NORMAL_EXIT, _STAGE_SPRING_FEET_I): "W2: Spring Feet I - Normal Exit",
@@ -380,7 +378,6 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     (CheckKind.TOP_OF_FLAG, _STAGE_CROUCHING_HIGH_JUMP_II): "W4: Crouching High Jump II - Top of Flag",
     (CheckKind.NORMAL_EXIT, _STAGE_INVISIBILITY_I): "W4: Invisibility I - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_INVISIBILITY_I): "W4: Invisibility I - Top of Flag",
-    (CheckKind.NORMAL_EXIT, _STAGE_SUNBAKED_SKIRMISH): "W4: Sunbaked Skirmish - Normal Exit",
     (CheckKind.WONDER_SEED, _STAGE_SUNBAKED_SKIRMISH): "W4: Sunbaked Skirmish - Wonder Seed",
     (CheckKind.WONDER_SEED, _STAGE_PIPE_PARK): "W4: Pipe Park - Wonder Seed",
     (CheckKind.WONDER_SEED, _STAGE_TREASURE_VAULT): "W4: Treasure Vault - Wonder Seed",
@@ -419,7 +416,6 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     (CheckKind.WONDER_SEED, _STAGE_SWAYING_RUINS): "W5: Swaying Ruins - Wonder Seed",
     (CheckKind.NORMAL_EXIT, _STAGE_GRAPPLING_VINE_I): "W5: Grappling Vine I - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_GRAPPLING_VINE_I): "W5: Grappling Vine I - Top of Flag",
-    (CheckKind.NORMAL_EXIT, _STAGE_FUNGI_FUNK): "W5: Fungi Funk - Normal Exit",
     (CheckKind.WONDER_SEED, _STAGE_FUNGI_FUNK): "W5: Fungi Funk - Wonder Seed",
     (CheckKind.FAKE_EXIT, _STAGE_POISON_RUINS): "W5: Poison Ruins - Fake Exit",
     (CheckKind.NORMAL_EXIT, _STAGE_POISON_RUINS): "W5: Poison Ruins - Normal Exit",
@@ -460,7 +456,6 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     (CheckKind.TOP_OF_FLAG, _STAGE_BOOSTING_SPIN_JUMP_II): "W6: Boosting Spin Jump II - Top of Flag",
     (CheckKind.NORMAL_EXIT, _STAGE_GRAPPLING_VINE_II): "W6: Grappling Vine II - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_GRAPPLING_VINE_II): "W6: Grappling Vine II - Top of Flag",
-    (CheckKind.NORMAL_EXIT, _STAGE_MAGMA_FLARE_UP): "W6: Magma Flare-Up - Normal Exit",
     (CheckKind.WONDER_SEED, _STAGE_MAGMA_FLARE_UP): "W6: Magma Flare-Up - Wonder Seed",
     (CheckKind.WONDER_SEED, _STAGE_ITEM_PARK): "W6: Item Park - Wonder Seed",
     (CheckKind.WONDER_SEED, _STAGE_HOT_HOT_ROCKS): "W6: Hot-Hot Rocks - Wonder Seed",
@@ -489,7 +484,6 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     (CheckKind.NORMAL_EXIT, _STAGE_BOOSTING_SPIN_JUMP_I): "PI: Boosting Spin Jump I - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_BOOSTING_SPIN_JUMP_I): "PI: Boosting Spin Jump I - Top of Flag",
     (CheckKind.WONDER_SEED, _STAGE_SPELUNKING): "PI: Spelunking! - Wonder Seed",
-    (CheckKind.NORMAL_EXIT, _STAGE_PETAL_MEDDLE): "PI: Petal Meddle - Normal Exit",
     (CheckKind.WONDER_SEED, _STAGE_PETAL_MEDDLE): "PI: Petal Meddle - Wonder Seed",
     (CheckKind.NORMAL_EXIT, _STAGE_WAY_OF_THE_GOOMBA): "Special: Way of the Goomba - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_WAY_OF_THE_GOOMBA): "Special: Way of the Goomba - Top of Flag",
@@ -652,12 +646,15 @@ _SHOP_SEED_WILDCARD_TABLE: Final[dict[tuple[int, int], str]] = {
 
 
 # (stage_key, coin_index) -> AP location name for TEN_COIN checks.
-# Each non-palace course has three "10 Coin" AP locations named
-# #1/#2/#3.  The PlayReport ``big_flower_coin_course_in/out`` arrays
-# carry per-course coin state at indices 0/1/2; whether those align
-# with the apworld's #1/#2/#3 numbering is unverified — see
-# docs/m2.2-runbook.md "Open question: array index vs apworld # numbering"
-# for the blind-mapping MVP choice (index N → #N+1).
+# Every course with hidden 10-coin rooms has three "10 Coin" AP
+# locations named #1/#2/#3 -- this includes the four palaces that ship
+# them in locations.json (W1 Pipe-Rock Plateau, W2 Fluff-Puff Peaks,
+# W4 Sunbaked Desert, W6 Deep Magma Bog).  The PlayReport
+# ``big_flower_coin_course_in/out`` arrays carry per-course coin state
+# at indices 0/1/2; whether those align with the apworld's #1/#2/#3
+# numbering is unverified — see docs/m2.2-runbook.md
+# "Open question: array index vs apworld # numbering" for the
+# blind-mapping MVP choice (index N → #N+1).
 _TEN_COIN_TABLE: Final[dict[tuple[int, int], str]] = {
     (_STAGE_WELCOME_TO_THE_FLOWER_KINGDOM, 0): "W1: Welcome to the Flower Kingdom! - 10 Coin #1",
     (_STAGE_WELCOME_TO_THE_FLOWER_KINGDOM, 1): "W1: Welcome to the Flower Kingdom! - 10 Coin #2",
@@ -953,6 +950,18 @@ _TEN_COIN_TABLE: Final[dict[tuple[int, int], str]] = {
     (_STAGE_BADGE_MARATHON, 0): "Special: Badge Marathon - 10 Coin #1",
     (_STAGE_BADGE_MARATHON, 1): "Special: Badge Marathon - 10 Coin #2",
     (_STAGE_BADGE_MARATHON, 2): "Special: Badge Marathon - 10 Coin #3",
+    (_STAGE_PIPE_ROCK_PLATEAU_PALACE, 0): "W1: Pipe-Rock Plateau Palace - 10 Coin #1",
+    (_STAGE_PIPE_ROCK_PLATEAU_PALACE, 1): "W1: Pipe-Rock Plateau Palace - 10 Coin #2",
+    (_STAGE_PIPE_ROCK_PLATEAU_PALACE, 2): "W1: Pipe-Rock Plateau Palace - 10 Coin #3",
+    (_STAGE_FLUFF_PUFF_PEAKS_PALACE, 0): "W2: Fluff-Puff Peaks Palace - 10 Coin #1",
+    (_STAGE_FLUFF_PUFF_PEAKS_PALACE, 1): "W2: Fluff-Puff Peaks Palace - 10 Coin #2",
+    (_STAGE_FLUFF_PUFF_PEAKS_PALACE, 2): "W2: Fluff-Puff Peaks Palace - 10 Coin #3",
+    (_STAGE_SUNBAKED_DESERT_PALACE, 0): "W4: Sunbaked Desert Palace - 10 Coin #1",
+    (_STAGE_SUNBAKED_DESERT_PALACE, 1): "W4: Sunbaked Desert Palace - 10 Coin #2",
+    (_STAGE_SUNBAKED_DESERT_PALACE, 2): "W4: Sunbaked Desert Palace - 10 Coin #3",
+    (_STAGE_DEEP_MAGMA_BOG_PALACE, 0): "W6: Deep Magma Bog Palace - 10 Coin #1",
+    (_STAGE_DEEP_MAGMA_BOG_PALACE, 1): "W6: Deep Magma Bog Palace - 10 Coin #2",
+    (_STAGE_DEEP_MAGMA_BOG_PALACE, 2): "W6: Deep Magma Bog Palace - 10 Coin #3",
 }
 # ---- end generated ----
 

@@ -400,6 +400,22 @@ class SMBWContext(CommonContext):
                 log.debug(
                     "badge item received: %r (id=%s) -- covered by "
                     "SetBadgesAbsolute push", item_name, item_id)
+                # Auto-resolve the "<Badge> Obtained" location at grant
+                # time.  Why: the Switch's badge bitfield serves dual
+                # duty -- Mario equips from it AND the Poplin shop
+                # refuses to sell any bit it sees set.  Granting via
+                # AP sets the bit immediately, locking the shop and
+                # making the in-game purchase that would normally
+                # complete the location unreachable.
+                bit = badge_table.grant_internal_id_for_item(item_name)
+                if bit is not None:
+                    check = CheckEmitted(
+                        kind=CheckKind.BADGE_ACQUIRED,
+                        stage_key=bit,
+                        metadata={"source": "ap_grant"},
+                    )
+                    if self.bridge_state.emit_check(check):
+                        await self.handle_check_emitted(check)
                 continue
             if wonder_seed_table.is_wonder_seed_item(item_name):
                 log.debug(

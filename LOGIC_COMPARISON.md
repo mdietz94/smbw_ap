@@ -6,8 +6,8 @@ This was a multi-round diff against the community-maintained logic PDF.  After a
 
 ## What was fixed
 
-### Missing locations (8 new entries, both wired through the in-game hook)
-6 KO Arena "Normal Exit" / Level-Clear entries (W1 Pipe-Rock Rumble, W2 Fluff-Puff Kerfuff, W4 Sunbaked Skirmish, W5 Fungi Funk, W6 Magma Flare-Up, PI Petal Meddle) — these already fire as `course_result(goal_id=0)` so no client-side change was needed beyond the locations.json + location_table.py entries.
+### Missing locations (2 new entries, both wired through the in-game hook)
+~~6 KO Arena "Normal Exit" / Level-Clear entries~~ — **reverted 2026-05-29**. KO Arenas (W1 Pipe-Rock Rumble, W2 Fluff-Puff Kerfuff, W4 Sunbaked Skirmish, W5 Fungi Funk, W6 Magma Flare-Up, PI Petal Meddle) don't have a real exit — clearing the arena is the Wonder Seed grab itself. Only the per-arena Wonder Seed (and the existing 3× 10-Coin) checks remain.
 
 7 "Top of Secret Flag" entries (W1 Piranha Plants, Bulrush Coming Through, Bulrush Express; W2 Outmaway Valley; W4 Shova Mansion; W6 Where the Rrrumbas Rule, Hot-Hot Hot) were briefly added as a separate `CheckKind.TOP_OF_SECRET_FLAG`, then **collapsed back into `TOP_OF_FLAG`** — topping either the normal-exit or secret-exit flagpole now fires the same per-course `TOP_OF_FLAG` check.
 
