@@ -14,6 +14,7 @@ import unittest
 
 from ..processor import (
     _BREAK_TIME_STAGE_KEYS,
+    _FAKE_EXIT_STAGE_KEYS,
     _HUB_HOUSE_STAGE_KEYS,
     _emit_ten_coin_checks,
     _handle_course_result,
@@ -185,6 +186,85 @@ class TestCourseResultClassification(unittest.TestCase):
             room="course_result", payload=PALACE_COURSE_RESULT))
         self.assertEqual(emitted, [])
         self.assertEqual(state.count_emitted(), 0)
+
+    def test_fake_exit_at_jump_jump_jump_emits_fake_exit_and_top_of_flag(self):
+        """W2: Jump! Jump Jump! Fake Exit live capture, 2026-05-29.
+        The PlayReport had goal_id=1 (NOT 2 as previously guessed),
+        touch_goal_top_result=True.  Must route to FAKE_EXIT (via the
+        stage-key allowlist) AND TOP_OF_FLAG (player topped the fake
+        flag, which the user wants to count toward the shared
+        TOP_OF_FLAG check)."""
+        state = BridgeState()
+        fields = {
+            "stage_info": {
+                "stage_key": 0x9C6F85C5,  # W2: Jump! Jump Jump!
+                "world_no": 2,
+                "course_no": 10,
+            },
+            "course_result": 1,
+            "goal_id": 1,
+            "touch_goal_top_result": True,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+        }
+        emitted = _handle_course_result(state, fields)
+        self.assertEqual(
+            [c.kind for c in emitted],
+            [CheckKind.FAKE_EXIT, CheckKind.TOP_OF_FLAG])
+        for c in emitted:
+            self.assertEqual(c.stage_key, 0x9C6F85C5)
+            self.assertEqual(c.metadata["goal_id"], 1)
+            self.assertTrue(c.metadata["touch_goal_top"])
+
+    def test_fake_exit_without_top_of_flag(self):
+        """A Fake Exit clear without topping the fake flag fires only
+        FAKE_EXIT -- mirrors the goal_id==0 / goal_id==1 paths."""
+        state = BridgeState()
+        fields = {
+            "stage_info": {
+                "stage_key": 0xCAAB3439,  # W5: Poison Ruins
+                "world_no": 5,
+                "course_no": 14,
+            },
+            "course_result": 1,
+            "goal_id": 1,
+            "touch_goal_top_result": False,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+        }
+        emitted = _handle_course_result(state, fields)
+        self.assertEqual([c.kind for c in emitted], [CheckKind.FAKE_EXIT])
+
+    def test_secret_exit_unchanged_at_non_fake_exit_stage(self):
+        """Regression guard for the FAKE_EXIT allowlist: a goal_id==1
+        clear at a stage NOT in _FAKE_EXIT_STAGE_KEYS must still route
+        to SECRET_EXIT, never FAKE_EXIT."""
+        state = BridgeState()
+        fields = {
+            "stage_info": {
+                "stage_key": W1_2_STAGE_KEY,  # Piranha Plants on Parade
+                "world_no": 1,
+                "course_no": 3,
+            },
+            "course_result": 1,
+            "goal_id": 1,
+            "touch_goal_top_result": False,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+        }
+        emitted = _handle_course_result(state, fields)
+        self.assertEqual([c.kind for c in emitted], [CheckKind.SECRET_EXIT])
+
+    def test_fake_exit_stage_set_disjoint_from_other_routing_sets(self):
+        """Routing sets must carve disjoint stage_key namespaces -- an
+        overlap with palace/hub-house/break-time would create ambiguity."""
+        self.assertEqual(
+            _FAKE_EXIT_STAGE_KEYS & _HUB_HOUSE_STAGE_KEYS, frozenset())
+        self.assertEqual(
+            _FAKE_EXIT_STAGE_KEYS & _BREAK_TIME_STAGE_KEYS, frozenset())
+        from ..processor import _PALACE_STAGE_KEYS
+        self.assertEqual(
+            _FAKE_EXIT_STAGE_KEYS & _PALACE_STAGE_KEYS, frozenset())
 
     def test_pause_menu_quit_suppressed(self):
         """In-course pause-menu quit emits a course_result PlayReport

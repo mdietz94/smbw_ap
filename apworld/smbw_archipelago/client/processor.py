@@ -204,6 +204,28 @@ _PALACE_STAGE_KEYS: frozenset[int] = frozenset({
 })
 
 
+# Fake-Exit stage_keys.  course_result emits goal_id == 1 for BOTH
+# Secret Exits AND Fake Exits -- the PlayReport doesn't distinguish
+# them.  Each course has at most one alt-exit type, so the per-stage
+# allowlist below routes goal_id == 1 to FAKE_EXIT at these stages and
+# to SECRET_EXIT everywhere else.  Confirmed 2026-05-29 from a
+# W2 Jump! Jump Jump! Fake Exit live capture: course_result payload had
+# goal_id=01, touch_goal_top_result=true, world_mother_seed=false --
+# previously misrouted to SECRET_EXIT and dropped because the
+# location_table has no SECRET_EXIT row for this stage.
+#
+# Stage keys mirror the (CheckKind.FAKE_EXIT, _STAGE_*) rows in
+# location_table.py.  None of these courses have a SECRET_EXIT row, so
+# the routing is unambiguous.
+_FAKE_EXIT_STAGE_KEYS: frozenset[int] = frozenset({
+    0x9C6F85C5,  # W2: Jump! Jump Jump!
+    0xE7027BAE,  # W3: The Final Trial
+    0x21B3A16E,  # W5: Wubba Ruins
+    0x8882773F,  # W5: Swaying Ruins
+    0xCAAB3439,  # W5: Poison Ruins
+})
+
+
 # ---------------------------------------------------------------------------
 # Top-level dispatch.
 
@@ -414,15 +436,20 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
                                              here to avoid double-firing)
         goal_id == 0 + touch_goal_top      → Top of Flag + Normal Exit
         goal_id == 0 + !touch_goal_top     → Normal Exit
-        goal_id == 1 + touch_goal_top      → Top of Flag + Secret Exit
-        goal_id == 1 + !touch_goal_top     → Secret Exit
-        goal_id == 2                       → Fake Exit (guessed)
+        goal_id == 1 at Fake-Exit stage    → Fake Exit (+TOP_OF_FLAG if top)
+        goal_id == 1 elsewhere             → Secret Exit (+TOP_OF_FLAG if top)
+
+    Note: ``goal_id == 1`` covers BOTH Secret Exits and Fake Exits.
+    The PlayReport doesn't distinguish them; we route by stage_key via
+    ``_FAKE_EXIT_STAGE_KEYS`` (see live-capture comment on that set for
+    the 2026-05-29 discovery -- the prior ``goal_id == 2`` guess for
+    Fake Exit was wrong and that branch never fired).
 
     A Top of Flag clear is a strict superset of an exit, so when
     ``touch_goal_top`` is set we emit BOTH TOP_OF_FLAG and the
-    corresponding exit (Normal or Secret).  TOP_OF_FLAG is a single
-    AP location per course: topping either the normal-exit or
-    secret-exit flagpole fires the same check.
+    corresponding exit (Normal / Secret / Fake).  TOP_OF_FLAG is a
+    single AP location per course: topping the normal, secret, or fake
+    flagpole fires the same check.
 
     M2.2 10-coin layer (added 2026-05-25): after the exit-type emit,
     diff ``big_flower_coin_course_in`` against ``_out`` and emit one
@@ -496,11 +523,16 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
         if top:
             kinds.append(CheckKind.TOP_OF_FLAG)
     elif goal_id == 1:
-        kinds = [CheckKind.SECRET_EXIT]
+        # goal_id == 1 covers both Secret Exits and Fake Exits.  The
+        # 5 Fake-Exit courses are an allowlist; everything else with
+        # goal_id == 1 is a Secret Exit.  Topping the fake/secret
+        # flagpole still counts toward the course's TOP_OF_FLAG check.
+        if stage_key in _FAKE_EXIT_STAGE_KEYS:
+            kinds = [CheckKind.FAKE_EXIT]
+        else:
+            kinds = [CheckKind.SECRET_EXIT]
         if top:
             kinds.append(CheckKind.TOP_OF_FLAG)
-    elif goal_id == 2:
-        kinds = [CheckKind.FAKE_EXIT]
     else:
         log.warning("course_result unknown goal_id=%r at stage_key=%d",
                     goal_id, stage_key)
