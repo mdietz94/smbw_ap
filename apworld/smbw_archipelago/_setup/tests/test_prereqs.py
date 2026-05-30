@@ -61,10 +61,32 @@ def test_check_git_success(patch_run: dict[str, Any]) -> None:
 
 def test_check_git_missing(force_windows, patch_run: dict[str, Any]) -> None:
     patch_run["git"] = None
+    # Disable the canonical-install-path probe so the test exercises only
+    # the PATH fallback (mirrors the `_CMAKE_DEFAULT_PATHS = ()` pattern).
+    P._GIT_DEFAULT_PATHS = ()  # type: ignore[assignment]
     r = P.check_git()
     assert r.ok is False
     assert "not found" in r.detail
     assert r.auto_installable is True
+
+
+def test_check_git_finds_standard_install_path(
+    force_windows, patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Git installed at the canonical Windows path is detected even when
+    not on the wizard process's PATH. Without this, a Launcher inheriting
+    a stale PATH triggers a redundant winget install that exits non-zero
+    with "package already installed" and aborts the install pipeline."""
+    fake_git = Path("C:/Program Files/Git/cmd/git.exe")
+    P._GIT_DEFAULT_PATHS = (fake_git,)  # type: ignore[assignment]
+    monkeypatch.setattr(
+        Path, "is_file", lambda self: str(self) == str(fake_git))
+    patch_run[str(fake_git)] = (0, "git version 2.43.0", "")
+    patch_run["git"] = None   # PATH probe would otherwise fail
+    r = P.check_git()
+    assert r.ok is True
+    assert "2.43.0" in r.detail
+    assert "Program Files" in r.detail
 
 
 def test_check_cmake_rejects_too_old(patch_run: dict[str, Any]) -> None:

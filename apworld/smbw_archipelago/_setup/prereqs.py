@@ -351,7 +351,33 @@ def check_dev_mode() -> PrereqResult:
 # the user sees the missing tool, not just a confusing "submodule missing".
 # ---------------------------------------------------------------------------
 
+# Canonical Git for Windows install paths. Probed before falling back to
+# PATH because winget's Git.Git installer updates the SYSTEM PATH, which
+# only takes effect for processes started after the install — a Launcher
+# already running (or launched from a shell that pre-dates the install)
+# sees git nowhere on PATH even though `C:\Program Files\Git\cmd\git.exe`
+# exists. Without this probe the wizard mis-diagnoses git as missing and
+# re-runs winget, which then exits 0x8A15002B ("package already installed,
+# no upgrade found") and the install phase fails.
+_GIT_DEFAULT_PATHS = (
+    Path("C:/Program Files/Git/cmd/git.exe"),
+    Path("C:/Program Files (x86)/Git/cmd/git.exe"),
+)
+
+
 def check_git() -> PrereqResult:
+    if _is_windows():
+        for default in _GIT_DEFAULT_PATHS:
+            if not default.is_file():
+                continue
+            r = _safe_run([str(default), "--version"])
+            if r is None or r[0] != 0:
+                continue
+            _prepend_path(default.parent)
+            ver = (r[1] or r[2]).strip()
+            return PrereqResult("git", "Git", True,
+                                f"{ver} ({default})",
+                                auto_installable=True)
     r = _safe_run(["git", "--version"])
     if r is None or r[0] != 0:
         if _is_windows():
