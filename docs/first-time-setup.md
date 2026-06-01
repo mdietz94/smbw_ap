@@ -57,10 +57,6 @@ Use Archipelago's normal seed-generation flow. The world's game name is
 **Super Mario Bros Wonder**. Per-player options are documented in the
 generated YAML template.
 
-Generation produces a `.smbwap` file per slot. Double-clicking it opens
-**SMBW Client** directly with your slot name pre-filled in the Connect
-bar, as a convenience for subsequent sessions.
-
 ## Play
 
 1. Launch Ryujinx and start SMBW.
