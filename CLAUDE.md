@@ -1,464 +1,142 @@
 # SMBW Archipelago — orientation for Claude Code
 
-This is the project-overview doc. For current-state details and the M-numbered roadmap, always read [docs/handoff.md](docs/handoff.md) first and [docs/milestones.md](docs/milestones.md) second.
+Project-overview doc. **For current state, always read [docs/handoff.md](docs/handoff.md)
+first and [docs/milestones.md](docs/milestones.md) (the M1–M7 roadmap) second.**
+Procedural and reference detail lives in **skills** (see the index below) — reach
+for the matching skill rather than expanding this file.
 
-> **Subsdk framework: hakkun (LLVM 19 + LibHakkun).** The earlier exlaunch
-> path stopped booting SMBW on Atmosphere 1.11.1 + HATS-2026-05-11 (see
-> [docs/hakkun-migration-plan.md](docs/hakkun-migration-plan.md) and memory
-> `[[smbwap-exlaunch-real-hw-broken]]`). The current build is driven by
-> `switch-mod/CMakeLists.txt` + `switch-mod/sys/` (LibHakkun submodule) +
-> `switch-mod/config/` + `switch-mod/src/{main.cpp, ap/, probe/, util/}`
-> and boots on real hardware. The retired exlaunch-era code at
-> `switch-mod/src/program/`, `switch-mod/src/lib/`, and `switch-mod/module/`
-> is **excluded from the build** but kept on disk as reference until
-> Phase 3 cleanup. The hook-pattern sections below describe the exlaunch
-> API; the hakkun equivalents are in memory `[[smbwap-hakkun-migration]]`
-> (cheat-sheet table).
+> **Subsdk framework: hakkun (LLVM 19 + LibHakkun).** The earlier exlaunch path
+> stopped booting SMBW on Atmosphere 1.11.1 + HATS-2026-05-11 (memory
+> `[[smbwap-exlaunch-real-hw-broken]]`). The live build is driven by
+> `switch-mod/CMakeLists.txt` + `sys/` (LibHakkun submodule) + `config/` +
+> `src/{main.cpp, ap/, probe/, util/}`, and boots on real hardware. The retired
+> exlaunch tree at `switch-mod/src/{program,lib}/` + `switch-mod/module/` is
+> **excluded from the build** but kept on disk for reference. Hook installs are
+> hakkun `HkTrampoline` + `installAtMainOffset` / `installAtSym<>` in
+> `src/main.cpp` (NOT the exlaunch `Hook::InstallAtOffset` API some older docs
+> still describe — see the **smbw-reverse-engineering** skill for the live idiom).
 
 ## What this project is
 
-An Archipelago multiworld integration for **Super Mario Bros. Wonder** (SMBW v1.0.0) running on modded Switch + Ryujinx. The architecture mirrors the user's existing `smo_archipelago` project (Super Mario Odyssey): a Switch subsdk hooks the game NSO, ships events over LAN to a PC-side Python service, which bridges to the Archipelago server.
+An Archipelago multiworld integration for **Super Mario Bros. Wonder** (SMBW
+v1.0.0) on modded Switch + Ryujinx. A Switch subsdk hooks the game NSO and ships
+events over LAN (`:17777`) to a PC-side Kivy Archipelago client, which bridges to
+the AP server. Architecture mirrors the user's `smo_archipelago` (Super Mario
+Odyssey) project at `C:\Users\maxwe\Documents\smo_archipelago\` — mirror its
+`switch-mod/src/ap/ApClient.cpp` and `apworld/` layout when extending the bridge.
 
-- **Dev target**: Ryujinx 1.3.3 (fast iteration loop).
-- **Production target**: real modded Switch under Atmosphere CFW (M6).
-- **Launches via**: Archipelago Launcher → "SMBW Client" button (Kivy GUI). The client subclasses `kvui.GameManager`; the prior `python -m bridge` headless CLI was removed in the M4→Kivy rewrite.
+- **Dev target**: Ryujinx 1.3.3. **Production target**: real Switch + Atmosphere (M6).
+- **Launches via**: Archipelago Launcher → "SMBW Client" button (Kivy GUI,
+  subclasses `kvui.GameManager`). The old `python -m bridge` CLI is gone.
+
+## Skills — reach for these first
+
+| Skill | Use it for |
+|---|---|
+| **smbw-build-deploy** | Compile `subsdk9`, deploy to Ryujinx, run the client, tail the `[smbwap]` log, first-time `/setup`, end-to-end smoke tests (Win + Linux). |
+| **smbw-reverse-engineering** | Find/install a hook (Ghidra), identify Nerves & game functions, the two hook patterns, NSO address space, the crash gotchas, Ghidra scripts. Bundles the master RE decompile journal. |
+| **smbw-save-data** | Grant AP items via the GameDataMgr API, pick the right `probe::` primitive, hash keys, container A/B/C/D layout, save-file format, save-survival/replay. |
+| **smbw-release** | Tag a version, build the `smbwonder.apworld` bundle, the pre-push release-gate audit, manual `gh release` fallback. |
+
+Skills are surfaced automatically — prefer invoking the relevant one over
+searching `docs/`. Deep reference travels with its skill under
+`.claude/skills/<skill>/reference/`.
 
 ## Repo layout
 
 ```
-smwonder_archipelago/             ← outer git repo (this one)
-├── CLAUDE.md                       you are here
-├── conftest.py                     adds vendor/Archipelago to sys.path for pytest
-├── docs/
-│   ├── handoff.md                  current state + recent decisions (READ FIRST)
-│   ├── milestones.md               M1-M7 roadmap
-│   └── save-diff-grants.md         M3 grants handoff (Ghidra dead-end; pivot to save-diff)
-├── apworld/
-│   └── smbw_archipelago/           the SMBWonder AP world + Kivy client
-│       ├── __init__.py             SMBWonderWorld + add_client_to_launcher()
-│       ├── {Game,Items,Locations,Regions,Rules,Options,...}.py
-│       ├── data/                   items.json / locations.json / regions.json
-│       ├── hooks/                  Manual-template hook stubs (rename pending)
-│       └── client/                 ★ Kivy client + LAN bridge
-│           ├── main.py             launch() entry point (Launcher button hits this)
-│           ├── context.py          SMBWContext: CommonContext subclass
-│           ├── gui.py              SMBWManager: kvui.GameManager subclass
-│           ├── lan_server.py       async TCP server on :17777
-│           ├── discovery.py        UDP responder on :17776
-│           ├── processor.py + play_report.py + state.py + protocol.py + wire.py
-│           ├── badge_table.py + royal_seed_table.py + location_table.py
-│           └── tests/              207 tests, runnable via `python -m pytest`
-├── vendor/
-│   └── Archipelago/                git submodule, pinned to commit 799e0b7b
-└── switch-mod/                     subsdk source (tracked in this repo)
-    ├── CMakeLists.txt              hakkun-driven; sets the toolchain file itself
-    ├── config/config.cmake         module name, title ID, USE_SAIL, addons
-    ├── sys/                        ★ git submodule (fruityloops1/LibHakkun) — framework
-    │   ├── cmake/toolchain.cmake     LLVM clang cross-compile (aarch64-none-elf)
-    │   └── cmake/{module,deploy,sail,...}.cmake
-    ├── syms/100/sdk.sym            ★ Nintendo SDK symbol map (Ghidra import)
-    ├── lib/imgui                   git submodule (ocornut/imgui, docking branch)
-    │                                 — debug overlay (gated off in Phase 1 config)
-    ├── src/
-    │   ├── main.cpp                ★ hkMain entry + hook installs
-    │   ├── ap/                     LAN bridge + wire protocol
-    │   ├── probe/                  gmd::GameDataMgr grant primitives
-    │   ├── util/                   Log, Json
-    │   ├── lib/                    retired exlaunch sources (excluded from build)
-    │   └── program/                retired exlaunch sources (excluded from build)
-    ├── module/                     retired exlaunch headers (excluded from build)
-    └── build/                      ← gitignored, CMake artifacts
+smbw_ap/                              ← this git repo
+├── CLAUDE.md                          you are here
+├── conftest.py                        puts vendor/Archipelago on sys.path for pytest
+├── .claude/skills/                    ★ build-deploy / reverse-engineering / save-data / release
+├── docs/                              living state + active-spike handoffs (see below)
+├── apworld/smbw_archipelago/          the SMBWonder AP world + Kivy client
+│   ├── __init__.py                    SMBWonderWorld + add_client_to_launcher()
+│   ├── {Game,Items,Locations,Regions,Rules,Options,...}.py
+│   ├── data/                          items.json / locations.json / regions.json
+│   ├── _setup/                        the /setup wizard (probe → install → build → deploy)
+│   └── client/                        ★ Kivy client + LAN bridge
+│       ├── main.py · context.py (SMBWContext) · gui.py (SMBWManager)
+│       ├── lan_server.py (:17777) · discovery.py (:17776)
+│       ├── processor.py · play_report.py · state.py · protocol.py · wire.py
+│       ├── badge_table.py · royal_seed_table.py · wonder_seed_table.py · coin_table.py
+│       └── tests/                     pytest: client + wire + PlayReport decode
+├── scripts/                           savediff.py, install_apworld.py, ghidra/ (RE scripts)
+├── vendor/Archipelago/               git submodule (pinned)
+└── switch-mod/                        subsdk source (tracked inline in this repo)
+    ├── CMakeLists.txt                 hakkun-driven; sets its own toolchain before project()
+    ├── config/config.cmake           module name, title ID, USE_SAIL, addons
+    ├── sys/                           ★ submodule fruityloops1/LibHakkun (framework)
+    ├── syms/100/                      Nintendo SDK + gmd/sead/main symbol maps (Ghidra import)
+    ├── lib/imgui                      submodule (debug overlay, gated off)
+    └── src/
+        ├── main.cpp                   ★ hkMain entry + all hook installs
+        ├── ap/                        LAN bridge + wire protocol (ApClient, ApFrameBridge, …)
+        ├── probe/                     ★ gmd::GameDataMgr grant primitives (ContainerA/B/C,
+        │                                PerCourse, SeedTrace, DeathLink, Gates, Diagnostics)
+        ├── util/                      Log, Json
+        └── {lib,program}/             retired exlaunch sources (excluded from build)
 ```
 
-`switch-mod/` was previously a separate git repo (fork of `mdietz94/wondar`) referenced as a submodule. It has been absorbed into this repo as plain tracked files so the Switch subsdk ships alongside the apworld in a single release. The hakkun framework at `switch-mod/sys/` and the imgui submodule are the only remaining submodules under `switch-mod/`; the exlaunch-era NintendoSDK and sead submodules were retired in the hakkun migration.
+`switch-mod/` was a separate repo (fork of `mdietz94/wondar`); it's now tracked
+inline so the subsdk ships with the apworld in one release. Only `sys/` (LibHakkun)
+and `lib/imgui` remain submodules under it.
 
-## Launching the SMBW Client
+## docs/ — what lives there now
 
-The Kivy AP client is launched via Archipelago's Launcher.  For dev,
-expose the apworld via a junction under `vendor/Archipelago/custom_worlds/`
-(one-time setup: `python scripts/install_smbw_apworld.py`, or run
-`/setup` from inside SMBW Client which does this as one of its phases).
-Then:
+`docs/` holds **living state** and **active-spike handoffs** only; durable
+reference moved into the skills (a redirect stub marks each moved file).
 
-```pwsh
-python vendor/Archipelago/Launcher.py
-# click "SMBW Client" → Kivy window opens with Archipelago + SMBW tabs
-```
-
-Direct module invocation also works (skips the Launcher chrome):
-
-```pwsh
-python -m apworld.smbw_archipelago.client.main --connect=localhost:38281 --name=Mario
-# add --nogui for headless CI runs
-```
-
-The client owns the LAN socket (:17777) and UDP discovery (:17776), so
-nothing else needs to run on the PC side -- just AP server + this client +
-Ryujinx with the SMBW mod.
-
-## Daily dev loop
-
-Prereqs (drive these via `/setup` from SMBW Client for a guided install):
-LLVM 19.1.x (clang on PATH), CMake 3.16+, Ninja, Python 3.11+. On
-Windows the wizard also drops a `python3.exe` shim alongside the
-interpreter because LibHakkun's `toolchain.cmake` shells out to bare
-`python3` for `setup_libcxx_prepackaged.py`; on Linux/macOS that's a
-no-op since `python3` is the default name there. devkitPro is **not**
-used anywhere — hakkun's toolchain hardcodes clang/clang++.
-
-The wizard auto-installs the system tools on Windows (via winget + a
-pinned LLVM 19.1.7 download). On Linux it prints the missing
-dependencies and leaves install to the user's package manager
-(`apt`/`dnf`/`pacman`/etc.); the `pip` and `git submodule` install
-steps still run automatically.
-
-PowerShell. Build + deploy:
-
-```pwsh
-& "C:\Program Files\CMake\bin\cmake.exe" --build `
-    "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build"
-
-$dst = "$env:APPDATA\Ryujinx\mods\contents\010015100b514000\smbwap\exefs"
-Copy-Item "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build\subsdk9" `
-          -Destination $dst -Force
-Copy-Item "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build\subsdk9.npdm" `
-          -Destination "$dst\main.npdm" -Force
-```
-
-First-time configure (only after blowing away `build/`):
-
-```pwsh
-& "C:\Program Files\CMake\bin\cmake.exe" `
-    -S "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod" `
-    -B "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build" `
-    -G Ninja
-```
-
-No `-DCMAKE_TOOLCHAIN_FILE` — `switch-mod/CMakeLists.txt:3` sets
-`CMAKE_TOOLCHAIN_FILE` to `${CMAKE_SOURCE_DIR}/sys/cmake/toolchain.cmake`
-before `project()`, so passing one is at best dead, at worst wrong.
-
-Tail the live game log (Ryujinx writes `svcOutputDebugString` to its file log):
-
-```pwsh
-$latest = Get-ChildItem "C:\Users\maxwe\Desktop\Switch\ryujinx-1.3.3\Logs\Ryujinx_*.log" |
-          Sort-Object LastWriteTime -Descending | Select-Object -First 1
-Get-Content -Wait $latest.FullName | Select-String '\[smbwap'
-```
-
-Our log lines are prefixed `[smbwap inf]` / `[smbwap dbg]`. Ryujinx writes them with embedded NUL bytes; offline parsing wants `tr -d '\0'` first.
-
-### Linux equivalent
-
-Same toolchain, different paths. Bash. Build + deploy:
-
-```bash
-cmake --build "$HOME/smwonder_archipelago/switch-mod/build"
-
-dst="${XDG_CONFIG_HOME:-$HOME/.config}/Ryujinx/mods/contents/010015100b514000/smbwap/exefs"
-mkdir -p "$dst"
-cp "$HOME/smwonder_archipelago/switch-mod/build/subsdk9"      "$dst/"
-cp "$HOME/smwonder_archipelago/switch-mod/build/subsdk9.npdm" "$dst/main.npdm"
-```
-
-First-time configure:
-
-```bash
-cmake \
-    -S "$HOME/smwonder_archipelago/switch-mod" \
-    -B "$HOME/smwonder_archipelago/switch-mod/build" \
-    -G Ninja
-```
-
-Tail the live game log:
-
-```bash
-ls -t "$HOME/.config/Ryujinx/Logs/Ryujinx_"*.log | head -1 |
-    xargs -I{} tail -F {} | tr -d '\0' | grep '\[smbwap'
-```
+- `handoff.md` (READ FIRST) · `milestones.md` (M1–M7 roadmap) — canonical state.
+- **Active spikes** (in-progress RE — leave these as the session entry points):
+  Wonder-Seed persistence (`handoff-2026-05-29-ws-persistence.md`,
+  `wonder-seed-re-reopen-2026-05-28.md`, `wonder-seed-observability-hook-prompt.md`);
+  Royal-Seed gate-entry / check-loss (`gate-entry-session3-handoff.md`,
+  `royal-seed-gate-entry-design.md`, `royal-seed-check-loss-re-findings.md`,
+  `royal-seed-phase-a-findings.md`).
+- `first-time-setup.md` · `release-process.md` · `m2.2-runbook.md` ·
+  `m4-runbook.md` — sources behind the build-deploy/release skills (the
+  m4-runbook's `python -m bridge` command is stale; the client is now
+  `python -m apworld.smbw_archipelago.client.main`).
+- `LOGIC_COMPARISON.md` — the logic-PDF reconciliation record.
 
 ## Game artifacts
 
-- Target version: **SMBW v1.0.0**, BID `CD6E42AEE7934F4D`, internal codename `Secred.nss`.
-- Extracted NSO: `C:\Users\maxwe\Desktop\Roms\Switch\Super Mario Bros. Wonder\main.nso`.
-- Tool used to extract: `C:\Users\maxwe\Desktop\Switch\hactool.exe`; keys at `C:\Users\maxwe\.switch\prod.keys`.
-- **Do not apply the v1.0.1 update in Ryujinx** — every offset in our hooks is pinned to v1.0.0.
-
-## Two hook patterns established
-
-All hooks live in [switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp). NSO base when loaded is `0x7100000000`; `exl::util::modules::GetTargetStart()` returns this.
-
-### Pattern 1: NSO offset hook (M1)
-
-`Hook::InstallAtOffset(0xXXXXXX)` — addresses are NSO-relative. Used for game functions we've reverse-engineered in Ghidra. Examples:
-
-- `NerveActivateOnce::InstallAtOffset(0x559f7c)` — traps the shared "Nerve one-shot activate" helper. Read `nerve[0]` (the vtable pointer) at callback entry; filter by `vt_off = vtable - GetTargetStart()` to identify *which* Nerve fired.
-- `SetCourseClearFlagExecute::InstallAtOffset(0x1bf28cc)` — direct trampoline on the SetCourseClearFlagToGameData Nerve's `execute` slot 8.
-
-### Pattern 2: SDK symbol hook (M2.4, FSHacks)
-
-`Hook::InstallAtSymbol("_ZN2nn...")` — resolves a mangled C++ symbol via `nn::ro::LookupSymbol`. Survives game/SDK rebuilds. Examples:
-
-- `pe::FSHacks::OpenFile::InstallAtSymbol("_ZN2nn2fs8OpenFileEPNS0_10FileHandleEPKci")`
-- `PlayReportSetEventId::InstallAtSymbol("_ZN2nn5prepo10PlayReport10SetEventIdEPKc")`
-- The two IPC SaveReport methods (mangled names are huge; see main.cpp).
-
-The full Nintendo SDK symbol table is in [switch-mod/syms/100/sdk.sym](switch-mod/syms/100/sdk.sym) — every symbol has its sdk-relative offset.
-
-## Critical gotchas (don't relearn these)
-
-1. **Never use `thread_local` in subsdk code.** No TLS allocator is registered before our code runs; nnSdk's `SetMemoryAllocatorForThreadLocal` Aborts at module load. Crash signature: Result `0xCA8`, User Break, stack ends at `SetMemoryAllocatorForThreadLocal`. Use `static std::atomic<...>` + manual TID check instead.
-
-2. **`exlaunch`'s And64InlineHook patches the first 5 instructions (20 bytes).** Any PC-relative instruction (adrp, ldr-literal, b/bl) in those bytes corrupts the trampoline. Symptoms appear *delayed* — typically the next time the function or another code path runs through the patched region. Wonder Seed Nerve slot 8 (`FUN_7101562fb4`) got bitten by this. Workaround: hook a shared inner helper instead (e.g. `FUN_7100559f7c`) and filter by caller identity.
-
-3. **Hooking `nn::prepo::PlayReport` member functions beyond ctor + SetEventId crashes the game.** Even no-op trampolines on `Save()` trigger a delayed guest abort 5-6 s later on a different SDK validator thread (`ModuleSystemWorker1` or `gmd::SaveDataMgr` depending on which audit runs first). **Workaround**: drop below the PlayReport class to the IPC client layer `CmifProxyImpl<IPrepoService>::_nn_sf_sync_SaveReport{,WithUser}` which sees the already-serialized payload and is below the audit checkpoints.
-
-4. **NSO and SDK have independent base offsets.** Game symbols use `__main_start + 0x...` (NSO-relative); SDK symbols use `__sdk_start + 0x...`. Don't mix them — InstallAtOffset is for the former, InstallAtSymbol resolves both transparently.
-
-5. **R_ABORT_UNLESS in `InstallAtSymbol`** aborts hard if the symbol can't be resolved. If a symbol typo or version mismatch slips in, the subsdk dies before the game window opens. Watch the early log lines after `installing X @ Y` to confirm the install succeeded.
-
-6. **PlayReport ABI surprise**: the with-event-id ctor is rarely used. The game almost always uses the no-arg ctor + `SetEventId("room_name")`. If you hook only the with-event-id ctor, you'll see zero firings even when reports are being sent. Hook `SetEventId` instead.
-
-7. **Always import `switch-mod/syms/100/*.sym` into Ghidra at project setup** — not just `sdk.sym`. The previous M3 static-RE sprint missed the `gmd::GameDataMgr::sInstance` anchor that's been sitting in [switch-mod/syms/100/gmd/GameDataMgr.sym](switch-mod/syms/100/gmd/GameDataMgr.sym) the whole time. Use [scripts/ghidra/import_sdk_symbols.py](scripts/ghidra/import_sdk_symbols.py) — it walks the entire `syms/100/` tree.
-
-## GameDataMgr (gmd::) save-data API
-
-Discovered 2026-05-24 via static-analysis sprint 2. Full decompile details in [docs/static-analysis-findings.md](docs/static-analysis-findings.md).
-
-**The singleton anchor**: `gmd::GameDataMgr::sInstance` lives at NSO `+0x0363F0F0`. Dereferencing this qword at runtime gives the live `GameDataMgr*`. This replaces any pointer-scan workflow for finding the live save-data state.
-
-**The grant primitive (M3.3 counters)** — ✅ **shipped 2026-05-25** as
-`probe::grantContainerACounter(hash, value)` in
-[switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp).
-Live-validated end-to-end with `flower_coin`: the boot-time smoke test
-called `grantContainerACounter(0xf4ee6827, 99)`, saved + quit, save-diff
-showed file offset 0x0894 went `06 00 → 63 00`.  `regular_coin` works by
-the same path.  Wire protocol gained `GrantHashKeyedMsg` (bridge ↔ Switch),
-inbound dispatch in [switch-mod/src/program/ap/ApFrameBridge.cpp](switch-mod/src/program/ap/ApFrameBridge.cpp).
-
-✅ **M3.3b Royal Seeds — shipped 2026-05-25** as
-`probe::grantContainerBBool(hash, value)` in
-[switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp).
-Calls `FUN_710049EA24` at NSO `+0x0049EA24` (the high-level container-B
-bool writer wrapper), which gates on the gmd+0x68 init/lock and
-delegates to `FUN_7101F263FC(gmd+8, value & 1, hash)` — the
-deferred-write bool setter for the gmd+8 substruct.  Lessons-learned
-tag: the bool writer was already statically identified in sprint 2
-(docs/static-analysis-findings.md lines 3215/3327) — the M3.3b work
-was 90% reading our own notes, 10% writing the primitive that mirrored
-`grantContainerACounter`.
-
-Live-validated end-to-end with the boot-time smoke test that wrote
-all 8 bool hashes:
-
-| Hash | Pair offset (value byte) | Save-diff result |
-|---|---|---|
-| `0x55815859` W1 Royal Seed | `0x0354` | already 0x01 (idempotent ✓) |
-| `0x49ABBA86` W2 Royal Seed | `0x0064` | `00 → 01` ✓ |
-| `0xB550D8D6` W3 Royal Seed | `0x0384` | `00 → 01` ✓ |
-| `0x1DCF7F6E` W4 Royal Seed | `0x01F4` | `00 → 01` ✓ |
-| `0x0D5A3E00` W5 Royal Seed | `0x036C` | `00 → 01` ✓ |
-| `0xD4660D2B` W6 Royal Seed | `0x00BC` | `00 → 01` ✓ |
-| `0x5D3EC9B4` COMPLETE_GAME | `0x0044` | `00 → 01` ✓ |
-| `0x89F1CC52` INTRO | `0x012C` | already 0x01 (idempotent ✓) |
-
-Trampoline log confirmed `substruct = gmd + 8` exactly as documented.
-Dispatch in [switch-mod/src/program/ap/ApFrameBridge.cpp](switch-mod/src/program/ap/ApFrameBridge.cpp)
-`drainInbound()` branches on `isBoolHash(h)` (defined in
-`ApFrameBridge.hpp` with the 8-hash whitelist) — counters stay on
-container-A, bools route to container-B.  Bridge side unchanged:
-`royal_seed_table.py` `source` flipped from `"memetendoYT-pending"` to
-`"live"`, `ap_client._handle_received_items` WARN replaced with INFO.
-
-```cpp
-// Container B bool writer.  High-level wrapper; gates on the gmd+0x68
-// init/lock and delegates to FUN_7101F263FC(gmd+8, value & 1, hash).
-// Deferred-write: value is queued at gmd+0xf8 dirty buffer and applied
-// to the persistent container at next save.
-void FUN_710049EA24(GameDataMgr* gmd, uint32_t value, uint32_t hash);
-// at NSO +0x0049EA24
-```
-
-```cpp
-// Container A counter writer.  Lock-free, thread-safe (uses ARM
-// exclusive-monitor atomics on the dirty queue at gmd->[+0xf8]).
-// Deferred-write: the value is queued and applied to the persistent
-// container at next save.
-void FUN_710049F648(GameDataMgr* gmd, uint32_t value, uint32_t hash);
-// at NSO +0x0049F648
-```
-
-Confirmed hash keys (cross-verified via MemetendoYT save editor):
-
-| Hash | Field | Width | Save offset |
-|---|---|---|---|
-| `0xf4ee6827` | flower_coin (purple coins) | u16 | 0x0894 |
-| `0x17f0bb21` | regular_coin | u8 | 0x08AC |
-| `0x55815859` | GRAND_SEED_WORLD1 (Royal Seed W1) | u8 bool | (pair region) |
-| `0x49abba86` | GRAND_SEED_WORLD2 | u8 bool | (pair region) |
-| `0xb550d8d6` | GRAND_SEED_WORLD3 | u8 bool | (pair region) |
-| `0x1dcf7f6e` | GRAND_SEED_WORLD4 | u8 bool | (pair region) |
-| `0x0d5a3e00` | GRAND_SEED_WORLD5 | u8 bool | (pair region) |
-| `0xd4660d2b` | GRAND_SEED_WORLD6 | u8 bool | (pair region) |
-| `0x5d3ec9b4` | COMPLETE_GAME | u8 bool | (pair region) |
-| `0x89f1cc52` | INTRO_CUTSCENE_COMPLETED | u8 bool | (pair region) |
-| `0xdf82e9ab` | "current course" hash (lookup key, not a writable field directly) | — | — |
-
-**The API surface** (confirmed roles):
-
-| NSO offset | Role | Signature |
-|---|---|---|
-| `+0x710012AE94` | Container A **reader** (counter GET) | `(gmd, uint32_t* out, uint32_t hash)` ← corrected 2026-05-24 from FUN_7101a5d9a0 call site |
-| **`+0x710049F648`** | Container A **WRITER** (counter SET) | `(gmd, value, hash)` ★ grant primitive |
-| **`+0x710049EA24`** | Container B bool **WRITER** (high-level wrapper) | `(gmd, value, hash)` ★ grant primitive (M3.3b) |
-| `+0x71005E93FC` | Container B inner delegate (called from +0x49EA24) | `(gmd+8 substruct, u8 value & 1, hash)` |
-| `+0x71001F263FC` | Container B bool deferred-write delegate | same as above; see HOOK_DEFINE_TRAMPOLINE GmdBoolWriter for observability |
-| `+0x71003838AC` | Sub-bool **reader** (handles INTRO, COMPLETE_GAME reads) | `(sub_obj, uint8_t* out, uint32_t hash)` |
-| `+0x71003D3FB0` | Stage-info hash → course-index **translator** | `(top_hash, &out_index)` |
-| `+0x71003D4110` | **Murmur3-32(course_name) → course_index** lookup over 81 hardcoded course strings | `(target_hash, &out_index)` |
-
-Additional hash keys discovered 2026-05-24 in `FUN_7101a5d9a0` call sites:
-- `0xed817774` — container-B bool flag (read into session+0x546 `touch_goal_top_result`; semantics likely per-course "ever-touched-top-of-flag" progress bit)
-- `0xf79bcbb0` — container-A counter (read into session+0x478 `goal_id`; semantics likely last goal_id reached on current course)
-
-⚠️ **Past wrong guesses now corrected**: the previous CLAUDE.md comment "`FUN_71003D3FB0` writes field by hash" was wrong — it's a hash-to-course-index translator, not a writer. `FUN_71003838AC` is a reader (not "unified get/set" as initially guessed).
-
-**The hash function for FIELD NAMES is unknown** (Murmur3 of obvious names like `"flower_coin"` doesn't match). Not blocking — we already have the 8 verified hashes. May be a different algorithm, may use internal/Japanese strings, may be precomputed offline.
-
-**Deferred-write implication**: a write via `FUN_710049F648` is applied to the live container at the next save. For UI to refresh immediately (in-game purple coin counter, etc.), the grant code should ALSO write the live-state struct field directly (HamletDuFromage cheat anchors give the offsets: flower_coin at `live_base + 0xC8`, lives at `live_base + 0x60`, etc.). Dual-write strategy described in [docs/static-analysis-findings.md](docs/static-analysis-findings.md).
-
-**Save-survival for container-A and container-B grants** — root cause:
-both `FUN_710049F648` (A) and `FUN_710049EA24 → FUN_7101F263FC` (B)
-write to the dirty buffer at `gmd->[+0xf8]`; a load-before-flush
-silently drops the grant.
-
-- ✅ **Royal Seeds (container-B bools)** — solved by M4.5 (shipped
-  2026-05-25): `SMBWContext._collect_royal_seed_grants` →
-  `LanServer._push_royal_seeds_now` re-emits one `GrantHashKeyedMsg`
-  per received Royal Seed on every Switch `HelloMsg`.  Idempotent at
-  the Switch primitive.  No periodic tick because Royal Seeds have no
-  in-game acquisition path that bypasses AP.
-- ✅ **Badges (container-C bitfield)** — solved by M4 follow-up #2
-  (different root cause but same shape): AP-authoritative absolute
-  overwrite via `SetBadgesAbsoluteMsg` on every `ReceivedItems`,
-  `HelloMsg`, and a 2 s periodic tick.
-- ⏳ **Container-A counters (flower_coin, regular_coin) and the two
-  container-B completion bools (COMPLETE_GAME, INTRO)** — not
-  currently AP items, so no replay wired.  When/if they become AP
-  items, extend `_collect_royal_seed_grants` into a more general
-  `_collect_hash_keyed_grants`.
-
-⚠️ **Critical — the save-diff sprint did NOT produce a live-grant mechanism.** The file-offset writers anchored on the `savedata_id` UUID at file offset `0x50b8` modify only the **save-OUT staging buffer**, which exists transiently during/after save serialization. The game populates this buffer FROM live state on every save; writes into it are overwritten on the next save event and never change live gameplay. What that work produced is a **save-file editor capability** (offline modification of `game_data.sav`) and a **verification target** (predict the bytes a successful live grant will write). For ALL live in-game grants, the only path we have is the GameDataMgr API above (`FUN_710049F648` for container-A counters; other accessors TBD for container-B fields like badges and per-course flags). See [docs/runtime-address-backtrace-plan.md](docs/runtime-address-backtrace-plan.md) for the discovery of this distinction.
-
-### M3.2 badge-grant: ✅ SOLVED 2026-05-24
-
-Badges live in **Container C** at `gmd+0x70..0x8c` — a previously
-unmapped sub-container holding hash-keyed bitfields. The badge owned
-bitfield is at:
-
-- **Hash**: `0x105df820`
-- **File offset**: `0x0EA0` (u64 LE)
-- **Bit position == internal_id == badge ID** (e.g., bit 4 = Spring Feet)
-
-**The grant primitive** (in [switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp)
-under `namespace probe`):
-
-```cpp
-probe::setBadgeBitfieldAbsolute(uint64_t bits);  // overwrites whole bitfield, returns bool
-```
-
-Walks the container-C bucket at `gmd+0x80` for the badge hash, follows
-to the typed-sub-obj at `gmd+0x78 + idx*0x40 + 0x28`, writes `bits` to
-the live `uint32_t[]` data (`data[0..1] = lo, hi` plus mirror at
-`data[2..3]`).  Validated end-to-end via Spring Feet (bit 4 = 0x10) —
-badge appears immediately in the live game UI without save+reload.
-
-**M4 follow-up #2 — AP-authoritative badge sync (shipped 2026-05-25)**.
-The original M3.2 primitive `probe::grantBadgeBit(internal_id)` (OR a
-single bit) has been **replaced** by `setBadgeBitfieldAbsolute`.
-Rationale: in-game badge acquisition (Poplin shop, badge house, badge
-medley, badge challenges) bypassed AP, so AP wasn't the sole authority
-over the badge pool — required for M5.  Solution: bridge holds the
-canonical `_badge_mask` derived from AP `items_received`, and
-overwrites the Switch's bitfield to that exact set on three triggers:
-(1) every AP `ReceivedItems`, (2) every Switch `HelloMsg`
-(replay-on-reconnect; subsumes the planned M4.5 replay), and (3) a
-~2 s periodic tick that reverts any in-game pickup within seconds.
-Idempotent by construction — same input always produces the same final
-state.  Wire type: `SetBadgesAbsoluteMsg { bits: u64 }`
-([apworld/smbw_archipelago/client/wire.py](apworld/smbw_archipelago/client/wire.py)) ↔ `WireSetBadgesAbsolute`
-([switch-mod/src/program/ap/ApProtocol.hpp](switch-mod/src/program/ap/ApProtocol.hpp)).
-
-⚠️ **Gotchas during discovery (don't relearn)**:
-- Hash `0x6d1b5c25` is an auxiliary "UI-slot" bitmap (file offset
-  `0x1204`), NOT the owned bitfield. Both are queried by the badge
-  inventory UI; only `0x105df820` controls actual ownership.
-- The save serializer filters out bit positions that don't correspond
-  to real badges in the registry (we saw bits 30-31 stripped during
-  the "all bits" experiment). Stick to valid internal_ids.
-- Murmur3-32 brute force ruled out naming the hash — field name is
-  Japanese / encoded / pre-computed. Discovered via in-game probing.
-- 14 Ghidra rounds + 6 hook iterations. Full forensics in
-  [docs/static-analysis-findings.md](docs/static-analysis-findings.md)
-  under "2026-05-24 — M3.2 SOLVED".
-
-## Nerve system primer
-
-Nintendo's Nerve system has two flavors with different hook strategies:
-
-- **Active Nerves**: tick every frame. Execute method shape: `if (flag == 0) FUN_7100559f7c(this); FUN_7100005390(this+0x68);`. The first call does one-shot work, the second advances state. Examples: Wonder Seed pickup, scene transition. **Hook strategy**: trampoline `FUN_7100559f7c`, filter by `nerve[0]` (vtable).
-- **One-shot dispatch Nerves**: `execute` is called explicitly by other code at a specific moment. Inline body. Examples: `SetCourseClearFlagToGameData`. **Hook strategy**: trampoline directly on the execute function. Validate the prologue has no PC-relative loads first.
-
-Recipe for finding a new Nerve hook target:
-
-1. Search Ghidra strings for the event name (`RequestEventXxx`, `SetXxx`, `GetXxx`).
-2. Find the getter that returns the string; its address is **vtable slot 0** somewhere in `0x710334XXXX` / `0x71033fXXXX` / `0x71034BXXXX` (the Nerve vtable regions).
-3. Read the vtable layout. Shared base method slots: `LAB_71014498**`, `LAB_7101e078e4`. Event-specific overrides: slots 7, 8, and a few high ones.
-4. **Slot 8 is execute.** Check whether slot 8's address appears in `FUN_7100559f7c`'s 19-entry xref list:
-   - Yes → active Nerve. Use `NerveActivateOnce` and add the vtable offset to the filter.
-   - No → one-shot. Peek the execute function's prologue. If clean, hook directly.
-
-## Address space layout in the loaded NSO
-
-- Base: `0x7100000000`.
-- `.text`: roughly `0x7100000000`-`0x7102800000`.
-- `.rodata` strings: `0x71028XXXXX`-`0x71029XXXXX`.
-- Vtables: `0x710334XXXX`, `0x71033fXXXX`, `0x71034BXXXX` (Nerve regions we've mapped).
-- Itanium-style typeinfo: `0x71000ac930` is a function appearing in every Nerve vtable's `-8` slot (probably a generic destructor or dispatch helper, not std::type_info).
-
-## Tools
-
-- **Ghidra 11.3 or 11.4** + **Adubbz Switch Loader 1.7.0** (`File → Install Extensions`).
-- **JDK 21** required by Ghidra 11.x.
-- **One-time Ghidra setup**: run [scripts/ghidra/import_sdk_symbols.py](scripts/ghidra/import_sdk_symbols.py) — walks the entire `switch-mod/syms/100/` tree (gmd, sead, main, sdk) and applies ~97 named labels. Massive nav speedup once `gmd::GameDataMgr::sInstance`, `nn::`, `sead::`, etc. names appear in the listing.
-- **Sprint-2 RE scripts** (2026-05-24, used to crack the M3 grant API): [scripts/ghidra/find_gamedatamgr_xrefs.py](scripts/ghidra/find_gamedatamgr_xrefs.py), [scripts/ghidra/walk_hash_writer_xrefs.py](scripts/ghidra/walk_hash_writer_xrefs.py), [scripts/ghidra/find_offset_constant_xrefs.py](scripts/ghidra/find_offset_constant_xrefs.py), [scripts/ghidra/playreport_field_backtrace.py](scripts/ghidra/playreport_field_backtrace.py). Run order + roles in [scripts/ghidra/README.md](scripts/ghidra/README.md).
-
-## What's done, what's next
-
-**M1 (✅ done)**: Two hooks proven end-to-end:
-- `WONDER_SEED_AWARDED` — every Wonder Seed grab (124 AP checks).
-- `COURSE_CLEARED` — every successful flagpole touch + every palace boss clear (206 AP checks lumped; exit-type splitting is M2.5).
-- Total: 330 / 663 AP checks covered (49.8%).
-
-**M2.4 + M2.5 (✅ done — Switch capture, Python decoder, full corpus)**: PlayReport payload capture via the IPC-layer pattern; Python decoder in [apworld/smbw_archipelago/client/play_report.py](apworld/smbw_archipelago/client/play_report.py) handles the Nintendo CBOR-ish format end-to-end. **87 tests pass against 9 live fixtures** covering all 5 observed room types (`world_activity`, `world_result`, `course_in`, `course_result`, `koopajr_result`) and edge cases (Top of Flag, Secret Exit, palace LOSS, palace WIN, inter-world transition).
-
-The M2.5 exit-type discriminator table is locked in (199/199 goal+palace AP checks structurally classifiable). Importantly: a palace WIN emits BOTH `course_result` AND `koopajr_result` ~1 ms apart for the same event — the bridge prefers `koopajr_result` when both fire; `course_result.world_mother_seed == True` is a defensive cross-check.
-
-**M2.6 (✅ done — bridge skeleton + course correlation)**: state + protocol + processor in `apworld/smbw_archipelago/client/`, 207 Python tests passing across PlayReport decode + event-routing + wire codec + LAN server.
-
-**Save-diff sprint (✅ done, 2026-05-22..23)**: byte-exact write targets identified for badges (file offset `0x0EA0` u64 bitfield), per-course flag arrays (16+ trailing-region u32 arrays, stride 4), and pair-region keys. Full layout + runtime anchor in [docs/save-diff-findings.md](docs/save-diff-findings.md). Externally cross-verified against MemetendoYT/SMBW-SaveGame-Editor.
-
-**Static-analysis sprint 2 (✅ done, 2026-05-24)**: **the M3 grant API is decompiled**. Full details in [docs/static-analysis-findings.md](docs/static-analysis-findings.md). The previous (2026-05-21) "dead-end" verdict was wrong; this sprint succeeded with: imported sym files (finding the singleton anchor), dataflow-anchored xref harvesting (finding the writer at `+0x0049F648`), cross-reference against the HamletDuFromage cheat DB + MemetendoYT (validating the 8 known hash keys), and direct decompile of the GameDataMgr accessors. Key result: `FUN_710049F648(gmd, value, hash)` is the universal counter writer for container A — enabling flower_coin, regular_coin, all 6 Royal Seeds, COMPLETE_GAME, and INTRO_CUTSCENE_COMPLETED grants in one function call.
-
-**Next** (per [docs/handoff.md](docs/handoff.md) "Next session priorities" 2026-05-24):
-- **Priority 1**: wire `gmd::GrantFlowerCoin(99)` smoke test in [switch-mod/src/program/main.cpp](switch-mod/src/program/main.cpp); validate via save-diff. ★ One-call test of the entire static-analysis sprint deliverable.
-- **Priority 2**: generalize to all 8 hash-keyed grants (regular_coin, 6 Royal Seeds, COMPLETE_GAME, INTRO). The Royal Seed test is the experimental case — if container A also holds the seed bools, M3.3b is solved with no further RE.
-- **Priority 3**: bridge integration — extend [apworld/smbw_archipelago/client/protocol.py](apworld/smbw_archipelago/client/protocol.py) with `GrantHashKeyed` message variant.
-- **Priority 4** (only if Royal Seeds DON'T work via container A): decompile `FUN_71005E93FC` + `FUN_710059F894` for container-B writes.
-- **M3.8 DeathLink detection** + **M4.1/M4.2 LAN socket** + **DeathLink trigger** + **per-course flag writers via [scripts/ghidra/find_offset_constant_xrefs.py](scripts/ghidra/find_offset_constant_xrefs.py)** — all queued but lower priority than proving the grant primitive end-to-end.
-- Deferred: M2.2 (10-coin), M3.1 (power-ups), M3.4 (chars), M3.5/M3.6/M3.7, M5/M6/M7.
-- ✅ M3.2 done — see badge-grant section above.
-
-## Reference: sister project
-
-The user's existing `smo_archipelago` project (Super Mario Odyssey integration; same architecture pattern) lives at `C:\Users\maxwe\Documents\smo_archipelago\`. Mirror its `switch-mod/src/ap/ApClient.cpp` when wiring up the LAN socket; mirror its `apworld/` and `scripts/` layout when building the Python bridge.
+- **SMBW v1.0.0**, BID `CD6E42AEE7934F4D`, codename `Secred.nss`.
+- Extracted NSO: `C:\Users\maxwe\Desktop\Roms\Switch\Super Mario Bros. Wonder\main.nso`
+  (hactool at `…\Desktop\Switch\hactool.exe`, keys at `~/.switch/prod.keys`).
+- **Do not apply the v1.0.1 update in Ryujinx** — every offset is pinned to v1.0.0.
+
+## Critical gotchas — these crash the game (don't relearn)
+
+Full detail + the live hakkun hook idiom are in the **smbw-reverse-engineering**
+skill; the load-bearing ones, kept visible here:
+
+1. **Never `thread_local` in subsdk code** — no TLS allocator is registered;
+   `SetMemoryAllocatorForThreadLocal` aborts at load (Result `0xCA8`). Use
+   `static std::atomic<…>` + manual TID check.
+2. **Inline hooks patch the first ~5 instructions** — a PC-relative insn (adrp,
+   ldr-literal, b/bl) in those bytes corrupts the trampoline, with *delayed*
+   symptoms. Verify a clean prologue, or hook a shared inner helper and filter by
+   caller identity (why we trap `FUN_7100559f7c`, not per-Nerve slot 8).
+3. **Don't hook `nn::prepo::PlayReport` beyond ctor + `SetEventId`** — `Save()`/
+   `Add()` trampolines trigger a delayed abort on an SDK validator thread. Drop to
+   the IPC layer `CmifProxyImpl<IPrepoService>::_nn_sf_sync_SaveReport{,WithUser}`.
+4. **NSO and SDK have independent bases** — `installAtMainOffset` for NSO-relative
+   game code; `installAtSym<>` resolves SDK + game symbols transparently.
+5. **Import the whole `switch-mod/syms/100/` tree into Ghidra**, not just
+   `sdk.sym` — that's where `gmd::GameDataMgr::sInstance @ +0x0363F0F0` lives.
+   Run `scripts/ghidra/import_sdk_symbols.py`.
+
+## Status (snapshot — handoff.md is authoritative)
+
+Shipped: M1 (Wonder-Seed + Course-Clear nerves, 330/663 checks), M2.4–2.6
+(PlayReport capture + Python decoder + bridge), M3.2 (badges), M3.3/3.3b
+(container-A counters + container-B bool grants), M3.7 (game-completion goal),
+M3.8 (DeathLink), M4 + M4.5 (LAN bridge + AP-authoritative replay). The grant
+primitives are ported into the hakkun build (`src/probe/*`).
+
+Active: Wonder-Seed **per-course persistence** (Container D writer) and the
+Royal-Seed **gate-entry / check-loss** spike — both tracked in the `docs/`
+handoffs listed above. Deferred: M2.2 (10-coin), M3.1/M3.4 (power-ups/chars,
+precollected for now), M5 (in-game grant suppression), M6 (real-hw deploy), M7.
