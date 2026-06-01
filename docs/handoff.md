@@ -1,5 +1,37 @@
 # SMBW Archipelago — handoff doc
 
+> ## ⚠️ 2026-05-31 accuracy banner — read this first
+>
+> **The shipped baseline documented below (M1–M4.5: the hooks, grant
+> primitives, hash keys, PlayReport format) is accurate — re-verified against
+> the live code on 2026-05-31.** But this doc was last *substantively* updated
+> **2026-05-26**, before the hakkun migration and two active spikes. For
+> **current** state, read these instead:
+>
+> - [gate-entry-session3-handoff.md](gate-entry-session3-handoff.md) — Royal-Seed
+>   gate-entry / check-loss spike (2026-05-31, newest).
+> - [handoff-2026-05-29-ws-persistence.md](handoff-2026-05-29-ws-persistence.md)
+>   — Wonder-Seed per-course Container-D persistence (supersedes the
+>   "gate override only, not per-course storage" caveat below).
+> - [../CLAUDE.md](../CLAUDE.md) + the `smbw-*` skills for build / RE / grant
+>   procedure.
+>
+> **Framework + path translation** — this doc was written in *exlaunch* terms;
+> the live build is *hakkun*. Read every path below through this key:
+>
+> | This doc says | Live location / idiom |
+> |---|---|
+> | `src/program/main.cpp` | hooks → `src/main.cpp`; grant primitives → `src/probe/{ContainerA,ContainerB,ContainerC,PerCourse,DeathLink,SeedTrace,Gates}.cpp` |
+> | `src/program/ap/…`, `src/program/util/…` | `src/ap/…`, `src/util/…` |
+> | `bridge/*.py` | `apworld/smbw_archipelago/client/*.py` (tests in `client/tests/`) |
+> | `And64InlineHook`, `exl::util::modules::GetTargetStart()` | hakkun `HkTrampoline` / `hk::hook::trampoline`, installed via `installAtMainOffset` / `installAtSym<>` in `hkMain()` |
+> | repo at `Documents\smwonder_archipelago\`, `wondar\syms\100\` | repo at `Documents\git\smbw_ap\`, `switch-mod/syms/100/` |
+> | `manual_smbwonder_zim/` | replaced by the first-class `apworld/smbw_archipelago/` |
+>
+> Unambiguous inline paths below have been refreshed to the live locations; the
+> **"State of the codebase"** section near the end still describes the retired
+> exlaunch fork *by design* (it's a historical record of that tree).
+
 > Last updated: 2026-05-26 — **AP-authoritative Wonder Seed gate
 > override wired end-to-end (M3.3 production path)**.  The earlier
 > "0x8c20ccb7 is the lifetime Wonder Seed counter" note was wrong;
@@ -38,7 +70,7 @@
 >   1. New wire message ``SetWonderSeedCountsMsg { counts: [u32; 8] }``
 >      ([wire.py](../apworld/smbw_archipelago/client/wire.py),
 >      ``WireSetWonderSeedCounts`` in
->      [ApProtocol.hpp](../switch-mod/src/program/ap/ApProtocol.hpp))
+>      [ApProtocol.hpp](../switch-mod/src/ap/ApProtocol.hpp))
 >      indexed by AP item bucket (W1=0..W6=5, Petal Isles=6, Special=7).
 >   2. [wonder_seed_table.py](../apworld/smbw_archipelago/client/wonder_seed_table.py)
 >      maps the 8 Wonder Seed AP item names to their bucket indices.
@@ -49,11 +81,11 @@
 >      every ``ReceivedItems``, every Switch ``HelloMsg``, every ~2 s
 >      tick (``_badge_sync_loop``).
 >   5. Switch worker thread routes the message via
->      [ApClient.cpp](../switch-mod/src/program/ap/ApClient.cpp)
+>      [ApClient.cpp](../switch-mod/src/ap/ApClient.cpp)
 >      ``InboundKind::SetWonderSeedCounts`` to the inbound ring;
->      [drainInbound](../switch-mod/src/program/ap/ApFrameBridge.cpp)
+>      [drainInbound](../switch-mod/src/ap/ApFrameBridge.cpp)
 >      caches the 8 values into ``g_wonder_seed_counts[8]`` (atomic).
->   6. [main.cpp](../switch-mod/src/program/main.cpp) NerveActivateOnce
+>   6. [main.cpp](../switch-mod/src/main.cpp) NerveActivateOnce
 >      tick (~2 s cadence under normal play) replaces the iteration-5
 >      hard-coded ``pushWonderSeedOverride(99)`` smoke with: read
 >      container-A hash ``0x9f5ead3c`` (live current-world index, 1..9),
@@ -92,11 +124,11 @@
 > revert to the genuine in-game state.  This is fine for the gate-pass
 > goal; it's the open follow-up for proper persistence.
 
-> **2026-05-25 layout change** — the headless `bridge/` package and the
+> **2026-05-25 layout change** — the headless `apworld/smbw_archipelago/client/` package and the
 > Manual-template `manual_smbwonder_zim/` apworld were replaced by a
 > first-class **SMBWonder** apworld + Kivy client at
 > [apworld/smbw_archipelago/](../apworld/smbw_archipelago/).  Archipelago
-> Launcher now exposes a "SMBW Client" button.  Every `bridge/*.py`
+> Launcher now exposes a "SMBW Client" button.  Every `apworld/smbw_archipelago/client/*.py`
 > path below has moved to `apworld/smbw_archipelago/client/*.py`;
 > `python -m bridge ...` is replaced by
 > `python -m apworld.smbw_archipelago.client.main ...` (or the Launcher
@@ -122,7 +154,7 @@ wrote HP=0 at +0x38, Mario died on first frame).  Production path is
 AP Bounce -> `SMBWContext.on_deathlink` -> `LanServer.send_kill` ->
 Switch `drainInbound` -> `probe::synthKill` (no constexpr gates).
 Container-A counter writer (`probe::grantContainerACounter`) shipped in
-[switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp) and
+[switch-mod/src/main.cpp](../switch-mod/src/main.cpp) and
 live-validated with `flower_coin` (6 → 99 at file offset `0x0894`).
 Container-B bool writer (`probe::grantContainerBBool` → NSO `+0x0049EA24`)
 shipped in the same file and live-validated 2026-05-25 with all 8
@@ -148,18 +180,18 @@ both: `flower_coin` 6 → 99 (counter), 6/8 expected bool hashes flipped
 in the save (the other 2 were already set, idempotent).
 
 - **Switch primitive**: `probe::grantContainerACounter(hash, value)` in
-  [switch-mod/src/program/main.cpp](../switch-mod/src/program/main.cpp).
+  [switch-mod/src/main.cpp](../switch-mod/src/main.cpp).
   Reuses the existing `probe::gmdSingleton()` helper from M3.2; calls the
   writer via a function-pointer cast at NSO+0x49F648.
 - **Wire protocol**: new `grant_hash_keyed { hash: u32, value: u32 }` message
   type.  Mirrors the existing `grant_badge` plumbing on both sides
-  ([bridge/wire.py](../bridge/wire.py),
-  [ApProtocol.{hpp,cpp}](../switch-mod/src/program/ap/ApProtocol.hpp),
-  [ApFrameBridge.{hpp,cpp}](../switch-mod/src/program/ap/ApFrameBridge.hpp),
-  [ApClient.cpp](../switch-mod/src/program/ap/ApClient.cpp)).
-- **AP routing**: [bridge/royal_seed_table.py](../bridge/royal_seed_table.py)
+  ([apworld/smbw_archipelago/client/wire.py](../apworld/smbw_archipelago/client/wire.py),
+  [ApProtocol.{hpp,cpp}](../switch-mod/src/ap/ApProtocol.hpp),
+  [ApFrameBridge.{hpp,cpp}](../switch-mod/src/ap/ApFrameBridge.hpp),
+  [ApClient.cpp](../switch-mod/src/ap/ApClient.cpp)).
+- **AP routing**: [apworld/smbw_archipelago/client/royal_seed_table.py](../apworld/smbw_archipelago/client/royal_seed_table.py)
   maps the 6 AP item names (`"W1 Royal Seed"` .. `"W6 Royal Seed"`) to their
-  MemetendoYT-verified hash keys; [ap_client.py](../bridge/ap_client.py)
+  MemetendoYT-verified hash keys; [ap_client.py](../apworld/smbw_archipelago/client/ap_client.py)
   routes them via `lan_server.send_grant_hash_keyed(hash, 1)`.
 
 ### M3.3 ✅ — counter writer works
@@ -373,12 +405,12 @@ shipped 2026-05-25:
 | Surface | Coverage | Notes |
 |---|---|---|
 | M1 — Wonder Seed nerve + Course Clear nerve | ✅ 330 AP checks | nerve hooks fire reliably across all tested scenarios |
-| M2.4 — PlayReport capture (real-hardware path) | ✅ done | SetEventId + IPC SaveReport hooks; Python decoder lives in [bridge/play_report.py](bridge/play_report.py); 87 tests pass against 9 live fixtures |
+| M2.4 — PlayReport capture (real-hardware path) | ✅ done | SetEventId + IPC SaveReport hooks; Python decoder lives in [apworld/smbw_archipelago/client/play_report.py](apworld/smbw_archipelago/client/play_report.py); 87 tests pass against 9 live fixtures |
 | M2.5 — Exit-type discrimination | ✅ 199/199 structurally classifiable | mapping table in `TestM25ExitTypeMapping`; only Fake Exit `goal_id` value (guessed 2) lacks live capture; palace WIN+LOSS both captured |
 
 **Status update (2026-05-21)**:
 
-- ✅ **M2.6** done — bridge skeleton + course correlation; 106 Python tests passing (`bridge/`).
+- ✅ **M2.6** done — bridge skeleton + course correlation; 106 Python tests passing (`apworld/smbw_archipelago/client/`).
 - ❌ **M3.2 + M3.3 + M3.3b grant-function RE failed.** 11 Ghidra scripts plus a runtime probe characterized the badge system as "no exposed grant API" (label strings only — UI / state-machines / log) and the wonder-seed system as a generic counter getter keyed by 32-bit hashes of internal stat names where SMBW uses a custom hash function none of CRC32 / FNV / DJB2 / SDBM / Murmur3 reproduce. **All three are now deferred to a save-diff sprint** ([save-diff-grants.md](save-diff-grants.md)).
 
 **Status update (2026-05-22)** — first badge capture round complete (⚠️ findings later proved to be save-file-editor capability only, NOT a live-grant path — see 2026-05-24 status above):
@@ -392,7 +424,7 @@ shipped 2026-05-25:
 
 **Status update (2026-05-21 PM)** — kicked off the save-diff sprint:
 
-- Reverted the M3.3 runtime probe in `switch-mod/src/program/main.cpp` (no longer producing useful data; freed 80 LoC + 1 hook install).
+- Reverted the M3.3 runtime probe in `switch-mod/src/main.cpp` (no longer producing useful data; freed 80 LoC + 1 hook install).
 - Located the SMBW save: `%APPDATA%\Ryujinx\bis\user\save\0000000000000002\<user>\game_data.sav` (21,876 bytes; plaintext; 87.6% zero bytes; magic `04 03 02 01`).
 - Characterized the save: first 0x400 bytes after the header are **128 entries of (u32 hash_key, u32 value)** — the SAME hash-keyed counter table the M3.3 probe was reading in memory. The diff yields ready-to-use 32-bit hash keys with zero hash-function work needed. Full layout in [save-diff-grants.md "Format we mapped on 2026-05-21"](save-diff-grants.md#format-we-mapped-on-2026-05-21).
 - Built [scripts/savediff.py](../scripts/savediff.py) + [scripts/test_savediff.py](../scripts/test_savediff.py) — diff tool with classification (`first-acquire`, `increment by 1`, `bit N flip`, generic `change`) and a `--summary` mode for single-save inspection. 13 unit tests pass.
@@ -449,7 +481,7 @@ follow-up PR removes it entirely.
 
 ### Priority 1 — Deferred items pending future sessions
 
-- **M2.2 10-coin** (306 checks) — ✅ **bridge implementation shipped 2026-05-25**; see [docs/m2.2-runbook.md](m2.2-runbook.md).  No Ghidra needed — `course_result` PlayReport's `big_flower_coin_course_{in,out}` bool[3] gives both detection AND per-instance identity for free.  ~30 LoC across [bridge/{protocol,state,processor,location_table}.py](../bridge/processor.py) + 21 new tests (224 total pass).  Two open items: (a) the diff-semantics interpretation is unproven by existing fixtures, **needs one empirical capture** where a 10-coin is collected within a single run; (b) `_TEN_COIN_TABLE` has 2 of 102 non-palace courses mapped, the rest fill in incrementally per playthrough.
+- **M2.2 10-coin** (306 checks) — ✅ **bridge implementation shipped 2026-05-25**; see [docs/m2.2-runbook.md](m2.2-runbook.md).  No Ghidra needed — `course_result` PlayReport's `big_flower_coin_course_{in,out}` bool[3] gives both detection AND per-instance identity for free.  ~30 LoC across [apworld/smbw_archipelago/client/{protocol,state,processor,location_table}.py](../apworld/smbw_archipelago/client/processor.py) + 21 new tests (224 total pass).  Two open items: (a) the diff-semantics interpretation is unproven by existing fixtures, **needs one empirical capture** where a 10-coin is collected within a single run; (b) `_TEN_COIN_TABLE` has 2 of 102 non-palace courses mapped, the rest fill in incrementally per playthrough.
 - **M3.2 badge follow-ups** — UI-slot mask hash `0x6d1b5c25` write may be
   needed for newly-granted badges to appear in the equip UI.
 - ~~**M3.1 power-up grant**~~ — **deferred to M7** (2026-05-25).  AP
@@ -471,7 +503,7 @@ follow-up PR removes it entirely.
 ## Project layout
 
 ```
-C:\Users\maxwe\Documents\smwonder_archipelago\
+C:\Users\maxwe\Documents\git\smbw_ap\
 ├── docs\
 │   ├── handoff.md          ← you are here
 │   └── milestones.md       ← read this next for the M2+ plan
@@ -507,13 +539,13 @@ wizard at `/setup` installs all of this. devkitPro is not used.
 ```pwsh
 # build
 & "C:\Program Files\CMake\bin\cmake.exe" --build `
-    "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build"
+    "C:\Users\maxwe\Documents\git\smbw_ap\switch-mod\build"
 
 # deploy
 $dst = "$env:APPDATA\Ryujinx\mods\contents\010015100b514000\smbwap\exefs"
-Copy-Item "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build\subsdk9" `
+Copy-Item "C:\Users\maxwe\Documents\git\smbw_ap\switch-mod\build\subsdk9" `
           -Destination $dst -Force
-Copy-Item "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build\subsdk9.npdm" `
+Copy-Item "C:\Users\maxwe\Documents\git\smbw_ap\switch-mod\build\subsdk9.npdm" `
           -Destination "$dst\main.npdm" -Force
 ```
 
@@ -521,8 +553,8 @@ Copy-Item "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build\subsdk
 
 ```pwsh
 & "C:\Program Files\CMake\bin\cmake.exe" `
-    -S "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod" `
-    -B "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build" `
+    -S "C:\Users\maxwe\Documents\git\smbw_ap\switch-mod" `
+    -B "C:\Users\maxwe\Documents\git\smbw_ap\switch-mod\build" `
     -G Ninja
 ```
 
@@ -673,7 +705,7 @@ The crash relocates to whichever validator subsystem notices the inconsistency f
 
 ### PlayReport payload format
 
-Reverse-engineered 2026-05-20 from three full payloads (world_activity / world_result / course_result, all from W1-1). Decoder is in [bridge/play_report.py](bridge/play_report.py); 44 tests pass including end-to-end decoding of all three live captures.
+Reverse-engineered 2026-05-20 from three full payloads (world_activity / world_result / course_result, all from W1-1). Decoder is in [apworld/smbw_archipelago/client/play_report.py](apworld/smbw_archipelago/client/play_report.py); 44 tests pass including end-to-end decoding of all three live captures.
 
 ```
 Header (3 bytes):
@@ -725,7 +757,7 @@ Important nuances:
 - The encoder uses different opcodes for the same magnitude depending on which `Add` overload was called: top-level `PlayReport::Add(long)` minimizes *unsigned* width (`cc`/`ce`); `Struct::Add(long)` minimizes *signed* width (`d0`/`d1`/`d2`/`d3`). Compare W1-1 stage_key=2937190396 (high bit set as s32 → bumps to s64 → `d3`) vs W1-2 stage_key=232160011 (fits positive s32 → `d2`). Both decode to plain Python ints.
 - `arena_score_enter = 4294967295` and `last_put_panel_id = -1` are both "all-ones" semantically but encode differently — the former is `ce ff ff ff ff` (genuine u32 max), the latter is `ff` (the -1 short form). The C++ caller's signedness flows through.
 
-Test fixtures and assertion sets live in [bridge/test_play_report.py](bridge/test_play_report.py). Iterate by playing through new scenarios (secret exit, palace clear, item pickup), pasting the new `prepo.ipc.bytes(...)` lines into a fixture, and adding assertions.
+Test fixtures and assertion sets live in [apworld/smbw_archipelago/client/tests/test_play_report.py](apworld/smbw_archipelago/client/tests/test_play_report.py). Iterate by playing through new scenarios (secret exit, palace clear, item pickup), pasting the new `prepo.ipc.bytes(...)` lines into a fixture, and adding assertions.
 
 ### Known room names so far (corpus grows organically)
 
@@ -741,7 +773,7 @@ Test fixtures and assertion sets live in [bridge/test_play_report.py](bridge/tes
 | **`course_result`** | **course CLEARED — fires ~8 ms after M1 `COURSE_CLEARED` nerve** | **`stage_info.{stage_key, world_no, course_no}` identifies the cleared course; `goal_id` (0=normal pole, 1=secret exit, 2=fake exit guessed); `touch_goal_top_{enter,result}` (bool, distinguishes Top of Flag from Normal Exit when `goal_id=0`); `course_result` (1=clear); `badge_id_array`; `total_get_finish_seed_count`; all flower-coin / yellow-coin counts** |
 | `koopajr_result` | palace boss fight result (win OR loss) | `stage_info` (identifies the palace), **`battle_result`** (True=won/Royal Seed earned, False=died), `koopajr_final_stage`, **`koopajr_step_info`** (array of per-phase structs with damage count + time), `koopajr_total_time`, `koopajr_challenge_count`, `badge_id_array`. **An AP Royal Seed check fires only when `battle_result == True`.** ✅ Both loss AND win captured (Pipe-Rock Plateau Palace, stage_key=2308078743). ⚠ A palace WIN *also* emits a concurrent `course_result` ~1 ms before — the bridge must prefer this `koopajr_result` over that companion. |
 
-The `course_result` discovery (2026-05-20) closes the M2.5 distinguisher question: every clear-state field we need (Top of Flag, goal identity, coin counts, badges held) is in the payload. Three live fixtures now lock in the exit-type mapping table — see [bridge/test_play_report.py](bridge/test_play_report.py) `COURSE_RESULT` (W1-1 Top of Flag, `goal_id=0`), `W1_2_COURSE_RESULT_SECRET` (W1-2 Secret Exit, `goal_id=1`), and `KOOPAJR_RESULT_LOSS` (Pipe-Rock Plateau Palace loss, room `koopajr_result` + `battle_result=False`), plus `TestM25ExitTypeMapping` for the discrimination logic. 199 of 199 goal-clear *and* palace AP checks are now classifiable structurally; only the Fake Exit `goal_id` value (guessed `2`) and a palace WIN capture (to confirm `battle_result=True` in the same shape) remain as nice-to-have empirical confirmations.
+The `course_result` discovery (2026-05-20) closes the M2.5 distinguisher question: every clear-state field we need (Top of Flag, goal identity, coin counts, badges held) is in the payload. Three live fixtures now lock in the exit-type mapping table — see [apworld/smbw_archipelago/client/tests/test_play_report.py](apworld/smbw_archipelago/client/tests/test_play_report.py) `COURSE_RESULT` (W1-1 Top of Flag, `goal_id=0`), `W1_2_COURSE_RESULT_SECRET` (W1-2 Secret Exit, `goal_id=1`), and `KOOPAJR_RESULT_LOSS` (Pipe-Rock Plateau Palace loss, room `koopajr_result` + `battle_result=False`), plus `TestM25ExitTypeMapping` for the discrimination logic. 199 of 199 goal-clear *and* palace AP checks are now classifiable structurally; only the Fake Exit `goal_id` value (guessed `2`) and a palace WIN capture (to confirm `battle_result=True` in the same shape) remain as nice-to-have empirical confirmations.
 
 ## What didn't work (don't repeat these)
 
@@ -783,7 +815,7 @@ Address space layout in the loaded NSO:
 
 - **Ghidra 11.3 or 11.4** + **Adubbz Switch Loader 1.7.0** (`File → Install Extensions`).
 - **JDK 21** required by Ghidra 11.x.
-- `wondar\syms\100\sdk.sym` is the NN SDK symbol map. Apply it as Ghidra labels via a Jython script (~20 lines: parse each `name = __main_start + 0xOFFSET;` line and apply to base + offset). Hugely speeds up navigation once `nn::`, `sead::`, etc. names appear in the listing.
+- `switch-mod/syms/100/sdk.sym` is the NN SDK symbol map. Apply it as Ghidra labels via a Jython script (~20 lines: parse each `name = __main_start + 0xOFFSET;` line and apply to base + offset). Hugely speeds up navigation once `nn::`, `sead::`, etc. names appear in the listing.
 
 ## Things to test next session (priority order)
 
@@ -799,14 +831,20 @@ See `milestones.md` for the full M2+ plan.
 
 ## State of the codebase
 
+> *Historical (exlaunch-era fork diff). The hooks/files below were ported to the
+> hakkun layout during the migration — `src/program/*` no longer builds; live
+> hooks are in `src/main.cpp` and grant primitives in `src/probe/*`. Kept as a
+> record of the original wondar-fork delta. `src/program/pe/DbgGui/...` is the
+> retired tree and is intentionally left un-refreshed.*
+
 `switch-mod/` was originally a fork of `mdietz94/wondar` (its own git repo); it has been absorbed into this repo as plain tracked files so the Switch subsdk releases together with the apworld. Local diffs from the upstream fruityloops1/wondar baseline:
 
 - `CMakeLists.txt`: `-fpermissive` (libstdc++15 `std::construct_at` const fix from smo_archipelago); symlink-shim block to materialize broken POSIX symlinks on Windows checkouts.
-- `src/program/main.cpp`: hooks added — `NerveActivateOnce`, `SetCourseClearFlagExecute` (M1); `PlayReportCtor`, `PlayReportSetEventId`, `PrepoIpcSaveReport`, `PrepoIpcSaveReportWithUser` (M2.4). Crashy hooks left as definitions only, install lines commented out with explanation (PlayReport::Save{,Uid&}, all PlayReport::Add overloads, Struct::Add overloads). `nvnImGui` install disabled; wondar's hardcoded `RwPages` SDK patch at `+0x399790` disabled.
-- `src/program/util/Log.hpp`/`Log.cpp` (new): smbwap kernel-debug logger, ported from smo_archipelago.
-- `src/program/util/TargetActorProbe.hpp`/`TargetActorProbe.cpp` (new): legacy actor-vtable runtime-discovery probe, currently a stub.
+- `src/main.cpp`: hooks added — `NerveActivateOnce`, `SetCourseClearFlagExecute` (M1); `PlayReportCtor`, `PlayReportSetEventId`, `PrepoIpcSaveReport`, `PrepoIpcSaveReportWithUser` (M2.4). Crashy hooks left as definitions only, install lines commented out with explanation (PlayReport::Save{,Uid&}, all PlayReport::Add overloads, Struct::Add overloads). `nvnImGui` install disabled; wondar's hardcoded `RwPages` SDK patch at `+0x399790` disabled.
+- `src/util/Log.hpp`/`Log.cpp` (new): smbwap kernel-debug logger, ported from smo_archipelago.
+- `src/util/TargetActorProbe.hpp`/`TargetActorProbe.cpp` (new): legacy actor-vtable runtime-discovery probe, currently a stub.
 - `src/program/pe/DbgGui/Windows/ActorBrowser.cpp`: lightly modified to call into the probe stub.
 
-This outer repo (`smwonder_archipelago/`) now also holds the `switch-mod/` tree directly. The hakkun framework at `switch-mod/sys/` and `switch-mod/lib/imgui` are the only remaining submodules under `switch-mod/`; the exlaunch-era `NintendoSDK` and `sead` submodules were retired in the hakkun migration. Everything else is tracked here as plain files.
+This outer repo (`smbw_ap/`) now also holds the `switch-mod/` tree directly. The hakkun framework at `switch-mod/sys/` and `switch-mod/lib/imgui` are the only remaining submodules under `switch-mod/`; the exlaunch-era `NintendoSDK` and `sead` submodules were retired in the hakkun migration. Everything else is tracked here as plain files.
 
 Decide before upstreaming: the symlink-shim and `-fpermissive` fixes are general Windows-build-fixes worth a PR to wondar; the prepo hooks are SMBW-specific and stay private.

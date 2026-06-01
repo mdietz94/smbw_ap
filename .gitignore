@@ -1,5 +1,9 @@
-# Claude Code state (per-developer).
-.claude/
+# Claude Code state (per-developer) — but DO track shared project skills.
+# `.claude/*` (not `.claude/`) ignores the dir's contents while still letting
+# git traverse in to honor the `!.claude/skills/` re-include below; settings,
+# worktrees, and plans stay ignored.
+.claude/*
+!.claude/skills/
 
 # Editor/IDE noise
 .vscode/
