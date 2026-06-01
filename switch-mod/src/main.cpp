@@ -117,6 +117,704 @@ HkTrampoline<void, void*, const void*> gameFrameworkInitializeHook =
 constexpr ::ptr kVtableOff_WonderSeedAwarded = 0x3345728;
 constexpr ::ptr kVtableOff_SceneTransition   = 0x33fd9a8;
 
+// RequestEventCourseExitByAreaTag — the ACTIVE Nerve that fires on a natural
+// course-out (pause→"Return to World Map", give-up, death-with-no-lives).
+// Its execute (slot 8) is thunk_FUN_7100559f7c, so the NerveActivateOnce hook
+// below already sees it fire, with `nerve` == the course-sequence controller.
+// Capturing that controller's layout is the key unlock for the "bounce" (let
+// a gated course load, then drive the game's own course-out).  Log-only.
+// See docs/gate-entry-session3-handoff.md "Recommended NEXT STEPS" #1.
+constexpr ::ptr kVtableOff_CourseExitByAreaTag = 0x33fd690;
+
+// Log-only observability dump (gate-entry session 3).  Dumps `nwords`
+// consecutive 64-bit words from `addr`, 2 per line, prefixed with the byte
+// offset.  No fault guard (the subsdk has no SEH), so only call on pointers
+// already shown live by a null-checked walk — here, Nerve `this` pointers and
+// the course-out global chain, both valid at the moment their Nerve fires.
+void dumpWords(const char* tag, const void* addr, unsigned nwords) {
+    if (addr == nullptr) {
+        SMBWAP_LOG_INFO("%s = <null>", tag);
+        return;
+    }
+    const auto* w = reinterpret_cast<const unsigned long long*>(addr);
+    for (unsigned i = 0; i < nwords; i += 2) {
+        if (i + 1 < nwords) {
+            SMBWAP_LOG_INFO("%s +0x%02x: %016llx %016llx",
+                            tag, i * 8u, w[i], w[i + 1]);
+        } else {
+            SMBWAP_LOG_INFO("%s +0x%02x: %016llx", tag, i * 8u, w[i]);
+        }
+    }
+}
+
+// gate-entry session 3, capture #2c/#3 — runtime anchor finder v3 (log-only).
+//
+// capture #2c CLIMB RESULT (live): ctx 0x20bf799330 (vt Ghidra 0x71034a8200)
+// -> L1 parent 0x20bf798dc0 (vt 0x7103517068) -> L2 grandparent 0x20bf796368
+// (vt 0x71033f9660, a 0x208-byte al sequence container built by the virtual
+// factory FUN_7100229fa4).  The +0x08 chain TOPS OUT at the grandparent (its
+// +0x08 is not a parent pointer — reading it as one faulted last build), and
+// the factory is reached by indirect dispatch, so there is no cheap static
+// global->ctx path.  v3 therefore (a) makes EVERY read fault-safe via
+// svc::QueryMemory (the prior crash was reading an in-window-but-unmapped
+// value), and (b) re-enables a WIDE scan of the scene + its +0x40 sub-object
+// for ctx/parent/grandparent so we learn which global/scene offset holds the
+// tree.  ctx is stable at 0x20bf799330 across every capture (deterministic dev
+// allocator), so once we know the scene->grandparent offset the walker is
+// fixed.
+//
+// SAFE: QueryMemory gates every dereference (mapped + readable), with the
+// last-good region cached so a contiguous scan costs a handful of SVCs.  Reads
+// only; one-shot.
+void anchorSearch(std::uintptr_t base, std::uintptr_t ctx,
+                  std::uintptr_t parent, std::uintptr_t courseMgr) {
+    auto ptrish = [](std::uintptr_t p) {
+        return p >= 0x2000000000ULL && p < 0x2800000000ULL && (p & 7) == 0;
+    };
+    // Fault-safe qword read: returns false (without touching memory) unless
+    // QueryMemory says the page is mapped + readable.  Caches the last good
+    // [okBase, okEnd) so a sequential sweep re-queries only on region change.
+    std::uintptr_t okBase = 1, okEnd = 0;
+    auto rd = [&](std::uintptr_t p, std::uintptr_t& out) -> bool {
+        if (!(p >= okBase && p + 8 <= okEnd)) {
+            hk::svc::MemoryInfo info; std::uint32_t pg;
+            if (!hk::svc::QueryMemory(&info, &pg,
+                    static_cast<::ptr>(p)).succeeded()) { okBase = 1; okEnd = 0; return false; }
+            if ((static_cast<std::uint32_t>(info.permission)
+                 & hk::svc::MemoryPermission_Read) == 0) { okBase = 1; okEnd = 0; return false; }
+            okBase = info.base_address;
+            okEnd  = info.base_address + info.size;
+            if (!(p >= okBase && p + 8 <= okEnd)) return false;
+        }
+        out = *reinterpret_cast<std::uintptr_t*>(p);
+        return true;
+    };
+    auto isObject = [&](std::uintptr_t p) -> bool {
+        if (!ptrish(p)) return false;
+        std::uintptr_t vt;
+        if (!rd(p, vt)) return false;
+        return base != 0 && vt >= base && vt < base + 0x4000000ULL;
+    };
+    auto toGhidra = [&](std::uintptr_t rt) -> unsigned long long {
+        return (rt && base) ? static_cast<unsigned long long>(
+                                  0x7100000000ULL + (rt - base)) : 0ULL;
+    };
+
+    // (1) Ancestor climb via +0x08.  targets[] collects ctx + each ancestor.
+    std::uintptr_t targets[18];
+    int nt = 0;
+    targets[nt++] = ctx;
+    SMBWAP_LOG_INFO("ancestor climb (via +0x08):");
+    std::uintptr_t cur = ctx;
+    for (int lvl = 0; lvl < 16 && nt < 18; ++lvl) {
+        std::uintptr_t vt;
+        if (!isObject(cur) || !rd(cur, vt)) {
+            SMBWAP_LOG_INFO("  L%d obj=0x%llx (stop)",
+                            lvl, static_cast<unsigned long long>(cur));
+            break;
+        }
+        SMBWAP_LOG_INFO("  L%d obj=0x%llx vt(ghidra)=0x%llx",
+                        lvl, static_cast<unsigned long long>(cur), toGhidra(vt));
+        std::uintptr_t up;
+        if (!rd(cur + 0x08, up) || up == cur || !isObject(up)) break;
+        cur = up;
+        targets[nt++] = cur;
+    }
+    auto matchTarget = [&](std::uintptr_t v) -> int {
+        if (v == parent) return 100;  // sentinel: matched parent specifically
+        for (int i = 0; i < nt; ++i) if (v == targets[i]) return i;
+        return -1;
+    };
+    auto label = [&](int ti) -> const char* {
+        return ti == 100 ? "parent" : (ti == 0 ? "ctx" : "ancestor");
+    };
+
+    int hits = 0;
+
+    // (2) Scan: wide sweep of the scene + its big +0x40 sub-object (now
+    // QueryMemory-safe), plus a 2-hop sweep of the smaller globals, for ctx /
+    // parent / any climbed ancestor (esp. the grandparent).
+    std::uintptr_t scene = 0, scene40 = 0;
+    std::uintptr_t areaMgr = 0, g1 = 0, a88 = 0, d90 = 0, cinmgr = 0;
+    if (base) {
+        rd(base + 0x3625850u, scene);
+        if (isObject(scene)) rd(scene + 0x40, scene40);
+        rd(base + 0x3628398u, areaMgr);
+        rd(base + 0x3623670u, g1);
+        rd(base + 0x3630a88u, a88);
+        rd(base + 0x3628d90u, d90);
+        rd(base + 0x3630d28u, cinmgr);
+    }
+    struct Seed { const char* name; std::uintptr_t root; unsigned win; bool hop2; };
+    const Seed seeds[] = {
+        {"scene",       scene,    0x1000, false},
+        {"scene+0x40",  scene40,  0x2c00, false},
+        {"areaMgr",     areaMgr,  0x200,  true},
+        {"g1",          g1,       0x200,  true},
+        {"DAT_3630a88", a88,      0x200,  true},
+        {"DAT_3628d90", d90,      0x200,  true},
+        {"courseInMgr", cinmgr,   0x200,  true},
+        {"courseMgr",   courseMgr,0x200,  true},
+    };
+    for (const auto& s : seeds) {
+        if (!isObject(s.root)) continue;
+        for (unsigned k = 0; k < s.win; k += 8) {
+            std::uintptr_t w;
+            if (!rd(s.root + k, w)) continue;
+            int ti = matchTarget(w);
+            if (ti >= 0) {
+                SMBWAP_LOG_INFO("ANCHOR: %s + 0x%x == %s[L%d]",
+                                s.name, k, label(ti), ti == 100 ? 1 : ti);
+                ++hits;
+            }
+            if (s.hop2 && w != s.root && isObject(w)) {
+                for (unsigned j = 0; j < 0x200; j += 8) {
+                    std::uintptr_t w2;
+                    if (!rd(w + j, w2)) continue;
+                    ti = matchTarget(w2);
+                    if (ti >= 0) {
+                        SMBWAP_LOG_INFO("ANCHOR: %s + 0x%x -> + 0x%x == %s[L%d]",
+                                        s.name, k, j, label(ti),
+                                        ti == 100 ? 1 : ti);
+                        ++hits;
+                    }
+                }
+            }
+        }
+    }
+
+    SMBWAP_LOG_INFO("anchorSearch v3 done: %d hit(s), %d ancestor level(s) "
+                    "(ctx=%p parent=%p)", hits, nt,
+                    reinterpret_cast<void*>(ctx),
+                    reinterpret_cast<void*>(parent));
+}
+
+// gate-entry session 6 (2026-05-31) — grandparent OWNER finder (log-only,
+// QueryMemory-safe; runs at the natural course-out, where ctx is the live
+// ExitCourseMgr-body arg).
+//
+// SETTLED in session 5: the whole exit tree (ctx -> parent -> grandparent, each
+// via +0x08) is TRANSIENT — built on course-out into a fixed arena, torn down
+// after; nothing up that chain persists during play.  The grandparent (al
+// sequence container, vtable NSO +0x33f9660, 0x208 B) is created by the al
+// SceneFactory (FUN_7100229fa4) and pushed onto a PERSISTENT al SceneController's
+// scene stack.  The factory writes NO owner pointer (decompiled: only the vtable
+// + self-referential intrusive-list sentinels), so the owner link must be a
+// field elsewhere in the grandparent (a back-pointer to the controller base, or
+// an intrusive-list node pointing into the controller), OR held one-directionally
+// by the controller.  Find it three ways at the SAME instant:
+//   (1) census the persistent g1 (DAT_3623670) SceneController cluster (the
+//       play-time-reachable controllers the handoff found at g1+0x20, vtables
+//       0x710349d…) so any link can be matched to a real persistent object;
+//   (2) dump the grandparent's 0x208 bytes, flagging every ptr field that
+//       targets a live main-module-vtable'd object (back-pointer to owner base)
+//       or lands inside a censused controller (intrusive back-link);
+//   (3) forward scan: does any censused controller hold gp / parent / ctx?
+// Reads only (svc::QueryMemory-gated); one-shot.  The owner's class + vtable
+// (mapped to Ghidra) is the next-session decompile target: its scene-push /
+// change-to-exit-state method is the clean persistent lever.
+void grandparentOwnerProbe(std::uintptr_t base, std::uintptr_t ctx) {
+    if (base == 0 || ctx == 0) return;
+    auto ptrish = [](std::uintptr_t p) {
+        return p >= 0x2000000000ULL && p < 0x2800000000ULL && (p & 7) == 0;
+    };
+    std::uintptr_t okBase = 1, okEnd = 0;
+    auto rd = [&](std::uintptr_t p, std::uintptr_t& out) -> bool {
+        if (!(p >= okBase && p + 8 <= okEnd)) {
+            hk::svc::MemoryInfo info; std::uint32_t pg;
+            if (!hk::svc::QueryMemory(&info, &pg,
+                    static_cast<::ptr>(p)).succeeded()) { okBase = 1; okEnd = 0; return false; }
+            if ((static_cast<std::uint32_t>(info.permission)
+                 & hk::svc::MemoryPermission_Read) == 0) { okBase = 1; okEnd = 0; return false; }
+            okBase = info.base_address;
+            okEnd  = info.base_address + info.size;
+            if (!(p >= okBase && p + 8 <= okEnd)) return false;
+        }
+        out = *reinterpret_cast<std::uintptr_t*>(p);
+        return true;
+    };
+    auto isObject = [&](std::uintptr_t p) -> bool {
+        if (!ptrish(p)) return false;
+        std::uintptr_t vt;
+        if (!rd(p, vt)) return false;
+        return vt >= base && vt < base + 0x4000000ULL;
+    };
+    auto toG = [&](std::uintptr_t rt) -> unsigned long long {
+        return (rt && base) ? 0x7100000000ULL + (rt - base) : 0ULL;
+    };
+
+    // Derive parent (ctx+0x08) and grandparent (parent+0x08).  ctx is the live
+    // body arg; parent is a live object at exit; reading parent+0x08 is the same
+    // step the capture-#2c climb made successfully (it only faulted reading
+    // grandparent+0x08, which we never do here).
+    std::uintptr_t parent = 0, gp = 0;
+    if (!rd(ctx + 0x08, parent) || !ptrish(parent)) {
+        SMBWAP_LOG_INFO("gpOwnerProbe: parent unreadable (ctx=0x%llx)",
+                        (unsigned long long)ctx);
+        return;
+    }
+    if (!rd(parent + 0x08, gp) || !ptrish(gp)) {
+        SMBWAP_LOG_INFO("gpOwnerProbe: grandparent unreadable (parent=0x%llx)",
+                        (unsigned long long)parent);
+        return;
+    }
+    std::uintptr_t cvt = 0, pvt = 0, gvt = 0;
+    rd(ctx, cvt); rd(parent, pvt); rd(gp, gvt);
+    SMBWAP_LOG_INFO("gpOwnerProbe: B_main=0x%llx", (unsigned long long)base);
+    SMBWAP_LOG_INFO("  ctx=0x%llx vt(g)=0x%llx  parent=0x%llx vt(g)=0x%llx  "
+                    "grandparent=0x%llx vt(g)=0x%llx",
+                    (unsigned long long)ctx, toG(cvt),
+                    (unsigned long long)parent, toG(pvt),
+                    (unsigned long long)gp, toG(gvt));
+
+    // (1) census the persistent g1 SceneController cluster (g1+0x20 + 1 hop).
+    constexpr int kMaxCtrl = 40;
+    std::uintptr_t ctrlAddr[kMaxCtrl]; int nCtrl = 0;
+    auto addCtrl = [&](std::uintptr_t o, std::uintptr_t vt, const char* via,
+                       unsigned off) {
+        for (int i = 0; i < nCtrl; ++i) if (ctrlAddr[i] == o) return;
+        if (nCtrl < kMaxCtrl) {
+            ctrlAddr[nCtrl++] = o;
+            SMBWAP_LOG_INFO("  g1ctrl[%d] obj=0x%llx vt(g)=0x%llx via %s+0x%x",
+                            nCtrl - 1, (unsigned long long)o, toG(vt), via, off);
+        }
+    };
+    std::uintptr_t g1 = 0;
+    if (rd(base + 0x3623670u, g1) && isObject(g1)) {
+        SMBWAP_LOG_INFO("  g1(DAT_3623670)=0x%llx", (unsigned long long)g1);
+        for (unsigned k = 0; k < 0x200 && nCtrl < kMaxCtrl; k += 8) {
+            std::uintptr_t w;
+            if (!rd(g1 + k, w) || !isObject(w)) continue;
+            std::uintptr_t wvt = 0; rd(w, wvt);
+            addCtrl(w, wvt, "g1", k);
+            for (unsigned j = 0; j < 0x200 && nCtrl < kMaxCtrl; j += 8) {
+                std::uintptr_t w2;
+                if (!rd(w + j, w2) || !isObject(w2)) continue;
+                std::uintptr_t w2vt = 0; rd(w2, w2vt);
+                addCtrl(w2, w2vt, "g1.sub", j);
+            }
+        }
+    } else {
+        SMBWAP_LOG_INFO("  g1(DAT_3623670) not an object (g1=0x%llx)",
+                        (unsigned long long)g1);
+    }
+
+    // (2) dump the grandparent's 0x208 bytes; flag owner candidates.
+    SMBWAP_LOG_INFO("  --- grandparent dump (0x208 B) ---");
+    int objFields = 0, ownerHits = 0;
+    for (unsigned k = 0; k < 0x208; k += 8) {
+        std::uintptr_t w;
+        if (!rd(gp + k, w) || !ptrish(w)) continue;
+        const char* tag = "";
+        if (w == ctx) tag = " ==ctx";
+        else if (w == parent) tag = " ==parent";
+        else if (w == gp) tag = " ==grandparent(self)";
+        int inCtrl = -1; unsigned inOff = 0;
+        for (int i = 0; i < nCtrl; ++i) {
+            if (w >= ctrlAddr[i] && w < ctrlAddr[i] + 0x2000) {
+                inCtrl = i; inOff = (unsigned)(w - ctrlAddr[i]); break;
+            }
+        }
+        if (isObject(w)) {
+            std::uintptr_t wvt = 0; rd(w, wvt);
+            ++objFields;
+            if (inCtrl >= 0 && tag[0] == '\0') ++ownerHits;
+            SMBWAP_LOG_INFO("  GP +0x%03x: OBJ 0x%llx vt(g)=0x%llx%s%s", k,
+                            (unsigned long long)w, toG(wvt), tag,
+                            inCtrl >= 0 ? " [OWNER? base==g1ctrl]" : "");
+        } else if (inCtrl >= 0) {
+            ++ownerHits;
+            SMBWAP_LOG_INFO("  GP +0x%03x: -> inside g1ctrl[%d]+0x%x (0x%llx)"
+                            " [OWNER back-link]%s", k, inCtrl, inOff,
+                            (unsigned long long)w, tag);
+        } else {
+            SMBWAP_LOG_INFO("  GP +0x%03x: ptr 0x%llx (non-obj)%s", k,
+                            (unsigned long long)w, tag);
+        }
+    }
+
+    // (3) forward owner search: does any censused controller hold gp/parent/ctx?
+    int fwd = 0;
+    for (int i = 0; i < nCtrl; ++i) {
+        for (unsigned j = 0; j < 0x800; j += 8) {
+            std::uintptr_t w;
+            if (!rd(ctrlAddr[i] + j, w)) continue;
+            const char* what = (w == gp) ? "grandparent"
+                             : (w == parent) ? "parent"
+                             : (w == ctx) ? "ctx" : nullptr;
+            if (what) {
+                ++fwd;
+                SMBWAP_LOG_INFO("  FWD: g1ctrl[%d](0x%llx)+0x%x == %s "
+                                "[OWNER holds it]", i,
+                                (unsigned long long)ctrlAddr[i], j, what);
+            }
+        }
+    }
+
+    SMBWAP_LOG_INFO("gpOwnerProbe done: %d obj field(s), %d owner hit(s), "
+                    "%d fwd hit(s), %d g1 ctrl(s)",
+                    objFields, ownerHits, fwd, nCtrl);
+}
+
+// gate-entry session 6 capture #2 — persistent course-sequence controller
+// state DUMP (log-only, QueryMemory-safe).
+//
+// Capture #1 (gpOwnerProbe) pinned the PERSISTENT controller: g1 =
+// DAT_3623670 (0x20d2fd2db0 in dev), a multiply-inherited NerveExecutor whose
+// primary vtable is NSO +0x349d300 and whose code cluster (0x7101bae…) sits
+// right next to the course / ExitCourseMgr management code.  Its ctor
+// (FUN_7101baeb20) lays out embedded subobjects at +0x08 (vt +0x34f3ac0),
+// +0xf0 (vt +0x349d4d0), +0x118 (vt +0x349d4f0) — all within g1+0x00..0x140.
+// The transient exit scene tree is NOT linked from this controller within the
+// shallow census, so the lever is a FIELD on this controller that flips when
+// course-out begins (a current/next-scene pointer, a NerveKeeper step word, or
+// a course-out request flag).  Find it by DIFFING the controller's state during
+// PLAY vs. at the EXIT moment: dump g1+0x00..0x160 at both; the changed field
+// is the trigger.  Reads only (svc::QueryMemory-gated).
+void dumpG1CourseSeqCtrl(const char* phase, std::uintptr_t base) {
+    if (base == 0) return;
+    auto ptrish = [](std::uintptr_t p) {
+        return p >= 0x2000000000ULL && p < 0x2800000000ULL && (p & 7) == 0;
+    };
+    std::uintptr_t okBase = 1, okEnd = 0;
+    auto rd = [&](std::uintptr_t p, std::uintptr_t& out) -> bool {
+        if (!(p >= okBase && p + 8 <= okEnd)) {
+            hk::svc::MemoryInfo info; std::uint32_t pg;
+            if (!hk::svc::QueryMemory(&info, &pg,
+                    static_cast<::ptr>(p)).succeeded()) { okBase = 1; okEnd = 0; return false; }
+            if ((static_cast<std::uint32_t>(info.permission)
+                 & hk::svc::MemoryPermission_Read) == 0) { okBase = 1; okEnd = 0; return false; }
+            okBase = info.base_address;
+            okEnd  = info.base_address + info.size;
+            if (!(p >= okBase && p + 8 <= okEnd)) return false;
+        }
+        out = *reinterpret_cast<std::uintptr_t*>(p);
+        return true;
+    };
+    auto toG = [&](std::uintptr_t rt) -> unsigned long long {
+        return (rt && base) ? 0x7100000000ULL + (rt - base) : 0ULL;
+    };
+    std::uintptr_t g1 = 0;
+    if (!rd(base + 0x3623670u, g1) || !ptrish(g1)) {
+        SMBWAP_LOG_INFO("g1ctrlDump[%s]: g1 not readable (g1=0x%llx)",
+                        phase, (unsigned long long)g1);
+        return;
+    }
+    std::uintptr_t g1vt = 0; rd(g1, g1vt);
+    SMBWAP_LOG_INFO("g1ctrlDump[%s]: g1=0x%llx vt(g)=0x%llx", phase,
+                    (unsigned long long)g1, toG(g1vt));
+    // Dump g1+0x00..0x160 (44 qwords), one per line, annotating values that are
+    // (or whose &~3 tagged form is) a live main-module object, so a play-vs-exit
+    // diff is easy to read.
+    for (unsigned k = 0; k < 0x160; k += 8) {
+        std::uintptr_t w;
+        if (!rd(g1 + k, w)) { SMBWAP_LOG_INFO("  g1+0x%03x: <unmapped>", k); continue; }
+        std::uintptr_t pw = w & ~3ULL, vt = 0;
+        if (ptrish(pw) && rd(pw, vt) && vt >= base && vt < base + 0x4000000ULL) {
+            SMBWAP_LOG_INFO("  g1+0x%03x: 0x%016llx OBJ vt(g)=0x%llx", k,
+                            (unsigned long long)w, toG(vt));
+        } else {
+            SMBWAP_LOG_INFO("  g1+0x%03x: 0x%016llx", k, (unsigned long long)w);
+        }
+    }
+    SMBWAP_LOG_INFO("g1ctrlDump[%s] done", phase);
+}
+
+// gate-entry session 6 capture #3 — WIDE holder reachability search
+// (log-only, QueryMemory-safe, budget-capped).  Fired at the EXIT moment.
+//
+// cap #1: the grandparent has no owner back-pointer.  cap #2: the g1 root
+// controller's first 0x160 B is unchanged play-vs-exit (g1 root is not the
+// direct holder/driver of the transient exit tree).  So SOMETHING persistent
+// still ticks the exit sequence (grandparent/parent/ctx) — find it by a
+// breadth-first walk of the persistent object graph from the scene
+// (DAT_3625850, the teardown's *(scene+0x40)+0x2c40 prime suspect), g1
+// (DAT_3623670) and the area mgr (DAT_3628398), reporting any field that points
+// to — or INTO — the exit tree (a raw pointer == ctx/parent/grandparent, or a
+// list-node link landing inside one; tagged ptrs matched via &~3).  The holder
+// object's class vtable (Ghidra-mapped) is the lever target.  Bounded: ≤512
+// objects, ≤300k reads; every read svc::QueryMemory-gated; hit-only logging.
+void holderSearchWide(std::uintptr_t base, std::uintptr_t ctx) {
+    if (base == 0 || ctx == 0) return;
+    auto ptrish = [](std::uintptr_t p) {
+        return p >= 0x2000000000ULL && p < 0x2800000000ULL && (p & 7) == 0;
+    };
+    std::uintptr_t okBase = 1, okEnd = 0;
+    auto rd = [&](std::uintptr_t p, std::uintptr_t& out) -> bool {
+        if (!(p >= okBase && p + 8 <= okEnd)) {
+            hk::svc::MemoryInfo info; std::uint32_t pg;
+            if (!hk::svc::QueryMemory(&info, &pg,
+                    static_cast<::ptr>(p)).succeeded()) { okBase = 1; okEnd = 0; return false; }
+            if ((static_cast<std::uint32_t>(info.permission)
+                 & hk::svc::MemoryPermission_Read) == 0) { okBase = 1; okEnd = 0; return false; }
+            okBase = info.base_address;
+            okEnd  = info.base_address + info.size;
+            if (!(p >= okBase && p + 8 <= okEnd)) return false;
+        }
+        out = *reinterpret_cast<std::uintptr_t*>(p);
+        return true;
+    };
+    auto isObject = [&](std::uintptr_t p) -> bool {
+        if (!ptrish(p)) return false;
+        std::uintptr_t vt;
+        if (!rd(p, vt)) return false;
+        return vt >= base && vt < base + 0x4000000ULL;
+    };
+    auto toG = [&](std::uintptr_t rt) -> unsigned long long {
+        return (rt && base) ? 0x7100000000ULL + (rt - base) : 0ULL;
+    };
+
+    std::uintptr_t parent = 0, gp = 0;
+    if (!rd(ctx + 8, parent) || !ptrish(parent)) {
+        SMBWAP_LOG_INFO("holderSearch: parent unreadable"); return;
+    }
+    if (!rd(parent + 8, gp) || !ptrish(gp)) {
+        SMBWAP_LOG_INFO("holderSearch: grandparent unreadable"); return;
+    }
+    SMBWAP_LOG_INFO("holderSearch: targets ctx=0x%llx parent=0x%llx gp=0x%llx",
+                    (unsigned long long)ctx, (unsigned long long)parent,
+                    (unsigned long long)gp);
+    auto match = [&](std::uintptr_t w) -> const char* {
+        std::uintptr_t v = w & ~3ULL;
+        if (v == ctx) return "==ctx";
+        if (v == parent) return "==parent";
+        if (v == gp) return "==gp";
+        if (v > ctx && v < ctx + 0x28) return "->ctx+";
+        if (v > parent && v < parent + 0x100) return "->parent+";
+        if (v > gp && v < gp + 0x208) return "->gp+";
+        return nullptr;
+    };
+
+    constexpr int kNMax = 512;
+    struct QE { std::uintptr_t a; unsigned win; };
+    QE q[kNMax]; int qh = 0, qt = 0;
+    std::uintptr_t seen[kNMax]; int ns = 0;
+    auto seenHas = [&](std::uintptr_t o) {
+        for (int i = 0; i < ns; ++i) if (seen[i] == o) return true; return false;
+    };
+    auto enq = [&](std::uintptr_t o, unsigned win) {
+        if (!isObject(o) || seenHas(o) || ns >= kNMax || qt >= kNMax) return;
+        seen[ns++] = o; q[qt].a = o; q[qt].win = win; ++qt;
+    };
+
+    std::uintptr_t scene = 0, scene40 = 0, areaMgr = 0, g1 = 0;
+    if (rd(base + 0x3625850u, scene) && isObject(scene)) {
+        enq(scene, 0x4000);
+        if (rd(scene + 0x40, scene40) && isObject(scene40)) enq(scene40, 0x4000);
+    }
+    if (rd(base + 0x3628398u, areaMgr)) enq(areaMgr, 0x1000);
+    if (rd(base + 0x3623670u, g1)) enq(g1, 0x1000);
+
+    int hits = 0; long reads = 0; const long kBudget = 300000;
+    while (qh < qt && reads < kBudget) {
+        const std::uintptr_t o = q[qh].a; const unsigned win = q[qh].win; ++qh;
+        for (unsigned k = 0; k < win && reads < kBudget; k += 8) {
+            std::uintptr_t w; ++reads;
+            if (!rd(o + k, w)) continue;
+            const char* m = match(w);
+            if (m) {
+                std::uintptr_t ovt = 0; rd(o, ovt);
+                ++hits;
+                SMBWAP_LOG_INFO("HOLDER obj=0x%llx vt(g)=0x%llx +0x%x val=0x%llx %s",
+                                (unsigned long long)o, toG(ovt), k,
+                                (unsigned long long)w, m);
+            }
+            enq(w & ~3ULL, 0x800);
+        }
+    }
+    SMBWAP_LOG_INFO("holderSearch done: %d hit(s), %d obj(s), %ld read(s) "
+                    "(q drained=%d)", hits, ns, reads, (qh >= qt) ? 1 : 0);
+}
+
+// gate-entry session 5 — course-sequence PARENT persistence diagnostic
+// (log-only, one-shot, QueryMemory-safe).  Runs DURING PLAY (courseManager()
+// valid) — unlike anchorSearch which ran at the exit moment.  Answers the
+// gate-entry endgame question: the ExitCourseMgr controller (ctx, vtable NSO
+// +0x34a8200) is TRANSIENT, but is its host PARENT sub-sequence (vtable NSO
+// +0x3517068) — or the grandparent seq container (NSO +0x33f9660) — PERSISTENT
+// and reachable while the player is in a course?  If so we can drive its
+// transition into the exit state instead of latching the transient ctx.
+//
+// Three independent probes, all reads gated by svc::QueryMemory:
+//   (A) read the latched parent's vtable during play (cheap, decisive-if-+ve);
+//   (B) climb the al host-chain (+0x08) up from live objects (courseMgr, the
+//       player-tick args, the latched parent) logging each level's Ghidra
+//       vtable + flagging the 3 target classes;
+//   (C) scan the engine globals + scene for the 3 target vtables AND census
+//       the distinct main-module vtables reachable within 2 hops (so even a
+//       partial reach names which persistent al objects hang off the scene).
+void seqPersistDiag(std::uintptr_t base, std::uintptr_t courseMgr,
+                    std::uintptr_t p1, std::uintptr_t p2) {
+    if (base == 0) { SMBWAP_LOG_INFO("seqPersistDiag: base==0, skip"); return; }
+    const std::uintptr_t kCtxVt = base + 0x34a8200u;   // ExitCourseMgr ctrl
+    const std::uintptr_t kParVt = base + 0x3517068u;   // parent sub-sequence
+    const std::uintptr_t kGrpVt = base + 0x33f9660u;   // grandparent container
+
+    auto ptrish = [](std::uintptr_t p) {
+        return p >= 0x2000000000ULL && p < 0x2800000000ULL && (p & 7) == 0;
+    };
+    std::uintptr_t okBase = 1, okEnd = 0;
+    auto rd = [&](std::uintptr_t p, std::uintptr_t& out) -> bool {
+        if (!(p >= okBase && p + 8 <= okEnd)) {
+            hk::svc::MemoryInfo info; std::uint32_t pg;
+            if (!hk::svc::QueryMemory(&info, &pg,
+                    static_cast<::ptr>(p)).succeeded()) { okBase = 1; okEnd = 0; return false; }
+            if ((static_cast<std::uint32_t>(info.permission)
+                 & hk::svc::MemoryPermission_Read) == 0) { okBase = 1; okEnd = 0; return false; }
+            okBase = info.base_address;
+            okEnd  = info.base_address + info.size;
+            if (!(p >= okBase && p + 8 <= okEnd)) return false;
+        }
+        out = *reinterpret_cast<std::uintptr_t*>(p);
+        return true;
+    };
+    auto vtOf = [&](std::uintptr_t obj, std::uintptr_t& vt) -> bool {
+        if (!ptrish(obj)) return false;
+        if (!rd(obj, vt)) return false;
+        return vt >= base && vt < base + 0x4000000ULL;  // a main-module vtable
+    };
+    auto toG = [&](std::uintptr_t rt) -> unsigned long long {
+        return rt ? 0x7100000000ULL + (rt - base) : 0ULL;
+    };
+    auto flag = [&](std::uintptr_t vt) -> const char* {
+        if (vt == kCtxVt) return " <== ctx(ExitCourseMgr ctrl)";
+        if (vt == kParVt) return " <== PARENT sub-sequence";
+        if (vt == kGrpVt) return " <== GRANDPARENT seq container";
+        return "";
+    };
+
+    SMBWAP_LOG_INFO("seqPersistDiag: B_main=0x%llx targets ctx=0x%llx par=0x%llx grp=0x%llx",
+                    (unsigned long long)base, (unsigned long long)kCtxVt,
+                    (unsigned long long)kParVt, (unsigned long long)kGrpVt);
+
+    // (A) latched-parent read during play (needs a prior natural course-out
+    // to have latched a parent; empty on a fresh boot+play).
+    {
+        std::uintptr_t lp = reinterpret_cast<std::uintptr_t>(probe::courseSeqParent());
+        std::uintptr_t vt = 0;
+        bool ok = lp != 0 && vtOf(lp, vt);
+        SMBWAP_LOG_INFO("  (A) latched parent=0x%llx readableObj=%d vt(ghidra)=0x%llx%s",
+                        (unsigned long long)lp, ok ? 1 : 0,
+                        (unsigned long long)(ok ? toG(vt) : 0), ok ? flag(vt) : "");
+    }
+
+    // (D) DEV-ONLY transience check.  The exit-time sequence tree is stable
+    // across dev sessions (ctx 0x20bf799330; the dead-end test already saw ctx
+    // read vt=0 mid-play).  Read the PARENT and GRANDPARENT slots too — they
+    // are SEPARATE objects (ctx's host + container), so if the container
+    // persists during play they'd still hold their vtables here, whereas the
+    // transient ctx reads 0.  Settles "whole exit tree transient" vs "container
+    // persists".  Every read QueryMemory-guarded; harmless if unmapped/reused.
+    {
+        struct DevAddr { const char* name; std::uintptr_t addr; };
+        const DevAddr da[] = {
+            {"ctx@0x20bf799330",         0x20bf799330ULL},
+            {"parent@0x20bf798dc0",      0x20bf798dc0ULL},
+            {"grandparent@0x20bf796368", 0x20bf796368ULL},
+        };
+        for (const auto& d : da) {
+            std::uintptr_t vt = 0;
+            const bool ok = rd(d.addr, vt);
+            const bool inMod = ok && vt >= base && vt < base + 0x4000000ULL;
+            SMBWAP_LOG_INFO("  (D) %s readable=%d vt=0x%llx vt(ghidra)=0x%llx%s",
+                            d.name, ok ? 1 : 0, (unsigned long long)(ok ? vt : 0),
+                            (unsigned long long)(inMod ? toG(vt) : 0),
+                            inMod ? flag(vt) : "");
+        }
+    }
+
+    // (B) host-chain climb (+0x08) from a few live seeds.
+    struct ClimbSeed { const char* name; std::uintptr_t root; };
+    const ClimbSeed climbs[] = {
+        {"courseMgr", courseMgr},
+        {"playerTick.p1", p1},
+        {"playerTick.p2", p2},
+        {"latchedParent", reinterpret_cast<std::uintptr_t>(probe::courseSeqParent())},
+    };
+    for (const auto& c : climbs) {
+        std::uintptr_t vt;
+        if (!vtOf(c.root, vt)) continue;
+        SMBWAP_LOG_INFO("  (B) climb from %s=0x%llx:", c.name,
+                        (unsigned long long)c.root);
+        std::uintptr_t cur = c.root;
+        for (int lvl = 0; lvl < 14; ++lvl) {
+            std::uintptr_t cvt;
+            if (!vtOf(cur, cvt)) break;
+            SMBWAP_LOG_INFO("      L%d obj=0x%llx vt(ghidra)=0x%llx%s", lvl,
+                            (unsigned long long)cur, (unsigned long long)toG(cvt),
+                            flag(cvt));
+            std::uintptr_t up;
+            if (!rd(cur + 0x08, up) || up == cur || !ptrish(up)) break;
+            cur = up;
+        }
+    }
+
+    // (C) scan seeds for the target vtables + census distinct vtables.
+    std::uintptr_t scene = 0, scene40 = 0, areaMgr = 0, g1 = 0,
+                   a88 = 0, d90 = 0, cinmgr = 0;
+    rd(base + 0x3625850u, scene);
+    if (ptrish(scene)) rd(scene + 0x40, scene40);
+    rd(base + 0x3628398u, areaMgr);
+    rd(base + 0x3623670u, g1);
+    rd(base + 0x3630a88u, a88);
+    rd(base + 0x3628d90u, d90);
+    rd(base + 0x3630d28u, cinmgr);
+    struct Seed { const char* name; std::uintptr_t root; unsigned win; bool hop2; };
+    const Seed seeds[] = {
+        {"scene",       scene,    0x1000, false},
+        {"scene+0x40",  scene40,  0x2c00, false},
+        {"areaMgr",     areaMgr,  0x300,  true},
+        {"g1",          g1,       0x300,  true},
+        {"DAT_3630a88", a88,      0x300,  true},
+        {"DAT_3628d90", d90,      0x300,  true},
+        {"courseInMgr", cinmgr,   0x300,  true},
+        {"courseMgr",   courseMgr,0x300,  true},
+    };
+    constexpr int kCensusMax = 48;
+    std::uintptr_t census[kCensusMax]; int nCensus = 0; int targets = 0;
+    auto consider = [&](std::uintptr_t obj, const char* sname, unsigned k,
+                        unsigned j, bool two) {
+        std::uintptr_t vt;
+        if (!vtOf(obj, vt)) return;
+        const char* fl = flag(vt);
+        if (fl[0] != '\0') {
+            ++targets;
+            if (two) SMBWAP_LOG_INFO("  (C) TARGET %s+0x%x->+0x%x obj=0x%llx%s",
+                                     sname, k, j, (unsigned long long)obj, fl);
+            else SMBWAP_LOG_INFO("  (C) TARGET %s+0x%x obj=0x%llx%s",
+                                 sname, k, (unsigned long long)obj, fl);
+        }
+        for (int i = 0; i < nCensus; ++i) if (census[i] == vt) return;
+        if (nCensus < kCensusMax) {
+            census[nCensus++] = vt;
+            SMBWAP_LOG_INFO("  (C) census vt(ghidra)=0x%llx via %s+0x%x obj=0x%llx",
+                            (unsigned long long)toG(vt), sname, k,
+                            (unsigned long long)obj);
+        }
+    };
+    for (const auto& s : seeds) {
+        if (!ptrish(s.root)) continue;
+        std::uintptr_t svt;
+        if (!vtOf(s.root, svt)) continue;
+        for (unsigned k = 0; k < s.win; k += 8) {
+            std::uintptr_t w;
+            if (!rd(s.root + k, w)) continue;
+            consider(w, s.name, k, 0, false);
+            if (s.hop2 && w != s.root && ptrish(w)) {
+                std::uintptr_t wvt;
+                if (!vtOf(w, wvt)) continue;
+                for (unsigned j = 0; j < 0x300; j += 8) {
+                    std::uintptr_t w2;
+                    if (!rd(w + j, w2)) continue;
+                    consider(w2, s.name, k, j, true);
+                }
+            }
+        }
+    }
+    SMBWAP_LOG_INFO("seqPersistDiag done: %d target hit(s), %d distinct vtable(s)",
+                    targets, nCensus);
+}
+
 HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
     [](void* nerve) -> void {
         // M4: drain inbound grants on the game thread. NerveActivateOnce
@@ -291,7 +989,176 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
             }
         }
 
+        // gate-entry session 3 — capture the natural course-out trigger.
+        // RequestEventCourseExitByAreaTag fires when the player triggers a
+        // course-out (pause→"Return to World Map", give-up, death w/ no
+        // lives); `nerve` is the course-sequence controller we must drive
+        // for the bounce.  Log-only: dump the controller head + the
+        // NerveKeeper at +0x68 so we can RE (a) its reachable-from-a-global
+        // path and (b) the heap exit-Nerve object it stores.  Bounded so a
+        // give-up loop can't flood the ring.
+        if (vt_off == kVtableOff_CourseExitByAreaTag && nerve) {
+            static int s_exit_dumps = 0;
+            if (s_exit_dumps < 8) {
+                ++s_exit_dumps;
+                SMBWAP_LOG_INFO(
+                    "COURSE_EXIT_BY_AREATAG: controller=%p (fire #%d, "
+                    "capture #%d)", nerve, s_fires, s_exit_dumps);
+                dumpWords("  ctrl", nerve, 16);  // controller +0x00..0x80
+                void* keeper = *reinterpret_cast<void* const*>(
+                    reinterpret_cast<const std::uint8_t*>(nerve) + 0x68);
+                SMBWAP_LOG_INFO("  keeper@+0x68 = %p", keeper);
+                dumpWords("  keeper", keeper, 12);  // keeper +0x00..0x60
+            }
+        }
+
         nerveActivateOnceHook.orig(nerve);
+    });
+
+// gate-entry session 6 — grandparent OWNER finder gate.  LOG-ONLY / READ-ONLY
+// (QueryMemory-gated), fired once at the natural course-out from inside
+// exitCourseMgrBodyHook.  ✅ RAN (capture #1, 2026-05-31): 0 owner hits / 0 fwd
+// hits — the grandparent has NO owner back-pointer and the shallow g1 census
+// does not hold it; BUT it pinned the live persistent controller (g1 vt
+// +0x349d300, code 0x7101bae…).  Turned OFF; superseded by the g1-controller
+// state diff below (kG1CtrlDiag).  Left in place for reference / re-enable.
+constexpr bool kGrandparentOwnerProbe = false;
+
+// gate-entry session 6 capture #2 — persistent g1 course-sequence controller
+// state DIFF.  LOG-ONLY / READ-ONLY (QueryMemory-gated).  Dumps g1+0x00..0x160
+// at TWO moments — during PLAY (fired ~200 in-course ticks in from
+// playerTickLatchHook) and at the EXIT moment (from exitCourseMgrBodyHook) — so
+// the field that flips on course-out (the current/next-scene ptr, NerveKeeper
+// step word, or course-out request flag) can be read off the diff.  That field
+// is the persistent lever.  Safe to ship ON; REVERT to false after the capture.
+// Procedure: boot -> enter ANY course -> play ~10 s (PLAY dump) -> pause ->
+// "Return to World Map" (EXIT dump).  Grab every `g1ctrlDump[PLAY]` and
+// `g1ctrlDump[EXIT]` line (strip NULs) and diff them.
+//
+// ✅ RAN (capture #2, 2026-05-31): PLAY and EXIT dumps were BYTE-IDENTICAL —
+// g1's first 0x160 B does not change on course-out ⇒ g1 root is NOT the direct
+// holder/driver of the transient exit tree.  Turned OFF; superseded by the wide
+// holder reachability search below (kHolderSearch).
+constexpr bool kG1CtrlDiag = false;
+
+// gate-entry session 6 capture #3 — WIDE holder reachability search.
+// LOG-ONLY / READ-ONLY (QueryMemory-gated, ≤512 objs / ≤300k reads).  Fired at
+// the EXIT moment from exitCourseMgrBodyHook: BFS the persistent object graph
+// from scene (DAT_3625850) + scene+0x40 + areaMgr (DAT_3628398) + g1
+// (DAT_3623670), reporting any field that points to/into the transient exit
+// tree (ctx/parent/grandparent).  The holder object's vtable (Ghidra) is the
+// lever target.  Safe to ship ON; REVERT to false after the capture.
+// Procedure: boot -> enter ANY course -> pause -> "Return to World Map".  Grab
+// every `holderSearch`/`HOLDER ` line (strip NULs).
+//
+// ✅ RAN (capture #3, 2026-05-31): 0 hit(s), 512 obj(s), 133376 read(s), queue
+// drained — the BFS exhausted the persistent object graph reachable from
+// scene/scene+0x40/areaMgr/g1 (512 objs) and found NOTHING pointing to/into the
+// exit tree.  ⇒ the transient exit sequence is not referenced by a plain
+// object-pointer chain from those roots (held via an al update-list iterator /
+// non-object intermediary / a different root).  Reverted to false (INERT).
+// Next direction: the PauseResult data lever (see docs Session 6 decision tree).
+constexpr bool kHolderSearch = false;
+
+// ExitCourseMgr body @ NSO +0x01be3a5c (FUN_7101be3a5c).
+//
+// gate-entry session 3, log-only.  This is the Nerve-execute body that, in
+// vanilla, performs the course-out teardown: it walks the course-out global
+// chain (DAT_7103628398 → +0x30 → +8 → *(+8) → +0x118 → courseMgr) and calls
+// the course-out executor FUN_7101a612cc.  We hook it purely to (a) confirm
+// ordering vs. the RequestEventCourseExitByAreaTag controller capture in
+// nerveActivateOnceHook and (b) snapshot the live course-out chain (the two
+// globals named in the handoff) so we can drive it ourselves for the bounce.
+// Calls Orig unconditionally — no behavior change.  Bounded to a few fires.
+HkTrampoline<void, void*> exitCourseMgrBodyHook = hk::hook::trampoline(
+    [](void* ctx) -> void {
+        // Latch the course-sequence controller for the bounce.  `ctx` is the
+        // live ExitCourseMgr-body arg (validated inside by vtable); refreshed
+        // on every natural course-out so the latched pointer stays current.
+        probe::latchCourseSeqController(ctx);
+        // Also latch the host PARENT sub-sequence (ctx+0x08).  ctx is a live
+        // object here so reading +0x08 is safe; latchCourseSeqParent validates
+        // the parent vtable (NSO +0x3517068) before storing.  Used by the
+        // gate-entry session-5 persistence diagnostic in PlayerTickLatch to
+        // test whether a parent-class object still lives at that address
+        // during play (unlike the transient ctx).
+        if (ctx != nullptr) {
+            void* parent = *reinterpret_cast<void* const*>(
+                reinterpret_cast<const std::uint8_t*>(ctx) + 0x08);
+            probe::latchCourseSeqParent(parent);
+        }
+
+        static int s_dumps = 0;
+        if (s_dumps < 8) {
+            ++s_dumps;
+            SMBWAP_LOG_INFO("EXIT_COURSE_MGR_BODY: ctx=%p (capture #%d)",
+                            ctx, s_dumps);
+            dumpWords("  ctx", ctx, 16);  // ctx +0x00..0x80
+
+            ::ptr base = 0;
+            const auto* main_mod = hk::ro::getMainModule();
+            if (main_mod) base = main_mod->range().start();
+            if (base != 0) {
+                const auto b = static_cast<std::uintptr_t>(base);
+                // Confirm the runtime main base (B_main).  Static RE pinned it
+                // at 0x08504000 on dev Ryujinx (memory reference_smbw_runtime_
+                // main_base); this lets us map dumped 0x0bxxxxxx vtables to
+                // Ghidra.  Logged so a new env (real HW ASLR) re-pins it.
+                SMBWAP_LOG_INFO("  B_main(getMainModule) = 0x%llx",
+                                static_cast<unsigned long long>(b));
+                // DAT_7103628398 — course-out chain anchor (+0x3628398).
+                void* g0 = *reinterpret_cast<void* const*>(b + 0x3628398u);
+                SMBWAP_LOG_INFO("  DAT_3628398 = %p", g0);
+                dumpWords("  g0", g0, 8);   // chain head +0x00..0x40
+                // DAT_7103623670 — sibling global named in the session-3
+                // handoff for the controller's global path (+0x3623670).
+                void* g1 = *reinterpret_cast<void* const*>(b + 0x3623670u);
+                SMBWAP_LOG_INFO("  DAT_3623670 = %p", g1);
+                dumpWords("  g1", g1, 8);
+            }
+            // Cross-check: the course manager resolved via the known walk.
+            void* cmgr = probe::courseManager();
+            SMBWAP_LOG_INFO("  courseManager() = %p", cmgr);
+
+            // capture #2b — ancestor climb + global anchor search.  Gated on a
+            // VALID course manager: courseManager() is non-null ONLY inside a
+            // fully-loaded course (the safe context, exactly where capture #1/#2
+            // succeeded); it is null on the world map and mid-transition, where
+            // walking the sequence tree could touch half-constructed state.
+            // Run-once via its OWN latch (not s_dumps==1) so a world-map exit
+            // firing first doesn't consume the one shot.
+            static bool s_anchor_done = false;
+            if (!s_anchor_done && ctx != nullptr && cmgr != nullptr) {
+                s_anchor_done = true;
+                const auto cptr = reinterpret_cast<std::uintptr_t>(ctx);
+                const std::uintptr_t parent =
+                    *reinterpret_cast<std::uintptr_t*>(cptr + 0x08);
+                SMBWAP_LOG_INFO("  parent(ctx+0x08) = 0x%llx",
+                                static_cast<unsigned long long>(parent));
+                if (parent >= 0x2000000000ULL && parent < 0x2800000000ULL) {
+                    dumpWords("  parent", reinterpret_cast<void*>(parent), 32);
+                }
+                if (kHolderSearch) {
+                    // session-6 capture #3: BFS the persistent object graph for
+                    // whoever holds/ticks the transient exit tree.
+                    holderSearchWide(static_cast<std::uintptr_t>(base), cptr);
+                } else if (kG1CtrlDiag) {
+                    // session-6 capture #2: EXIT-side snapshot of the persistent
+                    // course-sequence controller (g1).  Diff vs. the PLAY-side
+                    // snapshot from playerTickLatchHook to find the course-out
+                    // trigger field.
+                    dumpG1CourseSeqCtrl("EXIT", static_cast<std::uintptr_t>(base));
+                } else if (kGrandparentOwnerProbe) {
+                    // session-6 capture #1: find the persistent owner that pushes
+                    // the exit scene (dumps grandparent + g1 controller census).
+                    grandparentOwnerProbe(static_cast<std::uintptr_t>(base), cptr);
+                } else {
+                    anchorSearch(static_cast<std::uintptr_t>(base), cptr, parent,
+                                 reinterpret_cast<std::uintptr_t>(cmgr));
+                }
+            }
+        }
+        exitCourseMgrBodyHook.orig(ctx);
     });
 
 // SetCourseClearFlagExecute @ NSO +0x001bf28cc.
@@ -334,10 +1201,222 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 // call also retries any pending inbound DeathLink now that the player tick
 // is running.  See probe/DeathLink.cpp for the dereference chain
 // (replicates the game's own walk at +0x2743A0).
+// Phase B course-out ("bounce") smoke test (2026-05-30).  RESULT: the
+// direct call to the course-out executor FUN_7101a612cc is SAFE (no crash,
+// courseManager chain resolved, requestCourseOut->1) but INCOMPLETE — it
+// runs the teardown/prep only and does NOT change scene back to the world
+// map.  In vanilla the ExitCourseMgr Nerve runs FUN_7101a612cc AND then
+// advances the course-sequence controller's Nerve, and that state advance
+// is what actually loads the world map.  A direct call skips the advance,
+// so nothing visible happens.  exit_type 0 vs 1 makes no difference (the
+// exit_type==1 extras are gmd stat-recording, not a scene change).
+//
+// Disabled.  The COMPLETE bounce was since found (capture #1..#3, 2026-05-31):
+// the ExitCourseMgr Nerve body FUN_7101be3a5c(ctx) does the teardown AND the
+// controller-Nerve step advance that loads the world map — see
+// probe::bounceCourseOut() and the kBounceSmokeTest below, which supersede
+// this requestCourseOut()-only probe.
+constexpr bool kCourseOutSmokeTest = false;
+
+// Bounce smoke test (gate-entry, 2026-05-31).  Verifies that
+// probe::bounceCourseOut() — FUN_7101be3a5c on the latched course-sequence
+// controller — performs a COMPLETE course-out (the scene change that the
+// requestCourseOut() teardown alone was missing).  Gated OFF by default.
+// Test flow: enter course A → pause→"Return to World Map" (latches ctx) →
+// enter course B → ~300 ticks later fire bounceCourseOut().
+//
+// ❌ TESTED 2026-05-31, RESULT: latch approach is DEAD.  Diagnostic showed the
+// latched address (0x20bf799330) is readable but its vtable is 0x0 the whole
+// time during course B — the ExitCourseMgr controller is a TRANSIENT object
+// created when "Return to World Map" is invoked and freed afterward, NOT a
+// persistent one.  A pre-latched ctx can never be valid mid-play;
+// bounceCourseOut() correctly returned 0 (vtable re-check rejected the freed
+// object — no crash).  The sequence tree has no cheap global anchor either
+// (capture #3 = 0 hits; factory FUN_7100229fa4 is a stateless al SceneFactory).
+// Conclusion: drive the PERSISTENT pause-menu "Return to World Map" request
+// instead (next session).  Reverted to false; primitives kept for reference.
+constexpr bool kBounceSmokeTest = false;
+
+// gate-entry session 5 — course-sequence PARENT persistence diagnostic.
+// LOG-ONLY / READ-ONLY (QueryMemory-guarded).  Was the intentional one-shot
+// test the user asked for ("read the PARENT slot during play").
+//
+// ✅ RESULT (2026-05-31, SETTLED): the parent is NOT persistent.  Probe (D)
+// read the known exit-tree addresses DURING PLAY: ctx@0x20bf799330 vt=0,
+// parent@0x20bf798dc0 vt=0xc (freed), grandparent@0x20bf796368 vt=0 — all
+// mapped-but-empty; at the exit moment those same slots hold the sequence-tree
+// vtables (0x71034a8200 / 0x7103517068 / 0x71033f9660).  Probe (C) found 0
+// objects of those classes reachable during play (every live object was in the
+// 0x20dab…/0x2092…/0x209fab…/0x20d2fd… clusters; the exit tree lives in
+// 0x20bf79…, absent during play).  ⇒ the ENTIRE exit sequence tree
+// (ctx + parent + grandparent) is TRANSIENT — built on course-out into a fixed
+// arena, torn down after.  No persistent object up that chain to drive.  Next:
+// drive the persistent layer that BUILDS the exit scene — the al SceneController
+// (g1 = DAT_3623670; SceneFactory vtable 0x710349cf38, ctor FUN_7100942e70;
+// exit-scene create = factory table 0x710349cf38 slot +0x20 == FUN_7100229fa4;
+// ctx state-key 0x99137dfe).  See docs/gate-entry-session3-handoff.md "Session 5".
+//
+// Reverted to false (diag inert; code kept for reference / easy re-enable).
+constexpr bool kSeqPersistDiag = false;
+
 HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
     [](void* param_1, void* param_2) -> void {
         probe::serviceDeathLink(param_1);
         playerTickLatchHook.orig(param_1, param_2);
+
+        // gate-entry session 5 — one-shot parent-persistence diagnostic.
+        // Requires: save loaded, in a loaded course (courseManager() valid),
+        // and NOT mid-transition; counts ~200 in-course ticks so the scene
+        // tree is fully constructed before the scan; resets on the world map
+        // so it only fires once we're settled in a course.
+        if (kSeqPersistDiag) {
+            // Fire ONCE per course-entry (~200 ticks in), re-arming on the
+            // world map, capped at 6 total fires.  This lets the proven
+            // protocol (course A -> pause->Return-to-Map [latches parent] ->
+            // course B) exercise probe A's latched-parent read in course B,
+            // while still capturing the census/transience probes in any course.
+            static std::atomic<int>  s_dt{0};
+            static std::atomic<bool> s_firedThisCourse{false};
+            static std::atomic<int>  s_totalFires{0};
+            if (probe::isSaveLoaded() && !probe::isInSceneTransitionWindow()) {
+                void* cmgr = probe::courseManager();
+                if (cmgr != nullptr) {
+                    if (!s_firedThisCourse.load(std::memory_order_relaxed)
+                        && s_totalFires.load(std::memory_order_relaxed) < 6) {
+                        const int n = s_dt.fetch_add(1, std::memory_order_relaxed) + 1;
+                        if (n >= 200) {
+                            s_firedThisCourse.store(true, std::memory_order_relaxed);
+                            const int fno = s_totalFires.fetch_add(
+                                1, std::memory_order_relaxed) + 1;
+                            ::ptr base = 0;
+                            const auto* mm = hk::ro::getMainModule();
+                            if (mm) base = mm->range().start();
+                            SMBWAP_LOG_INFO(
+                                "seqPersistDiag: firing #%d at in-course tick #%d "
+                                "courseMgr=%p p1=%p p2=%p", fno, n, cmgr,
+                                param_1, param_2);
+                            seqPersistDiag(
+                                static_cast<std::uintptr_t>(base),
+                                reinterpret_cast<std::uintptr_t>(cmgr),
+                                reinterpret_cast<std::uintptr_t>(param_1),
+                                reinterpret_cast<std::uintptr_t>(param_2));
+                        }
+                    }
+                } else {
+                    s_dt.store(0, std::memory_order_relaxed);            // reset tick count on map
+                    s_firedThisCourse.store(false, std::memory_order_relaxed);  // re-arm next course
+                }
+            }
+        }
+
+        // gate-entry session 6 capture #2 — PLAY-side snapshot of the persistent
+        // course-sequence controller (g1).  Same firing discipline as the diag
+        // above: once per course-entry, ~200 in-course ticks in, re-arms on the
+        // world map, capped.  Diff this against the EXIT-side dump from
+        // exitCourseMgrBodyHook to find the course-out trigger field on g1.
+        if (kG1CtrlDiag) {
+            static std::atomic<int>  s_gt{0};
+            static std::atomic<bool> s_gFired{false};
+            static std::atomic<int>  s_gTotal{0};
+            if (probe::isSaveLoaded() && !probe::isInSceneTransitionWindow()) {
+                void* cmgr = probe::courseManager();
+                if (cmgr != nullptr) {
+                    if (!s_gFired.load(std::memory_order_relaxed)
+                        && s_gTotal.load(std::memory_order_relaxed) < 6) {
+                        const int n = s_gt.fetch_add(1, std::memory_order_relaxed) + 1;
+                        if (n >= 200) {
+                            s_gFired.store(true, std::memory_order_relaxed);
+                            const int fno = s_gTotal.fetch_add(
+                                1, std::memory_order_relaxed) + 1;
+                            ::ptr base = 0;
+                            const auto* mm = hk::ro::getMainModule();
+                            if (mm) base = mm->range().start();
+                            SMBWAP_LOG_INFO(
+                                "g1ctrlDump: PLAY firing #%d at in-course tick #%d",
+                                fno, n);
+                            dumpG1CourseSeqCtrl(
+                                "PLAY", static_cast<std::uintptr_t>(base));
+                        }
+                    }
+                } else {
+                    s_gt.store(0, std::memory_order_relaxed);        // reset on map
+                    s_gFired.store(false, std::memory_order_relaxed);  // re-arm next course
+                }
+            }
+        }
+
+        if (kCourseOutSmokeTest) {
+            static std::atomic<int> s_pt{0};
+            const int n = s_pt.fetch_add(1, std::memory_order_relaxed) + 1;
+            // Diagnostic: confirm the course-manager chain resolves while
+            // the player tick runs (i.e. we're in a loaded course).
+            if (n == 1 || n == 60 || n == 120) {
+                SMBWAP_LOG_INFO(
+                    "PhaseB courseout smoke: playerTick #%d courseManager=%p",
+                    n, probe::courseManager());
+            }
+            if (n == 180) {
+                SMBWAP_LOG_INFO(
+                    "PhaseB courseout smoke: calling requestCourseOut() at "
+                    "playerTick #%d", n);
+                const bool ok = probe::requestCourseOut();
+                SMBWAP_LOG_INFO(
+                    "PhaseB courseout smoke: requestCourseOut -> %d "
+                    "(one-shot, disarmed)", ok ? 1 : 0);
+            }
+        }
+
+        // Bounce smoke test + DIAGNOSTIC (2026-05-31): the latched-at-exit ctx
+        // was stale mid-play (bounceCourseOut -> 0, vtable re-check failed).
+        // Log the ACTUAL vtable at the latched address at a few ticks in the
+        // re-entered course vs. the expected controller vtable, to learn
+        // whether the controller is per-course / transient.  Then still attempt
+        // the bounce at tick 300.
+        if (kBounceSmokeTest &&
+            probe::courseSequenceController() != nullptr) {
+            static std::atomic<int> s_bt{0};
+            static std::atomic<bool> s_fired{false};
+            if (!s_fired.load(std::memory_order_relaxed)) {
+                void* cmgr = probe::courseManager();
+                if (cmgr != nullptr) {
+                    const int n =
+                        s_bt.fetch_add(1, std::memory_order_relaxed) + 1;
+                    if (n == 1 || n == 150 || n == 300) {
+                        void* ctrl = probe::courseSequenceController();
+                        ::ptr base = 0;
+                        const auto* mm = hk::ro::getMainModule();
+                        if (mm) base = mm->range().start();
+                        // Fault-safe read of *(ctrl): the latched address may
+                        // be freed/unmapped mid-play (that's what we're testing).
+                        hk::svc::MemoryInfo mi; std::uint32_t pgi;
+                        std::uintptr_t vt = 0;
+                        const bool readable = ctrl != nullptr &&
+                            hk::svc::QueryMemory(&mi, &pgi,
+                                reinterpret_cast<::ptr>(ctrl)).succeeded() &&
+                            (static_cast<std::uint32_t>(mi.permission)
+                             & hk::svc::MemoryPermission_Read) != 0;
+                        if (readable) vt = *reinterpret_cast<std::uintptr_t*>(ctrl);
+                        SMBWAP_LOG_INFO(
+                            "PhaseB bounce diag: tick #%d ctrl=%p readable=%d "
+                            "vt=0x%llx expect=0x%llx cmgr=%p", n, ctrl,
+                            readable ? 1 : 0,
+                            static_cast<unsigned long long>(vt),
+                            static_cast<unsigned long long>(
+                                static_cast<std::uintptr_t>(base) + 0x34a8200u),
+                            cmgr);
+                    }
+                    if (n >= 300) {
+                        s_fired.store(true, std::memory_order_relaxed);
+                        const bool ok = probe::bounceCourseOut();
+                        SMBWAP_LOG_INFO(
+                            "PhaseB bounce smoke: bounceCourseOut -> %d "
+                            "(one-shot, disarmed)", ok ? 1 : 0);
+                    }
+                } else {
+                    s_bt.store(0, std::memory_order_relaxed);  // reset on map
+                }
+            }
+        }
     });
 
 // GameGoalReachedExecute @ NSO +0x0015b77a8.
@@ -558,6 +1637,298 @@ HkTrampoline<void, void*> needBadgeIdEnterCourseExecuteHook =
                     "(fire #%d)", nerve, n);
             }
         });
+
+// =========================================================================
+// COURSE-IN ENTER GATE — Phase B block-all confirm test (2026-05-30)
+// =========================================================================
+//
+// CourseInEnterGate @ NSO +0x164201c (FUN_710164201c) — the enterable
+// check inside the world-map player's course-in state machine.  This is
+// the universal pre-commit entry gate the Phase A session concluded did
+// NOT exist; bulk static RE this session (now that
+// GHIDRA_MCP_ALLOW_SCRIPTS=1 unblocks scripts) located it.  See the
+// Phase B addendum in docs/royal-seed-phase-a-findings.md for the full
+// derivation and the surrounding Nerve-state-machine map.
+//
+// Call chain (world-map walk-up entry):
+//   free-walk -> press A -> CheckWorldMapPlayerGoToCoursePointCenter
+//   (Nerve exec FUN_7101641fd4, NSO +0x1641fd4) -> THIS (its sole caller)
+//
+// What FUN_710164201c does (decompile):
+//   FUN_710032aea4(nerve+0x28, 0);                 // publish "not ready"
+//   info = resolve(**(nerve+0x20));                // current course point
+//   if (!info) return 0;
+//   key  = *(*(info+0x350)+0x108);                 // 8-byte course key
+//   ent  = binsearch(courseStateRegistry, key);    // FUN_7100613870
+//   if (!ent) return 0;
+//   if (ent[0xa0]==0 && ent[0xb0]==0 &&
+//       ent[0xc0]==0 && ent[0xd0]==0) {            // all 4 "lock" ptrs null
+//       FUN_710032aea4(nerve+0x28, 1);             // publish "ready"
+//       return 1;                                  // ENTER
+//   }
+//   return 0;                                       // BLOCK (vanilla lock)
+//
+// The wrapper (FUN_7101641fd4) sends the GoToCenter Nerve to fail-state
+// (0xc0000000) when our return bit0 == 0, so course-in never begins — a
+// clean PRE-commit block, no half-loaded scene (unlike the downstream
+// load Nerves Phase A ruled out).  This gate fires for the generic
+// "reached the node, can I enter?" check, so it is expected to cover
+// regular courses AND palaces — the exact universality Phase A lacked.
+//
+// CONFIRM TEST: with kBlockAllCourseEntry == true we force EVERY course
+// point to block.  Expected in Ryujinx:
+//   * Boot to world map; walk onto any course point or palace, press A.
+//   * The player figure walks to the node center, then entry is REFUSED
+//     for every course type — proving the gate is universal.
+//   * "PhaseB course_in_gate" log fires repeatedly; natural_allow shows
+//     whether the vanilla gate would have permitted entry.
+// Things to watch (each is a finding):
+//   * Does the player gracefully return to free-walk after the refusal,
+//     or get stuck re-running the GoToCenter Nerve (soft-lock)?
+//   * Does any boot cutscene / first-visit world-map demo that relies on
+//     this gate succeeding hang?
+//
+// Flip kBlockAllCourseEntry to false to revert to observability-only
+// (call Orig, log, no behavior change) — same revert idiom as the
+// Phase A hooks above.
+//
+// 2026-05-30: set to FALSE (log-only). Two test runs proved this gate
+// NEVER FIRES on the walk-up course-entry path — the player entered a
+// course (course_in PlayReport emitted) with zero `course_in_gate` log
+// lines, while FlowerLockGateBody fired.  So FUN_710164201c is not on
+// the entry path used (its sole caller, the GoToCoursePointCenter Nerve,
+// didn't run).  The diagnostic that established this — log-only probes
+// on CheckCourseInUIKey (FUN_710022a964) and SetCourseInFlag
+// (FUN_710088cfdc) — has been removed; SetCourseInFlag was found to fire
+// at commit but is hook-sensitive (crashed the commit->load window).
+// This hook stays installed log-only as a harmless observability control
+// while the real entry-decision point is located via static RE.  See the
+// Phase B addendum in docs/royal-seed-phase-a-findings.md.
+constexpr bool kBlockAllCourseEntry = false;
+
+HkTrampoline<unsigned, void*> courseInEnterGateHook = hk::hook::trampoline(
+    [](void* nerve) -> unsigned {
+        // Always run Orig first: it owns all the refcount / read-lock
+        // bookkeeping (FUN_71001d7520 acquires a hold on the resolved
+        // course-point-info; FUN_710164201c releases it).  We only
+        // override its two output signals afterward — never skip it.
+        const unsigned natural = courseInEnterGateHook.orig(nerve);
+
+        // Cheap distinct-course-point id for telemetry: the raw selected-
+        // course-point handle the gate resolves from (**(nerve+0x20)).
+        const void* cp = nullptr;
+        if (nerve) {
+            auto* p0 = *reinterpret_cast<void**>(
+                static_cast<std::uint8_t*>(nerve) + 0x20);
+            if (p0) cp = *reinterpret_cast<void**>(p0);
+        }
+
+        // Bounded log: this Nerve ticks continuously while the player is
+        // on/approaching a node, so first 20 fires verbose then every
+        // 512th, to avoid flooding the ring.
+        static std::atomic<int> s_fires{0};
+        const int n = s_fires.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (n <= 20 || (n & 0x1FF) == 0) {
+            SMBWAP_LOG_INFO(
+                "PhaseB course_in_gate: nerve=%p cp=%p natural_allow=%u "
+                "block_all=%d (fire #%d)",
+                nerve, cp, natural,
+                static_cast<int>(kBlockAllCourseEntry), n);
+        }
+
+        if (kBlockAllCourseEntry) {
+            // Reproduce the vanilla "blocked" output exactly: force the
+            // "ready" byte at nerve+0x28 back to 0 (Orig leaves it at 1
+            // only on the natural-allow path) and return 0 so the
+            // GoToCenter Nerve fail-states.  Direct guarded write mirrors
+            // FUN_710032aea4's packed-pointer handling (presence flag at
+            // bit 1; byte at slot & ~3).  The TLS dirty-mark is omitted
+            // intentionally — the consumer re-reads the byte each tick,
+            // so the value (0) is what wins.
+            if (nerve) {
+                const std::uint64_t packed = *reinterpret_cast<std::uint64_t*>(
+                    static_cast<std::uint8_t*>(nerve) + 0x28);
+                if ((packed >> 1) & 1) {
+                    auto* ready_byte =
+                        reinterpret_cast<std::uint8_t*>(packed & ~3ULL);
+                    if (ready_byte) *ready_byte = 0;
+                }
+            }
+            return 0;
+        }
+        return natural;
+    });
+
+// =========================================================================
+// COURSE-IN KILL-SWITCH GATE — pre-commit block via the engine's own
+// "course-in forbidden" flag (2026-05-30 session 2, user-approved path)
+// =========================================================================
+//
+// CheckCourseInUIKeyGate @ NSO +0x22a964 (FUN_710022a964) — the world-map
+// course-in INPUT POLL.  Proven hook-stable in Phase B: it ran 512x as a
+// log-only probe with no issue.  (The crash that session was the separate
+// SetCourseInFlag trampoline, FUN_710088cfdc — NOT this function.)
+//
+// The input poll only starts a course-in when the engine's course-in
+// manager flag is clear (decompile of FUN_710022a964):
+//     if ((DAT_7103630d28 == 0 || *(char*)(DAT_7103630d28 + 0x70) == 0)
+//          && <predicate/player-state>) {
+//         publish requested=1; (**vtable[0x128])(param_1);   // drive commit
+//     }
+// DAT_7103630d28 = *(mainBase + 0x3630d28) is a stable sead singleton (the
+// course-in/sequence manager, 0x98 bytes, allocated once in FUN_7100655408,
+// vtable in the same 0x710348exxx region as the pause/exit nerve names).
+// Byte +0x70 is the engine's own "course-in forbidden" latch — the engine
+// sets it during cutscenes/demos.  Forcing it to 1 makes the poll refuse to
+// start ANY course-in: a clean PRE-commit block, no scene load, none of the
+// commit->load crash window that bit the SetCourseInFlag trampoline.
+//
+// We set +0x70 = 1 ONLY for the duration of Orig (the poll) and restore the
+// prior value afterward — surgical: only the poll observes the forced value,
+// nothing else in the frame is affected, and the poll only READS +0x70 (so
+// the restore never clobbers an engine write).  This is also the exact shape
+// the per-course version will take (gate +0x70 by the hovered node's AP
+// status instead of unconditionally).
+//
+// CONFIRM TEST (kForceCourseInForbidden == true): walk onto any node/palace,
+// press A -> entry refused for EVERY course type, player stays free to walk;
+// no scene load.  "PhaseB coursein_killswitch" logs the natural +0x70 value
+// (expected 0 when entry is normally allowed).  Flip to false for no-op
+// (Orig only, no behavior change).  Per-course selectivity is the follow-up
+// (reads the hovered node identity; see docs/royal-seed-phase-a-findings.md).
+//
+// 2026-05-30 confirm test PASSED (block held, no crash/soft-lock, manager
+// resolved every poll).  Now FALSE so the build is playable while we run the
+// log-only IDENTITY PROBE below (validate the hovered-node key chain before
+// any per-course gating ships).
+constexpr bool kForceCourseInForbidden = false;
+
+// DAT_7103630d28 (course-in/sequence manager pointer) and its "course-in
+// forbidden" byte.  manager = *(mainBase + offset); flag = manager + 0x70.
+constexpr std::uint32_t kCourseInMgrGlobalNsoOffset = 0x3630d28;
+constexpr std::uint32_t kCourseInForbiddenByteOff   = 0x70;
+
+// "Looks like a live guest-heap pointer" check.  The earlier permissive
+// range (0x1000000..0x1_0000_0000_0000) let a stale/garbage value through
+// during a course-entry transition and probe v5 dereferenced it -> guest
+// access violation (0xC0000005).  Tighten to the actual Ryujinx guest heap
+// window (all observed live objects are 0x20_xxxxxxxx: courseManager
+// 0x20dab50848, world-map actors 0x20bf7xxxxx) plus 8-byte alignment, so
+// transient garbage is rejected instead of faulted.
+// NOTE: this is the DEV (Ryujinx) heap base; real-hardware (M6) ASLR may
+// place the heap elsewhere -- revisit before shipping the gate on console.
+constexpr bool kLooksLikePtr(std::uintptr_t p) {
+    return p >= 0x2000000000ULL && p < 0x2800000000ULL && (p & 7) == 0;
+}
+
+// Per-course gate v9 — CANCEL-RESERVATION (2026-05-30).  Block course-in for
+// the hovered node by invalidating its "reserved open course" entry, the same
+// thing id_fb names, AFTER the driver runs.  Validated live (probe v6):
+// 1-1 -> id_fb 33, 1-2 -> 1362.  The real feature swaps the single test id for
+// a bridge-pushed gated-id set (mirrors badge-sync).  -1 disables the gate.
+// ⚠️ id_fb cross-boot stability unconfirmed; 33==1-1 holds for the test boot.
+//
+// 2026-05-30 v9 RESULT: clearing the reservation (id_fb -> -1) BROKE world-map
+// movement entirely — the driver does NOT re-reserve, so the player loses its
+// current-node anchor and can't move.  The "reserved open course" slot is
+// load-bearing NAVIGATION state, not a separable entry target.  Combined with
+// v7 (skip-driver freezes identity) and v8 (+0x30 clear: no block + teardown
+// crash), conclusion: course-IN is woven into world-map navigation; no clean
+// pre-commit chokepoint found.  Gate DISABLED pending a different strategy
+// (likely the let-load-then-bounce approach).
+constexpr std::int32_t kTestGatedIdFb = -1;  // -1 = gate disabled (safe build)
+
+// World-map registry: scene = *(mainBase+0x3625850); registry = *(scene+0x40).
+constexpr std::uint32_t kWorldMapSceneGlobalNsoOffset = 0x3625850;
+// Player-0 fallback "reserved open course" slot: registry + 0x100; its id
+// (the value id_fb reads) is at slot + 0x10.  FUN_7100191380 treats id == -1
+// as "no reservation" -> the course-in resolver finds no course to enter.
+constexpr std::uint32_t kReservedSlotIdOffset = 0x100 + 0x10;
+
+HkTrampoline<void, void*> checkCourseInUiKeyGateHook = hk::hook::trampoline(
+    [](void* param_1) -> void {
+        // Run the poll + driver FIRST.  The driver (vtable[0x128] =
+        // FUN_710074b578) RESERVES the hovered node (sets the slot id_fb reads)
+        // — it must run every frame or the identity freezes (v7's +0x70
+        // kill-switch skipped it and mis-gated every node).
+        checkCourseInUiKeyGateHook.orig(param_1);
+
+        if (kTestGatedIdFb < 0 && !kForceCourseInForbidden) return;  // gate off
+
+        // Transition guard: the world-map scene global goes STALE during the
+        // course-load teardown; dereferencing it then faults (v8's 0xC0000005).
+        // Skip while any scene transition is in flight.
+        if (probe::isInSceneTransitionWindow()) return;
+
+        const std::uintptr_t base = probe::mainBase();
+        if (base == 0) return;
+        const std::uintptr_t scene =
+            *reinterpret_cast<std::uintptr_t*>(base + kWorldMapSceneGlobalNsoOffset);
+        if (!kLooksLikePtr(scene)) return;
+        const std::uintptr_t reg =
+            *reinterpret_cast<std::uintptr_t*>(scene + 0x40);
+        if (!kLooksLikePtr(reg)) return;
+
+        auto* slot_id =
+            reinterpret_cast<std::int32_t*>(reg + kReservedSlotIdOffset);
+        const std::int32_t id_fb = *slot_id;
+        const bool gated =
+            kForceCourseInForbidden ||
+            (kTestGatedIdFb >= 0 && id_fb == kTestGatedIdFb);
+
+        bool cancelled = false;
+        if (gated && id_fb != -1) {
+            // Invalidate the reservation: the entry resolver (FUN_7100191380)
+            // short-circuits on id == -1, so no course point resolves and
+            // course-in cannot start.  The driver re-reserves next frame, so
+            // id_fb stays fresh — no freeze.  Plain int write (no holder /
+            // refcount touched), reg already range-validated.
+            *slot_id = -1;
+            cancelled = true;
+        }
+
+        // Bounded log on id_fb change.
+        static std::atomic<int> s_fires{0};
+        static std::atomic<std::int32_t> s_last{-3};
+        const std::int32_t prev = s_last.load(std::memory_order_relaxed);
+        const bool changed = id_fb != prev;
+        if (changed) s_last.store(id_fb, std::memory_order_relaxed);
+        const int n = s_fires.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (n <= 6 || changed || (n & 0x1FF) == 0) {
+            SMBWAP_LOG_INFO(
+                "PhaseB coursein_gate: poll #%d id_fb=%d gated=%d cancelled=%d "
+                "changed=%d", n, id_fb,
+                (kTestGatedIdFb >= 0 && id_fb == kTestGatedIdFb) ? 1 : 0,
+                cancelled ? 1 : 0, changed ? 1 : 0);
+        }
+    });
+
+// -------------------------------------------------------------------------
+// Phase B entry-path diagnostic probes — REMOVED 2026-05-30 (served their
+// purpose; one of them crashed the commit->load transition).
+// -------------------------------------------------------------------------
+//
+// Two log-only trampolines on the course-in state machine
+// (CheckCourseInUIKey body FUN_710022a964 and SetCourseInFlag exec
+// FUN_710088cfdc) ran one diagnostic session (Ryujinx_..._16-32-41.log)
+// and answered the entry-path question:
+//   * course_in_gate (FUN_710164201c / GoToCenter) -- SILENT again.
+//     Confirmed OFF the walk-up entry path (2 runs).
+//   * check_courseinuikey (FUN_710022a964) -- ticks continuously on the
+//     world map for the 3 selectable nodes.  The input poll.
+//   * set_course_in_flag (FUN_710088cfdc) -- fired EXACTLY ONCE at the
+//     commit moment.  The confirmed on-entry chokepoint.
+// Entry path: input poll -> commit (SetCourseInFlag) -> scene load ->
+// course_in PlayReport.
+//
+// CRASH: that run died in the commit->load window -- after
+// set_course_in_flag fired, before course_in PlayReport -- whereas the
+// prior build WITHOUT these probes cleared the same window fine.  Timing
+// implicates the SetCourseInFlag trampoline: FUN_710088cfdc is
+// hook-SENSITIVE, so it is NOT a safe block point.  Both probes removed.
+// Next step is pure static RE (no test runs) to find the decision point
+// upstream of SetCourseInFlag and a safe intercept.  See the Phase B
+// addendum in docs/royal-seed-phase-a-findings.md.
 
 // =========================================================================
 // PLAYREPORT (Phase 2c)
@@ -942,7 +2313,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2g + PhaseA observability probes: 15 hooks + ap/ subsystem + real probe:: grants + WS reader override");
+    SMBWAP_LOG_INFO("Phase 2g + PhaseA observability + PhaseB per-course gate INERT + gate-entry session-6 INERT/SAFE (persistent course-seq ctrl g1 vt +0x349d300 pinned; exit tree holder NOT found via scan; next = PauseResult data lever): 18 hooks + ap/ subsystem + real probe:: grants + WS reader override");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -996,6 +2367,34 @@ extern "C" void hkMain() {
                 flowerLockGateBodyHook.installAtMainOffset(0x00383418));
     installHook("NeedBadgeIdEnterCourseExecute", 0x01bffe94,
                 needBadgeIdEnterCourseExecuteHook.installAtMainOffset(0x01bffe94));
+
+    // PhaseB course-in entry gate — block-all confirm test.  Unlike the
+    // two reverted Phase A probes above, this one is ACTIVE: with
+    // kBlockAllCourseEntry == true it force-blocks every course point to
+    // verify FUN_710164201c is the universal pre-commit entry gate.  Flip
+    // the constexpr to false for observability-only.  See the Phase B
+    // addendum in docs/royal-seed-phase-a-findings.md.
+    installHook("CourseInEnterGate",             0x0164201c,
+                courseInEnterGateHook.installAtMainOffset(0x0164201c));
+
+    // PhaseB course-in KILL-SWITCH gate — pre-commit block via the engine's
+    // own "course-in forbidden" byte (*(DAT_7103630d28+0x70)).  Hooks the
+    // hook-stable input poll FUN_710022a964 and, while kForceCourseInForbidden
+    // is true, forces that byte to 1 around Orig to block ALL course-in with
+    // no scene load.  User-approved confirm test of the pre-commit lever; flip
+    // the constexpr to false for observability-only.  See the session-2
+    // addendum in docs/royal-seed-phase-a-findings.md.
+    installHook("CheckCourseInUIKeyGate",        0x0022a964,
+                checkCourseInUiKeyGateHook.installAtMainOffset(0x0022a964));
+
+    // gate-entry session 3 — log-only course-out capture (the bounce
+    // unlock).  ExitCourseMgr body snapshots the live course-out global
+    // chain; RequestEventCourseExitByAreaTag (handled inside
+    // nerveActivateOnceHook above) snapshots the course-sequence controller.
+    // No behavior change.  See docs/gate-entry-session3-handoff.md
+    // "Recommended NEXT STEPS" #1.
+    installHook("ExitCourseMgrBody",             0x01be3a5c,
+                exitCourseMgrBodyHook.installAtMainOffset(0x01be3a5c));
 
     SMBWAP_LOG_INFO("=== smbwap hkMain END ===");
 }
