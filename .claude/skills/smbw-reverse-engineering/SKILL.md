@@ -138,7 +138,8 @@ them — see `kDeathDiscriminator_Val` in main.cpp.
 
 ## Ghidra tooling
 
-- **Ghidra 11.3/11.4** + **Adubbz Switch Loader 1.7.0** + **JDK 21**.
+- **Ghidra 12.1** + **JDK 21**. The Adubbz Switch loader / overlay extension is
+  **no longer used** — `main.nso` is loaded directly (base `0x7100000000`).
 - One-time: run `import_sdk_symbols.py` (walks the whole `syms/100/` tree,
   ~27k named symbols incl. `gmd::GameDataMgr::sInstance @ +0x0363F0F0`).
 - **Script inventory + run order** is in

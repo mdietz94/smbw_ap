@@ -5,9 +5,10 @@ on the SMBW NSO. They print to the Ghidra console.
 
 ## Running
 
-1. Open the SMBW NSO in Ghidra (`main.nso` from
+1. Open the SMBW NSO in Ghidra 12.1 (`main.nso` from
    `C:\Users\maxwe\Desktop\Roms\Switch\Super Mario Bros. Wonder\`)
-   using the Adubbz Switch loader.
+   loaded directly at base `0x7100000000`. (The Adubbz Switch loader / overlay
+   extension is no longer used.)
 2. Run auto-analysis through at least `Function Start Analyzer`.
 3. Apply the NN SDK symbol map per [docs/handoff.md](../../docs/handoff.md)
    "Tools used".
