@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
-from . import appdata_root
+from . import appdata_root, local_appdata_root
 from .patch_hakkun import apply_patches as _apply_hakkun_patches
 from .prereqs import (
     is_dev_clone,
@@ -400,6 +400,47 @@ def expected_artifacts(repo: Path | None = None) -> dict[str, Path]:
     }
 
 
+def _ensure_python3_on_path(py_bin: str, env: dict[str, str]) -> None:
+    """Ensure ``python3.exe`` is reachable in the cmake subprocess PATH.
+
+    LibHakkun's toolchain.cmake runs bare ``python3
+    sys/tools/setup_libcxx_prepackaged.py`` to download and unpack the
+    prebuilt libc++/musl/compiler-rt bundle into ``lib/std/``.  On
+    Windows, standard CPython installs ship ``python.exe`` but NOT
+    ``python3.exe``.  The Microsoft Store stub that answers ``python3``
+    silently exits without writing anything, so ``lib/std/`` is never
+    populated and the cmake compiler-check link fails with missing *.a.
+
+    prereqs.ensure_python3_shim() tries to copy ``python.exe →
+    python3.exe`` alongside the interpreter, but silently swallows the
+    OSError when that directory is write-protected (Program Files install,
+    AP-launcher frozen PyInstaller bundle, etc.).
+
+    This function is the second line of defence: if ``python3.exe`` still
+    isn't present in the dir we just prepended, we create the shim in
+    ``%LOCALAPPDATA%/SMBWArchipelago/bin/`` (always writable) and prepend
+    that directory so it shadows any Store stub on the inherited PATH.
+    """
+    if sys.platform != "win32":
+        return
+    py_dir = Path(py_bin).parent
+    if (py_dir / "python3.exe").is_file():
+        return  # shim already in place — nothing to do
+
+    shim_dir = local_appdata_root() / "bin"
+    shim = shim_dir / "python3.exe"
+    if not shim.is_file():
+        try:
+            shim_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(py_bin, shim)
+        except OSError:
+            return  # cmake will surface a clear error about python3
+    s = str(shim_dir)
+    path_val = env.get("PATH", "")
+    if s not in path_val.split(os.pathsep):
+        env["PATH"] = s + os.pathsep + path_val
+
+
 def _compose_build_env() -> dict[str, str]:
     """Build the env dict every subprocess inherits.
 
@@ -432,6 +473,7 @@ def _compose_build_env() -> dict[str, str]:
     py_bin = resolved_python_bin()
     if py_bin:
         prepend(str(Path(py_bin).parent))
+        _ensure_python3_on_path(py_bin, env)
     ninja_bin = resolved_ninja_bin()
     if ninja_bin:
         prepend(ninja_bin)
