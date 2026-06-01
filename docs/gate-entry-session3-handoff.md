@@ -15,8 +15,11 @@ Read this first, then [royal-seed-phase-a-findings.md](royal-seed-phase-a-findin
 > ROOT is not the direct holder.  capture #3 SETTLED: a wide BFS reachability
 > search from scene/g1/areaMgr (512 objs) found 0 references to the exit tree ⇒
 > the "find the holder by scanning" approach is EXHAUSTED (3 hypotheses
-> eliminated).  Build reverted to INERT/SAFE.  **NEXT SESSION: the PauseResult
-> data lever** (RE where the pause "Return to World Map" result is stored + read
+> eliminated).  **SHELVED: all gate-entry CODE was then reverted to `master` (both
+> gate-entry hooks + every probe removed → back to the 13-hook baseline,
+> redeployed); this handoff is now a DOCS-ONLY PR with zero code change.  RE
+> primitives are preserved in this doc + git history.**  **NEXT SESSION (if
+> resumed): the PauseResult data lever** (RE where the pause "Return to World Map" result is stored + read
 > by the persistent course sequence; set that field during play) — see "NEXT
 > SESSION" in the Session 6 update.  Read Session 5 first for the SETTLED
 > transient-tree context.  ⚠️ Bounce = 6 sessions; bridge auto-resolve already
@@ -1114,19 +1117,26 @@ machinery is proving to be deeply-isolated al framework.  The bridge-side
 Royal-Seed auto-resolve already fixes the actual user-facing bug, so the general
 Switch-side gate remains **not urgent** — weigh further investment accordingly.
 
-### Code / build state after session 6 (INERT/SAFE — resting state)
+### ✅ Code REMOVED / shelved (2026-05-31) — this is now a DOCS-ONLY PR
 
-- **Build is INERT/SAFE/PLAYABLE.**  ALL session-6 probe gates OFF
-  (`kHolderSearch=false`, `kG1CtrlDiag=false`, `kGrandparentOwnerProbe=false`)
-  plus all prior test constants OFF (`kBounceSmokeTest`, `kCourseOutSmokeTest`,
-  `kBlockAllCourseEntry`, `kForceCourseInForbidden=false`, `kTestGatedIdFb=-1`,
-  `kSeqPersistDiag=false`).  The three probe functions are **dead-code-eliminated**
-  (verified: their log strings absent from the ELF).  `exitCourseMgrBodyHook`'s
-  once-block falls through to the legacy `anchorSearch` (prior INERT behavior).
-  Banner: `gate-entry session-6 INERT/SAFE … next = PauseResult data lever`.
-  Deployed to `%APPDATA%\…\010015100b514000\smbwap\exefs\` from THIS worktree,
-  **hash-matched** (`subsdk9` 92069 B, `main.npdm` 1608 B).  Still **18 hooks**.
-- `switch-mod/src/main.cpp`: kept (all gated off, DCE'd) `grandparentOwnerProbe()`,
-  `dumpG1CourseSeqCtrl()`, `holderSearchWide()` for reference / easy re-enable;
-  `exitCourseMgrBodyHook`'s once-block branches holderSearch → g1 dump →
-  gpOwnerProbe → `anchorSearch` (all but the last gated off).  No new hooks.
+Per the shelve decision, **all gate-entry CODE was backed out** of
+`switch-mod/src/{main.cpp, probe/Gates.{cpp,hpp}}` — those three files were
+reverted to `origin/master` (verified byte-identical to master), so the PR
+carries **only this documentation** (`docs/gate-entry-session3-handoff.md` +
+`docs/royal-seed-phase-a-findings.md`) and **zero code change**.
+
+- **Removed:** the two gate-entry hooks (`exitCourseMgrBodyHook` on
+  `FUN_7101be3a5c`, `checkCourseInUiKeyGateHook` on `FUN_710022a964`) and the
+  three other Phase-A observability hooks added on this branch, plus every
+  gated-off probe (`grandparentOwnerProbe`, `dumpG1CourseSeqCtrl`,
+  `holderSearchWide`, `seqPersistDiag`, `anchorSearch`, the latch/bounce
+  primitives in `Gates.{cpp,hpp}`, and all `k*` test constants).
+- **Result:** the subsdk is back to the **13-hook `master` baseline** (banner
+  `Phase 2g: 13 hooks`).  Rebuilt + redeployed to
+  `%APPDATA%\…\010015100b514000\smbwap\exefs\`, **hash-matched** (`subsdk9`
+  87230 B, `main.npdm` 1608 B).  Verified: the binary contains none of
+  `EXIT_COURSE_MGR_BODY` / `PhaseB coursein_gate` / `session-6` / `gpOwnerProbe`.
+- **All the RE primitives + probe implementations are preserved here in the
+  docs and in this branch's git history** (commits `c3c26e1` + the session-5/6
+  commit, before the revert) — re-derive or cherry-pick from there if the work
+  is ever resumed via the PauseResult data lever above.
