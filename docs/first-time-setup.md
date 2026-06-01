@@ -27,22 +27,11 @@ git submodules, Archipelago pip deps) on first launch.
 4. Launch Archipelago — a new **SMBW Client** button appears in the
    Launcher.
 
-## Generate a multiworld
+## First-time setup
 
-Use Archipelago's normal seed-generation flow. The world's game name is
-**Super Mario Bros Wonder**. Per-player options are documented in the
-generated YAML template.
-
-Generation produces a `.smbwap` file per slot — that's the entry point
-for each player.
-
-## Launch SMBW Client
-
-Double-click your `.smbwap` file. The Archipelago Launcher resolves the
-extension and opens **SMBW Client** with your slot name pre-filled.
-
-If this is your first run, type `/setup` in the SMBW Client chat box.
-The setup wizard opens in a new window and walks through:
+Click the **SMBW Client** button in the Archipelago Launcher, then type
+`/setup` in the chat box. The setup wizard opens in a new window and
+walks through:
 
 1. **Probe** — detects which prerequisites are already installed.
 2. **Install** — auto-installs everything missing (CMake, Ninja, Python
@@ -61,6 +50,16 @@ The setup wizard opens in a new window and walks through:
 
 Re-run `/setup` any time to bump toolchains, re-deploy after a code
 update, or switch deploy targets.
+
+## Generate a multiworld
+
+Use Archipelago's normal seed-generation flow. The world's game name is
+**Super Mario Bros Wonder**. Per-player options are documented in the
+generated YAML template.
+
+Generation produces a `.smbwap` file per slot. Double-clicking it opens
+**SMBW Client** directly with your slot name pre-filled in the Connect
+bar, as a convenience for subsequent sessions.
 
 ## Play
 
