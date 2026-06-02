@@ -70,20 +70,69 @@ imported: `syms/100/sead/heap/seadHeapMgr.sym`, `seadExpHeap.sym`). Allocate the
 load-bearing ordering invariant that bit SMO seven times.
 
 ### RE item #2 — per-frame NVN command buffer + draw call-site (`drawDebugConsole()`)
-SMO got the command buffer from
-`Application::instance()->mDrawSystemInfo->drawContext->getCommandBuffer()
-->ToData()->pNvnCommandBuffer` and called `drawDebugConsole()` from the
-`HakoniwaSequence::drawMain` post-orig trampoline. SMBW has neither symbol.
-Find, in Ghidra (see the **smbw-reverse-engineering** skill):
-  1. SMBW's per-frame **render/present chokepoint** to trampoline (the analog of
-     `drawMain`), and call `smbwap::ui::drawDebugConsole()` from it. Do **not**
-     reuse `PlayerTickLatch` — it's a logic tick, not a render hook.
-  2. The current frame's **NVN command buffer**, and pass it to
-     `backend->draw(ImGui::GetDrawData(), <cmdbuf>)` (the commented line at the
-     bottom of `drawDebugConsole()`).
-A reference for the bare NVN bootstrap is the retired exlaunch code at
-`switch-mod/src/program/imgui_nvn.cpp` (the `nvnQueuePresentTexture` intercept) —
-but prefer LibHakkun's addon path, as SMO does, over reviving that.
+
+**Good news from prior art (2026-06): this is NOT a Wonder-specific RE problem.**
+The clean way to drive ImGui on any NVN Switch title is the **game-agnostic NVN
+present hook**, not a per-game draw function:
+
+  * Hook the SDK symbol `nvnBootstrapLoader` (resolvable via `installAtSym`,
+    tagged `@sdk` — same as SMO's `nvn.sym`).
+  * From it, intercept `nvnDeviceGetProcAddress`; when the game asks for
+    `nvnCommandBufferInitialize` / `nvnQueuePresentTexture`, capture the
+    `nvn::Device*` / `nvn::Queue*` / `nvn::CommandBuffer*` and return your own
+    `presentTexture` shim.
+  * Your `presentTexture` shim calls the ImGui draw **then** chains the original
+    present. Because it runs from the present call, you already hold the command
+    buffer — **no `HakoniwaSequence::drawMain` analog and no `Application`
+    struct walk are needed**. SMO only used Odyssey's `Application->...
+    ->getCommandBuffer()` for convenience; it is not the general pattern.
+
+So the `NOTE(imgui-overlay)` at `PlayerTickLatch` in main.cpp stands (don't draw
+from a logic tick), but the real call-site is the **present shim**, which you
+install yourself — there is nothing to find in Ghidra for the draw path.
+
+This exact pattern already lives in this repo's retired exlaunch tree, inherited
+from wondar (where ImGui-in-Wonder is proven — see "Prior art" below):
+
+  * `switch-mod/src/program/imgui_nvn.cpp` — `nvnBootstrapLoader` hook →
+    `nvnDeviceGetProcAddress` intercept → captures device/queue/cmdbuf →
+    `presentTexture()` shim calls `nvnImGui::procDraw()` then the original.
+  * `switch-mod/src/imgui_backend/imgui_impl_nvn.{cpp,hpp}` + `ImguiShaderCompiler`
+    + `MemoryBuffer`/`MemoryPoolMaker` — a complete self-contained NVN ImGui
+    backend (shaders, font texture, vtx/idx buffers).
+
+Two implementation options (pick one):
+
+  * **(A) LibHakkun addon renderer + present-hook plumbing.** Keep
+    `ApDebugConsole.cpp` as written against `hk::gfx::ImGuiBackendNvn`, but feed
+    its `draw(drawData, cmdBuf)` from a wondar-style present shim (LibHakkun's
+    `ImGuiBackendNvn` has **no auto-draw** — confirmed: `draw()` takes a
+    caller-supplied `cmdBuf`, and `installHooks(bool)`'s bool only controls
+    auto-*init*, not auto-draw). Capture `cmdBuf` via the GetProcAddress
+    intercept above. This is the smallest delta from what's committed.
+  * **(B) Port the retired exlaunch backend wholesale to hakkun.** Convert
+    `HOOK_DEFINE_TRAMPOLINE` / `InstallAtSymbol("nvnBootstrapLoader")` to
+    `HkTrampoline<…>::installAtSym<"nvnBootstrapLoader">()`, and have
+    `ApDebugConsole`'s render body call `nvnImGui::addDrawFunc(...)` instead of
+    `ImGuiBackendNvn`. Reuses Wonder-proven code; avoids LibHakkun's ImGui addon
+    (so HAKKUN_ADDONS would only need `Nvn`, or none, depending on shader path).
+
+### Prior art / reference implementations (from a 2026-06 web search)
+
+  * **`fruityloops1/wondar`** — the base project SMBW's `switch-mod` was forked
+    from; ships an ImGui-based in-game tool ("Peepa", `sd/Peepa/ImGuiData`). This
+    is the upstream origin of the retired `src/program/imgui_nvn.cpp` +
+    `src/imgui_backend/` here. **Proves ImGui rendering works in Wonder v1.0.0.**
+    (exlaunch-based.)
+  * **`Retinalogic/imgui-nvn`** — standalone, game-agnostic ImGui-for-NVN. Entry
+    points `nvnImguiInitialize` / `nvnImguiCalc` (per-frame, returns `ImDrawData`).
+    "Hooks nvn functions, so it might work with any executable." Confirms the
+    present-hook approach is title-independent.
+  * **`CraftyBoss/SMO-Exlaunch-Base`** / **`GLOSHSEP/s3_imgui_base`** (Splatoon 3)
+    — same NVN-present-hook lineage applied to other titles.
+  * LibHakkun addons live at `addons/{Nvn,ImGui,DebugRenderer}` upstream (→
+    `sys/addons/...` after submodule checkout); `ImGuiBackendNvn` is the class
+    `ApDebugConsole.cpp` is currently written against.
 
 ## Smoke test once wired
 Boot SMBW in Ryujinx with the **SMBW Client closed**: after ~10 s the overlay
