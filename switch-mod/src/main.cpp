@@ -38,6 +38,7 @@
 #include "probe/DeathLink.hpp"
 #include "probe/Gates.hpp"
 #include "probe/Gmd.hpp"
+#include "ui/ApDebugConsole.hpp"
 #include "util/Log.hpp"
 
 namespace nn::socket {
@@ -66,6 +67,13 @@ HkTrampoline<void, void*, const void*> gameFrameworkInitializeHook =
     hk::hook::trampoline(
         [](void* thisPtr, const void* arg) -> void {
             SMBWAP_LOG_INFO("hook: GameFrameworkInitialize fire (pre)");
+
+            // ImGui debug overlay: stamp the boot tick and (when the addon is
+            // compiled in) build the NVN backend pre-orig, before the engine
+            // fragments the heap / brings up NVN. This mirrors the load-bearing
+            // SMO pre-orig ordering invariant. No-op without the addon today;
+            // see docs/handoff-imgui-overlay.md for the two open RE items.
+            smbwap::ui::initDebugConsole();
 
             // Bring up nn::socket BEFORE Orig so our pool wins the
             // one-shot Initialize race (per the M4 legacy comment:
@@ -330,6 +338,14 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
     [](void* param_1, void* param_2) -> void {
         probe::serviceDeathLink(param_1);
         playerTickLatchHook.orig(param_1, param_2);
+        // NOTE(imgui-overlay): the ImGui debug overlay's per-frame draw is
+        // intentionally NOT driven from here. PlayerTickLatch is a player-
+        // logic tick, not a render hook — calling ImGui NewFrame/Render +
+        // backend->draw() from it (once SMBWAP_HAS_DEBUG_RENDERER is on) would
+        // render off the rendering chokepoint. The real call-site is an open
+        // RE item: find SMBW's per-frame NVN present/draw and call
+        // smbwap::ui::drawDebugConsole() from there. See
+        // docs/handoff-imgui-overlay.md (RE item #2).
     });
 
 // GameGoalReachedExecute @ NSO +0x0015b77a8.

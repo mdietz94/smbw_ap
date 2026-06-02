@@ -25,6 +25,7 @@ set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/main.cpp
     ${PROJECT_SOURCE_DIR}/src/util/Log.cpp
     ${PROJECT_SOURCE_DIR}/src/util/Json.cpp
+    ${PROJECT_SOURCE_DIR}/src/ui/ApDebugConsole.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApClient.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApDiscovery.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApFrameBridge.cpp
@@ -50,6 +51,28 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 # as dynamic relocations.
 target_link_options(${PROJECT_NAME} PRIVATE
     -Wl,--unresolved-symbols=ignore-all)
+
+# On-Switch ImGui debug overlay (src/ui/ApDebugConsole.cpp). Ported from
+# smo_archipelago. The Nvn/ImGui/DebugRenderer addons themselves are enabled
+# via HAKKUN_ADDONS in config/config.cmake (currently empty — see the comment
+# there). Here we only expose the include paths and gate the overlay's
+# rendering body with SMBWAP_HAS_DEBUG_RENDERER, so the build still works when
+# the lib/imgui + sys/addons submodules aren't checked out (the default). Two
+# RE items remain before this can be flipped on — see
+# docs/handoff-imgui-overlay.md.
+if(EXISTS ${CMAKE_SOURCE_DIR}/lib/imgui/imgui.h AND
+   EXISTS ${CMAKE_SOURCE_DIR}/sys/addons/ImGui/CMakeLists.txt)
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        lib/imgui
+        sys/addons/ImGui/include
+        sys/addons/Nvn/include
+        sys/addons/DebugRenderer/include
+    )
+    target_compile_definitions(${PROJECT_NAME} PRIVATE SMBWAP_HAS_DEBUG_RENDERER=1)
+    message(STATUS "smbwap: ImGui debug overlay include paths enabled")
+else()
+    message(STATUS "smbwap: ImGui overlay gated off (lib/imgui or sys/addons not present)")
+endif()
 
 include(sys/cmake/module.cmake)
 include(sys/cmake/deploy.cmake)
