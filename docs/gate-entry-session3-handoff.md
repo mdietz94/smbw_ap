@@ -17,10 +17,19 @@
 > entry (grace to pause+leave) and re-arms every ~10 s while they stay inside
 > without the item. The `BridgeState.in_course` flag (set on `course_in`,
 > cleared on `course_result`/`koopajr_result`) stops the loop the moment they
-> leave, so it never fires on the world map. Toggle:
-> `slot_data["level_entry_gating"]` (default on). This needs none of the
-> persistent course-sequence RE the rest of this doc hunts for — that hunt is
-> only required for a *non-lethal* bounce.
+> leave, so it never fires on the world map. The gate arms even when NOT
+> connected to AP (anti-cheat: you can't dodge it by playing offline).
+> Toggle: `slot_data["level_entry_gating"]` (default on). This needs none of
+> the persistent course-sequence RE the rest of this doc hunts for — that
+> hunt is only required for a *non-lethal* bounce.
+>
+> Relatedly, the bridge **no longer overwrites Royal Seeds on the Switch at
+> all** (the old `SetRoyalSeedsAbsolute` push on ReceivedItems / HelloMsg /
+> 2 s tick is gone) — Royal Seed state is vanilla-owned, and the death-gate
+> above is what enforces AP logic at Bowser. `send_set_royal_seeds_absolute`
+> survives only as a manual `/send_royal_seeds [mask]` client command
+> (defaults to forcing all 6) for when the death-gate needs a manual
+> override.
 
 Authoritative handoff for the next agent on the **AP-controlled course-entry
 gating** feature (block entry to chosen courses/palaces under AP state).

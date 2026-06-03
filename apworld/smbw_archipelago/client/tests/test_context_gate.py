@@ -138,12 +138,19 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.ctx._gate_kill_task)
         self.ctx.lan_server.send_kill.assert_not_called()
 
-    async def test_not_connected_does_not_arm(self):
+    async def test_not_connected_still_arms_anticheat(self):
+        # Anti-cheat: a player who isn't connected to AP must still be
+        # gated -- otherwise they could sequence-break offline.  With no
+        # recorded item, the requirement is unmet, so the loop arms.
         self.ctx.slot = None  # not connected
         self._enter(self.BADGE_STAGE)
-        await self.ctx.handle_gate_entered(self._badge_gate())
-        self.assertIsNone(self.ctx._gate_kill_task)
-        self.ctx.lan_server.send_kill.assert_not_called()
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._badge_gate())
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(
+                self.ctx.lan_server.send_kill.call_count, 1)
+            self.state.mark_course_exited()
 
     async def test_gating_disabled_does_not_arm(self):
         self.ctx.entry_gating_enabled = False

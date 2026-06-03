@@ -104,10 +104,10 @@ class TestContextRoyalSeedAutoEmit(unittest.IsolatedAsyncioTestCase):
     async def test_royal_seed_receipt_sends_location_check(self):
         await self.ctx._handle_received_items(
             {"items": [{"item": self.W1_SEED_ITEM_ID}]})
-        # SetRoyalSeedsAbsolute still flows -- the absolute push wasn't
-        # disturbed.
-        self.ctx.lan_server.send_set_royal_seeds_absolute.assert_called_once()
-        # And a LocationChecks message for the W1 palace fires.
+        # Royal Seeds are vanilla-owned now: receiving the item must NOT
+        # push a SetRoyalSeedsAbsolute to the Switch.
+        self.ctx.lan_server.send_set_royal_seeds_absolute.assert_not_called()
+        # But the auto-resolve of the W1 palace LocationCheck still fires.
         sent = [c.args[0] for c in self.ctx.send_msgs.await_args_list]
         loc_checks = [
             msg[0] for msg in sent

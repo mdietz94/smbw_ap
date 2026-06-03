@@ -418,16 +418,40 @@ class SMBWCommandProcessor(ClientCommandProcessor):
         self.output(f"probe log path: {BADGE_PROBE_LOG_PATH}")
         return True
 
-    def _cmd_replay_seeds(self) -> bool:
-        """Push the current absolute Royal Seed mask to the Switch.
-        Useful for forcing a sync without waiting for the next 2 s tick
-        (e.g. after a save-reload during testing)."""
-        ctx = self.ctx
-        lan = getattr(ctx, "lan_server", None)
+    def _cmd_send_royal_seeds(self, mask_spec: str = "") -> bool:
+        """Force Royal Seeds onto the Switch (container-B bools).
+
+        Royal Seeds are normally VANILLA-owned -- the bridge does not
+        sync them, and AP enforces the final-Bowser gate by killing a
+        player who enters without the seeds.  This is the manual escape
+        hatch if that ever misbehaves: it writes an absolute 6-bit mask
+        to the Switch, granting set bits and clearing unset ones.
+
+        Usage:
+          ``/send_royal_seeds``        -> force ALL 6 (mask 0x3F)
+          ``/send_royal_seeds 0x3f``   -> explicit mask (hex or int)
+          ``/send_royal_seeds 0``      -> clear all 6
+
+        Bit N = world N+1 (bit 0 = W1 ... bit 5 = W6), matching
+        ``royal_seed_table``.
+        """
+        lan = getattr(self.ctx, "lan_server", None)
         if lan is None:
             self.output("ERROR: lan_server not wired")
             return True
-        mask = ctx._recompute_royal_seed_mask()
+        if not mask_spec:
+            mask = 0x3F  # all 6
+        else:
+            try:
+                mask = int(mask_spec, 0)
+            except ValueError:
+                self.output(f"ERROR: can't parse mask {mask_spec!r} as integer")
+                return True
+            if not (0 <= mask <= 0x3F):
+                self.output(
+                    f"ERROR: mask 0x{mask:x} out of range [0, 0x3F] "
+                    f"(only 6 Royal Seeds exist)")
+                return True
         lan.send_set_royal_seeds_absolute(mask)
         self.output(
             f"-> set_royal_seeds_absolute mask=0x{mask:02x} "

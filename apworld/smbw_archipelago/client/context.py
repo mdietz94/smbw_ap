@@ -445,19 +445,21 @@ class SMBWContext(CommonContext):
 
         new_mask = self._recompute_badge_mask()
         new_seed_counts = self._recompute_wonder_seed_counts()
+        # Royal Seeds are deliberately NOT pushed to the Switch any more
+        # -- the vanilla game owns Royal Seed state (world-map UI,
+        # final-castle access).  AP enforcement of "don't enter Bowser
+        # without the seeds" is handled by the level-entry death-gate
+        # instead, which reads the AP-granted count below.
         new_royal_seed_mask = self._recompute_royal_seed_mask()
         new_ws_bits_lo, new_ws_bits_hi = self._recompute_wonder_seed_bits()
         if self.lan_server is not None:
             log.info(
-                "ReceivedItems: badge mask now 0x%x, royal_seed mask 0x%x, "
-                "wonder_seed counts=%s, wonder_seed bits=(0x%x, 0x%x)",
+                "ReceivedItems: badge mask now 0x%x, royal_seed mask 0x%x "
+                "(not pushed; vanilla-owned), wonder_seed counts=%s, "
+                "wonder_seed bits=(0x%x, 0x%x)",
                 new_mask, new_royal_seed_mask, new_seed_counts,
                 new_ws_bits_lo, new_ws_bits_hi)
             self.lan_server.send_set_badges_absolute(new_mask)
-            # Idempotent absolute-overwrite: AP is the sole authority
-            # over container-B Royal Seed bools (same pattern as
-            # badges).  Switch loops the 6 hashes per bit.
-            self.lan_server.send_set_royal_seeds_absolute(new_royal_seed_mask)
             # Idempotent absolute-overwrite: AP is the sole authority
             # over the per-world Wonder Seed counts (same pattern as
             # badges).  Switch routes via current-world hash 0x9f5ead3c.
@@ -471,9 +473,8 @@ class SMBWContext(CommonContext):
         else:
             log.debug(
                 "no lan_server bound; not forwarding badge mask 0x%x / "
-                "royal_seed mask 0x%x / wonder_seed counts=%s / "
-                "wonder_seed bits=(0x%x, 0x%x)",
-                new_mask, new_royal_seed_mask, new_seed_counts,
+                "wonder_seed counts=%s / wonder_seed bits=(0x%x, 0x%x)",
+                new_mask, new_seed_counts,
                 new_ws_bits_lo, new_ws_bits_hi)
 
         for it in items:
@@ -516,18 +517,15 @@ class SMBWContext(CommonContext):
                 continue
             if royal_seed_table.is_royal_seed_item(item_name):
                 log.debug(
-                    "royal seed item received: %r (id=%s) -- covered by "
-                    "SetRoyalSeedsAbsolute push", item_name, item_id)
+                    "royal seed item received: %r (id=%s) -- Switch state "
+                    "now vanilla-owned (no push)", item_name, item_id)
                 # Auto-resolve the matching "<World> Palace - Royal Seed"
-                # location at grant time.  Why: setting the container-B
-                # seed bool flips the world-map UI to "cleared", so the
-                # player has no in-game reason to re-enter the palace --
-                # the PALACE_CLEAR PlayReport that normally fires the
-                # check never arrives.  See
-                # ``docs/royal-seed-check-loss-re-plan.md`` for the RE
-                # plan to find a path that fires the check naturally;
-                # this is the short-term unblock that keeps the AP
-                # location resolvable.
+                # location at grant time.  Belt-and-braces now that Royal
+                # Seeds are vanilla-owned: the player CAN re-enter the
+                # palace and clearing it fires the natural PALACE_CLEAR
+                # check, but resolving here too (deduped by
+                # ``emit_check``) guards against an AP-routed seed whose
+                # palace the player never re-clears.
                 stage_key = royal_seed_table.palace_stage_key_for_item(
                     item_name)
                 if stage_key is not None:
@@ -621,15 +619,14 @@ class SMBWContext(CommonContext):
         if not self.entry_gating_enabled:
             return
 
-        # Only enforce once connected: before ``Connected`` populates
-        # ``items_received`` we can't tell whether the player owns the
-        # gating item, and must not kill them on a false negative.
-        if self.slot is None:
-            log.debug(
-                "gate entered stage_key=0x%08x but not connected to AP; "
-                "not arming kill", ev.stage_key & 0xFFFFFFFF)
-            return
-
+        # Deliberately NOT gated on being connected to AP: a player who
+        # disconnects (or never connects) must NOT be able to sequence-
+        # break into gated content offline.  When not connected,
+        # items_received reflects the last-known AP state (empty on a
+        # fresh start), so an offline player with no recorded item is
+        # treated as not owning it -- and gets bounced.  Reconnecting
+        # and receiving the item satisfies the requirement on the next
+        # loop iteration.
         if self._gate_requirement_met(ev):
             log.info(
                 "entered gated stage_key=0x%08x (%s req=%d); requirement "
