@@ -105,6 +105,19 @@ void drainInbound();
 // probe::pushWonderSeedOverride).
 std::uint32_t getWonderSeedCount(std::uint32_t bucket);
 
+// Open-world mode (2026-06): bit position of the Castle/Bowser route in
+// the routable-world mask.  Worlds W1..W6 occupy bits 0..5, Petal Isles
+// bit 6, Special bit 7; the Castle is bit 8.  Mirrors
+// wire.SetRoutableWorldsAbsoluteMsg.CASTLE_BIT on the client.
+inline constexpr std::uint32_t kCastleMaskBit = 8;
+
+// Read the AP-authoritative routable-world mask cached by drainInbound on
+// SetRoutableWorldsAbsolute.  Bit N (AP-bucket order) set == that world is
+// routable from the start; bit kCastleMaskBit set == Castle/Bowser route
+// open.  0 == open-world inactive (the FUN_7100935ce0 hook no-ops).  Safe
+// from any thread; read from the game-thread predicate trampoline.
+std::uint32_t getRoutableWorldMask();
+
 }  // namespace smbwap::ap
 
 // Forward declarations for the grant primitives that live in main.cpp's

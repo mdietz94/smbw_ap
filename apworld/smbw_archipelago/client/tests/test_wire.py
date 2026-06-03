@@ -27,6 +27,7 @@ from ..wire import (
     PongMsg,
     ProtocolError,
     SetBadgesAbsoluteMsg,
+    SetRoutableWorldsAbsoluteMsg,
     SetRoyalSeedsAbsoluteMsg,
     decode,
     encode,
@@ -120,6 +121,19 @@ class TestRoundTrip(unittest.TestCase):
     def test_set_royal_seeds_absolute_full_mask(self):
         # All 6 seeds granted.
         self._round_trip(SetRoyalSeedsAbsoluteMsg(mask=0x3F))
+
+    def test_set_routable_worlds_zero(self):
+        # 0 == open-world inactive (Switch hook no-ops).
+        self._round_trip(SetRoutableWorldsAbsoluteMsg(mask=0))
+
+    def test_set_routable_worlds_active_set(self):
+        # W1 + W3 + W5 routable.
+        self._round_trip(SetRoutableWorldsAbsoluteMsg(mask=(1 << 0) | (1 << 2) | (1 << 4)))
+
+    def test_set_routable_worlds_with_castle_bit(self):
+        # Active worlds + Castle/Bowser unlocked.
+        self._round_trip(SetRoutableWorldsAbsoluteMsg(
+            mask=0x15 | (1 << SetRoutableWorldsAbsoluteMsg.CASTLE_BIT)))
 
     def test_grant_hash_keyed_royal_seed_w1(self):
         self._round_trip(GrantHashKeyedMsg(hash=0x55815859, value=1))
@@ -460,6 +474,25 @@ class TestDecodeErrors(unittest.TestCase):
         # 64 is one past 2**6; rejected (only 6 Royal Seed bits valid).
         with self.assertRaises(ProtocolError) as cm:
             decode(b'{"t":"set_royal_seeds_absolute","mask":64}\n')
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_set_routable_worlds_missing_mask(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"set_routable_worlds"}\n')
+        self.assertIn("mask", str(cm.exception))
+
+    def test_set_routable_worlds_bool_mask(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"set_routable_worlds","mask":true}\n')
+
+    def test_set_routable_worlds_negative_mask(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(b'{"t":"set_routable_worlds","mask":-1}\n')
+        self.assertIn("out of range", str(cm.exception))
+
+    def test_set_routable_worlds_mask_above_u16(self):
+        with self.assertRaises(ProtocolError) as cm:
+            decode(f'{{"t":"set_routable_worlds","mask":{1 << 16}}}\n'.encode())
         self.assertIn("out of range", str(cm.exception))
 
     def test_grant_hash_keyed_missing_hash(self):

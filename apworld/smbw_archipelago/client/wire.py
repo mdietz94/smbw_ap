@@ -441,6 +441,55 @@ class SetRoyalSeedsAbsoluteMsg:
 
 
 @dataclass(frozen=True)
+class SetRoutableWorldsAbsoluteMsg:
+    """Bridge -> Switch.  Open-world mode: AP-authoritative set of worlds
+    routable on the overworld FROM THE START (2026-06).
+
+    ``mask`` bit N == the world with AP bucket N is routable: bit 0 = W1,
+    ..., bit 5 = W6, bit 6 = Petal Isles, bit 7 = Special.  Bit 8
+    (``CASTLE_BIT``) == the Castle / Bowser route is open -- set by the
+    client once enough palaces are cleared, alongside a
+    ``SetRoyalSeedsAbsolute(0x3F)`` that actually opens the vanilla route.
+
+    Switch-side: ``ApFrameBridge::drainInbound`` caches the mask in
+    ``g_routable_world_mask``; the ``FUN_7100935ce0`` (NSO +0x935ce0)
+    trampoline forces a true return for any world whose bit is set, so it
+    becomes routable, passing through to the original predicate otherwise.
+    A mask of 0 means "open-world inactive" -- the Switch hook no-ops and
+    vanilla world-unlock behavior is byte-identical.
+
+    Idempotent absolute-overwrite, sent on the same triggers as
+    :class:`SetBadgesAbsoluteMsg`: every ReceivedItems, every Switch
+    HelloMsg (replay-on-reconnect), and the periodic ~2 s tick.
+
+    9 meaningful bits; range is ``[0, 2**16)`` for headroom (the Switch
+    decodes it as a u16).
+    """
+
+    T = "set_routable_worlds"
+
+    # Bit position of the Castle/Bowser route in the mask.  Mirrors
+    # ``kCastleMaskBit`` in ApFrameBridge.hpp.
+    CASTLE_BIT: int = 8
+
+    mask: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "mask": self.mask}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetRoutableWorldsAbsoluteMsg:
+        raw = d.get("mask")
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            raise ProtocolError(
+                f"set_routable_worlds.mask must be int, got {raw!r}")
+        if not (0 <= raw < (1 << 16)):
+            raise ProtocolError(
+                f"set_routable_worlds.mask out of range [0, 2**16): {raw}")
+        return cls(mask=raw)
+
+
+@dataclass(frozen=True)
 class SetWonderSeedCountsMsg:
     """Bridge -> Switch.  AP-authoritative Wonder Seed gate override.
 
@@ -814,6 +863,7 @@ WireMsg = (
     | PlayReportWireMsg
     | SetBadgesAbsoluteMsg
     | SetRoyalSeedsAbsoluteMsg
+    | SetRoutableWorldsAbsoluteMsg
     | GrantHashKeyedMsg
     | IncrementHashKeyedMsg
     | SetWonderSeedCountsMsg
@@ -837,6 +887,7 @@ _FROM_WIRE: dict[str, Any] = {
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     SetRoyalSeedsAbsoluteMsg.T: SetRoyalSeedsAbsoluteMsg.from_wire,
+    SetRoutableWorldsAbsoluteMsg.T: SetRoutableWorldsAbsoluteMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,
     SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,

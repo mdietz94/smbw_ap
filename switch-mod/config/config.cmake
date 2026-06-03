@@ -37,18 +37,20 @@ set(BAKE_SYMBOLS FALSE)
 # ships embedded shaders + self-contained NVN bindings — no SD card, no glslc,
 # no exlaunch backend port. The ImGui addon depends on Nvn.
 #
-# Gate the addons on lib/imgui being checked out: the ImGui addon's CMakeLists
-# FATAL_ERRORs without it, and CMakeLists.txt likewise gates
-# SMBWAP_HAS_DEBUG_RENDERER on imgui.h existing. So with the submodule absent
-# (the default for CI / fresh clones) NO addon is enabled and the live build is
-# byte-for-byte unchanged; checking out switch-mod/lib/imgui opts the overlay in.
+# The overlay is now a MANDATORY part of the build (maintainer decision
+# 2026-06): the Nvn + ImGui addons are always enabled and
+# SMBWAP_HAS_DEBUG_RENDERER is always defined (see CMakeLists.txt).  There is
+# no "build without it" path — switch-mod/lib/imgui must be checked out
+# (`git submodule update --init switch-mod/lib/imgui`).  We FATAL_ERROR below
+# if it's missing rather than silently shipping an overlay-less build.
 #
 # USE_SAIL stays FALSE: the PlayReport hooks in src/main.cpp already prove
 # installAtSym<mangled>() resolves SDK symbols at runtime via hk::ro::lookupSymbol
 # under HK_DISABLE_SAIL, so the nvnBootstrapLoader @sdk symbol resolves the same
 # way — no VersionList.sym population needed.
-if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/../lib/imgui/imgui.h)
-    set(HAKKUN_ADDONS Nvn ImGui)
-else()
-    set(HAKKUN_ADDONS )
+if(NOT EXISTS ${CMAKE_CURRENT_LIST_DIR}/../lib/imgui/imgui.h)
+    message(FATAL_ERROR
+        "switch-mod/lib/imgui is not checked out, but the debug overlay is "
+        "mandatory. Run: git submodule update --init switch-mod/lib/imgui")
 endif()
+set(HAKKUN_ADDONS Nvn ImGui)

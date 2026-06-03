@@ -724,6 +724,72 @@ HkTrampoline<unsigned long long, long, unsigned*, unsigned>
             return result;
         });
 
+// =========================================================================
+// OPEN-WORLD ROUTABILITY OVERRIDE
+// =========================================================================
+//
+// FUN_7100935ce0 @ NSO +0x935ce0 -- per-world overworld-routability
+// predicate.  `bool FUN(uint32_t world_val)`.  The accessible-worlds
+// evaluator at +0x480f20 calls it 8x (world_vals 1,3,4,5,6,7,2,9 ==
+// AP buckets 0..7) and tests bit 0 of each result to build the routable
+// world list.  Castle (world_val 8) is intentionally never queried there.
+//
+// Open-world mode: drainInbound caches an AP-authoritative routable-world
+// mask (g_routable_world_mask, AP-bucket-bit indexed).  This trampoline
+// forces a `true` return for any world whose bit is set, so those worlds
+// are routable from the start; otherwise it passes through to orig() so
+// vanilla progression still works for un-forced worlds and for every
+// non-open-world session (mask == 0 -> no-op, byte-identical to vanilla).
+//
+// PROLOGUE SAFETY: +0x935ce0 is `sub/stp/stp/stp` then `adrp` at +0x14.
+// The relocator patches the first 4 instructions ((0x935ce0+8)&7==0 ->
+// count=4), all clean -- the adrp is never touched.  Direct hook is safe.
+//
+// world_val -> AP bucket is the inverse of kWorldValToBucket; Castle
+// (world_val 8) maps to kCastleMaskBit explicitly.
+HkTrampoline<bool, unsigned> worldRoutableHook = hk::hook::trampoline(
+    [](unsigned world_val) -> bool {
+        const bool orig_result = worldRoutableHook.orig(world_val);
+
+        // Gate like the WS reader substitute: only override once a save
+        // is loaded.  No scene-transition gate -- this is a pure read
+        // substitution with no game-memory write.
+        if (!probe::isSaveLoaded()) return orig_result;
+
+        const std::uint32_t mask = smbwap::ap::getRoutableWorldMask();
+        if (mask == 0) return orig_result;  // open-world inactive
+
+        // world_val -> AP-bucket bit.  Castle (8) -> kCastleMaskBit.
+        static constexpr signed char kWorldValToBucket[10] = {
+            -1, 0, 6, 1, 2, 3, 4, 5, /*8=Castle*/ -1, 7,
+        };
+        int bit = -1;
+        if (world_val == 8) {
+            bit = static_cast<int>(smbwap::ap::kCastleMaskBit);
+        } else if (world_val <= 9 && kWorldValToBucket[world_val] >= 0) {
+            bit = kWorldValToBucket[world_val];
+        }
+
+        if (bit >= 0 && (mask & (1u << bit))) {
+            // Rate-limited observability (saturating-CAS budget, same idiom
+            // as the WS reader substitute) so we don't flood the log on
+            // every world-map refresh.
+            static std::atomic<int32_t> log_budget{32};
+            int32_t b = log_budget.load(std::memory_order_relaxed);
+            while (b > 0 && !log_budget.compare_exchange_weak(
+                       b, b - 1, std::memory_order_relaxed)) {
+            }
+            if (b > 0) {
+                SMBWAP_LOG_INFO(
+                    "WorldRoutable force-true world_val=%u bit=%d orig=%d "
+                    "mask=0x%03x",
+                    world_val, bit, orig_result ? 1 : 0, mask);
+            }
+            return true;
+        }
+        return orig_result;
+    });
+
 void installHook(const char* name, ::ptr offset, hk::Result rc) {
     if (rc.failed()) {
         SMBWAP_LOG_ERROR("install %s @ +0x%lx FAILED rc=0x%x",
@@ -748,7 +814,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2g: 13 hooks + ap/ subsystem + real probe:: grants + WS reader override");
+    SMBWAP_LOG_INFO("Phase 2g: 14 hooks + ap/ subsystem + real probe:: grants + WS reader override + open-world routability");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -788,6 +854,13 @@ extern "C" void hkMain() {
     // WONDER SEED GATE OVERRIDE (reader-side substitution)
     installHook("ContainerAReader",    0x0012ae94,
                 containerAReaderHook.installAtMainOffset(0x0012ae94));
+
+    // OPEN-WORLD ROUTABILITY OVERRIDE -- forces FUN_7100935ce0(world_val)
+    // true for worlds in the AP-authoritative routable mask.  No-op until
+    // the bridge sends a non-zero SetRoutableWorldsAbsolute, so vanilla
+    // world-unlock behavior is unchanged for non-open-world seeds.
+    installHook("WorldRoutable",       0x00935ce0,
+                worldRoutableHook.installAtMainOffset(0x00935ce0));
 
     // DEBUG OVERLAY: NVN present-hook chain that drives the ImGui overlay.
     // No-op unless built with SMBWAP_HAS_DEBUG_RENDERER (see CMakeLists.txt

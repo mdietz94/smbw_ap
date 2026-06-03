@@ -493,6 +493,9 @@ void ApClient::handleLine(char* line, std::size_t len) {
     static bool        s_have_ws_bits = false;
     static std::uint64_t s_last_ws_lo  = 0;
     static std::uint64_t s_last_ws_hi  = 0;
+    // 2026-06 -- open-world routable-world mask dedup.
+    static bool          s_have_routable = false;
+    static std::uint16_t s_last_routable = 0;
     switch (msg.kind) {
         case InboundKind::HelloAck:
             SMBWAP_LOG_INFO(
@@ -507,6 +510,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
             s_have_seeds  = false;
             s_have_counts = false;
             s_have_ws_bits = false;
+            s_have_routable = false;
             return;
         case InboundKind::SetBadgesAbsolute: {
             const std::uint64_t bits = msg.set_badges_absolute.bits;
@@ -681,6 +685,25 @@ void ApClient::handleLine(char* line, std::size_t len) {
             if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping SetWonderSeedCounts");
+            }
+            return;
+        }
+        case InboundKind::SetRoutableWorldsAbsolute: {
+            // 2026-06 -- open-world routability.  drainInbound caches into
+            // g_routable_world_mask; the FUN_7100935ce0 trampoline forces
+            // matching worlds routable.
+            const std::uint16_t mask = msg.set_routable_worlds_absolute.mask;
+            if (!s_have_routable || mask != s_last_routable) {
+                SMBWAP_LOG_INFO(
+                    "[grant] received SetRoutableWorldsAbsolute(mask=0x%03x), "
+                    "enqueued", static_cast<unsigned>(mask));
+                s_last_routable = mask;
+                s_have_routable = true;
+            }
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
+                SMBWAP_LOG_WARN(
+                    "[ring] inbound full; dropping SetRoutableWorldsAbsolute"
+                    "(mask=0x%03x)", static_cast<unsigned>(mask));
             }
             return;
         }

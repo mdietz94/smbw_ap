@@ -195,6 +195,7 @@ _DRAIN_INCREMENTS: _DrainIncrementsSentinel = _DrainIncrementsSentinel()
 GrantMsg = (
     wire.SetBadgesAbsoluteMsg
     | wire.SetRoyalSeedsAbsoluteMsg
+    | wire.SetRoutableWorldsAbsoluteMsg
     | wire.GrantHashKeyedMsg
     | wire.IncrementHashKeyedMsg
     | wire.SetWonderSeedCountsMsg
@@ -202,6 +203,18 @@ GrantMsg = (
     | wire.KillMsg
     | _DrainIncrementsSentinel
 )
+
+
+# Open-world mode (2026-06) providers, analogs of :data:`BadgeMaskProvider`.
+# ``RoutableWorldsProvider`` returns the AP-authoritative routable-world
+# mask (see :class:`wire.SetRoutableWorldsAbsoluteMsg`); 0 means open-world
+# is inactive and the Switch hook no-ops.  ``OpenWorldRoyalSeedProvider``
+# returns the Royal-Seed mask to force once Bowser is unlocked, or ``None``
+# to skip (the non-open-world default, where the vanilla game owns Royal
+# Seeds).  Both are replayed on HelloMsg + the periodic tick so the
+# open-world state survives Switch reboots / save reloads.
+RoutableWorldsProvider = Callable[[], int]
+OpenWorldRoyalSeedProvider = Callable[[], "int | None"]
 
 
 class LanServer:
@@ -229,6 +242,8 @@ class LanServer:
         badge_mask_provider: BadgeMaskProvider | None = None,
         wonder_seed_counts_provider: WonderSeedCountsProvider | None = None,
         wonder_seed_bits_provider: WonderSeedBitsProvider | None = None,
+        routable_worlds_provider: RoutableWorldsProvider | None = None,
+        open_world_royal_seed_provider: OpenWorldRoyalSeedProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
@@ -238,6 +253,8 @@ class LanServer:
         self._badge_mask_provider = badge_mask_provider
         self._wonder_seed_counts_provider = wonder_seed_counts_provider
         self._wonder_seed_bits_provider = wonder_seed_bits_provider
+        self._routable_worlds_provider = routable_worlds_provider
+        self._open_world_royal_seed_provider = open_world_royal_seed_provider
 
         self._server: asyncio.base_events.Server | None = None
 
@@ -372,6 +389,30 @@ class LanServer:
             log.error(
                 "send_set_royal_seeds_absolute(mask=0x%x): outbound queue "
                 "full; dropping", mask)
+
+    def send_set_routable_worlds(self, mask: int) -> None:
+        """Enqueue a SetRoutableWorldsAbsolute (open-world routability) to
+        the active Switch client.  ``mask`` bit N = AP-bucket-N world is
+        routable (bit 0 = W1 ... bit 5 = W6, bit 8 = Castle/Bowser).  A
+        mask of 0 means open-world is inactive and the Switch hook no-ops.
+
+        Same drop-on-no-client semantics as
+        :meth:`send_set_badges_absolute`; the next HelloMsg re-pushes via
+        :meth:`_push_routable_worlds_now` so a dropped tick is recovered
+        on reconnect."""
+        msg = wire.SetRoutableWorldsAbsoluteMsg(mask=mask)
+        if self._send_queue is None:
+            log.warning(
+                "send_set_routable_worlds(mask=0x%x): no Switch client "
+                "connected; dropping", mask)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug("send_set_routable_worlds: enqueued mask=0x%x", mask)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_routable_worlds(mask=0x%x): outbound queue full; "
+                "dropping", mask)
 
     def send_kill(self, source: str, cause: str) -> None:
         """Enqueue a Kill (M3.8 DeathLink inbound) to the active Switch.
@@ -646,6 +687,13 @@ class LanServer:
             # live state) re-applies AP's canonical bitfield within
             # one round-trip.
             self._push_wonder_seed_bits_now()
+            # Open-world (2026-06): re-assert which worlds are routable
+            # from the start (+ the Castle bit once Bowser is unlocked)
+            # and, once unlocked, re-force all Royal Seeds.  Replay-on-
+            # HelloMsg so the open-world state survives Switch reboots /
+            # save reloads.  No-ops when open-world is inactive.
+            self._push_routable_worlds_now()
+            self._push_open_world_royal_seeds_now()
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -883,6 +931,41 @@ class LanServer:
             return
         self.send_set_wonder_seeds_absolute(int(bits_lo), int(bits_hi))
 
+    def _push_routable_worlds_now(self) -> None:
+        """Pull the AP-known routable-world mask from the provider and
+        enqueue a ``SetRoutableWorldsAbsoluteMsg``.  No-op if no provider
+        was wired (non-open-world clients) or no client is connected.
+        Called from HelloMsg dispatch, the per-ReceivedItems push (via
+        :meth:`send_set_routable_worlds` directly in
+        ``SMBWContext._handle_received_items``), and the periodic tick."""
+        if self._routable_worlds_provider is None:
+            return
+        try:
+            mask = int(self._routable_worlds_provider())
+        except Exception:
+            log.exception("routable_worlds_provider raised; skipping sync")
+            return
+        self.send_set_routable_worlds(mask)
+
+    def _push_open_world_royal_seeds_now(self) -> None:
+        """Open-world only: once Bowser is unlocked, re-force the Royal
+        Seeds (the provider returns the mask to set, or ``None`` to skip).
+        No-op when no provider was wired or the provider returns ``None``
+        (the non-open-world default, where the vanilla game owns Royal
+        Seeds).  Replayed on HelloMsg + tick so the unlocked Castle route
+        survives Switch reboots / save reloads."""
+        if self._open_world_royal_seed_provider is None:
+            return
+        try:
+            mask = self._open_world_royal_seed_provider()
+        except Exception:
+            log.exception(
+                "open_world_royal_seed_provider raised; skipping sync")
+            return
+        if mask is None:
+            return
+        self.send_set_royal_seeds_absolute(int(mask))
+
     async def _idempotent_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
         current AP-known badge mask, Royal Seed mask, AND per-world
@@ -899,9 +982,13 @@ class LanServer:
             while True:
                 await asyncio.sleep(BADGE_SYNC_INTERVAL_SEC)
                 self._push_badge_sync_now()
-                # Royal Seeds intentionally not synced -- vanilla-owned.
+                # Royal Seeds intentionally not synced -- vanilla-owned
+                # (except open-world, where _push_open_world_royal_seeds_now
+                # re-forces them once Bowser is unlocked).
                 self._push_wonder_seeds_now()
                 self._push_wonder_seed_bits_now()
+                self._push_routable_worlds_now()
+                self._push_open_world_royal_seeds_now()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -938,6 +1025,7 @@ class LanServer:
         last_royal_seeds_mask: int | None = None
         last_wonder_seed_counts: tuple[int, ...] | None = None
         last_wonder_seed_bits: tuple[int, int] | None = None
+        last_routable_worlds_mask: int | None = None
         try:
             while True:
                 msg = await queue.get()
@@ -998,6 +1086,11 @@ class LanServer:
                                 "-> set_royal_seeds_absolute mask=0x%x",
                                 msg.mask)
                             last_royal_seeds_mask = msg.mask
+                    elif isinstance(msg, wire.SetRoutableWorldsAbsoluteMsg):
+                        if msg.mask != last_routable_worlds_mask:
+                            log.info(
+                                "-> set_routable_worlds mask=0x%x", msg.mask)
+                            last_routable_worlds_mask = msg.mask
                     elif isinstance(msg, wire.SetWonderSeedsAbsoluteMsg):
                         tup = (msg.bits_lo, msg.bits_hi)
                         if tup != last_wonder_seed_bits:

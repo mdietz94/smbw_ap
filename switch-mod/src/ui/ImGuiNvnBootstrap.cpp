@@ -65,6 +65,11 @@ nvn::QueuePresentTextureFunc         s_origPresentTexture = nullptr;
 nvn::CommandBufferSetTexturePoolFunc s_origSetTexturePool = nullptr;
 nvn::CommandBufferSetSamplerPoolFunc s_origSetSamplerPool = nullptr;
 nvn::WindowSetCropFunc               s_origWindowSetCrop  = nullptr;
+// Finalize originals — hooked so we can drop our captured Queue/CommandBuffer
+// pointers the instant the game tears them down (see the scene-transition
+// crash note on s_drawArmed below).
+nvn::CommandBufferFinalizeFunc       s_origCmdBufFinalize = nullptr;
+nvn::QueueFinalizeFunc               s_origQueueFinalize  = nullptr;
 
 // Draw-gate state. init-readiness (the backend/context/atlas are up) is NOT
 // the same as draw-readiness (it is actually safe to record + submit a frame),
@@ -251,13 +256,55 @@ NVNboolean queueInitShim(nvn::Queue* queue, const nvn::QueueBuilder* builder) {
     return result;
 }
 
+// Rate-limited lifecycle logging (saturating-CAS budget, same idiom as the WS
+// reader substitute) so a chatty boot/transition doesn't flood the log.
+bool lifecycleLogBudget() {
+    static std::atomic<int32_t> budget{64};
+    int32_t b = budget.load(std::memory_order_relaxed);
+    while (b > 0 && !budget.compare_exchange_weak(b, b - 1, std::memory_order_relaxed)) {}
+    return b > 0;
+}
+
 NVNboolean cmdBufInitShim(nvn::CommandBuffer* buffer, nvn::Device* device) {
     NVNboolean result = s_origCmdBufInit(buffer, device);
+    nvn::CommandBuffer* prev = s_cmdBuf;
     s_cmdBuf = buffer;
+    if (prev != buffer && lifecycleLogBudget()) {
+        SMBWAP_LOG_INFO("[overlay] cmdBufInit: s_cmdBuf %p -> %p", prev, buffer);
+    }
     if (!s_imguiInited.load(std::memory_order_acquire)) {
         if (initImGui()) s_imguiInited.store(true, std::memory_order_release);
     }
     return result;
+}
+
+// The game finalizes (and later re-initializes) its command buffer / queue at
+// scene transitions — notably title -> save-data selector. Our captured
+// s_cmdBuf / s_queue would then dangle, and because overlayDrawReady() latches
+// s_drawArmed after warm-up it no longer re-validates them, so procDraw()'s
+// next s_cmdBuf->BeginRecording() faulted inside the NVN driver on the
+// Presentation Thread (null deref, confirmed at presentTextureShim+0xb0).
+// Dropping the pointer the moment the game finalizes it makes procDraw()'s
+// null-guard skip cleanly until cmdBufInitShim captures the replacement.
+void cmdBufFinalizeShim(nvn::CommandBuffer* buffer) {
+    if (buffer == s_cmdBuf) {
+        s_cmdBuf = nullptr;
+        if (lifecycleLogBudget()) {
+            SMBWAP_LOG_INFO("[overlay] cmdBufFinalize: dropped captured s_cmdBuf %p "
+                            "(overlay pauses until re-init)", buffer);
+        }
+    }
+    s_origCmdBufFinalize(buffer);
+}
+
+void queueFinalizeShim(nvn::Queue* queue) {
+    if (queue == s_queue) {
+        s_queue = nullptr;
+        if (lifecycleLogBudget()) {
+            SMBWAP_LOG_INFO("[overlay] queueFinalize: dropped captured s_queue %p", queue);
+        }
+    }
+    s_origQueueFinalize(queue);
 }
 
 nvn::GenericFuncPtrFunc getProcShim(nvn::Device* device, const char* procName) {
@@ -285,6 +332,14 @@ nvn::GenericFuncPtrFunc getProcShim(nvn::Device* device, const char* procName) {
     if (std::strcmp(procName, "nvnQueuePresentTexture") == 0) {
         s_origPresentTexture = reinterpret_cast<nvn::QueuePresentTextureFunc>(ptr);
         return reinterpret_cast<nvn::GenericFuncPtrFunc>(&presentTextureShim);
+    }
+    if (std::strcmp(procName, "nvnCommandBufferFinalize") == 0) {
+        s_origCmdBufFinalize = reinterpret_cast<nvn::CommandBufferFinalizeFunc>(ptr);
+        return reinterpret_cast<nvn::GenericFuncPtrFunc>(&cmdBufFinalizeShim);
+    }
+    if (std::strcmp(procName, "nvnQueueFinalize") == 0) {
+        s_origQueueFinalize = reinterpret_cast<nvn::QueueFinalizeFunc>(ptr);
+        return reinterpret_cast<nvn::GenericFuncPtrFunc>(&queueFinalizeShim);
     }
     return ptr;
 }

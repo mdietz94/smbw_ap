@@ -74,6 +74,12 @@ GAME_NAME = "Super Mario Bros Wonder"
 GOAL_LOCATION_NAME_BOWSER = "PI: Bowser's Rage Stage - Royal Seed"
 
 
+# Open-world: bit position of the Castle/Bowser route in the routable-
+# world mask (see wire.SetRoutableWorldsAbsoluteMsg.CASTLE_BIT and the
+# Switch-side kCastleMaskBit).  Worlds W1..W6 occupy bits 0..5.
+ROUTABLE_CASTLE_BIT = 8
+
+
 # Level-entry gate (kill the player if they sequence-broke into a course
 # AP logic gates).  The Switch can't physically block course entry, so
 # the bridge waits ``GATE_KILL_DELAY_S`` after entry -- enough grace for
@@ -176,6 +182,18 @@ class SMBWContext(CommonContext):
         # or paste the snippet from `/badge_status` somewhere durable.
         self._badge_probe_invalid: set[int] = set()
 
+        # Open-world mode (2026-06).  ``open_world`` flips on when the
+        # apworld ships a non-empty ``open_world_active`` list in
+        # slot_data; ``open_world_active`` holds the active world numbers
+        # (1-6) and ``palaces_required`` the Royal-Seed threshold that
+        # unlocks Bowser.  ``_bowser_opened`` latches once the threshold
+        # is met so we force all Royal Seeds + the Castle route exactly
+        # once (then keep re-asserting on reconnect via the providers).
+        self.open_world: bool = False
+        self.open_world_active: list[int] = []
+        self.palaces_required: int = 0
+        self._bowser_opened: bool = False
+
     # ---- AP lifecycle overrides ---------------------------------------
 
     async def server_auth(self, password_requested: bool = False) -> None:
@@ -251,6 +269,27 @@ class SMBWContext(CommonContext):
                     "level_entry_gating: %s (from slot_data)",
                     "ENABLED" if eg else "disabled")
             self.entry_gating_enabled = eg
+
+            # Open-world mode.  The apworld injects ``open_world_active``
+            # (the random active world set) and ``palaces_required`` into
+            # slot_data; a non-empty list turns the mode on.  Reset the
+            # one-shot Bowser latch -- the ReceivedItems that follows
+            # Connected re-evaluates the threshold and re-opens if met.
+            active = slot_data.get("open_world_active") or []
+            self.open_world_active = [int(n) for n in active if isinstance(n, int)]
+            self.open_world = bool(self.open_world_active)
+            self.palaces_required = int(slot_data.get("palaces_required") or 0)
+            self._bowser_opened = False
+            if self.open_world:
+                log.info(
+                    "open-world: active worlds=%s palaces_required=%d",
+                    self.open_world_active, self.palaces_required)
+                # Push routable worlds right away so they open even before
+                # the first item arrives (idempotent; the provider also
+                # replays on HelloMsg + tick).
+                if self.lan_server is not None:
+                    self.lan_server.send_set_routable_worlds(
+                        self._recompute_routable_worlds_mask())
 
             # Tell the AP server the player is in-game so item routing
             # starts flowing.  ClientStatus.CLIENT_PLAYING.
@@ -440,6 +479,34 @@ class SMBWContext(CommonContext):
             mask |= (1 << bit)
         return mask
 
+    def _recompute_routable_worlds_mask(self) -> int:
+        """Open-world: return the AP-authoritative routable-world mask --
+        bit N-1 set per active world N (bit 0 = W1 ... bit 5 = W6), plus
+        the Castle bit once Bowser is unlocked.  Returns 0 when open-world
+        is inactive, which the Switch hook treats as a no-op (vanilla
+        world-unlock behavior).  Side-effect-free; wired as the LanServer
+        ``routable_worlds_provider`` so it replays on HelloMsg + tick."""
+        if not self.open_world:
+            return 0
+        mask = 0
+        for n in self.open_world_active:
+            if 1 <= n <= 6:
+                mask |= (1 << (n - 1))
+        if self._bowser_opened:
+            mask |= (1 << ROUTABLE_CASTLE_BIT)
+        return mask
+
+    def _open_world_royal_seed_mask(self) -> int | None:
+        """Open-world: once Bowser is unlocked, return the Royal-Seed mask
+        to force (all six, so the vanilla Castle route opens); otherwise
+        ``None`` to skip.  Wired as the LanServer
+        ``open_world_royal_seed_provider`` so the unlocked route survives
+        reconnects.  ``None`` outside open-world preserves the default
+        where the vanilla game owns Royal Seeds."""
+        if self.open_world and self._bowser_opened:
+            return royal_seed_table.ALL_MASK
+        return None
+
     async def _handle_received_items(self, args: dict) -> None:
         items = args.get("items", []) or []
 
@@ -470,6 +537,21 @@ class SMBWContext(CommonContext):
             # bits to match.
             self.lan_server.send_set_wonder_seeds_absolute(
                 new_ws_bits_lo, new_ws_bits_hi)
+            # Open-world: once the player has cleared enough active-world
+            # palaces, force all Royal Seeds (opens the vanilla Castle
+            # route) and flag the Castle routable.  One-shot; the
+            # providers keep re-asserting it on reconnect.
+            if self.open_world and not self._bowser_opened:
+                owned = bin(new_royal_seed_mask).count("1")
+                if owned >= self.palaces_required:
+                    self._bowser_opened = True
+                    log.info(
+                        "open-world: %d/%d palaces cleared -> unlocking Bowser",
+                        owned, self.palaces_required)
+                    self.lan_server.send_set_royal_seeds_absolute(
+                        royal_seed_table.ALL_MASK)
+                    self.lan_server.send_set_routable_worlds(
+                        self._recompute_routable_worlds_mask())
         else:
             log.debug(
                 "no lan_server bound; not forwarding badge mask 0x%x / "
