@@ -61,9 +61,9 @@ target_link_options(${PROJECT_NAME} PRIVATE
 # trampoline and feeds the backend; we do NOT use the addon's auto-hook path.
 # See docs/handoff-imgui-overlay.md for the chosen-approach writeup.
 #
-# The rendering body is gated by SMBWAP_HAS_DEBUG_RENDERER so the build still
-# works when lib/imgui isn't checked out (the default — config.cmake then
-# enables no addons and this whole block is skipped).
+# The overlay is MANDATORY (maintainer decision 2026-06): SMBWAP_HAS_DEBUG_RENDERER
+# is always defined. config.cmake FATAL_ERRORs if lib/imgui is missing, so by the
+# time we get here imgui.h exists.
 #
 # The main TUs that #include "imgui.h" (ApDebugConsole.cpp + ImGuiNvnBootstrap)
 # MUST compile imgui with the SAME config the ImGui addon uses, or the ImGuiIO /
@@ -72,22 +72,23 @@ target_link_options(${PROJECT_NAME} PRIVATE
 # IMGUI_USER_CONFIG=<addon>/include/hk/gfx/ImGuiConfig.h; mirror both here. The
 # addon include dir (for hk/gfx/ImGuiBackendNvn.h) is added to this target by
 # enable_addons() in sys/cmake/module.cmake.
-if(EXISTS ${CMAKE_SOURCE_DIR}/lib/imgui/imgui.h)
-    # lib/imgui for "imgui.h"; sys/addons/Nvn/include/hk so the addon's NVN
-    # headers can resolve their own internal "nvn/..." includes (enable_addons
-    # only puts each addon's include/ root on this target, not include/hk —
-    # that's only added to the addon's own build).
-    target_include_directories(${PROJECT_NAME} PRIVATE
-        lib/imgui
-        ${CMAKE_SOURCE_DIR}/sys/addons/Nvn/include/hk)
-    target_compile_definitions(${PROJECT_NAME} PRIVATE
-        SMBWAP_HAS_DEBUG_RENDERER=1
-        IMGUI_DISABLE_DEFAULT_ALLOCATORS
-        IMGUI_USER_CONFIG="${CMAKE_SOURCE_DIR}/sys/addons/ImGui/include/hk/gfx/ImGuiConfig.h")
-    message(STATUS "smbwap: ImGui debug overlay ENABLED (lib/imgui present, LibHakkun NVN backend)")
-else()
-    message(STATUS "smbwap: ImGui overlay gated off (lib/imgui not checked out)")
+if(NOT EXISTS ${CMAKE_SOURCE_DIR}/lib/imgui/imgui.h)
+    message(FATAL_ERROR
+        "switch-mod/lib/imgui missing — the debug overlay is mandatory. "
+        "Run: git submodule update --init switch-mod/lib/imgui")
 endif()
+# lib/imgui for "imgui.h"; sys/addons/Nvn/include/hk so the addon's NVN
+# headers can resolve their own internal "nvn/..." includes (enable_addons
+# only puts each addon's include/ root on this target, not include/hk —
+# that's only added to the addon's own build).
+target_include_directories(${PROJECT_NAME} PRIVATE
+    lib/imgui
+    ${CMAKE_SOURCE_DIR}/sys/addons/Nvn/include/hk)
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    SMBWAP_HAS_DEBUG_RENDERER=1
+    IMGUI_DISABLE_DEFAULT_ALLOCATORS
+    IMGUI_USER_CONFIG="${CMAKE_SOURCE_DIR}/sys/addons/ImGui/include/hk/gfx/ImGuiConfig.h")
+message(STATUS "smbwap: ImGui debug overlay ENABLED (mandatory; LibHakkun NVN backend)")
 
 include(sys/cmake/module.cmake)
 include(sys/cmake/deploy.cmake)
