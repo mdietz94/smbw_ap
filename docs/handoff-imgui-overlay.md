@@ -1,141 +1,101 @@
 # Handoff — on-Switch ImGui debug overlay (port from smo_archipelago)
 
-Ports SMO's `ApDebugConsole` to SMBW: a Dear ImGui overlay that pops up on the
-TV when the PC-side **SMBW Client** bridge has been unreachable for >5 s, showing
-the connection state + the tail of the in-memory log ring, and hides instantly
-when the bridge reconnects. Same idea as SMO's overlay (LibHakkun `Nvn`/`ImGui`/
-`DebugRenderer` addons + Dear ImGui).
+An ImGui overlay that pops up on the TV when the PC-side **SMBW Client** bridge
+has been unreachable for >5 s, showing the connection state + the tail of the
+in-memory log ring, and hides instantly when the bridge reconnects. Same idea
+as SMO's `ApDebugConsole`.
 
-## What landed in this branch (portable, build-safe)
+## Chosen approach: Option B — game-agnostic NVN present hook
 
-These compile and ship today; they change **nothing** in the live build because
-the rendering body is gated behind `SMBWAP_HAS_DEBUG_RENDERER`, which CMake only
-defines when the addon submodules are present (they aren't yet).
+A 2026-06 web search settled the architecture. ImGui-in-Wonder is already proven
+(`fruityloops1/wondar` ships an ImGui tool, "Peepa"; this repo's `switch-mod`
+was forked from wondar), and the draw path is **title-independent**: hook the
+SDK symbol `nvnBootstrapLoader`, intercept `nvnDeviceGetProcAddress`, capture the
+NVN Device/Queue/CommandBuffer, and swap `nvnQueuePresentTexture` for a shim that
+draws ImGui each frame then chains the original present. **No Wonder-specific
+draw function or `Application`-struct walk is needed** — the present shim already
+holds the live command buffer. (SMO only used Odyssey's `Application->drawContext`
+for convenience; it is not the general pattern.)
 
-- `switch-mod/src/ui/ApDebugConsole.{cpp,hpp}` — the overlay. Ported 1:1 from
-  SMO with these SMBW adaptations:
-  - **Clock:** SMBW dropped `ApState::nowMs()`, so ms is derived from
-    `hk::svc::getSystemTick() / 19'200` (19.2 MHz ARM generic timer — the same
-    rate `probe/Gates.cpp` and `probe/DeathLink.cpp` already use).
-  - **Connection signal:** read straight off `ap::connState()` (`== Ready`)
-    each frame; the disconnect timestamp is self-latched in the draw loop. No
-    `ApClient` edit, fully self-contained (SMO used an explicit
-    `notifyConnectChange()` callback — not needed here).
-  - **Discovery panel dropped:** SMBW's `ApDiscovery` exposes only
-    `resolveBridge()`, no `DiscoveryReport` snapshot, so the overlay shows
-    connection + log only.
-- `switch-mod/src/ui/EmbeddedFontKarla.hpp` — Karla-Regular TTF (OFL 1.1) as a
-  byte array, copied verbatim from SMO (namespace `smbwap::ui`). Atlas swap
-  replaces the blurry 13px ProggyClean bitmap with crisp 22px Karla.
-- `switch-mod/CMakeLists.txt` — adds `ApDebugConsole.cpp` to the source list and
-  a gated include block: if `lib/imgui/imgui.h` **and** `sys/addons/ImGui/
-  CMakeLists.txt` exist, it adds the imgui + addon include dirs and defines
-  `SMBWAP_HAS_DEBUG_RENDERER=1`; otherwise it prints a "gated off" status.
-- `switch-mod/src/main.cpp` — `smbwap::ui::initDebugConsole()` is now the first
-  statement of the `GameFrameworkInitialize` **pre-orig** lambda (stamps the
-  boot tick + builds the backend pre-orig when the addon is on — mirrors SMO's
-  load-bearing pre-orig ordering). A `NOTE(imgui-overlay)` at `PlayerTickLatch`
-  documents why the per-frame draw is *not* wired there.
+## What landed in this branch (build-safe, behavior-neutral)
 
-With the addon off, `initDebugConsole()` just stamps a tick + logs one line, and
-`drawDebugConsole()` is a no-op. The live build is byte-for-byte unaffected in
-behavior.
+All of this compiles + ships today and changes nothing in the live build: the
+renderer body is gated behind `SMBWAP_HAS_DEBUG_RENDERER`, which CMake defines
+only when `lib/imgui` is checked out (it isn't by default).
+
+- **`src/ui/ApDebugConsole.{cpp,hpp}`** — the overlay content + visibility gate.
+  - Visibility: `(since_boot > 5s) AND (!connected) AND (since_disconnect > 5s)`.
+  - Clock from `hk::svc::getSystemTick() / 19'200` (SMBW has no `ApState::nowMs()`).
+  - Connection read straight off `ap::connState() == Ready`, disconnect tick
+    self-latched in the draw loop (no `ApClient` edit).
+  - **Widget-only**: `drawDebugConsole()` emits the ImGui window but does NOT
+    call NewFrame/Render — the present shim owns the frame lifecycle.
+- **`src/ui/ImGuiNvnBootstrap.{cpp,hpp}`** — the NVN present-hook glue, ported
+  from the retired exlaunch `src/program/imgui_nvn.cpp` to hakkun:
+  `HOOK_DEFINE_TRAMPOLINE`/`InstallAtSymbol` → `HkTrampoline` +
+  `installAtSym<"nvnBootstrapLoader">()`. Captures Device/Queue/CommandBuffer via
+  the GetProcAddress intercepts; the `presentTextureShim` runs `procDraw()`
+  (`ImguiNvnBackend::newFrame` → `ImGui::NewFrame` → `drawDebugConsole()` →
+  `ImGui::Render` → `ImguiNvnBackend::renderDrawData`) then chains the original.
+  Drops the HID input-disable hooks (display-only) and the drawQueue (calls the
+  overlay directly); ImGui allocator uses malloc/free instead of exlaunch's
+  `nn::init::GetAllocator()`.
+- **`src/ui/EmbeddedFontKarla.hpp`** — Karla TTF (OFL 1.1), loaded in `initImGui`.
+- **`CMakeLists.txt`** — adds both sources; defines `SMBWAP_HAS_DEBUG_RENDERER`
+  when `lib/imgui/imgui.h` exists.
+- **`main.cpp`** — `initDebugConsole()` (stamps the boot tick) in the
+  `GameFrameworkInitialize` pre-orig hook; `installNvnImGuiHooks()` in `hkMain`.
+  Both are no-ops without the gate.
 
 ## What's left (needs the toolchain + a Switch/Ryujinx — can't be done in CI)
 
-### 0. Build-config flips (`switch-mod/config/config.cmake`)
-```cmake
-set(USE_SAIL TRUE)                                # NVN symbols need sail
-set(HAKKUN_ADDONS HeapSourceDynamic Nvn ImGui DebugRenderer)
-```
-and check out the submodules:
-```sh
-git submodule update --init --recursive switch-mod/sys switch-mod/lib/imgui
-```
-(`switch-mod/sys` = LibHakkun, `switch-mod/lib/imgui` = Dear ImGui, `docking`
-branch per `.gitmodules`.) Confirm LibHakkun's pinned commit actually ships
-`sys/addons/{Nvn,ImGui,DebugRenderer}/` — SMO pins LibHakkun to a `main` commit
-that has them; SMBW's pin may need bumping to match. Add an `nvn.sym`
-(`nvnBootstrapLoader`, tagged `@sdk`) under `switch-mod/syms/` like SMO's, and
-install the bootstrap hook in `hkMain`:
-`hk::gfx::ImGuiBackendNvn::instance()->installHooks(false);`
+The bootstrap glue + overlay are complete. The one substantial remaining piece is
+**bringing the NVN renderer backend into the hakkun build** — the bootstrap calls
+`ImguiNvnBackend::{InitBackend,newFrame,renderDrawData}`, which today live only in
+the retired exlaunch tree at `src/imgui_backend/` (`imgui_impl_nvn.cpp`,
+`ImguiShaderCompiler`, `MemoryBuffer`, `MemoryPoolMaker`). Porting it requires:
 
-### RE item #1 — ImGui heap source (`ensureSetup()` in ApDebugConsole.cpp)
-SMBW is **not** the Odyssey `al::` engine, so `al::getStationedHeap()` does not
-exist. `ensureSetup()` has a `parent = nullptr` placeholder with a TODO. Wire it
-to SMBW's sead root/stationed heap — most likely
-`sead::HeapMgr::instance()->getRootHeap(0)` (the relevant symbols are already
-imported: `syms/100/sead/heap/seadHeapMgr.sym`, `seadExpHeap.sym`). Allocate the
-2 MiB ExpHeap pre-orig (before the engine fragments the heap) — this is the
-load-bearing ordering invariant that bit SMO seven times.
+1. **NVN SDK headers.** `imgui_impl_nvn` + the bootstrap include `nvn_Cpp.h` /
+   `nvn_CppFuncPtrImpl.h` / `nvn_CppMethods.h`. These are **not in the repo**.
+   Source them from LibHakkun's `addons/Nvn` (preferred — it vendors NVN
+   bindings) or a vendored NVN header set, and add the include path to the gated
+   CMake block (alongside `src/imgui_backend` and `src/glslc`).
+2. **Shaders without the SD card.** `ImguiShaderCompiler` runtime-compiles GLSL
+   via `glslc` and reads the shader files off the SD card (`FsHelper`). Either
+   keep that (ship the shader files) or, cleaner, precompile + embed the control
+   binary the way LibHakkun's ImGui addon does.
+3. **De-exlaunch the backend.** Replace `EXL_ASSERT`/`EXL_ABORT`, `lib.hpp`,
+   `nn::init::GetAllocator()`, and the `helpers/` (fsHelper, InputHelper) deps
+   with hakkun/std equivalents (malloc/free is already wired in the bootstrap).
+4. **Build config** (`config/config.cmake`): `set(USE_SAIL TRUE)` and add the NVN
+   addon to `HAKKUN_ADDONS` (e.g. `Nvn`); init the submodule
+   (`git submodule update --init switch-mod/lib/imgui`). Confirm `nvnBootstrapLoader`
+   resolves — it's an `@sdk` symbol; under HK_DISABLE_SAIL `installAtSym` resolves
+   it via `hk::ro::lookupSymbol`, so verify nnSdk exports it (or add a `.sym`).
 
-### RE item #2 — per-frame NVN command buffer + draw call-site (`drawDebugConsole()`)
+### Alternative renderer: LibHakkun's `ImGuiBackendNvn`
+Instead of porting the exlaunch backend you could point `procDraw()` at
+LibHakkun's `hk::gfx::ImGuiBackendNvn` (vendored NVN bindings + embedded shaders,
+no SD dependency). Caveat confirmed from its header: it has **no auto-draw**
+(`draw(drawData, cmdBuf)` takes a caller-supplied command buffer — feed it our
+captured `s_cmdBuf`), and it installs its **own** `nvnBootstrapLoader` hook via
+`installHooks()`, which would collide with ours — so you'd either use its hooks
+*or* ours, not both, and reconcile how it receives the device. Trade-off: less
+code to port, but an unresolved device-handoff/double-hook question vs. the
+exlaunch backend, whose `InitBackend({device,queue,cmdBuf})` matches our captured
+trio exactly.
 
-**Good news from prior art (2026-06): this is NOT a Wonder-specific RE problem.**
-The clean way to drive ImGui on any NVN Switch title is the **game-agnostic NVN
-present hook**, not a per-game draw function:
-
-  * Hook the SDK symbol `nvnBootstrapLoader` (resolvable via `installAtSym`,
-    tagged `@sdk` — same as SMO's `nvn.sym`).
-  * From it, intercept `nvnDeviceGetProcAddress`; when the game asks for
-    `nvnCommandBufferInitialize` / `nvnQueuePresentTexture`, capture the
-    `nvn::Device*` / `nvn::Queue*` / `nvn::CommandBuffer*` and return your own
-    `presentTexture` shim.
-  * Your `presentTexture` shim calls the ImGui draw **then** chains the original
-    present. Because it runs from the present call, you already hold the command
-    buffer — **no `HakoniwaSequence::drawMain` analog and no `Application`
-    struct walk are needed**. SMO only used Odyssey's `Application->...
-    ->getCommandBuffer()` for convenience; it is not the general pattern.
-
-So the `NOTE(imgui-overlay)` at `PlayerTickLatch` in main.cpp stands (don't draw
-from a logic tick), but the real call-site is the **present shim**, which you
-install yourself — there is nothing to find in Ghidra for the draw path.
-
-This exact pattern already lives in this repo's retired exlaunch tree, inherited
-from wondar (where ImGui-in-Wonder is proven — see "Prior art" below):
-
-  * `switch-mod/src/program/imgui_nvn.cpp` — `nvnBootstrapLoader` hook →
-    `nvnDeviceGetProcAddress` intercept → captures device/queue/cmdbuf →
-    `presentTexture()` shim calls `nvnImGui::procDraw()` then the original.
-  * `switch-mod/src/imgui_backend/imgui_impl_nvn.{cpp,hpp}` + `ImguiShaderCompiler`
-    + `MemoryBuffer`/`MemoryPoolMaker` — a complete self-contained NVN ImGui
-    backend (shaders, font texture, vtx/idx buffers).
-
-Two implementation options (pick one):
-
-  * **(A) LibHakkun addon renderer + present-hook plumbing.** Keep
-    `ApDebugConsole.cpp` as written against `hk::gfx::ImGuiBackendNvn`, but feed
-    its `draw(drawData, cmdBuf)` from a wondar-style present shim (LibHakkun's
-    `ImGuiBackendNvn` has **no auto-draw** — confirmed: `draw()` takes a
-    caller-supplied `cmdBuf`, and `installHooks(bool)`'s bool only controls
-    auto-*init*, not auto-draw). Capture `cmdBuf` via the GetProcAddress
-    intercept above. This is the smallest delta from what's committed.
-  * **(B) Port the retired exlaunch backend wholesale to hakkun.** Convert
-    `HOOK_DEFINE_TRAMPOLINE` / `InstallAtSymbol("nvnBootstrapLoader")` to
-    `HkTrampoline<…>::installAtSym<"nvnBootstrapLoader">()`, and have
-    `ApDebugConsole`'s render body call `nvnImGui::addDrawFunc(...)` instead of
-    `ImGuiBackendNvn`. Reuses Wonder-proven code; avoids LibHakkun's ImGui addon
-    (so HAKKUN_ADDONS would only need `Nvn`, or none, depending on shader path).
-
-### Prior art / reference implementations (from a 2026-06 web search)
-
-  * **`fruityloops1/wondar`** — the base project SMBW's `switch-mod` was forked
-    from; ships an ImGui-based in-game tool ("Peepa", `sd/Peepa/ImGuiData`). This
-    is the upstream origin of the retired `src/program/imgui_nvn.cpp` +
-    `src/imgui_backend/` here. **Proves ImGui rendering works in Wonder v1.0.0.**
-    (exlaunch-based.)
-  * **`Retinalogic/imgui-nvn`** — standalone, game-agnostic ImGui-for-NVN. Entry
-    points `nvnImguiInitialize` / `nvnImguiCalc` (per-frame, returns `ImDrawData`).
-    "Hooks nvn functions, so it might work with any executable." Confirms the
-    present-hook approach is title-independent.
-  * **`CraftyBoss/SMO-Exlaunch-Base`** / **`GLOSHSEP/s3_imgui_base`** (Splatoon 3)
-    — same NVN-present-hook lineage applied to other titles.
-  * LibHakkun addons live at `addons/{Nvn,ImGui,DebugRenderer}` upstream (→
-    `sys/addons/...` after submodule checkout); `ImGuiBackendNvn` is the class
-    `ApDebugConsole.cpp` is currently written against.
+## Prior art / reference implementations
+- **`fruityloops1/wondar`** — base project `switch-mod` was forked from; ships
+  ImGui-in-Wonder ("Peepa"). Origin of `src/program/imgui_nvn.cpp` +
+  `src/imgui_backend/`. (exlaunch.)
+- **`Retinalogic/imgui-nvn`** — standalone game-agnostic ImGui-for-NVN.
+- **`CraftyBoss/SMO-Exlaunch-Base`** / **`GLOSHSEP/s3_imgui_base`** — same
+  NVN-present-hook lineage on other titles.
+- **`fruityloops1/LibHakkun`** `addons/{Nvn,ImGui,DebugRenderer}` — maintained
+  alternative backend (`ImGuiBackendNvn`).
 
 ## Smoke test once wired
 Boot SMBW in Ryujinx with the **SMBW Client closed**: after ~10 s the overlay
-should appear showing `Bridge: DISCONNECTED` + the recent `[smbwap ...]` log
-tail. Launch the client; on bridge `Ready` the overlay should vanish within a
-frame. (Mirrors SMO's overlay smoke test.)
+should appear (`Bridge: DISCONNECTED` + the recent `[smbwap ...]` log tail).
+Launch the client; on bridge `Ready` the overlay should vanish within a frame.

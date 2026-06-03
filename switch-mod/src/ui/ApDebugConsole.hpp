@@ -24,30 +24,31 @@
 //
 // The rendering body is guarded by SMBWAP_HAS_DEBUG_RENDERER. That macro is
 // only defined by CMake when BOTH lib/imgui and LibHakkun's ImGui/Nvn addons
-// are present (see switch-mod/CMakeLists.txt). Until the overlay's NVN
-// backend wiring is finished (see docs/handoff-imgui-overlay.md — the two
-// open RE items: the ImGui heap source and the per-frame NVN command-buffer
-// chokepoint), the macro stays undefined and init()/draw() compile to the
-// cheap no-op paths so the live build is unchanged.
+// are present (see switch-mod/CMakeLists.txt). Until the NVN renderer backend
+// is finished (see docs/handoff-imgui-overlay.md), the macro stays undefined
+// and init()/draw() compile to the cheap no-op paths so the live build is
+// unchanged.
+//
+// Frame ownership (Option B / wondar lineage): the per-frame ImGui lifecycle
+// (NewFrame / Render / renderDrawData) is owned by the NVN present hook in
+// ImGuiNvnBootstrap.cpp. drawDebugConsole() is called by that shim between
+// NewFrame and Render and emits widgets only.
 
 #pragma once
 
 namespace smbwap::ui {
 
-// One-time init. Stamps the boot tick used by the visibility gate, and (when
-// SMBWAP_HAS_DEBUG_RENDERER is defined) creates the ImGui heap + initializes
-// the NVN backend. MUST be called pre-orig from an early-init hook, before the
-// engine fragments the heap (mirrors the load-bearing SMO pre-orig invariant).
-// Safe to call when the backend isn't compiled in (just stamps + logs).
+// One-time init. Stamps the boot tick the visibility gate keys off of. The
+// ImGui context + NVN backend are created lazily by the present hook
+// (ImGuiNvnBootstrap.cpp), not here. Safe to call when the backend isn't
+// compiled in (just stamps + logs). Wired pre-orig from an early-init hook.
 void initDebugConsole();
 
-// Per-frame entry. Samples ap::connState() + the log ring and renders the
-// overlay if the visibility conditions are met. Cheap when hidden — early
-// returns before any ImGui calls. No-op unless SMBWAP_HAS_DEBUG_RENDERER.
-//
-// NOTE (open RE item): this must be driven from SMBW's real per-frame NVN
-// present/draw chokepoint. PlayerTickLatch is a logic tick, not a render
-// hook — see docs/handoff-imgui-overlay.md.
+// Per-frame overlay entry, called by the NVN present shim between
+// ImGui::NewFrame() and ImGui::Render(). Samples ap::connState() + the log
+// ring and emits the overlay window if the visibility conditions are met —
+// widgets only, no frame-lifecycle calls. Cheap when hidden. No-op unless
+// SMBWAP_HAS_DEBUG_RENDERER.
 void drawDebugConsole();
 
 }  // namespace smbwap::ui

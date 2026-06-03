@@ -26,6 +26,7 @@ set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/util/Log.cpp
     ${PROJECT_SOURCE_DIR}/src/util/Json.cpp
     ${PROJECT_SOURCE_DIR}/src/ui/ApDebugConsole.cpp
+    ${PROJECT_SOURCE_DIR}/src/ui/ImGuiNvnBootstrap.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApClient.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApDiscovery.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApFrameBridge.cpp
@@ -52,26 +53,20 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_link_options(${PROJECT_NAME} PRIVATE
     -Wl,--unresolved-symbols=ignore-all)
 
-# On-Switch ImGui debug overlay (src/ui/ApDebugConsole.cpp). Ported from
-# smo_archipelago. The Nvn/ImGui/DebugRenderer addons themselves are enabled
-# via HAKKUN_ADDONS in config/config.cmake (currently empty — see the comment
-# there). Here we only expose the include paths and gate the overlay's
-# rendering body with SMBWAP_HAS_DEBUG_RENDERER, so the build still works when
-# the lib/imgui + sys/addons submodules aren't checked out (the default). Two
-# RE items remain before this can be flipped on — see
-# docs/handoff-imgui-overlay.md.
-if(EXISTS ${CMAKE_SOURCE_DIR}/lib/imgui/imgui.h AND
-   EXISTS ${CMAKE_SOURCE_DIR}/sys/addons/ImGui/CMakeLists.txt)
-    target_include_directories(${PROJECT_NAME} PRIVATE
-        lib/imgui
-        sys/addons/ImGui/include
-        sys/addons/Nvn/include
-        sys/addons/DebugRenderer/include
-    )
+# On-Switch ImGui debug overlay (src/ui/ApDebugConsole.cpp +
+# src/ui/ImGuiNvnBootstrap.cpp). Ported from smo_archipelago + the retired
+# wondar/exlaunch NVN path. The overlay's rendering body is gated by
+# SMBWAP_HAS_DEBUG_RENDERER so the build still works when lib/imgui isn't
+# checked out (the default) and while the NVN renderer backend
+# (src/imgui_backend/) is still being ported off exlaunch — see
+# docs/handoff-imgui-overlay.md for the remaining backend work and the extra
+# include paths it will need (src/imgui_backend, NVN SDK headers, src/glslc).
+if(EXISTS ${CMAKE_SOURCE_DIR}/lib/imgui/imgui.h)
+    target_include_directories(${PROJECT_NAME} PRIVATE lib/imgui)
     target_compile_definitions(${PROJECT_NAME} PRIVATE SMBWAP_HAS_DEBUG_RENDERER=1)
-    message(STATUS "smbwap: ImGui debug overlay include paths enabled")
+    message(STATUS "smbwap: ImGui debug overlay ENABLED (lib/imgui present)")
 else()
-    message(STATUS "smbwap: ImGui overlay gated off (lib/imgui or sys/addons not present)")
+    message(STATUS "smbwap: ImGui overlay gated off (lib/imgui not checked out)")
 endif()
 
 include(sys/cmake/module.cmake)

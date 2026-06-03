@@ -39,6 +39,7 @@
 #include "probe/Gates.hpp"
 #include "probe/Gmd.hpp"
 #include "ui/ApDebugConsole.hpp"
+#include "ui/ImGuiNvnBootstrap.hpp"
 #include "util/Log.hpp"
 
 namespace nn::socket {
@@ -338,14 +339,10 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
     [](void* param_1, void* param_2) -> void {
         probe::serviceDeathLink(param_1);
         playerTickLatchHook.orig(param_1, param_2);
-        // NOTE(imgui-overlay): the ImGui debug overlay's per-frame draw is
-        // intentionally NOT driven from here. PlayerTickLatch is a player-
-        // logic tick, not a render hook — calling ImGui NewFrame/Render +
-        // backend->draw() from it (once SMBWAP_HAS_DEBUG_RENDERER is on) would
-        // render off the rendering chokepoint. The real call-site is an open
-        // RE item: find SMBW's per-frame NVN present/draw and call
-        // smbwap::ui::drawDebugConsole() from there. See
-        // docs/handoff-imgui-overlay.md (RE item #2).
+        // NOTE(imgui-overlay): the overlay's per-frame draw is intentionally
+        // NOT driven from here — PlayerTickLatch is a logic tick. It's driven
+        // from the NVN present shim in ui/ImGuiNvnBootstrap.cpp (game-agnostic,
+        // holds the live command buffer). See docs/handoff-imgui-overlay.md.
     });
 
 // GameGoalReachedExecute @ NSO +0x0015b77a8.
@@ -791,6 +788,11 @@ extern "C" void hkMain() {
     // WONDER SEED GATE OVERRIDE (reader-side substitution)
     installHook("ContainerAReader",    0x0012ae94,
                 containerAReaderHook.installAtMainOffset(0x0012ae94));
+
+    // DEBUG OVERLAY: NVN present-hook chain that drives the ImGui overlay.
+    // No-op unless built with SMBWAP_HAS_DEBUG_RENDERER (see CMakeLists.txt
+    // + docs/handoff-imgui-overlay.md).
+    smbwap::ui::installNvnImGuiHooks();
 
     SMBWAP_LOG_INFO("=== smbwap hkMain END ===");
 }
