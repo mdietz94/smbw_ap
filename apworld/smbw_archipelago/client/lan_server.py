@@ -200,6 +200,7 @@ GrantMsg = (
     | wire.SetWonderSeedCountsMsg
     | wire.SetWonderSeedsAbsoluteMsg
     | wire.KillMsg
+    | wire.OverlayNoticeMsg
     | _DrainIncrementsSentinel
 )
 
@@ -401,6 +402,28 @@ class LanServer:
                 "send_kill(source=%r, cause=%r): outbound queue full; "
                 "dropping",
                 source, cause)
+
+    def send_overlay_notice(self, text: str, ttl_ms: int) -> None:
+        """Enqueue an OverlayNotice to the active Switch: force the
+        on-Switch debug overlay visible and show ``text`` for ``ttl_ms``
+        milliseconds.  An empty ``text`` / ``ttl_ms <= 0`` clears it.
+
+        Used by the level-entry death-gate countdown, which re-sends every
+        second, so drops are logged at debug level (and harmless: the next
+        tick re-sends, and the notice's TTL self-clears on the Switch if
+        the bridge goes quiet)."""
+        msg = wire.OverlayNoticeMsg(text=text, ttl_ms=ttl_ms)
+        if self._send_queue is None:
+            log.debug(
+                "send_overlay_notice(ttl_ms=%d): no Switch client; dropping",
+                ttl_ms)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+        except asyncio.QueueFull:
+            log.debug(
+                "send_overlay_notice(ttl_ms=%d): outbound queue full; "
+                "dropping", ttl_ms)
 
     def send_set_wonder_seed_counts(self, counts: list[int]) -> None:
         """Enqueue a SetWonderSeedCounts (per-world Wonder Seed gate
@@ -1025,6 +1048,12 @@ class LanServer:
                         log.info(
                             "-> kill source=%r cause=%r",
                             msg.source, msg.cause)
+                    elif isinstance(msg, wire.OverlayNoticeMsg):
+                        # Re-sent every second during a gate countdown --
+                        # debug level so it doesn't flood the info log.
+                        log.debug(
+                            "-> overlay_notice ttl_ms=%d text=%r",
+                            msg.ttl_ms, msg.text)
                     else:
                         log.info("-> %s", type(msg).__name__)
                 except (ConnectionResetError, BrokenPipeError) as e:

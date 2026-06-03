@@ -319,6 +319,25 @@ struct WireKill {
     char cause[kKillCauseCap]   = {};
 };
 
+// Bridge -> Switch.  Overlay notice: force the on-Switch ImGui debug
+// overlay visible (even while the bridge is connected) and display
+// `text` for `ttl_ms` milliseconds.  Used by the level-entry death-gate
+// countdown (context.SMBWContext._gate_kill_loop) so the player sees WHY
+// they're about to be bounced -- a "Level not in logic" banner plus a
+// per-second countdown -- instead of dying with no explanation.
+//
+// Empty `text` or `ttl_ms <= 0` clears any active notice.  ttl_ms is
+// clamped to [0, 60000] by the decoder.  Applied directly on the network
+// rx thread (ApClient::handleLine) via ui::setOverlayNotice -- it only
+// writes the overlay's notice state, so unlike the grant messages it does
+// NOT go through the game-thread inbound ring.  `text` cap MUST match
+// OverlayNoticeMsg.TEXT_CAP in apworld/.../client/wire.py.
+inline constexpr std::size_t kOverlayTextCap = 192;
+struct WireOverlayNotice {
+    char text[kOverlayTextCap] = {};
+    std::int32_t ttl_ms = 0;
+};
+
 struct WireHelloAck {
     bool ok = false;
     int wire_ver = 0;
@@ -349,6 +368,7 @@ enum class InboundKind : std::uint8_t {
     SetWonderSeedCounts = 11,
     SetRoyalSeedsAbsolute = 12,
     SetWonderSeedsAbsolute = 13,
+    OverlayNotice = 14,
 };
 
 struct InboundMsg {
@@ -367,6 +387,7 @@ struct InboundMsg {
         WireSetWonderSeedCounts set_wonder_seed_counts;
         WireSetRoyalSeedsAbsolute set_royal_seeds_absolute;
         WireSetWonderSeedsAbsolute set_wonder_seeds_absolute;
+        WireOverlayNotice overlay_notice;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

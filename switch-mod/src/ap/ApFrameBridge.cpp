@@ -372,11 +372,13 @@ void drainInbound() {
             case InboundKind::HelloAck:
             case InboundKind::Err:
             case InboundKind::Pong:
+            case InboundKind::OverlayNotice:
             case InboundKind::None:
                 // Worker should have consumed these before they reach the
                 // game-thread inbound ring -- ApClient routes them
                 // internally and only forwards SetBadgesAbsolute /
-                // GrantHashKeyed / Kill.  Log + drop.
+                // GrantHashKeyed / Kill (OverlayNotice is applied straight
+                // on the rx thread, never enqueued here).  Log + drop.
                 SMBWAP_LOG_WARN(
                     "[grant] unexpected inbound kind %u on game thread",
                     static_cast<unsigned>(msg.kind));

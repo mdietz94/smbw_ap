@@ -44,6 +44,7 @@ namespace nn::os {
 #include "ApFrameBridge.hpp"
 #include "ApProtocol.hpp"
 #include "ApState.hpp"
+#include "ui/ApDebugConsole.hpp"
 #include "util/Json.hpp"
 #include "util/Log.hpp"
 
@@ -684,6 +685,18 @@ void ApClient::handleLine(char* line, std::size_t len) {
             }
             return;
         }
+        case InboundKind::OverlayNotice:
+            // Force the on-Switch debug overlay visible + show the notice.
+            // Applied straight from this rx thread: setOverlayNotice only
+            // writes the overlay's notice state (an atomic expiry + a small
+            // char buffer the render thread reads), so -- unlike the grant
+            // messages -- it does NOT go through the game-thread inbound ring.
+            SMBWAP_LOG_DEBUG(
+                "[overlay] received OverlayNotice(ttl_ms=%d): %.64s",
+                msg.overlay_notice.ttl_ms, msg.overlay_notice.text);
+            ui::setOverlayNotice(msg.overlay_notice.text,
+                                 msg.overlay_notice.ttl_ms);
+            return;
         case InboundKind::Err:
             SMBWAP_LOG_WARN("[conn] bridge reports err: %s", msg.err.reason);
             return;
