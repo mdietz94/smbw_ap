@@ -516,26 +516,14 @@ class SMBWContext(CommonContext):
                     "SetWonderSeedCounts push", item_name, item_id)
                 continue
             if royal_seed_table.is_royal_seed_item(item_name):
+                # Royal Seeds are vanilla-owned: nothing to push, and we
+                # no longer auto-resolve the palace location on receipt.
+                # The player re-enters the palace and the natural
+                # PALACE_CLEAR (koopajr_result) fires the AP check.
                 log.debug(
-                    "royal seed item received: %r (id=%s) -- Switch state "
-                    "now vanilla-owned (no push)", item_name, item_id)
-                # Auto-resolve the matching "<World> Palace - Royal Seed"
-                # location at grant time.  Belt-and-braces now that Royal
-                # Seeds are vanilla-owned: the player CAN re-enter the
-                # palace and clearing it fires the natural PALACE_CLEAR
-                # check, but resolving here too (deduped by
-                # ``emit_check``) guards against an AP-routed seed whose
-                # palace the player never re-clears.
-                stage_key = royal_seed_table.palace_stage_key_for_item(
-                    item_name)
-                if stage_key is not None:
-                    check = CheckEmitted(
-                        kind=CheckKind.PALACE_CLEAR,
-                        stage_key=stage_key,
-                        metadata={"source": "ap_grant"},
-                    )
-                    if self.bridge_state.emit_check(check):
-                        await self.handle_check_emitted(check)
+                    "royal seed item received: %r (id=%s) -- vanilla-owned, "
+                    "no push, palace check fires on natural clear",
+                    item_name, item_id)
                 continue
             if coin_table.is_coin_item(item_name):
                 grant = coin_table.grant_for_item(item_name)

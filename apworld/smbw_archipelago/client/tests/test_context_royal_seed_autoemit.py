@@ -1,19 +1,19 @@
-"""Tests for the AP-grant -> PALACE_CLEAR auto-emit path for Royal Seeds.
+"""Tests for Royal Seed item receipt now that seeds are vanilla-owned.
 
-When the bridge receives a Royal Seed item from AP, the Switch's
-container-B bool gets set immediately -- which flips the world-map UI to
-"palace cleared", giving the player no in-game reason to re-enter the
-palace.  The natural ``PALACE_CLEAR`` PlayReport that normally fires the
-matching ``- Royal Seed`` AP location therefore never arrives, leaving
-the location unreachable unless the bridge resolves it directly at
-grant time.  These tests pin that auto-emit behavior.
+Royal Seeds used to be AP-authoritative: receiving the item pushed a
+``SetRoyalSeedsAbsolute`` to the Switch AND auto-resolved the matching
+palace ``- Royal Seed`` location (because clobbering the container-B
+bool flipped the world-map UI to "cleared", suppressing the natural
+``PALACE_CLEAR`` PlayReport).
 
-The companion RE plan in ``docs/royal-seed-check-loss-re-plan.md``
-tracks the investigation of why the natural path fails and whether
-there's a fix that doesn't require this short-circuit.
+Both of those were removed (2026-06-03): the vanilla game owns Royal
+Seed state, the player re-enters the palace, and the natural
+``koopajr_result`` -> ``PALACE_CLEAR`` path fires the AP check.  These
+tests pin the NEW behavior: receiving a Royal Seed item is a no-op on
+both the Switch-push and AP-LocationCheck sides.
 
 Same Archipelago-availability guard pattern as the other
-test_context_* files (mirrors test_context_badge_autoemit.py).
+test_context_* files.
 """
 
 from __future__ import annotations
@@ -36,8 +36,8 @@ _ARCHIPELAGO_AVAILABLE = _try_import_archipelago()
 @unittest.skipUnless(
     _ARCHIPELAGO_AVAILABLE,
     "Archipelago not importable (run `git submodule update --init` and "
-    "ensure conftest.py is loaded); skipping royal-seed-autoemit tests.")
-class TestContextRoyalSeedAutoEmit(unittest.IsolatedAsyncioTestCase):
+    "ensure conftest.py is loaded); skipping royal-seed-receipt tests.")
+class TestContextRoyalSeedReceipt(unittest.IsolatedAsyncioTestCase):
 
     # W1 Royal Seed: palace stage_key 0x89927C97 (Pipe-Rock Plateau Palace)
     W1_SEED_ITEM_ID = 300
@@ -45,8 +45,6 @@ class TestContextRoyalSeedAutoEmit(unittest.IsolatedAsyncioTestCase):
     W1_PALACE_STAGE_KEY = 0x89927C97
 
     # W3 Royal Seed: palace stage_key 0xA5E2BB3A (Royal Seed Mansion).
-    # Verifies the W3 special-case where the "palace" is actually a
-    # mansion -- mapping is in royal_seed_table, not derived.
     W3_SEED_ITEM_ID = 302
     W3_SEED_LOC_ID = 702
     W3_PALACE_STAGE_KEY = 0xA5E2BB3A
@@ -99,64 +97,47 @@ class TestContextRoyalSeedAutoEmit(unittest.IsolatedAsyncioTestCase):
         except Exception:
             pass
 
-    # ---- Core auto-emit behavior --------------------------------------
+    def _location_checks_sent(self) -> set[int]:
+        loc_ids: set[int] = set()
+        for call in self.ctx.send_msgs.await_args_list:
+            for m in call.args[0]:
+                if m.get("cmd") == "LocationChecks":
+                    loc_ids.update(m["locations"])
+        return loc_ids
 
-    async def test_royal_seed_receipt_sends_location_check(self):
+    # ---- Vanilla-owned: receipt is a no-op ---------------------------
+
+    async def test_royal_seed_receipt_does_not_push_to_switch(self):
         await self.ctx._handle_received_items(
             {"items": [{"item": self.W1_SEED_ITEM_ID}]})
-        # Royal Seeds are vanilla-owned now: receiving the item must NOT
-        # push a SetRoyalSeedsAbsolute to the Switch.
         self.ctx.lan_server.send_set_royal_seeds_absolute.assert_not_called()
-        # But the auto-resolve of the W1 palace LocationCheck still fires.
-        sent = [c.args[0] for c in self.ctx.send_msgs.await_args_list]
-        loc_checks = [
-            msg[0] for msg in sent
-            if msg and msg[0].get("cmd") == "LocationChecks"
-        ]
-        self.assertTrue(
-            any(self.W1_SEED_LOC_ID in m["locations"] for m in loc_checks),
-            f"expected LocationChecks containing {self.W1_SEED_LOC_ID}, "
-            f"got {sent!r}")
 
-    async def test_royal_seed_receipt_records_in_bridge_state(self):
+    async def test_royal_seed_receipt_does_not_auto_resolve_location(self):
+        # No auto-resolve: the palace location must come from the natural
+        # PALACE_CLEAR path, not from item receipt.
+        await self.ctx._handle_received_items(
+            {"items": [{"item": self.W1_SEED_ITEM_ID}]})
+        self.assertNotIn(self.W1_SEED_LOC_ID, self._location_checks_sent())
+
+    async def test_royal_seed_receipt_does_not_record_palace_clear(self):
         from ..protocol import CheckKind
         await self.ctx._handle_received_items(
             {"items": [{"item": self.W3_SEED_ITEM_ID}]})
-        self.assertTrue(self.state.has_emitted(
+        self.assertFalse(self.state.has_emitted(
             CheckKind.PALACE_CLEAR, self.W3_PALACE_STAGE_KEY))
 
-    async def test_royal_seed_receipt_dedups_across_replays(self):
-        # Two ReceivedItems batches with the same seed -- the second
-        # must NOT trigger a second LocationCheck or a second state record.
-        await self.ctx._handle_received_items(
-            {"items": [{"item": self.W1_SEED_ITEM_ID}]})
-        first_send_count = self.ctx.send_msgs.await_count
-        await self.ctx._handle_received_items(
-            {"items": [{"item": self.W1_SEED_ITEM_ID}]})
-        self.assertEqual(self.ctx.send_msgs.await_count, first_send_count,
-                         "second receipt of the same seed re-sent")
-
-    async def test_multiple_seeds_in_one_batch_each_get_a_check(self):
+    async def test_multiple_seeds_in_one_batch_emit_no_checks(self):
         await self.ctx._handle_received_items({"items": [
             {"item": self.W1_SEED_ITEM_ID},
             {"item": self.W3_SEED_ITEM_ID},
             {"item": self.W6_SEED_ITEM_ID},
         ]})
-        sent = [c.args[0] for c in self.ctx.send_msgs.await_args_list]
-        loc_ids: set[int] = set()
-        for msg in sent:
-            for m in msg:
-                if m.get("cmd") == "LocationChecks":
-                    loc_ids.update(m["locations"])
-        self.assertEqual(
-            loc_ids,
-            {self.W1_SEED_LOC_ID, self.W3_SEED_LOC_ID, self.W6_SEED_LOC_ID})
+        self.assertEqual(self._location_checks_sent(), set())
 
-    # ---- Negative paths -----------------------------------------------
+    # ---- Negative paths ----------------------------------------------
 
     async def test_non_seed_item_does_not_emit_palace_clear(self):
-        # "10 Coin" takes the increment path; PALACE_CLEAR auto-emit
-        # must not fire.
+        # "10 Coin" takes the increment path; PALACE_CLEAR must not fire.
         from ..protocol import CheckKind
         await self.ctx._handle_received_items(
             {"items": [{"item": self.TEN_COIN_ITEM_ID}]})
