@@ -57,6 +57,7 @@ from .protocol import (
     BadgeAcquiredMsg,
     CheckEmitted,
     DeathReported,
+    GateEntered,
     GoalCompleted,
     NerveFireMsg,
     PlayReportMsg,
@@ -108,6 +109,11 @@ DeathReportedHandler = Callable[[DeathReported], Awaitable[None]]
 # M3.7 game-completion -- analog for GoalCompleted.  Wired to
 # ``SMBWContext.handle_goal_completed`` in the bridge entry point.
 GoalCompletedHandler = Callable[[GoalCompleted], Awaitable[None]]
+
+# Level-entry gate -- analog for GateEntered.  Wired to
+# ``SMBWContext.handle_gate_entered``, which arms the delayed-kill loop
+# when the player sequence-broke into a course AP logic gates.
+GateEnteredHandler = Callable[[GateEntered], Awaitable[None]]
 
 # Synchronous callable that returns the current AP-known badge bitmask.
 # Set at construction time; the LAN server calls it on every Switch
@@ -222,6 +228,7 @@ class LanServer:
         on_check_emitted: CheckEmittedHandler | None = None,
         on_death_reported: DeathReportedHandler | None = None,
         on_goal_completed: GoalCompletedHandler | None = None,
+        on_gate_entered: GateEnteredHandler | None = None,
         badge_mask_provider: BadgeMaskProvider | None = None,
         royal_seed_mask_provider: RoyalSeedMaskProvider | None = None,
         wonder_seed_counts_provider: WonderSeedCountsProvider | None = None,
@@ -231,6 +238,7 @@ class LanServer:
         self._on_check_emitted = on_check_emitted
         self._on_death_reported = on_death_reported
         self._on_goal_completed = on_goal_completed
+        self._on_gate_entered = on_gate_entered
         self._badge_mask_provider = badge_mask_provider
         self._royal_seed_mask_provider = royal_seed_mask_provider
         self._wonder_seed_counts_provider = wonder_seed_counts_provider
@@ -747,6 +755,14 @@ class LanServer:
                 except Exception:
                     log.exception(
                         "on_goal_completed handler crashed for %r", emit)
+            elif isinstance(emit, GateEntered):
+                if self._on_gate_entered is None:
+                    continue
+                try:
+                    await self._on_gate_entered(emit)
+                except Exception:
+                    log.exception(
+                        "on_gate_entered handler crashed for %r", emit)
             else:
                 log.warning("processor emitted unknown type %r", type(emit).__name__)
 

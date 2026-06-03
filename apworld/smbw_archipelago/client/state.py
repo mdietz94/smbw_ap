@@ -54,6 +54,15 @@ class BridgeState:
         # Current player position. None when not in a course.
         self.current_course: CurrentCourse | None = None
 
+        # True while the player is inside a course (set on every
+        # course_in, cleared on every course_result / koopajr_result).
+        # Distinct from ``current_course``, which stays sticky after an
+        # exit so a post-course nerve can still attribute -- this flag
+        # is the authoritative "are we physically in a level right now"
+        # signal the level-entry gate's delayed-kill loop polls so it
+        # never fires on the world map.
+        self.in_course: bool = False
+
         # Every check the bridge has emitted, in arrival order. The
         # `_emitted_keys` set is the dedup index so a repeat fire (e.g.
         # a re-cleared course on a fresh save) doesn't re-fire the AP
@@ -83,6 +92,22 @@ class BridgeState:
         when entering a course-less context (overworld, etc.)."""
         with self._lock:
             self.current_course = course
+
+    def mark_course_entered(self, course: CurrentCourse) -> None:
+        """course_in: set the active course AND flag us as in-course.
+        Convenience over ``set_current_course`` + ``set_in_course(True)``
+        so both updates happen under one lock acquisition."""
+        with self._lock:
+            self.current_course = course
+            self.in_course = True
+
+    def mark_course_exited(self) -> None:
+        """course_result / koopajr_result: the player left or finished
+        the course.  Clears ``in_course`` but deliberately leaves
+        ``current_course`` sticky (its post-course attribution
+        semantics are unchanged)."""
+        with self._lock:
+            self.in_course = False
 
     def emit_check(self, check: CheckEmitted) -> bool:
         """Record a CheckEmitted from the processor. Returns True if
@@ -139,6 +164,12 @@ class BridgeState:
         to 0 for all other kinds."""
         with self._lock:
             return (kind.value, stage_key, coin_index) in self._emitted_keys
+
+    def is_in_course(self) -> bool:
+        """Thread-safe read of the in-course flag for the level-entry
+        gate's delayed-kill loop."""
+        with self._lock:
+            return self.in_course
 
     def count_emitted(self, kind: CheckKind | None = None) -> int:
         """Number of CheckEmitted entries, optionally filtered by kind."""

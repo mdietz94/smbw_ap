@@ -82,6 +82,7 @@ async def _main(args: argparse.Namespace) -> int:
         on_check_emitted=ctx.handle_check_emitted,
         on_death_reported=ctx.handle_death_reported,
         on_goal_completed=ctx.handle_goal_completed,
+        on_gate_entered=ctx.handle_gate_entered,
         badge_mask_provider=ctx._recompute_badge_mask,
         royal_seed_mask_provider=ctx._recompute_royal_seed_mask,
         wonder_seed_counts_provider=ctx._recompute_wonder_seed_counts,

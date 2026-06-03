@@ -163,6 +163,49 @@ class DeathReported:
     seq: int = 0
 
 
+class GateKind(str, Enum):
+    """Which AP-state requirement a gated course entry is checked against.
+
+    Used by :class:`GateEntered`.  ``BADGE`` means "the player must own
+    the AP-granted badge whose container-C internal_id is
+    :attr:`GateEntered.requirement`"; ``ROYAL_SEEDS`` means "the player
+    must hold at least :attr:`GateEntered.requirement` AP-granted Royal
+    Seeds" (the final-Bowser gate).
+    """
+
+    BADGE = "badge"
+    ROYAL_SEEDS = "royal_seeds"
+
+
+@dataclass(frozen=True)
+class GateEntered:
+    """The player entered a course that AP logic gates behind an item the
+    Switch can't physically block entry to (the Switch-side pre-commit
+    gate is a documented dead end -- see
+    ``docs/gate-entry-session3-handoff.md``).
+
+    The processor emits this from ``_handle_course_in`` whenever the
+    entered stage is one of the gated courses (a badge-granting course,
+    or the final Bowser stage).  The LanServer routes it to
+    ``SMBWContext.handle_gate_entered``, which -- if the player does NOT
+    satisfy ``gate_kind``/``requirement`` -- arms a delayed-kill loop:
+    after ~10 s (enough grace to pause and leave) it sends a
+    ``KillMsg`` via the DeathLink ``synthKill`` route, re-arming every
+    ~10 s while the player is still inside the gated course without the
+    item.
+
+    ``requirement`` is overloaded by ``gate_kind``: the badge
+    container-C internal_id for ``BADGE``, or the required Royal-Seed
+    count for ``ROYAL_SEEDS``.
+    """
+
+    stage_key: int
+    gate_kind: GateKind
+    requirement: int
+    world_no: int = 0
+    course_no: int = 0
+
+
 @dataclass(frozen=True)
 class CheckEmitted:
     """A bridge-side classification of an in-game event into an AP
