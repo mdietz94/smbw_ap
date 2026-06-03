@@ -52,11 +52,11 @@
     "connects_to": [
       "PI 8 Seeds"
     ],
-    "requires": "|Petal Isles Wonder Seed:5| AND |W2 Royal Seed|"
+    "requires": "|Petal Isles Wonder Seed:5|"
   },
   "PI 8 Seeds": {
     "connects_to": [],
-    "requires": "|Petal Isles Wonder Seed:8| AND |W3 Royal Seed|"
+    "requires": "|Petal Isles Wonder Seed:8|"
   },
   "W2 Start": {
     "connects_to": [
@@ -97,7 +97,7 @@
     "connects_to": [
       "W3 4 Seeds"
     ],
-    "requires": "|Petal Isles Wonder Seed:8| AND |W2 Royal Seed|"
+    "requires": "|Petal Isles Wonder Seed:8|"
   },
   "W3 4 Seeds": {
     "connects_to": [
