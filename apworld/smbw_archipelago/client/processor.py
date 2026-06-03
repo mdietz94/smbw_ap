@@ -177,15 +177,16 @@ _STAGE_TO_BADGE_INTERNAL_ID: dict[int, int] = {
 
 
 # Palace stage_keys (one per Royal Seed location).  Used by
-# ``_handle_course_result`` to suppress the misleading default-fields
-# course_result that palace WINs emit alongside their koopajr_result --
-# previous code gated on the ``world_mother_seed`` PlayReport field, but
-# that flag is "player owns the Royal Seed for this world" (a persistent
-# state), NOT "this event is a palace clear".  Live-reproduced 2026-05-27
-# in user run 10-08-58: W1 course 3 ("Bulrush Coming Through!") emitted
-# course_result with world_mother_seed=True simply because the player had
-# already cleared the W1 palace earlier, causing every subsequent W1
-# course clear to be silently dropped.
+# ``_handle_course_result`` to route a palace's default-fields
+# course_result to PALACE_CLEAR (NOT the misleading NORMAL_EXIT it would
+# otherwise pick from goal_id=0 + touch_goal_top=False) -- previous code
+# gated on the ``world_mother_seed`` PlayReport field, but that flag is
+# "player owns the Royal Seed for this world" (a persistent state), NOT
+# "this event is a palace clear".  Live-reproduced 2026-05-27 in user run
+# 10-08-58: W1 course 3 ("Bulrush Coming Through!") emitted course_result
+# with world_mother_seed=True simply because the player had already
+# cleared the W1 palace earlier, causing every subsequent W1 course clear
+# to be silently dropped.
 #
 # Stage-key allowlist is the right discriminator: it identifies the
 # course directly, not the player's progression state.  Mirrors the seven
@@ -484,9 +485,12 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
 
         course_result != 1                 → not a clear (quit / abort);
                                              emit nothing
-        world_mother_seed == True          → palace clear (defer to
-                                             koopajr_result; emit nothing
-                                             here to avoid double-firing)
+        palace stage_key + goal_id == 0    → palace clear; emit
+                                             PALACE_CLEAR directly (the
+                                             concurrent koopajr_result,
+                                             when it fires, dedups).  See
+                                             the _PALACE_STAGE_KEYS branch
+                                             for why we no longer defer.
         goal_id == 0 + touch_goal_top      → Top of Flag + Normal Exit
         goal_id == 0 + !touch_goal_top     → Normal Exit
         goal_id == 1 at Fake-Exit stage    → Fake Exit (+TOP_OF_FLAG if top)
@@ -557,17 +561,39 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
     # See _PALACE_STAGE_KEYS docstring for the history of the previous
     # world_mother_seed-based gate, which was a false positive.
     #
-    # Suppression is exit-type only: kinds = [] keeps the NORMAL_EXIT
-    # branch from firing but lets execution fall through to the 10-coin
-    # diff and badge emit below, so the three palace 10-coin AP checks
-    # still go out.  Returning early here previously dropped them all.
+    # We emit PALACE_CLEAR directly here rather than NORMAL_EXIT, then
+    # let the concurrent koopajr_result emit the SAME (PALACE_CLEAR,
+    # stage_key) -- BridgeState.emit_check dedups by (kind, stage_key,
+    # sub_key) so only one AP LocationCheck goes out per palace.  This
+    # closes the Royal-Seed check-loss bug: the koopajr_result PlayReport
+    # is SKIPPED by the game when the world's Royal Seed bool is already
+    # set (AP granted the seed item ahead of the player, so the boss
+    # cutscene that fires koopajr_result doesn't replay -- the world map
+    # already shows the palace cleared).  In that case course_result is
+    # the ONLY palace event we get, and the previous ``kinds = []``
+    # dropped it entirely; the check then only ever fired via the
+    # inbound AP-grant auto-resolve in context._handle_received_items,
+    # so a palace beaten WITHOUT the seed item in hand (e.g. W4/W6 when
+    # those seeds weren't released yet) never sent its - Royal Seed
+    # check.  Live-confirmed 2026-06-02 (21:06 run): W4 Sunbaked Desert
+    # Palace -- seed NOT owned -- fought the boss, koopajr_result WIN
+    # fired, check sent (natural path worked).  W5 Operation Poplin
+    # Rescue -- seed owned via mask 0x17 -- logged "course_result at
+    # palace ... deferring exit-type emit to koopajr_result" but NO
+    # koopajr_result ever arrived (next event was world_result), so the
+    # PALACE_CLEAR was lost.  Emitting here makes the clear authoritative
+    # off course_result regardless of whether the boss fight replays.
+    #
+    # Gated on goal_id == 0 so a SECRET_EXIT at W3 Royal Seed Mansion or
+    # W5 Operation Poplin Rescue (goal_id == 1) still routes through the
+    # SECRET_EXIT branch below.  Execution still falls through to the
+    # 10-coin diff + badge emit so the three palace 10-coin checks go out.
     if stage_key in _PALACE_STAGE_KEYS and goal_id == 0:
         log.debug(
             "course_result at palace stage_key=0x%08x goal_id=0; "
-            "deferring exit-type emit to koopajr_result "
-            "(10-coin diff still runs)",
+            "emitting PALACE_CLEAR (koopajr_result emit, if any, dedups)",
             stage_key)
-        kinds = []
+        kinds = [CheckKind.PALACE_CLEAR]
     elif (stage_key in _HUB_HOUSE_STAGE_KEYS
             or stage_key in _BREAK_TIME_STAGE_KEYS):
         # Hub-house and Break Time! exits route to the WONDER_SEED AP

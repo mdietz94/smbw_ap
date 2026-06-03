@@ -181,16 +181,26 @@ class TestCourseResultClassification(unittest.TestCase):
         self.assertEqual(len(first), 2)
         self.assertEqual(second, [])
 
-    def test_palace_companion_course_result_suppressed(self):
-        """The course_result emitted alongside a palace WIN's
-        koopajr_result has world_mother_seed=True and must NOT fire as
-        a Normal Exit (its goal_id=0, touch_goal_top=False would naively
-        route there)."""
+    def test_palace_course_result_emits_palace_clear_not_normal_exit(self):
+        """A palace course_result (goal_id=0, touch_goal_top=False, the
+        AAPCS-default zeroed fields) must route to PALACE_CLEAR, NOT the
+        Normal Exit those fields would naively pick.
+
+        This is the Royal-Seed check-loss fix (Issue 4, 2026-06-02): the
+        koopajr_result PlayReport that previously carried PALACE_CLEAR is
+        SKIPPED by the game when the world's seed bool is already set, so
+        course_result is sometimes the only palace event we receive.
+        Emitting PALACE_CLEAR here (rather than the old ``kinds = []``)
+        makes the clear authoritative off course_result; the concurrent
+        koopajr_result, when it does fire, dedups against this emit."""
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=PALACE_COURSE_RESULT))
-        self.assertEqual(emitted, [])
-        self.assertEqual(state.count_emitted(), 0)
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].kind, CheckKind.PALACE_CLEAR)
+        self.assertEqual(emitted[0].stage_key, PIPEROCK_PALACE_STAGE_KEY)
+        self.assertFalse(state.has_emitted(
+            CheckKind.NORMAL_EXIT, PIPEROCK_PALACE_STAGE_KEY))
 
     def test_fake_exit_at_jump_jump_jump_emits_fake_exit_and_top_of_flag(self):
         """W2: Jump! Jump Jump! Fake Exit live capture, 2026-05-29.
@@ -549,8 +559,9 @@ class TestRealisticPlaythroughFlows(unittest.TestCase):
 
     def test_palace_win_dual_event_fires_only_palace_clear(self):
         """Palace WIN emits BOTH course_result AND koopajr_result.  The
-        bridge must collapse this to a single PALACE_CLEAR AP check —
-        the companion course_result is suppressed by world_mother_seed.
+        bridge must collapse this to a single PALACE_CLEAR AP check.
+        Both events now emit PALACE_CLEAR for the same stage_key and the
+        second one dedups at emit_check; no NORMAL_EXIT contamination.
         Order: course_result first (it fires ~1 ms before koopajr_result
         per the live capture)."""
         state = BridgeState()
@@ -604,6 +615,38 @@ class TestRealisticPlaythroughFlows(unittest.TestCase):
         self.assertTrue(state.has_emitted(
             CheckKind.PALACE_CLEAR, PIPEROCK_PALACE_STAGE_KEY))
         self.assertEqual(state.count_emitted(), 1)
+
+    def test_palace_clear_without_koopajr_still_fires_royal_seed(self):
+        """Issue 4 (Royal-Seed check loss, 2026-06-02): when the world's
+        Royal Seed bool is already set (AP granted the seed item before
+        the player beat the palace), the game SKIPS the boss cutscene and
+        no koopajr_result PlayReport is sent -- the only palace event the
+        bridge sees is the course_result.  Live evidence from the 21:06
+        run: W5 Operation Poplin Rescue logged the palace course_result
+        but no koopajr_result ever followed (next event was world_result),
+        so the - Royal Seed check was lost.  Beating the palace must send
+        the PALACE_CLEAR (-> - Royal Seed) check off course_result alone,
+        with NO trailing koopajr_result."""
+        state = BridgeState()
+        state.set_current_course(CurrentCourse(
+            stage_key=PIPEROCK_PALACE_STAGE_KEY,
+            world_no=1, course_no=30))
+
+        # Only the course_result arrives -- the boss fight is skipped
+        # because AP already set the seed bool, so no koopajr_result.
+        emitted = process_event(state, PlayReportMsg(
+            room="course_result", payload=PALACE_COURSE_RESULT))
+
+        palace_clears = [e for e in emitted
+                         if isinstance(e, CheckEmitted)
+                         and e.kind == CheckKind.PALACE_CLEAR]
+        self.assertEqual(len(palace_clears), 1)
+        self.assertEqual(
+            palace_clears[0].stage_key, PIPEROCK_PALACE_STAGE_KEY)
+        self.assertTrue(state.has_emitted(
+            CheckKind.PALACE_CLEAR, PIPEROCK_PALACE_STAGE_KEY))
+        self.assertFalse(state.has_emitted(
+            CheckKind.NORMAL_EXIT, PIPEROCK_PALACE_STAGE_KEY))
 
 
 # ---------------------------------------------------------------------------
@@ -1095,22 +1138,24 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
 
     def test_palace_companion_emits_no_ten_coin(self):
         # PALACE_COURSE_RESULT has _in == _out for big_flower_coin so
-        # the 10-coin diff naturally yields zero emits.  Exit-type emit
-        # is suppressed by the _PALACE_STAGE_KEYS branch separately;
-        # see test_palace_with_new_ten_coins_emits_them for the case
-        # where _out has newly-True entries.
+        # the 10-coin diff naturally yields zero emits.  The exit-type
+        # emit is now PALACE_CLEAR (the _PALACE_STAGE_KEYS branch routes
+        # there rather than dropping it -- see the Royal-Seed check-loss
+        # fix); the point of this test is that NO TEN_COIN fires when the
+        # diff is empty.
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=PALACE_COURSE_RESULT))
-        self.assertEqual(emitted, [])
+        self.assertEqual(
+            [c.kind for c in emitted], [CheckKind.PALACE_CLEAR])
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
 
     def test_palace_with_new_ten_coins_emits_them(self):
         """Regression: a palace clear that picks up new 10-coins must
-        still emit TEN_COIN AP checks.  Pre-fix, the palace exit-type
-        suppression returned [] before the 10-coin diff ran, so the
-        three palace 10-coin AP locations were silently dropped on
-        every palace clear."""
+        still emit TEN_COIN AP checks.  The palace branch now emits
+        PALACE_CLEAR (not NORMAL_EXIT) and falls through to the 10-coin
+        diff, so the headline emit is PALACE_CLEAR followed by the three
+        TEN_COIN checks -- never NORMAL_EXIT."""
         state = BridgeState()
         fields = {
             "stage_info": {
@@ -1127,12 +1172,15 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
             "big_flower_coin_course_out": [True,  True,  True],
         }
         emitted = _handle_course_result(state, fields)
-        # No NORMAL_EXIT (palace suppression); three TEN_COIN checks.
+        # PALACE_CLEAR + three TEN_COIN checks; no NORMAL_EXIT.
         self.assertEqual(
             [c.kind for c in emitted],
-            [CheckKind.TEN_COIN, CheckKind.TEN_COIN, CheckKind.TEN_COIN])
+            [CheckKind.PALACE_CLEAR, CheckKind.TEN_COIN,
+             CheckKind.TEN_COIN, CheckKind.TEN_COIN])
         self.assertEqual(
-            sorted(c.metadata["coin_index"] for c in emitted), [0, 1, 2])
+            sorted(c.metadata["coin_index"]
+                   for c in emitted if c.kind == CheckKind.TEN_COIN),
+            [0, 1, 2])
         self.assertFalse(
             state.has_emitted(CheckKind.NORMAL_EXIT, PIPEROCK_PALACE_STAGE_KEY))
 
