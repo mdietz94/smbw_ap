@@ -457,6 +457,80 @@ class TestBreakTimeRemap(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# KO Arena courses (Issue 2, 2026-06-02) — combat-only arenas whose
+# only AP location is a Wonder Seed (plus three 10-coin checks).  They
+# share the Break Time! routing: the in-game wonder-seed nerve is
+# suppressed and the seed routes off course_result as WONDER_SEED.
+# Regression target: the 11:43 run where W1 Pipe-Rock Rumble cleared,
+# logged "course_result → normal_exit" + "no AP location for
+# kind=normal_exit ... (table needs extending)", silently dropping the
+# Wonder Seed while its three 10-coin checks (off the unconditional
+# big_flower_coin diff) still sent.
+
+PIPE_ROCK_RUMBLE_STAGE_KEY = 0x495A535A  # W1: Pipe-Rock Rumble — KO Arena
+KO_ARENA_STAGE_KEYS = frozenset({
+    0x495A535A,  # W1: Pipe-Rock Rumble
+    0x0FB8DE7F,  # W2: Fluff-Puff Kerfuff
+    0x28382D44,  # PI: Petal Meddle
+    0x389A6B66,  # W4: Sunbaked Skirmish
+    0x82259180,  # W5: Fungi Funk
+    0x086183F8,  # W6: Magma Flare-Up
+})
+
+
+class TestKoArenaRemap(unittest.TestCase):
+
+    def test_all_ko_arenas_in_break_time_set(self):
+        """Guard: every KO Arena stage_key must be in
+        _BREAK_TIME_STAGE_KEYS or its clear misroutes to NORMAL_EXIT."""
+        self.assertTrue(KO_ARENA_STAGE_KEYS <= _BREAK_TIME_STAGE_KEYS)
+
+    def test_ko_arena_clear_emits_wonder_seed_and_ten_coins(self):
+        """A KO Arena clear (course_result=1, goal_id=0,
+        touch_goal_top=False) emits WONDER_SEED -- never NORMAL_EXIT --
+        while the three 10-coin checks still fire off the big-flower-coin
+        diff (the diff path is what already worked in the buggy run)."""
+        state = BridgeState()
+        fields = {
+            "stage_info": {
+                "stage_key": PIPE_ROCK_RUMBLE_STAGE_KEY,
+                "world_no": 1,
+                "course_no": 40,
+            },
+            "course_result": 1,
+            "goal_id": 0,
+            "touch_goal_top_result": False,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+            # All three big flower coins newly collected this run.
+            "big_flower_coin_course_in": [False, False, False],
+            "big_flower_coin_course_out": [True, True, True],
+        }
+        emitted = _handle_course_result(state, fields)
+        kinds = [c.kind for c in emitted]
+        self.assertEqual(kinds.count(CheckKind.WONDER_SEED), 1)
+        self.assertEqual(kinds.count(CheckKind.TEN_COIN), 3)
+        self.assertNotIn(CheckKind.NORMAL_EXIT, kinds)
+        self.assertEqual(emitted[0].kind, CheckKind.WONDER_SEED)
+        self.assertEqual(
+            emitted[0].stage_key, PIPE_ROCK_RUMBLE_STAGE_KEY)
+        self.assertFalse(state.has_emitted(
+            CheckKind.NORMAL_EXIT, PIPE_ROCK_RUMBLE_STAGE_KEY))
+
+    def test_wonder_seed_nerve_inside_ko_arena_is_suppressed(self):
+        """The in-game wonder-seed nerve fires once per save inside a KO
+        Arena; suppress it so the seed routes via the course_result
+        re-fire path (same one-shot semantics as Break Time!)."""
+        state = BridgeState()
+        state.set_current_course(CurrentCourse(
+            stage_key=PIPE_ROCK_RUMBLE_STAGE_KEY, world_no=1, course_no=40))
+        emitted = process_event(state, NerveFireMsg(
+            kind=NerveKind.WONDER_SEED_AWARDED, seq=1))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+
+# ---------------------------------------------------------------------------
 # M2.5 palace classification — koopajr_result routing.
 
 class TestKoopajrResultClassification(unittest.TestCase):

@@ -107,6 +107,30 @@ _BREAK_TIME_STAGE_KEYS: frozenset[int] = frozenset({
     0x46D083C8,  # W6: Observatory #3
     0x86D3E8CB,  # W6: Observatory #4
     0x13F9E775,  # PI: Spelunking!
+
+    # KO Arena courses (one per world).  These are combat-only "arena"
+    # bonus courses whose sole AP location is a Wonder Seed -- the
+    # locations.json shape for each is exactly {Wonder Seed, 10 Coin
+    # #1/#2/#3} with NO Normal/Secret/Top-of-Flag/Palace/Fake entry,
+    # mechanically identical to a Break Time! course.  On clear they
+    # emit a regular course_result (result_code=1, goal_id=0,
+    # touch_goal_top_result=False) which -- before this entry -- misrouted
+    # to NORMAL_EXIT and was silently dropped because no NORMAL_EXIT row
+    # exists for them, while their 10-coin checks (which run off the
+    # unconditional big_flower_coin diff) still sent.  Live-confirmed
+    # 2026-06-02 from the 11:43 run: W1 Pipe-Rock Rumble cleared
+    # (stage_key=0x495A535A) logged "course_result → normal_exit" +
+    # "no AP location for kind=normal_exit ... (table needs extending)"
+    # while its three 10-coin checks went out normally.  Adding them
+    # here suppresses the once-per-save wonder-seed nerve and routes the
+    # seed off course_result as WONDER_SEED (re-fires on every re-entry).
+    # Stage keys mirror the WONDER_SEED rows in location_table.py.
+    0x495A535A,  # W1: Pipe-Rock Rumble
+    0x0FB8DE7F,  # W2: Fluff-Puff Kerfuff
+    0x28382D44,  # PI: Petal Meddle
+    0x389A6B66,  # W4: Sunbaked Skirmish
+    0x82259180,  # W5: Fungi Funk
+    0x086183F8,  # W6: Magma Flare-Up
 })
 
 
