@@ -9,11 +9,12 @@ manual intervention).
 Per connection, the server:
 
   1. Waits for a HELLO, replies with HELLO_ACK, then immediately pushes
-     a SetBadgesAbsolute with the current AP-known mask AND a
-     SetRoyalSeedsAbsolute with the current 6-bit Royal Seed mask
-     (replay-on-reconnect; container-B bools survive Switch reconnect
-     and save/reload because the bridge re-clobbers the seed bools to
-     AP's view every time the Switch handshakes).
+     a SetBadgesAbsolute with the current AP-known mask (replay-on-
+     reconnect; container-C badge bits survive Switch reconnect and
+     save/reload because the bridge re-clobbers them to AP's view every
+     handshake).  Royal Seeds are NOT pushed -- the vanilla game owns
+     that state; ``send_set_royal_seeds_absolute`` exists only as a
+     manual ``/send_royal_seeds`` override.
   2. Reads framed JSON lines, dispatches by ``"t"``:
        nerve        -> processor.process_event(state, NerveFireMsg)
                         -> forward each CheckEmitted to ``on_check_emitted``
@@ -57,6 +58,7 @@ from .protocol import (
     BadgeAcquiredMsg,
     CheckEmitted,
     DeathReported,
+    GateEntered,
     GoalCompleted,
     NerveFireMsg,
     PlayReportMsg,
@@ -81,19 +83,19 @@ behavior changes that a Switch-side log reader might care about."""
 
 BADGE_SYNC_INTERVAL_SEC = 2.0
 """How often the idempotent-sync tick fires while a Switch client is
-connected.  Each tick re-sends a SetBadgesAbsolute, a
-SetRoyalSeedsAbsolute, and a SetWonderSeedCounts with whatever the
-providers currently return -- all idempotent, so they coalesce with
-the per-ReceivedItems and per-HelloMsg sends without debounce work.
+connected.  Each tick re-sends a SetBadgesAbsolute and a
+SetWonderSeedCounts (plus the per-course Wonder Seed bitfield) with
+whatever the providers currently return -- all idempotent, so they
+coalesce with the per-ReceivedItems and per-HelloMsg sends without
+debounce work.  Royal Seeds are NOT synced (vanilla-owned).
 Tradeoff: tighter intervals shrink the in-game-pickup visibility
 window at the cost of LAN socket traffic.  At 2 s, an in-game pickup
-(badge purchase, palace clear before AP grants the seed, etc.) is
-visible for up to ~2 s before being reverted; each LAN line is
-~60 bytes JSON, trivially cheap.
+(badge purchase, Wonder phase seed grab, etc.) is visible for up to
+~2 s before being reverted; each LAN line is ~60 bytes JSON, trivially
+cheap.
 
 Named ``BADGE_SYNC_INTERVAL_SEC`` for diff continuity with the M3.2/M4
-rollout; now drives badges, Royal Seeds, and Wonder Seed counts
-together."""
+rollout; now drives badges and Wonder Seed counts together."""
 
 
 # Type alias for the per-check callback the LAN server invokes when the
@@ -109,6 +111,11 @@ DeathReportedHandler = Callable[[DeathReported], Awaitable[None]]
 # ``SMBWContext.handle_goal_completed`` in the bridge entry point.
 GoalCompletedHandler = Callable[[GoalCompleted], Awaitable[None]]
 
+# Level-entry gate -- analog for GateEntered.  Wired to
+# ``SMBWContext.handle_gate_entered``, which arms the delayed-kill loop
+# when the player sequence-broke into a course AP logic gates.
+GateEnteredHandler = Callable[[GateEntered], Awaitable[None]]
+
 # Synchronous callable that returns the current AP-known badge bitmask.
 # Set at construction time; the LAN server calls it on every Switch
 # HelloMsg and on every periodic tick.  Returning 0 is fine and means
@@ -116,15 +123,11 @@ GoalCompletedHandler = Callable[[GoalCompleted], Awaitable[None]]
 BadgeMaskProvider = Callable[[], int]
 
 
-# Synchronous callable returning the absolute 6-bit Royal Seed mask
-# AP has granted (bit 0 = W1, ..., bit 5 = W6).  Same idempotent-
-# absolute-overwrite pattern as ``BadgeMaskProvider``: pushed on every
-# HelloMsg, every ReceivedItems, and the periodic ~2 s tick.  Returning
-# 0 is fine and means "AP has no Royal Seeds yet -- clobber the
-# Switch's container-B bools to zero".  See [royal_seed_table.py]
-# (royal_seed_table.py) for the bit-order contract with the Switch
-# dispatch.
-RoyalSeedMaskProvider = Callable[[], int]
+# NOTE: Royal Seeds are no longer pushed to the Switch -- the vanilla
+# game owns Royal Seed state.  The former ``RoyalSeedMaskProvider`` and
+# its HelloMsg / tick / ReceivedItems sync were removed; AP enforces the
+# final-Bowser gate via the level-entry death-gate (see
+# ``SMBWContext.handle_gate_entered``) instead of overwriting seed bools.
 
 
 # Synchronous callable returning the cumulative per-world Wonder Seed
@@ -222,8 +225,8 @@ class LanServer:
         on_check_emitted: CheckEmittedHandler | None = None,
         on_death_reported: DeathReportedHandler | None = None,
         on_goal_completed: GoalCompletedHandler | None = None,
+        on_gate_entered: GateEnteredHandler | None = None,
         badge_mask_provider: BadgeMaskProvider | None = None,
-        royal_seed_mask_provider: RoyalSeedMaskProvider | None = None,
         wonder_seed_counts_provider: WonderSeedCountsProvider | None = None,
         wonder_seed_bits_provider: WonderSeedBitsProvider | None = None,
     ) -> None:
@@ -231,8 +234,8 @@ class LanServer:
         self._on_check_emitted = on_check_emitted
         self._on_death_reported = on_death_reported
         self._on_goal_completed = on_goal_completed
+        self._on_gate_entered = on_gate_entered
         self._badge_mask_provider = badge_mask_provider
-        self._royal_seed_mask_provider = royal_seed_mask_provider
         self._wonder_seed_counts_provider = wonder_seed_counts_provider
         self._wonder_seed_bits_provider = wonder_seed_bits_provider
 
@@ -266,7 +269,6 @@ class LanServer:
         # _drop_active_client_locked so reconnect re-logs the first
         # absolute push.
         self._last_logged_badges_bits: int | None = None
-        self._last_logged_royal_seeds_mask: int | None = None
         self._last_logged_wonder_seed_counts: tuple[int, ...] | None = None
         self._last_logged_wonder_seed_bits: tuple[int, int] | None = None
 
@@ -346,17 +348,16 @@ class LanServer:
     def send_set_royal_seeds_absolute(self, mask: int) -> None:
         """Enqueue a SetRoyalSeedsAbsolute to the active Switch client.
 
-        ``mask`` is the absolute 6-bit Royal Seed set AP has granted
-        (bit N = world N+1).  The Switch loops the 6 container-B bool
-        hashes and writes ``(mask >> bit) & 1`` to each, so the call
-        BOTH grants AP-granted seeds and clears seeds the player
-        obtained in-game without AP releasing the matching item.
+        ``mask`` is the absolute 6-bit Royal Seed set to write (bit N =
+        world N+1).  The Switch loops the 6 container-B bool hashes and
+        writes ``(mask >> bit) & 1`` to each, so the call BOTH grants
+        the set bits and clears the unset ones.
 
-        Drop semantics match :meth:`send_set_badges_absolute`.  The
-        next HelloMsg triggers a fresh send via
-        :meth:`_push_royal_seeds_now`, so any dropped tick is reliably
-        recovered on reconnect.
-        """
+        NOT called automatically any more -- Royal Seeds are vanilla-
+        owned.  Retained as a manual override surfaced via the
+        ``/send_royal_seeds`` client command, for forcing the seeds if
+        the death-gate ever misbehaves.  Drop semantics match
+        :meth:`send_set_badges_absolute`."""
         msg = wire.SetRoyalSeedsAbsoluteMsg(mask=mask)
         if self._send_queue is None:
             log.warning(
@@ -365,10 +366,8 @@ class LanServer:
             return
         try:
             self._send_queue.put_nowait(msg)
-            if self._last_logged_royal_seeds_mask != mask:
-                log.debug(
-                    "send_set_royal_seeds_absolute: enqueued mask=0x%x", mask)
-                self._last_logged_royal_seeds_mask = mask
+            log.info(
+                "send_set_royal_seeds_absolute: enqueued mask=0x%x", mask)
         except asyncio.QueueFull:
             log.error(
                 "send_set_royal_seeds_absolute(mask=0x%x): outbound queue "
@@ -546,12 +545,8 @@ class LanServer:
         Save-survival: the Switch-side primitive (both container-A
         ``FUN_710049F648`` and container-B ``FUN_710049EA24``) writes
         to a deferred-write dirty buffer at ``gmd+0xf8`` that flushes
-        on next save.  Production code does NOT use this path for the
-        Royal Seed bools any more -- the absolute-overwrite primitive
-        :meth:`send_set_royal_seeds_absolute` handles seed grants
-        (with HelloMsg + periodic-tick replay built into the loop),
-        making AP the sole authority.  This method is still exposed
-        for the ``/grant_hash`` debug command and ad-hoc tests."""
+        on next save.  This method is exposed for the ``/grant_hash``
+        debug command and ad-hoc tests."""
         msg = wire.GrantHashKeyedMsg(hash=hash_, value=value)
         if self._send_queue is None:
             log.warning(
@@ -637,13 +632,9 @@ class LanServer:
             # AP's view from the moment the connection is up.  This is
             # what makes badges survive save/reload and Switch reboots.
             self._push_badge_sync_now()
-            # Same idempotent-absolute-overwrite pattern for container-B
-            # Royal Seed bools: AP holds the canonical 6-bit mask and
-            # clobbers the Switch's seed bools to match on every
-            # handshake.  Subsumes the earlier M4.5 additive replay AND
-            # reverts any in-game palace-clear pickup that ran ahead of
-            # AP releasing the matching item.
-            self._push_royal_seeds_now()
+            # Royal Seeds are intentionally NOT replayed here -- the
+            # vanilla game owns Royal Seed state.  (Was a
+            # SetRoyalSeedsAbsolute clobber; removed 2026-06-03.)
             # Same idempotent absolute-overwrite pattern for the
             # container-A Wonder Seed counter (M3.3 follow-up): the
             # bridge holds the canonical AP-derived count and clobbers
@@ -747,6 +738,14 @@ class LanServer:
                 except Exception:
                     log.exception(
                         "on_goal_completed handler crashed for %r", emit)
+            elif isinstance(emit, GateEntered):
+                if self._on_gate_entered is None:
+                    continue
+                try:
+                    await self._on_gate_entered(emit)
+                except Exception:
+                    log.exception(
+                        "on_gate_entered handler crashed for %r", emit)
             else:
                 log.warning("processor emitted unknown type %r", type(emit).__name__)
 
@@ -766,11 +765,10 @@ class LanServer:
             # would have no context for them.
             self._pending_increments = {}
             # Forget last-logged absolute-state payloads so the new
-            # session's first SetBadges/SetRoyalSeeds/SetWonderSeeds
-            # push logs (matters when a Switch reconnects and we need
-            # to see the initial sync land).
+            # session's first SetBadges/SetWonderSeeds push logs
+            # (matters when a Switch reconnects and we need to see the
+            # initial sync land).
             self._last_logged_badges_bits = None
-            self._last_logged_royal_seeds_mask = None
             self._last_logged_wonder_seed_counts = None
             self._last_logged_wonder_seed_bits = None
             self._writer_task = asyncio.create_task(
@@ -820,7 +818,6 @@ class LanServer:
         # Match the per-session reset done in _install_client so the
         # next session's first absolute-state push logs.
         self._last_logged_badges_bits = None
-        self._last_logged_royal_seeds_mask = None
         self._last_logged_wonder_seed_counts = None
 
     # ---- Badge sync ---------------------------------------------------
@@ -839,27 +836,6 @@ class LanServer:
             log.exception("badge_mask_provider raised; skipping sync")
             return
         self.send_set_badges_absolute(bits)
-
-    def _push_royal_seeds_now(self) -> None:
-        """Pull the current AP-known 6-bit Royal Seed mask from the
-        provider and enqueue a SetRoyalSeedsAbsolute.  No-op if no
-        provider was wired (e.g. unit tests that don't care about
-        seeds) or no client is connected.  Called from HelloMsg
-        dispatch and from the periodic tick loop.
-
-        ALWAYS pushes -- even when mask=0 -- so AP stays the sole
-        authority over Royal Seeds.  An empty mask clears any seed the
-        player obtained in-game without AP, which is the correct
-        behavior pre-grant."""
-        if self._royal_seed_mask_provider is None:
-            return
-        try:
-            mask = int(self._royal_seed_mask_provider())
-        except Exception:
-            log.exception(
-                "royal_seed_mask_provider raised; skipping sync")
-            return
-        self.send_set_royal_seeds_absolute(mask)
 
     def _push_wonder_seeds_now(self) -> None:
         """Pull the AP-known per-world Wonder Seed counts from the
@@ -923,7 +899,7 @@ class LanServer:
             while True:
                 await asyncio.sleep(BADGE_SYNC_INTERVAL_SEC)
                 self._push_badge_sync_now()
-                self._push_royal_seeds_now()
+                # Royal Seeds intentionally not synced -- vanilla-owned.
                 self._push_wonder_seeds_now()
                 self._push_wonder_seed_bits_now()
         except asyncio.CancelledError:

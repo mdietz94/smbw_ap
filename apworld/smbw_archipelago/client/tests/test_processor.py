@@ -15,8 +15,11 @@ import unittest
 from ..processor import (
     _BREAK_TIME_STAGE_KEYS,
     _FAKE_EXIT_STAGE_KEYS,
+    _FINAL_BOWSER_STAGE_KEY,
     _HUB_HOUSE_STAGE_KEYS,
+    _STAGE_TO_BADGE_INTERNAL_ID,
     _emit_ten_coin_checks,
+    _handle_course_in,
     _handle_course_result,
     process_event,
 )
@@ -25,6 +28,8 @@ from ..protocol import (
     CheckEmitted,
     CheckKind,
     DeathReported,
+    GateEntered,
+    GateKind,
     GoalCompleted,
     NerveFireMsg,
     NerveKind,
@@ -1130,6 +1135,117 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
             sorted(c.metadata["coin_index"] for c in emitted), [0, 1, 2])
         self.assertFalse(
             state.has_emitted(CheckKind.NORMAL_EXIT, PIPEROCK_PALACE_STAGE_KEY))
+
+
+# ---------------------------------------------------------------------------
+# Level-entry gate (course_in -> GateEntered; in_course flag lifecycle).
+
+class TestLevelEntryGate(unittest.TestCase):
+    """The processor emits a GateEntered when the player enters a gated
+    course, and tracks the in_course flag across entry/exit."""
+
+    @staticmethod
+    def _course_in_fields(stage_key: int, world_no: int = 1,
+                          course_no: int = 5) -> dict:
+        return {"stage_info": {
+            "stage_key": stage_key,
+            "world_no": world_no,
+            "course_no": course_no,
+            "world_kind": 0,
+        }}
+
+    def test_course_in_sets_in_course_flag(self):
+        state = BridgeState()
+        self.assertFalse(state.in_course)
+        process_event(state, PlayReportMsg(
+            room="course_in", payload=W1_2_COURSE_IN))
+        self.assertTrue(state.in_course)
+        self.assertTrue(state.is_in_course())
+
+    def test_course_result_clears_in_course_flag(self):
+        state = BridgeState()
+        process_event(state, PlayReportMsg(
+            room="course_in", payload=W1_2_COURSE_IN))
+        self.assertTrue(state.in_course)
+        process_event(state, PlayReportMsg(
+            room="course_result", payload=COURSE_RESULT))
+        self.assertFalse(state.in_course)
+        # current_course stays sticky for post-course attribution.
+        self.assertIsNotNone(state.current_course)
+
+    def test_course_quit_clears_in_course_flag(self):
+        """A pause-quit (course_result=3) must clear in_course too --
+        that's the grace path the gate kill cancels on."""
+        state = BridgeState()
+        process_event(state, PlayReportMsg(
+            room="course_in", payload=W1_2_COURSE_IN))
+        process_event(state, PlayReportMsg(
+            room="course_result", payload=COURSE_RESULT_QUIT))
+        self.assertFalse(state.in_course)
+
+    def test_koopajr_result_clears_in_course_flag(self):
+        state = BridgeState()
+        process_event(state, PlayReportMsg(
+            room="course_in", payload=W1_2_COURSE_IN))
+        process_event(state, PlayReportMsg(
+            room="koopajr_result", payload=KOOPAJR_RESULT_LOSS))
+        self.assertFalse(state.in_course)
+
+    def test_normal_course_emits_no_gate(self):
+        """A course that grants no badge and isn't Bowser produces no
+        GateEntered (W1-2 Piranha Plants on Parade)."""
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="course_in", payload=W1_2_COURSE_IN))
+        self.assertEqual(emitted, [])
+
+    def test_badge_challenge_emits_gate_entered(self):
+        state = BridgeState()
+        # 0xDADED63E = W1 Wall-Climb Jump I -> badge internal_id 34.
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0xDADED63E, world_no=1, course_no=5))
+        self.assertEqual(len(emitted), 1)
+        gate = emitted[0]
+        self.assertIsInstance(gate, GateEntered)
+        self.assertEqual(gate.gate_kind, GateKind.BADGE)
+        self.assertEqual(gate.requirement, 34)
+        self.assertEqual(gate.stage_key, 0xDADED63E)
+        self.assertEqual(gate.world_no, 1)
+        self.assertEqual(gate.course_no, 5)
+
+    def test_story_badge_course_also_gates(self):
+        """Per spec, ALL course-based badge grants gate (not just the
+        named Badge Challenges) -- e.g. the Wiggler Race that hands over
+        Auto Super Mushroom."""
+        state = BridgeState()
+        # 0x954EB962 = W1 Mountaineering! (Wiggler Race) -> badge 46.
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0x954EB962))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].gate_kind, GateKind.BADGE)
+        self.assertEqual(emitted[0].requirement, 46)
+
+    def test_every_badge_table_stage_gates(self):
+        """Every entry in _STAGE_TO_BADGE_INTERNAL_ID must produce a
+        BADGE GateEntered carrying that internal_id."""
+        for stage_key, internal_id in _STAGE_TO_BADGE_INTERNAL_ID.items():
+            state = BridgeState()
+            emitted = _handle_course_in(
+                state, self._course_in_fields(stage_key))
+            self.assertEqual(len(emitted), 1, f"stage 0x{stage_key:08x}")
+            self.assertEqual(emitted[0].gate_kind, GateKind.BADGE)
+            self.assertEqual(emitted[0].requirement, internal_id)
+
+    def test_final_bowser_emits_royal_seed_gate(self):
+        state = BridgeState()
+        emitted = _handle_course_in(
+            state, self._course_in_fields(
+                _FINAL_BOWSER_STAGE_KEY, world_no=2, course_no=99))
+        self.assertEqual(len(emitted), 1)
+        gate = emitted[0]
+        self.assertEqual(gate.gate_kind, GateKind.ROYAL_SEEDS)
+        self.assertEqual(gate.requirement, 6)
+        self.assertEqual(gate.stage_key, _FINAL_BOWSER_STAGE_KEY)
 
 
 # ---------------------------------------------------------------------------

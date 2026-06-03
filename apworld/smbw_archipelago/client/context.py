@@ -43,7 +43,14 @@ from . import royal_seed_table
 from . import wonder_seed_table
 from .commands import SMBWCommandProcessor
 from .location_table import lookup_name
-from .protocol import CheckEmitted, CheckKind, DeathReported, GoalCompleted
+from .protocol import (
+    CheckEmitted,
+    CheckKind,
+    DeathReported,
+    GateEntered,
+    GateKind,
+    GoalCompleted,
+)
 from .state import BridgeState
 
 
@@ -65,6 +72,22 @@ GAME_NAME = "Super Mario Bros Wonder"
 # Exit) reach CLIENT_GOAL via ``handle_check_emitted`` matching the
 # goal name on a normal LocationCheck.
 GOAL_LOCATION_NAME_BOWSER = "PI: Bowser's Rage Stage - Royal Seed"
+
+
+# Level-entry gate (kill the player if they sequence-broke into a course
+# AP logic gates).  The Switch can't physically block course entry, so
+# the bridge waits ``GATE_KILL_DELAY_S`` after entry -- enough grace for
+# the player to pause and walk back out -- then drives the DeathLink
+# ``synthKill`` route, re-firing every ``GATE_KILL_DELAY_S`` while the
+# player is still inside the gated course without the required item.
+GATE_KILL_DELAY_S = 10.0
+
+# Safety cap on consecutive gate kills for a single course entry.  The
+# loop normally stops the moment the player leaves (in_course clears) or
+# acquires the item; this cap only matters if some exit path failed to
+# fire a course_result -- it bounds a runaway to ~10 minutes rather than
+# forever.  Re-entering the course re-arms a fresh loop.
+GATE_MAX_CONSECUTIVE_KILLS = 60
 
 
 class SMBWContext(CommonContext):
@@ -135,6 +158,15 @@ class SMBWContext(CommonContext):
         # badge_sync tick keeps re-pushing the probe mask, so the badge
         # stays visible in-game until the override is cleared.
         self._badge_probe_mask: int | None = None
+
+        # Level-entry gate.  ``entry_gating_enabled`` defaults ON (the
+        # feature is the request); an apworld can ship a
+        # ``level_entry_gating`` slot_data key to turn it off per-seed.
+        # ``_gate_kill_task`` holds the in-flight delayed-kill loop for
+        # the course the player is currently inside (None when idle); it
+        # is replaced/cancelled on every new gated entry and on shutdown.
+        self.entry_gating_enabled: bool = True
+        self._gate_kill_task: asyncio.Task[None] | None = None
 
         # M2.3 known-invalid bits the user has confirmed (via
         # `/badge_probe_invalid`) don't correspond to any AP badge.
@@ -208,6 +240,18 @@ class SMBWContext(CommonContext):
                     "goal hook will fire on Bowser regardless of "
                     "the player's chosen goal option")
                 self.goal_location_name = None
+            # Level-entry gating toggle.  Default ON if slot_data omits
+            # the key (older apworld, or one that hasn't surfaced the
+            # option) -- the feature is the request.  The kill loop
+            # re-reads this flag each iteration, so flipping it off mid-
+            # session stops any in-flight kill within one delay window.
+            eg = bool(slot_data.get("level_entry_gating", True))
+            if eg != self.entry_gating_enabled:
+                log.info(
+                    "level_entry_gating: %s (from slot_data)",
+                    "ENABLED" if eg else "disabled")
+            self.entry_gating_enabled = eg
+
             # Tell the AP server the player is in-game so item routing
             # starts flowing.  ClientStatus.CLIENT_PLAYING.
             try:
@@ -401,19 +445,21 @@ class SMBWContext(CommonContext):
 
         new_mask = self._recompute_badge_mask()
         new_seed_counts = self._recompute_wonder_seed_counts()
+        # Royal Seeds are deliberately NOT pushed to the Switch any more
+        # -- the vanilla game owns Royal Seed state (world-map UI,
+        # final-castle access).  AP enforcement of "don't enter Bowser
+        # without the seeds" is handled by the level-entry death-gate
+        # instead, which reads the AP-granted count below.
         new_royal_seed_mask = self._recompute_royal_seed_mask()
         new_ws_bits_lo, new_ws_bits_hi = self._recompute_wonder_seed_bits()
         if self.lan_server is not None:
             log.info(
-                "ReceivedItems: badge mask now 0x%x, royal_seed mask 0x%x, "
-                "wonder_seed counts=%s, wonder_seed bits=(0x%x, 0x%x)",
+                "ReceivedItems: badge mask now 0x%x, royal_seed mask 0x%x "
+                "(not pushed; vanilla-owned), wonder_seed counts=%s, "
+                "wonder_seed bits=(0x%x, 0x%x)",
                 new_mask, new_royal_seed_mask, new_seed_counts,
                 new_ws_bits_lo, new_ws_bits_hi)
             self.lan_server.send_set_badges_absolute(new_mask)
-            # Idempotent absolute-overwrite: AP is the sole authority
-            # over container-B Royal Seed bools (same pattern as
-            # badges).  Switch loops the 6 hashes per bit.
-            self.lan_server.send_set_royal_seeds_absolute(new_royal_seed_mask)
             # Idempotent absolute-overwrite: AP is the sole authority
             # over the per-world Wonder Seed counts (same pattern as
             # badges).  Switch routes via current-world hash 0x9f5ead3c.
@@ -427,9 +473,8 @@ class SMBWContext(CommonContext):
         else:
             log.debug(
                 "no lan_server bound; not forwarding badge mask 0x%x / "
-                "royal_seed mask 0x%x / wonder_seed counts=%s / "
-                "wonder_seed bits=(0x%x, 0x%x)",
-                new_mask, new_royal_seed_mask, new_seed_counts,
+                "wonder_seed counts=%s / wonder_seed bits=(0x%x, 0x%x)",
+                new_mask, new_seed_counts,
                 new_ws_bits_lo, new_ws_bits_hi)
 
         for it in items:
@@ -471,29 +516,14 @@ class SMBWContext(CommonContext):
                     "SetWonderSeedCounts push", item_name, item_id)
                 continue
             if royal_seed_table.is_royal_seed_item(item_name):
+                # Royal Seeds are vanilla-owned: nothing to push, and we
+                # no longer auto-resolve the palace location on receipt.
+                # The player re-enters the palace and the natural
+                # PALACE_CLEAR (koopajr_result) fires the AP check.
                 log.debug(
-                    "royal seed item received: %r (id=%s) -- covered by "
-                    "SetRoyalSeedsAbsolute push", item_name, item_id)
-                # Auto-resolve the matching "<World> Palace - Royal Seed"
-                # location at grant time.  Why: setting the container-B
-                # seed bool flips the world-map UI to "cleared", so the
-                # player has no in-game reason to re-enter the palace --
-                # the PALACE_CLEAR PlayReport that normally fires the
-                # check never arrives.  See
-                # ``docs/royal-seed-check-loss-re-plan.md`` for the RE
-                # plan to find a path that fires the check naturally;
-                # this is the short-term unblock that keeps the AP
-                # location resolvable.
-                stage_key = royal_seed_table.palace_stage_key_for_item(
-                    item_name)
-                if stage_key is not None:
-                    check = CheckEmitted(
-                        kind=CheckKind.PALACE_CLEAR,
-                        stage_key=stage_key,
-                        metadata={"source": "ap_grant"},
-                    )
-                    if self.bridge_state.emit_check(check):
-                        await self.handle_check_emitted(check)
+                    "royal seed item received: %r (id=%s) -- vanilla-owned, "
+                    "no push, palace check fires on natural clear",
+                    item_name, item_id)
                 continue
             if coin_table.is_coin_item(item_name):
                 grant = coin_table.grant_for_item(item_name)
@@ -559,6 +589,134 @@ class SMBWContext(CommonContext):
                 death.seq, self._own_player_name() or "?")
         except Exception:
             log.exception("send_death failed for seq=%d", death.seq)
+
+    # ---- Level-entry gate ---------------------------------------------
+
+    async def handle_gate_entered(self, ev: GateEntered) -> None:
+        """LanServer dispatches this when the processor sees the player
+        enter a course AP logic gates (a badge-granting course, or the
+        final Bowser stage).  If the player lacks the required item, arm
+        a delayed-kill loop that bounces them out via the DeathLink
+        ``synthKill`` route after a grace window.
+
+        A new gated entry always supersedes any prior pending kill (only
+        one course is active at a time).
+        """
+        self._cancel_gate_kill()
+
+        if not self.entry_gating_enabled:
+            return
+
+        # Deliberately NOT gated on being connected to AP: a player who
+        # disconnects (or never connects) must NOT be able to sequence-
+        # break into gated content offline.  When not connected,
+        # items_received reflects the last-known AP state (empty on a
+        # fresh start), so an offline player with no recorded item is
+        # treated as not owning it -- and gets bounced.  Reconnecting
+        # and receiving the item satisfies the requirement on the next
+        # loop iteration.
+        if self._gate_requirement_met(ev):
+            log.info(
+                "entered gated stage_key=0x%08x (%s req=%d); requirement "
+                "satisfied -- no kill",
+                ev.stage_key & 0xFFFFFFFF, ev.gate_kind.value, ev.requirement)
+            return
+
+        log.warning(
+            "entered gated stage_key=0x%08x (%s req=%d) WITHOUT the required "
+            "item; arming delayed kill (%.0fs grace, re-arms while inside)",
+            ev.stage_key & 0xFFFFFFFF, ev.gate_kind.value, ev.requirement,
+            GATE_KILL_DELAY_S)
+        self._gate_kill_task = asyncio.create_task(
+            self._gate_kill_loop(ev), name="smbw-gate-kill")
+
+    def _gate_requirement_met(self, ev: GateEntered) -> bool:
+        """True iff the player satisfies the gate's AP-item requirement.
+
+        BADGE: own the AP badge whose container-C internal_id is
+        ``ev.requirement``.  ROYAL_SEEDS: hold at least ``ev.requirement``
+        AP Royal Seeds.  An unknown gate kind fails *open* (treated as
+        satisfied) so a future gate kind never kills players on an older
+        client."""
+        if ev.gate_kind == GateKind.BADGE:
+            return bool((self._recompute_badge_mask() >> ev.requirement) & 1)
+        if ev.gate_kind == GateKind.ROYAL_SEEDS:
+            owned = bin(self._recompute_royal_seed_mask()).count("1")
+            return owned >= ev.requirement
+        log.warning(
+            "unknown gate kind %r for stage_key=0x%08x; treating as satisfied",
+            ev.gate_kind, ev.stage_key & 0xFFFFFFFF)
+        return True
+
+    @staticmethod
+    def _gate_kill_cause(ev: GateEntered) -> str:
+        """Human-readable ``cause`` string for the KillMsg (the Switch
+        logs it; truncated to the wire cap downstream)."""
+        if ev.gate_kind == GateKind.ROYAL_SEEDS:
+            return f"Locked: need {ev.requirement} Royal Seeds to face Bowser"
+        return "Locked: missing the AP badge for this challenge"
+
+    async def _gate_kill_loop(self, ev: GateEntered) -> None:
+        """Sleep the grace window, then kill -- repeating every window
+        while the player is still inside the gated course without the
+        item.  Stops the moment any precondition lapses (left the
+        course, moved courses, acquired the item, gating disabled, no
+        Switch bound) or the safety cap is reached."""
+        cause = self._gate_kill_cause(ev)
+        sk = ev.stage_key & 0xFFFFFFFF
+        kills = 0
+        try:
+            while True:
+                await asyncio.sleep(GATE_KILL_DELAY_S)
+                if not self.entry_gating_enabled:
+                    log.info("gate kill stage_key=0x%08x: gating disabled; "
+                             "stopping", sk)
+                    return
+                if not self.bridge_state.is_in_course():
+                    log.info("gate kill stage_key=0x%08x: player left the "
+                             "course; stopping", sk)
+                    return
+                cur = self.bridge_state.current_course
+                if cur is None or cur.stage_key != ev.stage_key:
+                    log.info("gate kill stage_key=0x%08x: player moved to a "
+                             "different course; stopping", sk)
+                    return
+                if self._gate_requirement_met(ev):
+                    log.info("gate kill stage_key=0x%08x: requirement now "
+                             "satisfied; stopping", sk)
+                    return
+                if self.lan_server is None:
+                    log.info("gate kill stage_key=0x%08x: no Switch bound; "
+                             "stopping", sk)
+                    return
+                self.lan_server.send_kill(source="SMBW Gate", cause=cause)
+                kills += 1
+                log.warning("gate kill #%d sent for stage_key=0x%08x (%s)",
+                            kills, sk, cause)
+                if kills >= GATE_MAX_CONSECUTIVE_KILLS:
+                    log.warning(
+                        "gate kill stage_key=0x%08x: hit safety cap (%d); "
+                        "stopping (re-arms on re-entry)",
+                        sk, GATE_MAX_CONSECUTIVE_KILLS)
+                    return
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if self._gate_kill_task is asyncio.current_task():
+                self._gate_kill_task = None
+
+    def _cancel_gate_kill(self) -> None:
+        """Cancel any in-flight gate-kill loop (idempotent)."""
+        task = self._gate_kill_task
+        self._gate_kill_task = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    async def shutdown(self) -> None:  # type: ignore[override]
+        """Cancel the gate-kill loop before the base shutdown so a
+        sleeping task doesn't outlive the event loop."""
+        self._cancel_gate_kill()
+        await super().shutdown()
 
     # ---- Game-completion goal -----------------------------------------
 

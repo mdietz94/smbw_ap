@@ -1,5 +1,36 @@
 # Gate-entry — session 3 handoff (2026-05-30 PM)
 
+> ## 2026-06-03 — bridge-side death-gate shipped for two specific cases
+> The Switch-side *pre-commit* and *bounce* gates remain shelved (below).
+> But the two cases that actually matter for logic enforcement are now
+> handled **entirely bridge-side** via the DeathLink `synthKill` route —
+> no Switch RE needed:
+>
+> 1. Entering a **badge-granting course** (every stage in
+>    `processor._STAGE_TO_BADGE_INTERNAL_ID`) without the AP-granted badge.
+> 2. Entering the **final Bowser stage** (`0x6895BF00`) without all 6
+>    AP Royal Seeds.
+>
+> On `course_in` the processor emits a `GateEntered` (`protocol.GateEntered`);
+> `SMBWContext.handle_gate_entered` evaluates the requirement against AP item
+> state and, if unmet, arms a loop that `send_kill`s the player ~10 s after
+> entry (grace to pause+leave) and re-arms every ~10 s while they stay inside
+> without the item. The `BridgeState.in_course` flag (set on `course_in`,
+> cleared on `course_result`/`koopajr_result`) stops the loop the moment they
+> leave, so it never fires on the world map. The gate arms even when NOT
+> connected to AP (anti-cheat: you can't dodge it by playing offline).
+> Toggle: `slot_data["level_entry_gating"]` (default on). This needs none of
+> the persistent course-sequence RE the rest of this doc hunts for — that
+> hunt is only required for a *non-lethal* bounce.
+>
+> Relatedly, the bridge **no longer overwrites Royal Seeds on the Switch at
+> all** (the old `SetRoyalSeedsAbsolute` push on ReceivedItems / HelloMsg /
+> 2 s tick is gone) — Royal Seed state is vanilla-owned, and the death-gate
+> above is what enforces AP logic at Bowser. `send_set_royal_seeds_absolute`
+> survives only as a manual `/send_royal_seeds [mask]` client command
+> (defaults to forcing all 6) for when the death-gate needs a manual
+> override.
+
 Authoritative handoff for the next agent on the **AP-controlled course-entry
 gating** feature (block entry to chosen courses/palaces under AP state).
 Read this first, then [royal-seed-phase-a-findings.md](royal-seed-phase-a-findings.md)

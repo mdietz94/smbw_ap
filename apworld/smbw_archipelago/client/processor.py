@@ -24,6 +24,8 @@ from .protocol import (
     CheckEmitted,
     CheckKind,
     DeathReported,
+    GateEntered,
+    GateKind,
     GoalCompleted,
     NerveFireMsg,
     NerveKind,
@@ -34,8 +36,9 @@ from .state import BridgeState, CurrentCourse
 
 # Anything the processor emits as a side-effect of consuming an event.
 # CheckEmitted -> AP LocationChecks; DeathReported -> AP DeathLink Bounce;
-# GoalCompleted -> AP StatusUpdate(CLIENT_GOAL).
-ProcessorEmit = CheckEmitted | DeathReported | GoalCompleted
+# GoalCompleted -> AP StatusUpdate(CLIENT_GOAL); GateEntered -> the
+# level-entry gate's delayed-kill loop in SMBWContext.
+ProcessorEmit = CheckEmitted | DeathReported | GoalCompleted | GateEntered
 
 
 log = logging.getLogger("SMBW")
@@ -227,6 +230,29 @@ _FAKE_EXIT_STAGE_KEYS: frozenset[int] = frozenset({
 
 
 # ---------------------------------------------------------------------------
+# Level-entry gating (the "kill them after 10 s if they sequence-broke
+# into a gated course" feature).  The Switch can't physically block
+# course entry (6 RE sessions proved the pre-commit gate a dead end --
+# see docs/gate-entry-session3-handoff.md), so instead the bridge
+# detects entry into a gated course via course_in and, if the player
+# lacks the AP item that logic requires, drives the DeathLink synthKill
+# route to bounce them out.
+#
+# Badge-challenge gate: the set of gated courses is EXACTLY
+# ``_STAGE_TO_BADGE_INTERNAL_ID`` (every course-based badge grant --
+# the badge challenges plus the story/house courses that hand a badge
+# over; Poplin shops are NOT in this table and are intentionally never
+# gated).  Entry requires owning the AP badge whose container-C
+# internal_id that course awards.
+#
+# Final-Bowser gate: Bowser's Rage Stage requires the player hold all
+# six AP Royal Seeds, mirroring the vanilla final-castle gate.
+
+_FINAL_BOWSER_STAGE_KEY: int = 0x6895BF00  # PI: Bowser's Rage Stage
+_FINAL_BOWSER_REQUIRED_ROYAL_SEEDS: int = 6
+
+
+# ---------------------------------------------------------------------------
 # Top-level dispatch.
 
 def process_event(state: BridgeState, event: Any) -> list[ProcessorEmit]:
@@ -356,7 +382,7 @@ def _handle_badge_acquired(
 # ---------------------------------------------------------------------------
 # PlayReport handlers — one per room name we care about.
 
-def _handle_play_report(state: BridgeState, event: PlayReportMsg) -> list[CheckEmitted]:
+def _handle_play_report(state: BridgeState, event: PlayReportMsg) -> list[ProcessorEmit]:
     # Decode once; route on room name.
     try:
         decoded = play_report.decode_play_report(event.payload)
@@ -392,17 +418,22 @@ def _handle_play_report(state: BridgeState, event: PlayReportMsg) -> list[CheckE
     return []
 
 
-def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[CheckEmitted]:
+def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[ProcessorEmit]:
     """course_in fires when a course actually loads.  Sets current_course
-    so subsequent nerve fires (notably WONDER_SEED_AWARDED) can attribute."""
+    so subsequent nerve fires (notably WONDER_SEED_AWARDED) can attribute,
+    and flags us as in-course for the level-entry gate.  Emits a
+    ``GateEntered`` when the entered stage is one AP logic gates (a
+    badge-granting course, or the final Bowser stage)."""
     stage_info = fields.get("stage_info")
     if not isinstance(stage_info, dict):
         log.warning("course_in missing stage_info; ignoring")
         return []
-    state.set_current_course(CurrentCourse(
+    world_no = stage_info.get("world_no", 0)
+    course_no = stage_info.get("course_no", 0)
+    state.mark_course_entered(CurrentCourse(
         stage_key=stage_info["stage_key"],
-        world_no=stage_info.get("world_no", 0),
-        course_no=stage_info.get("course_no", 0),
+        world_no=world_no,
+        course_no=course_no,
         world_kind=stage_info.get("world_kind", 0),
     ))
     # M4 location_table playtest-sweep helper: tag the line with
@@ -413,9 +444,31 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[CheckE
     # side -- see docs/playtest-stage-key-sweep.md.
     sk = stage_info["stage_key"]
     log.info("STAGEKEY  world=%d course=%d  stage_key=%d (0x%08X)",
-             stage_info.get("world_no", 0),
-             stage_info.get("course_no", 0),
-             sk, sk & 0xFFFFFFFF)
+             world_no, course_no, sk, sk & 0xFFFFFFFF)
+
+    # Level-entry gate: emit a GateEntered the context evaluates against
+    # AP state.  Bowser takes precedence (it isn't in the badge table,
+    # so the order is informational, not a real overlap).  stage_key is
+    # compared unmasked, matching _emit_course_clear_badge /
+    # _handle_course_result (the PlayReport decoder yields the unsigned
+    # 32-bit key these tables are keyed by).
+    if sk == _FINAL_BOWSER_STAGE_KEY:
+        return [GateEntered(
+            stage_key=sk,
+            gate_kind=GateKind.ROYAL_SEEDS,
+            requirement=_FINAL_BOWSER_REQUIRED_ROYAL_SEEDS,
+            world_no=world_no,
+            course_no=course_no,
+        )]
+    badge_id = _STAGE_TO_BADGE_INTERNAL_ID.get(sk)
+    if badge_id is not None:
+        return [GateEntered(
+            stage_key=sk,
+            gate_kind=GateKind.BADGE,
+            requirement=badge_id,
+            world_no=world_no,
+            course_no=course_no,
+        )]
     return []
 
 
@@ -464,6 +517,13 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
     if not isinstance(stage_info, dict):
         log.warning("course_result missing stage_info; ignoring")
         return []
+
+    # The player is leaving / finishing the course (clear OR pause-quit
+    # OR any other course_result) -- clear the in-course flag so the
+    # level-entry gate's delayed-kill loop stops re-arming.  Done before
+    # any result-code branching so even a quit (course_result=3) cancels
+    # a pending gate kill within the grace window.
+    state.mark_course_exited()
 
     result_code = fields.get("course_result")
     if result_code != 1:
@@ -778,6 +838,11 @@ def _handle_koopajr_result(state: BridgeState, fields: dict[str, Any]) -> list[C
     if not isinstance(stage_info, dict):
         log.warning("koopajr_result missing stage_info; ignoring")
         return []
+
+    # Palace/boss result: the player has left the course.  Clear the
+    # in-course flag (same rationale as _handle_course_result) so a
+    # gate kill armed on Bowser's Rage Stage stops once the fight ends.
+    state.mark_course_exited()
 
     won = bool(fields.get("battle_result", False))
     if not won:
