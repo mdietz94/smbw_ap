@@ -51,4 +51,15 @@ void initDebugConsole();
 // SMBWAP_HAS_DEBUG_RENDERER.
 void drawDebugConsole();
 
+// Push (or clear) a transient overlay notice. While a notice is active the
+// overlay is forced visible even when the bridge is connected, so the
+// level-entry death-gate countdown is seen in-game. `text` is shown
+// verbatim (newlines allowed) for `ttl_ms` milliseconds; an empty/null
+// `text` or `ttl_ms <= 0` clears any active notice immediately.
+//
+// Thread-safe: called from the network rx thread (ApClient::handleLine);
+// the render thread reads it. Safe to call when the renderer isn't
+// compiled in (stores the state; nothing renders).
+void setOverlayNotice(const char* text, int ttl_ms);
+
 }  // namespace smbwap::ui

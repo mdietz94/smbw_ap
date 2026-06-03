@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any
 
 from CommonClient import CommonContext  # type: ignore
@@ -88,6 +89,14 @@ GATE_KILL_DELAY_S = 10.0
 # fire a course_result -- it bounds a runaway to ~10 minutes rather than
 # forever.  Re-entering the course re-arms a fresh loop.
 GATE_MAX_CONSECUTIVE_KILLS = 60
+
+# TTL (ms) of each on-Switch overlay countdown notice.  The countdown
+# re-sends one notice per second; the TTL is set comfortably longer than
+# that interval so the banner never flickers between ticks, and so it
+# self-clears on the Switch a couple seconds after the last notice if the
+# loop stops abruptly (player left, bridge went quiet) and the explicit
+# clear is dropped.
+GATE_OVERLAY_TTL_MS = 2500
 
 
 class SMBWContext(CommonContext):
@@ -656,38 +665,91 @@ class SMBWContext(CommonContext):
             return f"Locked: need {ev.requirement} Royal Seeds to face Bowser"
         return "Locked: missing the AP badge for this challenge"
 
+    def _gate_check_stop(self, ev: GateEntered) -> str | None:
+        """Return a human-readable reason the gate-kill loop should STOP,
+        or ``None`` if it should keep counting down toward a kill.  Mirrors
+        the precondition checks the loop made inline before it grew a
+        per-second overlay countdown."""
+        if not self.entry_gating_enabled:
+            return "gating disabled"
+        if not self.bridge_state.is_in_course():
+            return "player left the course"
+        cur = self.bridge_state.current_course
+        if cur is None or cur.stage_key != ev.stage_key:
+            return "player moved to a different course"
+        if self._gate_requirement_met(ev):
+            return "requirement now satisfied"
+        if self.lan_server is None:
+            return "no Switch bound"
+        return None
+
+    @staticmethod
+    def _gate_overlay_text(ev: GateEntered, seconds_left: int) -> str:
+        """The on-Switch overlay banner for a pending gate kill: a fixed
+        "Level not in logic" headline, the live countdown, and the same
+        human-readable detail the KillMsg carries."""
+        return (
+            "Level not in logic\n"
+            f"Bouncing you out in {seconds_left}s\n"
+            f"{SMBWContext._gate_kill_cause(ev)}"
+        )
+
+    def _push_gate_overlay(self, ev: GateEntered, seconds_left: int) -> None:
+        """Surface the countdown banner on the Switch overlay (forces it
+        visible even while connected).  No-op if no Switch is bound."""
+        if self.lan_server is None:
+            return
+        self.lan_server.send_overlay_notice(
+            text=self._gate_overlay_text(ev, seconds_left),
+            ttl_ms=GATE_OVERLAY_TTL_MS)
+
+    def _clear_gate_overlay(self) -> None:
+        """Clear any active overlay countdown banner (idempotent)."""
+        if self.lan_server is not None:
+            self.lan_server.send_overlay_notice(text="", ttl_ms=0)
+
+    async def _gate_countdown(self, ev: GateEntered) -> bool:
+        """Count the grace window down one second at a time, pushing an
+        on-Switch overlay notice each tick so the player sees *why* they're
+        about to be bounced.  Returns ``True`` if the loop should STOP (a
+        precondition lapsed mid-countdown -- the overlay is cleared in that
+        case), or ``False`` once the full window elapsed and the caller
+        should fire the kill."""
+        sk = ev.stage_key & 0xFFFFFFFF
+        remaining = float(GATE_KILL_DELAY_S)
+        while remaining > 0:
+            reason = self._gate_check_stop(ev)
+            if reason is not None:
+                log.info("gate kill stage_key=0x%08x: %s; stopping", sk, reason)
+                self._clear_gate_overlay()
+                return True
+            self._push_gate_overlay(ev, max(1, math.ceil(remaining)))
+            step = 1.0 if remaining > 1.0 else remaining
+            await asyncio.sleep(step)
+            remaining -= step
+        return False
+
     async def _gate_kill_loop(self, ev: GateEntered) -> None:
-        """Sleep the grace window, then kill -- repeating every window
-        while the player is still inside the gated course without the
-        item.  Stops the moment any precondition lapses (left the
-        course, moved courses, acquired the item, gating disabled, no
-        Switch bound) or the safety cap is reached."""
+        """Count down the grace window (surfacing an on-Switch overlay
+        countdown), then kill -- repeating every window while the player is
+        still inside the gated course without the item.  Stops the moment
+        any precondition lapses (left the course, moved courses, acquired
+        the item, gating disabled, no Switch bound) or the safety cap is
+        reached."""
         cause = self._gate_kill_cause(ev)
         sk = ev.stage_key & 0xFFFFFFFF
         kills = 0
         try:
             while True:
-                await asyncio.sleep(GATE_KILL_DELAY_S)
-                if not self.entry_gating_enabled:
-                    log.info("gate kill stage_key=0x%08x: gating disabled; "
-                             "stopping", sk)
+                if await self._gate_countdown(ev):
                     return
-                if not self.bridge_state.is_in_course():
-                    log.info("gate kill stage_key=0x%08x: player left the "
-                             "course; stopping", sk)
-                    return
-                cur = self.bridge_state.current_course
-                if cur is None or cur.stage_key != ev.stage_key:
-                    log.info("gate kill stage_key=0x%08x: player moved to a "
-                             "different course; stopping", sk)
-                    return
-                if self._gate_requirement_met(ev):
-                    log.info("gate kill stage_key=0x%08x: requirement now "
-                             "satisfied; stopping", sk)
-                    return
-                if self.lan_server is None:
-                    log.info("gate kill stage_key=0x%08x: no Switch bound; "
-                             "stopping", sk)
+                # Re-check after the final countdown second so a precondition
+                # that lapsed in that last second still aborts the kill.
+                reason = self._gate_check_stop(ev)
+                if reason is not None:
+                    log.info("gate kill stage_key=0x%08x: %s; stopping",
+                             sk, reason)
+                    self._clear_gate_overlay()
                     return
                 self.lan_server.send_kill(source="SMBW Gate", cause=cause)
                 kills += 1
@@ -698,10 +760,12 @@ class SMBWContext(CommonContext):
                         "gate kill stage_key=0x%08x: hit safety cap (%d); "
                         "stopping (re-arms on re-entry)",
                         sk, GATE_MAX_CONSECUTIVE_KILLS)
+                    self._clear_gate_overlay()
                     return
         except asyncio.CancelledError:
             raise
         finally:
+            self._clear_gate_overlay()
             if self._gate_kill_task is asyncio.current_task():
                 self._gate_kill_task = None
 

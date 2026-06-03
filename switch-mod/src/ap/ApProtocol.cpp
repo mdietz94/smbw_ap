@@ -193,6 +193,40 @@ bool parseKill(util::json::Reader& r, WireKill& out) {
     return saw_source && saw_cause;
 }
 
+bool parseOverlayNotice(util::json::Reader& r, WireOverlayNotice& out) {
+    // Cursor just after "t":"overlay_notice".  `text` is a string (capped
+    // to the fixed buffer); `ttl_ms` an int clamped to [0, 60000].  Either
+    // missing -> reject; the bridge always emits both.
+    std::string_view key;
+    bool saw_text = false;
+    bool saw_ttl = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "text")) {
+            std::string_view sv;
+            if (!r.nextString(sv)) return false;
+            copyFixedN(out.text, sv.data(), sv.size());
+            saw_text = true;
+        } else if (sv_eq(key, "ttl_ms")) {
+            std::int64_t i = 0;
+            if (!r.nextInt(i)) return false;
+            if (i < 0) i = 0;
+            if (i > 60000) i = 60000;
+            out.ttl_ms = static_cast<std::int32_t>(i);
+            saw_ttl = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_text && saw_ttl;
+}
+
 bool parseGrantHashKeyed(util::json::Reader& r, WireGrantHashKeyed& out) {
     // Cursor is positioned just after "t":"grant_hash_keyed".  Both fields
     // are u32; the bridge validates [0, 2**32) before sending.  We accept
@@ -621,6 +655,10 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::SetWonderSeedsAbsolute;
         out.set_wonder_seeds_absolute = WireSetWonderSeedsAbsolute{};
         if (!parseSetWonderSeedsAbsolute(r, out.set_wonder_seeds_absolute)) return false;
+    } else if (std::strcmp(t_val, "overlay_notice") == 0) {
+        out.kind = InboundKind::OverlayNotice;
+        out.overlay_notice = WireOverlayNotice{};
+        if (!parseOverlayNotice(r, out.overlay_notice)) return false;
     } else if (std::strcmp(t_val, "kill") == 0) {
         out.kind = InboundKind::Kill;
         out.kill = WireKill{};

@@ -724,6 +724,48 @@ class KillMsg:
 
 
 @dataclass(frozen=True)
+class OverlayNoticeMsg:
+    """Bridge -> Switch.  Force the on-Switch ImGui debug overlay visible
+    (even while the bridge is connected) and display ``text`` for
+    ``ttl_ms`` milliseconds.
+
+    Used by the level-entry death-gate countdown
+    (:meth:`...context.SMBWContext._gate_kill_loop`) so the player sees
+    *why* they're about to be bounced -- a "Level not in logic" banner
+    plus a per-second countdown -- instead of dying with no explanation.
+
+    The Switch applies this on its network rx thread; it only writes the
+    overlay's notice state, so unlike the grant messages it does NOT go
+    through the game-thread inbound ring.  An empty ``text`` or
+    ``ttl_ms <= 0`` clears any active notice; ``ttl_ms`` is clamped to
+    [0, 60000] by the Switch decoder.
+    """
+
+    T = "overlay_notice"
+
+    text: str
+    ttl_ms: int
+
+    # MUST match kOverlayTextCap in
+    # switch-mod/src/ap/ApProtocol.hpp -- bump both together.
+    TEXT_CAP = 192
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "t": self.T,
+            "text": self.text[: self.TEXT_CAP],
+            "ttl_ms": int(self.ttl_ms),
+        }
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> OverlayNoticeMsg:
+        return cls(
+            text=_req_str(d, "text"),
+            ttl_ms=int(d.get("ttl_ms", 0)),
+        )
+
+
+@dataclass(frozen=True)
 class ErrMsg:
     """Either direction.  Protocol-level error notification.
 
@@ -819,6 +861,7 @@ WireMsg = (
     | SetWonderSeedCountsMsg
     | SetWonderSeedsAbsoluteMsg
     | KillMsg
+    | OverlayNoticeMsg
     | ErrMsg
     | PingMsg
     | PongMsg
@@ -842,6 +885,7 @@ _FROM_WIRE: dict[str, Any] = {
     SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,
     SetWonderSeedsAbsoluteMsg.T: SetWonderSeedsAbsoluteMsg.from_wire,
     KillMsg.T: KillMsg.from_wire,
+    OverlayNoticeMsg.T: OverlayNoticeMsg.from_wire,
     ErrMsg.T: ErrMsg.from_wire,
     PingMsg.T: PingMsg.from_wire,
     PongMsg.T: PongMsg.from_wire,
