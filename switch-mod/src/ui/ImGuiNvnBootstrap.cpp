@@ -234,8 +234,15 @@ HkTrampoline<nvn::GenericFuncPtrFunc, const char*> nvnBootstrapHook =
 }  // namespace
 
 void installNvnImGuiHooks() {
-    nvnBootstrapHook.installAtSym<"nvnBootstrapLoader">();
-    SMBWAP_LOG_INFO("[overlay] NVN bootstrap hook installed");
+    const hk::Result rc = nvnBootstrapHook.installAtSym<"nvnBootstrapLoader">();
+    if (rc.failed()) {
+        SMBWAP_LOG_ERROR(
+            "[overlay] nvnBootstrapLoader hook install FAILED rc=0x%x "
+            "(symbol unresolved under HK_DISABLE_SAIL?) — overlay disabled",
+            static_cast<unsigned>(rc.getValue()));
+    } else {
+        SMBWAP_LOG_INFO("[overlay] NVN bootstrap hook installed OK");
+    }
 }
 
 }  // namespace smbwap::ui
