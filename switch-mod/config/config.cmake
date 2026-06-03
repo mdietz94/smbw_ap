@@ -32,7 +32,23 @@ set(USE_SAIL FALSE)
 set(TRAMPOLINE_POOL_SIZE 0x40)
 set(BAKE_SYMBOLS FALSE)
 
-# Phase 1: no addons. HeapSourceDynamic is needed only once we allocate via
-# new/malloc through the game's heap (none of Phase 1's code does). Nvn /
-# ImGui / DebugRenderer come back when we restore the debug overlay.
-set(HAKKUN_ADDONS )
+# Debug overlay (docs/handoff-imgui-overlay.md): the on-Switch ImGui overlay
+# renders through LibHakkun's NVN backend (hk::gfx::ImGuiBackendNvn), which
+# ships embedded shaders + self-contained NVN bindings — no SD card, no glslc,
+# no exlaunch backend port. The ImGui addon depends on Nvn.
+#
+# Gate the addons on lib/imgui being checked out: the ImGui addon's CMakeLists
+# FATAL_ERRORs without it, and CMakeLists.txt likewise gates
+# SMBWAP_HAS_DEBUG_RENDERER on imgui.h existing. So with the submodule absent
+# (the default for CI / fresh clones) NO addon is enabled and the live build is
+# byte-for-byte unchanged; checking out switch-mod/lib/imgui opts the overlay in.
+#
+# USE_SAIL stays FALSE: the PlayReport hooks in src/main.cpp already prove
+# installAtSym<mangled>() resolves SDK symbols at runtime via hk::ro::lookupSymbol
+# under HK_DISABLE_SAIL, so the nvnBootstrapLoader @sdk symbol resolves the same
+# way — no VersionList.sym population needed.
+if(EXISTS ${CMAKE_CURRENT_LIST_DIR}/../lib/imgui/imgui.h)
+    set(HAKKUN_ADDONS Nvn ImGui)
+else()
+    set(HAKKUN_ADDONS )
+endif()

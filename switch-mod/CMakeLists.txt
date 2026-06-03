@@ -25,6 +25,8 @@ set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/main.cpp
     ${PROJECT_SOURCE_DIR}/src/util/Log.cpp
     ${PROJECT_SOURCE_DIR}/src/util/Json.cpp
+    ${PROJECT_SOURCE_DIR}/src/ui/ApDebugConsole.cpp
+    ${PROJECT_SOURCE_DIR}/src/ui/ImGuiNvnBootstrap.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApClient.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApDiscovery.cpp
     ${PROJECT_SOURCE_DIR}/src/ap/ApFrameBridge.cpp
@@ -50,6 +52,42 @@ target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 # as dynamic relocations.
 target_link_options(${PROJECT_NAME} PRIVATE
     -Wl,--unresolved-symbols=ignore-all)
+
+# On-Switch ImGui debug overlay (src/ui/ApDebugConsole.cpp +
+# src/ui/ImGuiNvnBootstrap.cpp). The overlay renders through LibHakkun's NVN
+# backend (hk::gfx::ImGuiBackendNvn, the Nvn + ImGui addons enabled in
+# config.cmake) — embedded shaders, self-contained NVN bindings, no SD card.
+# Our present hook (ImGuiNvnBootstrap.cpp) owns the single nvnBootstrapLoader
+# trampoline and feeds the backend; we do NOT use the addon's auto-hook path.
+# See docs/handoff-imgui-overlay.md for the chosen-approach writeup.
+#
+# The rendering body is gated by SMBWAP_HAS_DEBUG_RENDERER so the build still
+# works when lib/imgui isn't checked out (the default — config.cmake then
+# enables no addons and this whole block is skipped).
+#
+# The main TUs that #include "imgui.h" (ApDebugConsole.cpp + ImGuiNvnBootstrap)
+# MUST compile imgui with the SAME config the ImGui addon uses, or the ImGuiIO /
+# ImDrawData struct layouts diverge across the TU boundary (ABI mismatch ->
+# crash). The addon sets IMGUI_DISABLE_DEFAULT_ALLOCATORS +
+# IMGUI_USER_CONFIG=<addon>/include/hk/gfx/ImGuiConfig.h; mirror both here. The
+# addon include dir (for hk/gfx/ImGuiBackendNvn.h) is added to this target by
+# enable_addons() in sys/cmake/module.cmake.
+if(EXISTS ${CMAKE_SOURCE_DIR}/lib/imgui/imgui.h)
+    # lib/imgui for "imgui.h"; sys/addons/Nvn/include/hk so the addon's NVN
+    # headers can resolve their own internal "nvn/..." includes (enable_addons
+    # only puts each addon's include/ root on this target, not include/hk —
+    # that's only added to the addon's own build).
+    target_include_directories(${PROJECT_NAME} PRIVATE
+        lib/imgui
+        ${CMAKE_SOURCE_DIR}/sys/addons/Nvn/include/hk)
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        SMBWAP_HAS_DEBUG_RENDERER=1
+        IMGUI_DISABLE_DEFAULT_ALLOCATORS
+        IMGUI_USER_CONFIG="${CMAKE_SOURCE_DIR}/sys/addons/ImGui/include/hk/gfx/ImGuiConfig.h")
+    message(STATUS "smbwap: ImGui debug overlay ENABLED (lib/imgui present, LibHakkun NVN backend)")
+else()
+    message(STATUS "smbwap: ImGui overlay gated off (lib/imgui not checked out)")
+endif()
 
 include(sys/cmake/module.cmake)
 include(sys/cmake/deploy.cmake)
