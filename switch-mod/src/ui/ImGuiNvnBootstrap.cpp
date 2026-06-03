@@ -28,7 +28,9 @@
 
 #ifdef SMBWAP_HAS_DEBUG_RENDERER
 
+#include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -64,9 +66,68 @@ nvn::CommandBufferSetTexturePoolFunc s_origSetTexturePool = nullptr;
 nvn::CommandBufferSetSamplerPoolFunc s_origSetSamplerPool = nullptr;
 nvn::WindowSetCropFunc               s_origWindowSetCrop  = nullptr;
 
-bool s_imguiInited = false;
+// Draw-gate state. init-readiness (the backend/context/atlas are up) is NOT
+// the same as draw-readiness (it is actually safe to record + submit a frame),
+// and conflating the two is what crashed boot: the first nvnQueuePresentTexture
+// could fire before the game had bound its texture/sampler pools, so the
+// backend's draw() recorded against a null pool and faulted inside the NVN
+// driver (nnSdk) on the Presentation Thread — intermittently, depending on
+// whether the pool-set calls happened to land before that first present.
+//
+// All of these are written from the NVN init / set-pool / present shims, which
+// in practice run on the single render thread; we still use std::atomic per the
+// subsdk no-thread_local rule (CLAUDE.md gotcha #1) and to make the ordering
+// explicit. The captured Device/Queue/CommandBuffer above are set once during
+// graphics bring-up and only read after s_imguiInited is observed true.
+std::atomic<bool> s_imguiInited{false};
+// Both pools must have been seen at least once before draw() is safe — these
+// flip when the game calls nvnCommandBufferSet{Texture,Sampler}Pool, which is
+// also when we forward the live pool to the backend (set*PoolShim below).
+std::atomic<bool> s_texturePoolSeen{false};
+std::atomic<bool> s_samplerPoolSeen{false};
+// Warm-up: even once everything is wired, hold off drawing for a stretch of
+// presents so we never paint into a half-settled swapchain during boot. The
+// overlay is a debug aid with no urgency (per maintainer: fine to gate "until
+// safe"), so we err heavily toward late. Counting presents is the natural
+// render-thread clock — there is no cheap wall-clock here. ~300 presents is
+// roughly 5s at 60fps (longer at 30fps; that is fine).
+constexpr int32_t kWarmupPresents = 300;
+std::atomic<int32_t> s_warmupPresents{0};
+// Latched true once the full gate first passes; thereafter the present shim
+// takes a cheap fast path. Never cleared (the captured objects live for the
+// process), which also avoids the warm-up counter wrapping.
+std::atomic<bool> s_drawArmed{false};
 
 hk::gfx::ImGuiBackendNvn* backend() { return hk::gfx::ImGuiBackendNvn::instance(); }
+
+// Gate the per-frame overlay draw. Returns true only when it is safe to record
+// and submit an ImGui frame on the captured NVN objects. Once it returns true
+// it latches, so the steady-state cost is a single relaxed atomic load.
+bool overlayDrawReady() {
+    if (s_drawArmed.load(std::memory_order_acquire)) return true;
+
+    // Backend + context + atlas are up.
+    if (!s_imguiInited.load(std::memory_order_acquire)) return false;
+    // Captured NVN trio is present and the backend agrees it initialized.
+    if (s_device == nullptr || s_queue == nullptr || s_cmdBuf == nullptr) return false;
+    if (!backend()->isInitialized()) return false;
+    // The game has bound both pools at least once, so draw() has live pools to
+    // record against instead of null.
+    if (!s_texturePoolSeen.load(std::memory_order_acquire)) return false;
+    if (!s_samplerPoolSeen.load(std::memory_order_acquire)) return false;
+
+    // Everything is wired — start (or continue) the warm-up countdown. The
+    // counter only advances from this known-good state, so the warm-up measures
+    // settled presents rather than presents-since-boot.
+    const int32_t seen =
+        s_warmupPresents.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (seen < kWarmupPresents) return false;
+
+    s_drawArmed.store(true, std::memory_order_release);
+    SMBWAP_LOG_INFO("[overlay] draw gate armed (%d warm-up presents elapsed)",
+                    static_cast<int>(seen));
+    return true;
+}
 
 // ImGui + the NVN backend allocate GPU-mappable memory (vertex/index/shader/
 // texture pools) through this allocator; the pool allocations demand page
@@ -123,6 +184,11 @@ bool initImGui() {
 void procDraw() {
     auto* bd = backend();
 
+    // Defensive: overlayDrawReady() already vetted these, but the cost of a
+    // re-check is nil next to a null deref inside the NVN driver.
+    if (bd == nullptr || s_cmdBuf == nullptr || s_queue == nullptr) return;
+    if (!bd->isInitialized()) return;
+
     ImGuiIO& io = ImGui::GetIO();
     io.DeltaTime = 1.0f / 60.0f;  // display-only; a fixed step keeps NewFrame happy
 
@@ -143,12 +209,18 @@ void procDraw() {
 
 void setTexturePoolShim(nvn::CommandBuffer* cmdBuf, const nvn::TexturePool* pool) {
     s_origSetTexturePool(cmdBuf, pool);
-    backend()->setPrevTexturePool(const_cast<nvn::TexturePool*>(pool));
+    if (pool != nullptr) {
+        backend()->setPrevTexturePool(const_cast<nvn::TexturePool*>(pool));
+        s_texturePoolSeen.store(true, std::memory_order_release);
+    }
 }
 
 void setSamplerPoolShim(nvn::CommandBuffer* cmdBuf, const nvn::SamplerPool* pool) {
     s_origSetSamplerPool(cmdBuf, pool);
-    backend()->setPrevSamplerPool(const_cast<nvn::SamplerPool*>(pool));
+    if (pool != nullptr) {
+        backend()->setPrevSamplerPool(const_cast<nvn::SamplerPool*>(pool));
+        s_samplerPoolSeen.store(true, std::memory_order_release);
+    }
 }
 
 void windowSetCropShim(nvn::Window* window, int x, int y, int w, int h) {
@@ -159,7 +231,7 @@ void windowSetCropShim(nvn::Window* window, int x, int y, int w, int h) {
 }
 
 void presentTextureShim(nvn::Queue* queue, nvn::Window* window, int texIndex) {
-    if (s_imguiInited) procDraw();
+    if (overlayDrawReady()) procDraw();
     s_origPresentTexture(queue, window, texIndex);
 }
 
@@ -182,7 +254,9 @@ NVNboolean queueInitShim(nvn::Queue* queue, const nvn::QueueBuilder* builder) {
 NVNboolean cmdBufInitShim(nvn::CommandBuffer* buffer, nvn::Device* device) {
     NVNboolean result = s_origCmdBufInit(buffer, device);
     s_cmdBuf = buffer;
-    if (!s_imguiInited) s_imguiInited = initImGui();
+    if (!s_imguiInited.load(std::memory_order_acquire)) {
+        if (initImGui()) s_imguiInited.store(true, std::memory_order_release);
+    }
     return result;
 }
 
