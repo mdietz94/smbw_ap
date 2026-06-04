@@ -113,11 +113,42 @@ setPerCourseBitfieldAbsolute`.
    checks; death-gate still blocks premature Bowser; goal works after palaces.
    Tail `[smbwap` log for the new `[unlock]` lines + backpressure warnings.
 
+## ⚑ STATIC-RE FINDING (2026-06-03, confirmed) — read this first
+
+The container-B bool replay (85 hashes) does NOT make courses appear, and Ghidra
+RE explains why:
+
+- `FUN_7100935ce0` gates a world on its per-world record's `vtable[+0x20]() >= 1`
+  — a **count** of the world's content — AND `*(*(record+0x28)) & 1`. The
+  world-map course-node UI reads the same per-world record. A fresh world's count
+  is 0, so **no course nodes are drawn** regardless of any bool.
+- `savediff.py fresh→100%` breakdown: **~85 pair-region bool flips + ~10 stat
+  counters, but 736 trailing-region runs (file offset 0xbf0+).** The trailing
+  region is the bulk and holds the **per-course records** (per-course structs with
+  embedded course-name strings) that populate the count and the map nodes.
+- => The unlock state lives in the **trailing per-course region**, NOT the
+  pair-region containers A/B. The agent replayed the wrong (small) layer.
+
+**Refined direction:** write the per-course records, not bools. The mod ALREADY
+has the container-D per-course writer (`probe::setPerCourseBitfieldAbsolute` →
+`FUN_7101F2B354`, gmd `+0x788` deferred / `+0x800` live; `PerCourse.cpp` +
+`SeedTrace.cpp::pushWonderSeedContainerDCounts` already encode per-world counts as
+container-D bitmasks). The gap is the **course-name → course-index mapping**
+(Murmur3 `FUN_71003D4110`) so we know which `(hash, course_index, bitmask)` writes
+correspond to "this world's courses exist/unlocked". Use the 100% save's
+trailing region as ground truth: map its changed per-course runs to container-D
+writes, replay them for the active world(s), verify course nodes appear.
+
+**Alternative if trailing-region writes prove too gnarly:** pivot the "teleport"
+to a **direct stage-warp** — find SMBW's load-course-by-stage-key routine and warp
+the player straight into a course, bypassing the world-map unlock entirely. This
+sidesteps the per-course-record problem but is its own RE (find + safely call the
+warp). May be the more pragmatic shippable path.
+
 ## Risks / open questions
-- **Course-node population may need more than container bools** — if setting the
-  bool/bitfield hashes doesn't make course nodes appear, the world-map nodes likely
-  live in the trailing per-course records (container-D / the 0xbf0+ region, partly
-  un-RE'd — see `docs/handoff-2026-05-29-ws-persistence.md`). RE that region next.
+- **Course-node population needs the trailing per-course region** (CONFIRMED above),
+  which is only partly RE'd — see `docs/handoff-2026-05-29-ws-persistence.md` and
+  the container-D code in `switch-mod/src/probe/PerCourse.cpp` / `SeedTrace.cpp`.
 - **Batch-write safety**: hundreds of deferred-queue writes can hit backpressure /
   race scene transitions → game Abort. Spread + gate.
 - **100% save has Bowser/everything cleared** — exclude those flags or Bowser
