@@ -577,6 +577,8 @@ class SMBWContext(CommonContext):
                 source, cause)
             return
         log.info("[deathlink in] source=%s cause=%s -> Switch", source, cause)
+        notice = f"DeathLink!\n{source}" if not cause else f"DeathLink!\n{source}: {cause}"
+        self.lan_server.send_overlay_notice(text=notice, ttl_ms=5000)
         self.lan_server.send_kill(source=source, cause=cause)
 
     async def handle_death_reported(self, death: DeathReported) -> None:

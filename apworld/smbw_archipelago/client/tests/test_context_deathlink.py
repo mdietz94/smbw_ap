@@ -100,8 +100,26 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
             "source": "Friend",
             "cause": "fell in a pit",
         })
+        self.ctx.lan_server.send_overlay_notice.assert_called_once()
+        _, kw = self.ctx.lan_server.send_overlay_notice.call_args
+        self.assertIn("Friend", kw["text"])
+        self.assertIn("fell in a pit", kw["text"])
         self.ctx.lan_server.send_kill.assert_called_once_with(
             source="Friend", cause="fell in a pit")
+
+    def test_on_deathlink_forwards_no_cause(self):
+        """When cause is empty the overlay still shows just the source."""
+        self.ctx.deathlink_enabled = True
+        self.ctx.on_deathlink({
+            "time": 1.0,
+            "source": "Friend",
+            "cause": "",
+        })
+        self.ctx.lan_server.send_overlay_notice.assert_called_once()
+        _, kw = self.ctx.lan_server.send_overlay_notice.call_args
+        self.assertIn("Friend", kw["text"])
+        self.ctx.lan_server.send_kill.assert_called_once_with(
+            source="Friend", cause="")
 
     def test_on_deathlink_no_forward_when_disabled(self):
         self.ctx.deathlink_enabled = False
@@ -111,6 +129,7 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
             "cause": "x",
         })
         self.ctx.lan_server.send_kill.assert_not_called()
+        self.ctx.lan_server.send_overlay_notice.assert_not_called()
 
     def test_on_deathlink_drops_self_sourced_bounce(self):
         self.ctx.deathlink_enabled = True
@@ -121,6 +140,7 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
             "cause": "mario_died",
         })
         self.ctx.lan_server.send_kill.assert_not_called()
+        self.ctx.lan_server.send_overlay_notice.assert_not_called()
 
     def test_on_deathlink_with_no_lan_server_just_logs(self):
         self.ctx.deathlink_enabled = True
