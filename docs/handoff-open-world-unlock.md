@@ -145,6 +145,48 @@ the player straight into a course, bypassing the world-map unlock entirely. This
 sidesteps the per-course-record problem but is its own RE (find + safely call the
 warp). May be the more pragmatic shippable path.
 
+## ⚑ PATH A — concrete recipe + RE findings (2026-06-03, second Ghidra pass)
+
+Decided direction: write the per-course / route records via the existing
+container writer; do NOT ship a save. Key functions nailed down:
+
+- **Course-index resolver `FUN_71003D4110(murmur3_name_hash, &out_index)`**
+  (NSO +0x3D4110): there are exactly **81 courses** (loop 0..0x50). A static array
+  of course-name string pointers lives at **`PTR_s_Course1_71034dec90`** (81 ptrs).
+  `course_index` = the array slot **0..80**; the key is the **Murmur3 hash of the
+  course's internal name**. So container writes are keyed by
+  `(course_type_hash, course_index 0..80)`.
+- **Write target is the FlowerLock container @ gmd+0x800** (world-map ROUTES). The
+  reader the mod calls "container-D per-course" — `FUN_71000E258C` — is now
+  labeled `FlowerLockBitfieldReader_gmd800` in the shared Ghidra DB (the
+  `claude/elastic-hopper-94525d` agent is RE'ing this same container — COORDINATE).
+  It hash-probes gmd+0x800 (cap gmd+0x80c), data array gmd+0x7f8 (slot*0x40+0x28),
+  falls back to gmd+0x788 (`FUN_71000e26a8`). `probe::setPerCourseBitfieldAbsolute`
+  (writer `FUN_7101F2B354` @ +0x1F2B354 — note: not a *defined* function in the
+  DB, but the live mod calls it fine) writes into this container.
+- The teleport UI lists, per world, the **courses you've reached**; a fresh world's
+  list is empty (→ "no courses, can't teleport"). The 100% save has them all.
+
+**Recipe to implement & test:**
+1. Enumerate the 81 course names from `PTR_s_Course1_71034dec90` → map
+   `course_index 0..80` → world (which indices belong to W1..W6/PI/Special).
+2. Diff the 100% save's trailing region vs fresh, per course, to get the target
+   `(course_type_hash, course_index, bitmask)` writes that mark a course
+   reached/route-open (the per-course-type hashes incl. CourseClear/Normal @ file
+   0x43F0, GoalSeed @ 0x3348, CourseClear/Badge @ 0x4438, and the FlowerLock
+   route hash(es) @ gmd+0x800 — confirm which one drives the teleport list / node
+   visibility, likely FlowerLock).
+3. Replay those via `setPerCourseBitfieldAbsolute` for the **active** world's
+   course indices only (batch across ticks; respect `checkContainerD()`
+   backpressure — already built into the writer).
+4. Verify in Ryujinx (FRESH save + open-world seed): active world's course nodes
+   appear + teleportable; clears fire AP checks; death-gate still gates Bowser.
+
+Open sub-question to pin first: WHICH bit/hash makes a course show in the teleport
+list — the FlowerLock route bit (gmd+0x800) or a CourseClear/visited flag. Bisect
+with one course: write only the FlowerLock bit for one W-active course, see if it
+appears; if not, add the CourseClear/GoalSeed bits.
+
 ## Risks / open questions
 - **Course-node population needs the trailing per-course region** (CONFIRMED above),
   which is only partly RE'd — see `docs/handoff-2026-05-29-ws-persistence.md` and
