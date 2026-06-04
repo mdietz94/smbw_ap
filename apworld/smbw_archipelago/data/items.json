@@ -69,7 +69,7 @@
       "Badge"
     ],
     
-		"useful": true
+		"progression": true
   },
   {
     
@@ -381,7 +381,7 @@
       "Badge"
     ],
     
-		"useful": true
+		"progression": true
   },
   {
     
@@ -453,7 +453,7 @@
       "Badge"
     ],
     
-		"useful": true
+		"progression": true
   },
   {
     
@@ -549,7 +549,7 @@
       "Badge"
     ],
     
-		"filler": true
+		"progression": true
   },
   {
     
