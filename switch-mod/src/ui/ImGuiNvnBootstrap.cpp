@@ -54,7 +54,31 @@ namespace {
 // Captured NVN objects (set by the GetProcAddress intercepts below).
 nvn::Device*        s_device  = nullptr;
 nvn::Queue*         s_queue   = nullptr;
-nvn::CommandBuffer* s_cmdBuf  = nullptr;
+
+// The command buffer we record the overlay into.  This is the GAME's own
+// command buffer, pinned at the first nvnCommandBufferInitialize and reused
+// for the process lifetime (the proven exlaunch-lineage recipe — see
+// src/program/imgui_backend/imgui_impl_nvn.cpp: the backend captured the first
+// game cmdBuf at InitBackend and called BeginRecording/EndRecording/Submit on
+// it every present, never owning its own command memory).
+//
+// Why NOT a dedicated cmdBuf we allocate ourselves: Ryujinx's NVN emulation
+// rejects BeginRecording on any cmdBuf whose command-memory pool we set up via
+// AddCommandMemory (heap OR BSS) — it aborts inside nvnCommandBufferBeginRecording
+// (nnSdk:0x442b80).  Only the game's cmdBufs, whose command memory the game
+// registered through paths the emulator accepts, survive BeginRecording.
+//
+// Why pin + re-pin (not track-latest): the game finalizes (frees) its cmdBufs
+// at scene transitions (title -> save selector).  Tracking the *latest* one
+// left a dangling pointer when that cmdBuf was freed mid-overlay, faulting in
+// BeginRecording on freed memory (nnSdk:0x442ad0).  We instead pin the cmdBuf
+// and DROP it the instant the game finalizes it (cmdBufFinalizeShim), re-pinning
+// on the next nvnCommandBufferInitialize.  procDraw null-checks every frame, so
+// the brief gap where no cmdBuf is pinned just skips a frame — no dangle.
+//
+// Atomic because cmdBufFinalizeShim (main/scene thread) can null it while
+// presentTextureShim (presentation thread) reads it.
+std::atomic<nvn::CommandBuffer*> s_imguiCmdBuf{nullptr};
 
 // Saved originals.
 nvn::DeviceGetProcAddressFunc        s_origGetProcAddress = nullptr;
@@ -65,11 +89,12 @@ nvn::QueuePresentTextureFunc         s_origPresentTexture = nullptr;
 nvn::CommandBufferSetTexturePoolFunc s_origSetTexturePool = nullptr;
 nvn::CommandBufferSetSamplerPoolFunc s_origSetSamplerPool = nullptr;
 nvn::WindowSetCropFunc               s_origWindowSetCrop  = nullptr;
+nvn::CommandBufferSetViewportFunc    s_origSetViewport    = nullptr;
 // Finalize originals — hooked so we can drop our captured Queue/CommandBuffer
 // pointers the instant the game tears them down (see the scene-transition
 // crash note on s_drawArmed below).
-nvn::CommandBufferFinalizeFunc       s_origCmdBufFinalize = nullptr;
-nvn::QueueFinalizeFunc               s_origQueueFinalize  = nullptr;
+nvn::CommandBufferFinalizeFunc            s_origCmdBufFinalize    = nullptr;
+nvn::QueueFinalizeFunc                    s_origQueueFinalize     = nullptr;
 
 // Draw-gate state. init-readiness (the backend/context/atlas are up) is NOT
 // the same as draw-readiness (it is actually safe to record + submit a frame),
@@ -113,13 +138,17 @@ bool overlayDrawReady() {
 
     // Backend + context + atlas are up.
     if (!s_imguiInited.load(std::memory_order_acquire)) return false;
-    // Captured NVN trio is present and the backend agrees it initialized.
-    if (s_device == nullptr || s_queue == nullptr || s_cmdBuf == nullptr) return false;
+    // A game cmdBuf must be pinned; the present queue comes from the caller.
+    if (s_device == nullptr ||
+        s_imguiCmdBuf.load(std::memory_order_acquire) == nullptr) return false;
     if (!backend()->isInitialized()) return false;
-    // The game has bound both pools at least once, so draw() has live pools to
-    // record against instead of null.
-    if (!s_texturePoolSeen.load(std::memory_order_acquire)) return false;
-    if (!s_samplerPoolSeen.load(std::memory_order_acquire)) return false;
+    // Pool preconditions (s_texturePoolSeen / s_samplerPoolSeen) are intentionally
+    // omitted here. On Ryujinx the emulated NVN never routes through our
+    // setTexturePool/setSamplerPool shims, so those flags stay false forever and
+    // the draw gate would never arm. The pool shims still forward pool pointers to
+    // the backend when they DO fire (real hardware), so draw() gets live pools
+    // there. On Ryujinx the backend handles null pools without crashing (the
+    // original boot-crash was the dangling cmdBuf, fixed by the finalize hooks).
 
     // Everything is wired — start (or continue) the warm-up countdown. The
     // counter only advances from this known-good state, so the warm-up measures
@@ -146,7 +175,7 @@ void* imguiAlloc(::size sz, ::size align) {
 void imguiFree(void* p) { std::free(p); }
 
 bool initImGui() {
-    if (!(s_device && s_queue && s_cmdBuf)) return false;
+    if (!s_device) return false;
 
     auto* bd = backend();
     bd->setAllocator({ &imguiAlloc, &imguiFree });
@@ -183,49 +212,51 @@ bool initImGui() {
     return true;
 }
 
-// Drive one ImGui frame from the present shim, where s_cmdBuf is idle (the game
-// already submitted this frame) and the swapchain texture is still the bound
-// render target — the wondar/exlaunch present-hook invariant.
-void procDraw() {
-    auto* bd = backend();
-
-    // Defensive: overlayDrawReady() already vetted these, but the cost of a
-    // re-check is nil next to a null deref inside the NVN driver.
-    if (bd == nullptr || s_cmdBuf == nullptr || s_queue == nullptr) return;
+// Drive one ImGui frame on the pinned game cmdBuf.  At present time the game
+// has finished + submitted its frame, so the cmdBuf is in INITIAL state and
+// safe to BeginRecording; our commands draw on top of the game's frame and are
+// submitted before the original present chains.  The queue comes from
+// presentTextureShim.  We load the pinned cmdBuf once and null-check it here so
+// a finalize on another thread (scene transition) cleanly skips the frame.
+void procDraw(nvn::Queue* queue) {
+    auto* bd     = backend();
+    auto* cmdBuf = s_imguiCmdBuf.load(std::memory_order_acquire);
+    if (bd == nullptr || cmdBuf == nullptr || queue == nullptr) return;
     if (!bd->isInitialized()) return;
 
     ImGuiIO& io = ImGui::GetIO();
-    io.DeltaTime = 1.0f / 60.0f;  // display-only; a fixed step keeps NewFrame happy
+    io.DeltaTime = 1.0f / 60.0f;
 
     bd->update();
     ImGui::NewFrame();
-    drawDebugConsole();  // emits the overlay window only when visible
+    drawDebugConsole();
     ImGui::Render();
 
-    // The backend records ImGui draws but neither begins nor submits — we own
-    // the recording lifecycle on the captured command buffer + queue.
-    s_cmdBuf->BeginRecording();
-    bd->draw(ImGui::GetDrawData(), s_cmdBuf);
-    nvn::CommandHandle handle = s_cmdBuf->EndRecording();
-    s_queue->SubmitCommands(1, &handle);
+    const auto* drawData = ImGui::GetDrawData();
+    cmdBuf->BeginRecording();
+    if (drawData) bd->draw(drawData, cmdBuf);
+    nvn::CommandHandle handle = cmdBuf->EndRecording();
+    queue->SubmitCommands(1, &handle);
 }
 
 // ---- NVN proc shims (returned to the game from getProc) ------------------
 
 void setTexturePoolShim(nvn::CommandBuffer* cmdBuf, const nvn::TexturePool* pool) {
+    // Null-guard: the ImGui backend calls SetTexturePool(null) at the end of
+    // draw() to restore mPrevTexturePool — null when Ryujinx never routes the
+    // game's SetTexturePool calls through our shim.  Setting a null pool aborts
+    // NVN on both emulator and hardware.  Skip null; only forward valid pools.
+    if (pool == nullptr) return;
     s_origSetTexturePool(cmdBuf, pool);
-    if (pool != nullptr) {
-        backend()->setPrevTexturePool(const_cast<nvn::TexturePool*>(pool));
-        s_texturePoolSeen.store(true, std::memory_order_release);
-    }
+    backend()->setPrevTexturePool(const_cast<nvn::TexturePool*>(pool));
+    s_texturePoolSeen.store(true, std::memory_order_release);
 }
 
 void setSamplerPoolShim(nvn::CommandBuffer* cmdBuf, const nvn::SamplerPool* pool) {
+    if (pool == nullptr) return;  // same null-guard as setTexturePoolShim
     s_origSetSamplerPool(cmdBuf, pool);
-    if (pool != nullptr) {
-        backend()->setPrevSamplerPool(const_cast<nvn::SamplerPool*>(pool));
-        s_samplerPoolSeen.store(true, std::memory_order_release);
-    }
+    backend()->setPrevSamplerPool(const_cast<nvn::SamplerPool*>(pool));
+    s_samplerPoolSeen.store(true, std::memory_order_release);
 }
 
 void windowSetCropShim(nvn::Window* window, int x, int y, int w, int h) {
@@ -235,8 +266,21 @@ void windowSetCropShim(nvn::Window* window, int x, int y, int w, int h) {
     }
 }
 
+// The viewport set by the game's command buffer gives us the display size
+// that ImGui must render into. This is the reliable source: nvnWindowSetCrop
+// may never fire in SMBW, so we can't rely on it alone. Mirror the original
+// exlaunch approach (src/program/imgui_nvn.cpp). Only update for "full-screen"
+// viewports (both w and h >= 400) so shadow-map / post-process sub-passes
+// don't corrupt the display size we're accumulating.
+void setViewportShim(nvn::CommandBuffer* cmdBuf, int x, int y, int w, int h) {
+    s_origSetViewport(cmdBuf, x, y, w, h);
+    if (w >= 400 && h >= 400) {
+        backend()->setResolution({ static_cast<float>(w - x), static_cast<float>(h - y) });
+    }
+}
+
 void presentTextureShim(nvn::Queue* queue, nvn::Window* window, int texIndex) {
-    if (overlayDrawReady()) procDraw();
+    if (overlayDrawReady()) procDraw(queue);
     s_origPresentTexture(queue, window, texIndex);
 }
 
@@ -267,10 +311,17 @@ bool lifecycleLogBudget() {
 
 NVNboolean cmdBufInitShim(nvn::CommandBuffer* buffer, nvn::Device* device) {
     NVNboolean result = s_origCmdBufInit(buffer, device);
-    nvn::CommandBuffer* prev = s_cmdBuf;
-    s_cmdBuf = buffer;
-    if (prev != buffer && lifecycleLogBudget()) {
-        SMBWAP_LOG_INFO("[overlay] cmdBufInit: s_cmdBuf %p -> %p", prev, buffer);
+    // Pin the game's cmdBuf for overlay recording.  We pin the FIRST one the
+    // game creates and reuse it for the process lifetime (proven exlaunch
+    // recipe).  If it is later finalized at a scene transition,
+    // cmdBufFinalizeShim clears the pin and we re-pin the next one here.
+    nvn::CommandBuffer* expected = nullptr;
+    if (s_imguiCmdBuf.compare_exchange_strong(expected, buffer,
+                                              std::memory_order_acq_rel)) {
+        if (lifecycleLogBudget()) {
+            SMBWAP_LOG_INFO("[overlay] pinned game cmdBuf %p for overlay recording",
+                            buffer);
+        }
     }
     if (!s_imguiInited.load(std::memory_order_acquire)) {
         if (initImGui()) s_imguiInited.store(true, std::memory_order_release);
@@ -278,20 +329,18 @@ NVNboolean cmdBufInitShim(nvn::CommandBuffer* buffer, nvn::Device* device) {
     return result;
 }
 
-// The game finalizes (and later re-initializes) its command buffer / queue at
-// scene transitions — notably title -> save-data selector. Our captured
-// s_cmdBuf / s_queue would then dangle, and because overlayDrawReady() latches
-// s_drawArmed after warm-up it no longer re-validates them, so procDraw()'s
-// next s_cmdBuf->BeginRecording() faulted inside the NVN driver on the
-// Presentation Thread (null deref, confirmed at presentTextureShim+0xb0).
-// Dropping the pointer the moment the game finalizes it makes procDraw()'s
-// null-guard skip cleanly until cmdBufInitShim captures the replacement.
+// The game finalizes (frees) its command buffers at scene transitions —
+// notably title -> save-data selector. If our pinned overlay cmdBuf is the one
+// being torn down, drop the pin BEFORE the game frees it so the presentation
+// thread's procDraw() skips cleanly (null-checked each frame) instead of
+// recording into freed memory (the nnSdk:0x442ad0 BeginRecording fault).
+// cmdBufInitShim re-pins the next cmdBuf the game creates.
 void cmdBufFinalizeShim(nvn::CommandBuffer* buffer) {
-    if (buffer == s_cmdBuf) {
-        s_cmdBuf = nullptr;
+    nvn::CommandBuffer* pinned = buffer;
+    if (s_imguiCmdBuf.compare_exchange_strong(pinned, nullptr,
+                                              std::memory_order_acq_rel)) {
         if (lifecycleLogBudget()) {
-            SMBWAP_LOG_INFO("[overlay] cmdBufFinalize: dropped captured s_cmdBuf %p "
-                            "(overlay pauses until re-init)", buffer);
+            SMBWAP_LOG_INFO("[overlay] cmdBufFinalize: dropped pinned cmdBuf %p", buffer);
         }
     }
     s_origCmdBufFinalize(buffer);
@@ -329,8 +378,13 @@ nvn::GenericFuncPtrFunc getProcShim(nvn::Device* device, const char* procName) {
         s_origWindowSetCrop = reinterpret_cast<nvn::WindowSetCropFunc>(ptr);
         return reinterpret_cast<nvn::GenericFuncPtrFunc>(&windowSetCropShim);
     }
+    if (std::strcmp(procName, "nvnCommandBufferSetViewport") == 0) {
+        s_origSetViewport = reinterpret_cast<nvn::CommandBufferSetViewportFunc>(ptr);
+        return reinterpret_cast<nvn::GenericFuncPtrFunc>(&setViewportShim);
+    }
     if (std::strcmp(procName, "nvnQueuePresentTexture") == 0) {
         s_origPresentTexture = reinterpret_cast<nvn::QueuePresentTextureFunc>(ptr);
+        SMBWAP_LOG_INFO("[overlay] nvnQueuePresentTexture hooked (orig=%p)", ptr);
         return reinterpret_cast<nvn::GenericFuncPtrFunc>(&presentTextureShim);
     }
     if (std::strcmp(procName, "nvnCommandBufferFinalize") == 0) {
