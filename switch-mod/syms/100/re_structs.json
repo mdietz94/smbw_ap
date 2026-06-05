@@ -1,0 +1,154 @@
+{
+  "_meta": {
+    "program": "main.nso",
+    "build_id": "CD6E42AEE7934F4D",
+    "game_version": "1.0.0",
+    "image_base": "0x7100000000",
+    "generated": "2026-06-05",
+    "source": "ghidra-mcp bridge (read+write). 22 functions named/commented from smbw-re-map.md + docs on 2026-06-05 (batches 1+2); 6 pre-existing FlowerLock/castle-gate discoveries.",
+    "note": "No user-defined struct/union data types in the Ghidra project (struct layouts live in smbw-re-map.md S4). All named functions carry plate comments."
+  },
+  "structs": [],
+  "plate_comments": [
+    {
+      "name": "HandleNerveAtomicStateBump",
+      "offset": "0x00005390",
+      "comment": "Atomic Nerve state-bump primitive (NSO +0x5390). Active-Nerve execute shape:\nif (flag==0) NerveActivateOnceShared(this); HandleNerveAtomicStateBump(this+0x68);\nRef: royal-seed-phase-a-findings.md."
+    },
+    {
+      "name": "FlowerLockBitfieldReader_gmd800",
+      "offset": "0x000e258c",
+      "comment": "FlowerLock bitfield READER for gmd+0x800 container.\nSignature: (gmd, u32* out, u32 hash, u32 bitIdx) -> bool\nHash-probes gmd+0x800 (hash table ptr), capacity at gmd+0x80c.\nBitfield data array at gmd+0x7f8 (slot*0x40 + 0x28 = bitfield word array).\nReturns 1 and writes bitfield word to *out if found; falls back to gmd+0x788 (FUN_71000e26a8).\nNSO offset: +0xe258c | Ghidra: 0x71000e258c\nSession: 2026-06-03"
+    },
+    {
+      "name": "GetFlowerLockBitfieldFallback_gmd788",
+      "offset": "0x000e26a8",
+      "comment": "FlowerLock bitfield reader FALLBACK on gmd+0x788 (NSO +0xe26a8).\nCalled by FlowerLockBitfieldReader_gmd800 (+0xe258c) when the gmd+0x800 lookup misses. Session 2026-06-03."
+    },
+    {
+      "name": "PerCourseBitReader",
+      "offset": "0x00124134",
+      "comment": "ACTIVE / UNVERIFIED -- per-course Wonder-Seed Container-D RE.\nPer-course bit READER, observed filtered to hash 0x60458608 (NSO +0x124134). Signature unconfirmed -- no prototype set.\nSee docs/handoff-2026-05-29-ws-persistence.md."
+    },
+    {
+      "name": "ContainerACounterReader",
+      "offset": "0x0012ae94",
+      "comment": "Container-A counter READER (NSO +0x12AE94). Args: (gmd, u32* out, hash)."
+    },
+    {
+      "name": "PlayerTickLatchTarget",
+      "offset": "0x00273868",
+      "comment": "Player per-tick fn (NSO +0x273868). HOOK TARGET (PlayerTickLatch):\nwalks param_1 -> +0x10 -> +0x208 -> (+0 or +0x118 ver-conditional) -> HP struct, latches live_base for DeathLink. HP int16 at live_base+0x38."
+    },
+    {
+      "name": "ProcessWorldMapRouteGate",
+      "offset": "0x00377280",
+      "comment": "World-map route gate update (NSO +0x377280). Dispatches per route-type; case 7 calls RouteFlowerLockChecker (+0x1b70670).\nOne of two route-gate update sites (other: +0x5840f0). HIGH-CONF (named during castle-gate RE, 2026-06-03)."
+    },
+    {
+      "name": "ContainerBBoolReader",
+      "offset": "0x003838ac",
+      "comment": "Container-B sub-bool READER (NSO +0x3838AC). Args: (sub, u8* out, hash). Reads INTRO / COMPLETE_GAME. NOT a setter (old guess corrected)."
+    },
+    {
+      "name": "StageInfoHashToCourseIndex",
+      "offset": "0x003d3fb0",
+      "comment": "Stage-info hash -> course-index TRANSLATOR (NSO +0x3D3FB0). Args: (topHash, u32* outIndex). NOT a writer (old CLAUDE.md guess was wrong)."
+    },
+    {
+      "name": "Murmur3_32_CourseName",
+      "offset": "0x003d4110",
+      "comment": "Murmur3-32 (seed 0) over 81 hardcoded course-name strings (NSO +0x3D4110).\nConstants 0xcc9e2d51 / 0x1b873593 / 0xe6546b64. The field-name hash (flower_coin etc.) is a DIFFERENT, still-unknown fn.\nSignature unverified -- no prototype set."
+    },
+    {
+      "name": "FlowerLockBitfield_PopCount_gmd800",
+      "offset": "0x00483574",
+      "comment": "FlowerLock bitfield POPCOUNT for gmd+0x800 container.\nDirectly accesses gmd+0x800 (hash table) and gmd+0x7f8 (bitfield array).\nReturns number of set bits across the FlowerLock bitfield for a route entry.\nNSO offset: +0x483574 | Ghidra: 0x7100483574\nSession: 2026-06-03"
+    },
+    {
+      "name": "CheckFlowerLockBit",
+      "offset": "0x0048c1a0",
+      "comment": "CheckFlowerLockBit (NSO +0x48c1a0)\nReads a specific FlowerLock bit from the gmd+0x800 custom container.\nparam_1 = pointer to route/node object (contains the FlowerLock hash key reference)\nparam_2 = bit index to test (signed; -1 = check if gmd has any FlowerLock data)\nCalls FUN_71000e258c(gmd, &bitword, hash) to retrieve the bitfield word, then shifts to isolate bit param_2.\nPart of the castle-path gate; called in a loop by RouteFlowerLockChecker.\nSee: docs/re-castle-bowser-gate-findings.md (2026-06-03)"
+    },
+    {
+      "name": "ContainerBBoolWriter",
+      "offset": "0x0049ea24",
+      "comment": "Container-B bool WRITER wrapper (NSO +0x49EA24). Args: (gmd, value, hash).\nChecks gmd+0x68 init/lock, delegates to SetContainerBBoolDeferred (+0x1F263FC) on the gmd+8 substruct.\nDeferred-write. Grants Royal Seeds / COMPLETE_GAME / INTRO."
+    },
+    {
+      "name": "ContainerACounterWriter",
+      "offset": "0x0049f648",
+      "comment": "Container-A counter WRITER (NSO +0x49F648). Args: (gmd, value, hash) -- VALUE FIRST.\nLock-free atomics; deferred-write to dirty queue at gmd+0xf8 (drains at next save).\nGrants coins + Wonder-Seed counts/mirrors. Ref: smbw-re-map.md S2/S3."
+    },
+    {
+      "name": "NerveActivateOnceShared",
+      "offset": "0x00559f7c",
+      "comment": "Shared one-shot Nerve activate helper (NSO +0x559f7c, 19 xrefs).\nHOOK TARGET: trampoline here, filter by nerve[0] vtable (vt_off = vtable - GetTargetStart()).\nDrives Wonder-Seed pickup (vt_off 0x3345728) + DeathLink SceneTransition (0x33fd9a8, discriminator at nerve+0x18). Ref: smbw-re-map.md S6."
+    },
+    {
+      "name": "GetGameDataAccessor",
+      "offset": "0x0059f894",
+      "comment": "Opens/returns a GameData accessor (NSO +0x59f894). Called at the top of SetCourseClearedFlagToGameData before the hash write.\nSignature unverified -- no prototype. Ref: handoff.md course-clear body."
+    },
+    {
+      "name": "CheckGameDataAccessorResult",
+      "offset": "0x005e93fc",
+      "comment": "Checks the result of a GameData write/commit (NSO +0x5e93fc). In SetCourseClearedFlagToGameData the caller does tbz w0,#0 on its return (success/fail).\nSignature unverified -- no prototype."
+    },
+    {
+      "name": "FlowerLock_SyncGmd80_to_ContainerB",
+      "offset": "0x006b5d6c",
+      "comment": "FlowerLock SYNC: reads gmd+0x80 bitfield container (hashes 0x1faf41e5, 0xb9bd745d), syncs bit values to container-B bools via FUN_7101f263fc.\nCalled at load step 1 of FUN_7101bd7c04 (save-load pipeline).\nFlowerLock hashes 0x1faf41e5 / 0xb9bd745d are the container-B gate booleans.\nNOTE: reads from gmd+0x80 (different container from gmd+0x800 used by CheckFlowerLockBit).\nNSO offset: +0x6b5d6c | Ghidra: 0x71006b5d6c\nSession: 2026-06-03"
+    },
+    {
+      "name": "CheckOverworldBridgeGate",
+      "offset": "0x00935ce0",
+      "comment": "Overworld inter-world bridge/route gate evaluator (NSO +0x935ce0). Takes world_val; world-level accessibility gate (separate from Royal-Seed container-B).\nCompanion evaluator at +0x480f20 builds the accessible-worlds list. See memory smbwap-overworld-bridge-gate."
+    },
+    {
+      "name": "HandleGameCompleteGoalNerve",
+      "offset": "0x015b77a8",
+      "comment": "SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss nerve execute (vtable +0x3363330 slot 8) (NSO +0x15b77a8).\nHOOK TARGET: one-shot; fires when final Bowser cleared -> GoalCompleted."
+    },
+    {
+      "name": "WonderSeedRouteGatePredicate",
+      "offset": "0x01787b40",
+      "comment": "Wonder-Seed route gate PREDICATE (NSO +0x1787b40). Reads container-A hash 0x390eb960 (current-world Wonder-Seed count) and compares vs a per-gate threshold.\n5 mirror hashes (0x21f89ab1/0x8c20ccb7/0xeeff353b/0x390eb960/0xa0e5f253) update in lockstep. Ref: smbw-re-map.md S5."
+    },
+    {
+      "name": "RouteFlowerLockChecker",
+      "offset": "0x01b70670",
+      "comment": "RouteFlowerLockChecker (NSO +0x1b70670)\nEvaluates the FlowerLock status for a world-map ROUTE entry.\nCalled as case 7 in FUN_7100377280 (WorldMapRouteGateUpdate) and FUN_71005840f0.\nReads FlowerLock bits from gmd+0x800 container via CheckFlowerLockBit (0x710048c1a0).\nFor the castle path: all 6 Royal-Seed FlowerLock bits must be set for the path to open.\nparam_1 = route entry object (lVar9 = the specific route data node).\nReturns 1 (open) when all required FlowerLock bits are set.\nSee: docs/re-castle-bowser-gate-findings.md (2026-06-03)"
+    },
+    {
+      "name": "ProcessGameDataRestorePipeline",
+      "offset": "0x01bd7c04",
+      "comment": "GameData save-load (restore) pipeline (NSO +0x1bd7c04). Load step 1 invokes FlowerLock_SyncGmd80_to_ContainerB (+0x6b5d6c). Session 2026-06-03."
+    },
+    {
+      "name": "ProcessExitCourseMgrBody",
+      "offset": "0x01be3a5c",
+      "comment": "ACTIVE -- ExitCourseMgr complete course-out body (NSO +0x1be3a5c): teardown + nerve step advance.\nHook candidate for Royal-Seed gate-entry/check-loss (Phase A negative so far). ctx class vtable 0x71034a8200.\nSee docs/gate-entry-session3-handoff.md."
+    },
+    {
+      "name": "SetCourseClearedFlagToGameData",
+      "offset": "0x01bf28cc",
+      "comment": "SetCourseClearFlagToGameData nerve execute (slot 8, vtable +0x34b14e8) (NSO +0x1bf28cc).\nHOOK TARGET: fires once on every valid course clear -> COURSE_CLEARED. Uses is-clear key 0xdf82e9ab.\nBody calls GetGameDataAccessor (+0x59f894), StageInfoHashToCourseIndex (+0x3d3fb0), CheckGameDataAccessorResult (+0x5e93fc)."
+    },
+    {
+      "name": "SetContainerBBoolDeferred",
+      "offset": "0x01f263fc",
+      "comment": "Container-B bool deferred-write delegate (NSO +0x1F263FC). Called by ContainerBBoolWriter with sub = gmd+8, value & 1, hash."
+    },
+    {
+      "name": "GameDataMgrObjectAccessor",
+      "offset": "0x01f27b78",
+      "comment": "GameDataMgr object-pointer accessor (NSO +0x1F27B78). Args: (gmd, void** outObj, hash).\nBadge / typed-object (container-C) path. HIGH-CONF (static)."
+    },
+    {
+      "name": "PerCourseBitfieldWriter",
+      "offset": "0x01f2b354",
+      "comment": "ACTIVE / UNVERIFIED -- per-course Wonder-Seed Container-D RE.\nCandidate per-course bitfield WRITER (NSO +0x1F2B354), untested. Signature unconfirmed -- no prototype set.\nSee docs/handoff-2026-05-29-ws-persistence.md + memory smbwap-wonder-seed-counter-candidate."
+    }
+  ]
+}

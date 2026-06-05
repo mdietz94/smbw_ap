@@ -1,5 +1,11 @@
 # Save-diff handoff: M3 incoming item grants
 
+> 📋 **Append-only research log — superseded for live grants.** Current confirmed
+> facts live in
+> [smbw-re-map.md](../../smbw-reverse-engineering/reference/smbw-re-map.md); the
+> live-grant path is the GameDataMgr API, not save offsets. Kept for the save-file
+> format / editing workflow only.
+
 ⚠️ **Status (2026-05-24 retrospective): the strategy this doc proposes
 does NOT work for live grants.** The runtime memory anchor envisioned
 in "Step 4 — locating the live address" turned out to be the

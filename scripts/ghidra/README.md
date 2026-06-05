@@ -19,6 +19,20 @@ on the SMBW NSO. They print to the Ghidra console.
 
 The scripts are Python 2 / Jython AND Python 3 / PyGhidra compatible.
 
+## Persisting analysis to the repo (run order)
+
+Ghidra annotations (renamed functions, defined structs, plate comments) live only
+in the local `.gpr` project unless you export them. To make the work durable:
+
+| When | Script | Effect |
+|---|---|---|
+| **On a fresh Ghidra load** (or after `git pull`) | `import_sdk_symbols.py` | Imports all `switch-mod/syms/100/*.sym` — Nintendo's maps **and** `re_discovered.sym` (our exported discoveries) — as labels. |
+| **At the end of an RE session** | `export_re_annotations.py` | Dumps our user-named functions/labels → `re_discovered.sym` and struct layouts + plate comments → `re_structs.json`. Commit both. |
+
+This closes the loop: export → commit → a fresh load re-imports every name. The
+ledger [smbw-re-map.md](../../.claude/skills/smbw-reverse-engineering/reference/smbw-re-map.md)
+is the human-readable companion to these machine-readable files.
+
 ## Inventory
 
 ### Sprint 2 (2026-05-24) — dataflow + symbol-aware

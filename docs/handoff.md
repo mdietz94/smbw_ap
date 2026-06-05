@@ -8,6 +8,10 @@
 > **2026-05-26**, before the hakkun migration and two active spikes. For
 > **current** state, read these instead:
 >
+> - [../.claude/skills/smbw-reverse-engineering/reference/smbw-re-map.md](../.claude/skills/smbw-reverse-engineering/reference/smbw-re-map.md)
+>   — **canonical current-state RE ledger** (offsets, hashes, structs, hooks,
+>   save offsets, ruled-out leads). The single source of truth for RE facts; the
+>   spikes below feed into it.
 > - [gate-entry-session3-handoff.md](gate-entry-session3-handoff.md) — Royal-Seed
 >   gate-entry / check-loss spike (2026-05-31, newest).
 > - [handoff-2026-05-29-ws-persistence.md](handoff-2026-05-29-ws-persistence.md)

@@ -1,0 +1,32 @@
+/* SMBW Archipelago -- RE discoveries exported from Ghidra (main.nso, BID CD6E42AEE7934F4D, v1.0.0). */
+/* Generated 2026-06-05 via the ghidra-mcp bridge (equivalent to scripts/ghidra/export_re_annotations.py). */
+/* Re-importable by import_sdk_symbols.py (same name = __main_start + 0xOFFSET; format). */
+
+HandleNerveAtomicStateBump = __main_start + 0x00005390;
+FlowerLockBitfieldReader_gmd800 = __main_start + 0x000e258c;
+GetFlowerLockBitfieldFallback_gmd788 = __main_start + 0x000e26a8;
+PerCourseBitReader = __main_start + 0x00124134;
+ContainerACounterReader = __main_start + 0x0012ae94;
+PlayerTickLatchTarget = __main_start + 0x00273868;
+ProcessWorldMapRouteGate = __main_start + 0x00377280;
+ContainerBBoolReader = __main_start + 0x003838ac;
+StageInfoHashToCourseIndex = __main_start + 0x003d3fb0;
+Murmur3_32_CourseName = __main_start + 0x003d4110;
+FlowerLockBitfield_PopCount_gmd800 = __main_start + 0x00483574;
+CheckFlowerLockBit = __main_start + 0x0048c1a0;
+ContainerBBoolWriter = __main_start + 0x0049ea24;
+ContainerACounterWriter = __main_start + 0x0049f648;
+NerveActivateOnceShared = __main_start + 0x00559f7c;
+GetGameDataAccessor = __main_start + 0x0059f894;
+CheckGameDataAccessorResult = __main_start + 0x005e93fc;
+FlowerLock_SyncGmd80_to_ContainerB = __main_start + 0x006b5d6c;
+CheckOverworldBridgeGate = __main_start + 0x00935ce0;
+HandleGameCompleteGoalNerve = __main_start + 0x015b77a8;
+WonderSeedRouteGatePredicate = __main_start + 0x01787b40;
+RouteFlowerLockChecker = __main_start + 0x01b70670;
+ProcessGameDataRestorePipeline = __main_start + 0x01bd7c04;
+ProcessExitCourseMgrBody = __main_start + 0x01be3a5c;
+SetCourseClearedFlagToGameData = __main_start + 0x01bf28cc;
+SetContainerBBoolDeferred = __main_start + 0x01f263fc;
+GameDataMgrObjectAccessor = __main_start + 0x01f27b78;
+PerCourseBitfieldWriter = __main_start + 0x01f2b354;

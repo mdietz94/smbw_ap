@@ -1,5 +1,12 @@
 # Save-diff findings — growing notes
 
+> 📋 **Append-only research log — not the source of current truth.** For
+> present-tense confirmed facts (save offsets, badge map, hashes) see
+> [smbw-re-map.md](../../smbw-reverse-engineering/reference/smbw-re-map.md). This
+> file may contain superseded claims; read it for *how/why we found something*,
+> the map for *what is true now*. Remember: these are save-OUT offsets, **not**
+> live-writable.
+
 Append-only log of what each capture told us. Capture protocol per item
 is in [save-diff-grants.md](save-diff-grants.md).
 
