@@ -203,7 +203,7 @@ project and in `re_discovered.sym`.
 | `GetFlowerLockBitfieldFallback_gmd788` | `+0xe26a8` | fallback FlowerLock reader on `gmd+0x788` when the `gmd+0x800` lookup misses | HIGH-CONF |
 | `ProcessGameDataRestorePipeline` | `+0x1bd7c04` | save-load (restore) pipeline; load step 1 calls `FlowerLock_SyncGmd80_to_ContainerB` | HIGH-CONF |
 | `ProcessExitCourseMgrBody` | `+0x1be3a5c` | ExitCourseMgr complete course-out (teardown + step advance); gate-entry hook candidate | ACTIVE |
-| `CheckOverworldBridgeGate` | `+0x935ce0` | overworld inter-world bridge/route gate eval `(world_val)`; companion list-builder `+0x480f20` | HIGH-CONF |
+| `CheckOverworldBridgeGate` | `+0x935ce0` | overworld inter-world bridge/route gate eval `(world_val)`; companion list-builder `+0x480f20` | MED-CONF (memory-sourced, not re-verified) |
 
 ---
 

@@ -13,7 +13,7 @@
     {
       "name": "HandleNerveAtomicStateBump",
       "offset": "0x00005390",
-      "comment": "Atomic Nerve state-bump primitive (NSO +0x5390). Active-Nerve execute shape:\nif (flag==0) NerveActivateOnceShared(this); HandleNerveAtomicStateBump(this+0x68);\nRef: royal-seed-phase-a-findings.md."
+      "comment": "Atomic Nerve state-bump primitive (NSO +0x5390). Active-Nerve execute shape:\nif (flag==0) NerveActivateOnceShared(this); HandleNerveAtomicStateBump(this+0x68);\nConfidence: identity HIGH-CONF (royal-seed-phase-a-findings.md). Prototype (void* nerveState)\nis INFERRED from the (this+0x68) call site -- arg count and return type NOT confirmed.\nRef: royal-seed-phase-a-findings.md."
     },
     {
       "name": "FlowerLockBitfieldReader_gmd800",
@@ -23,7 +23,7 @@
     {
       "name": "GetFlowerLockBitfieldFallback_gmd788",
       "offset": "0x000e26a8",
-      "comment": "FlowerLock bitfield reader FALLBACK on gmd+0x788 (NSO +0xe26a8).\nCalled by FlowerLockBitfieldReader_gmd800 (+0xe258c) when the gmd+0x800 lookup misses. Session 2026-06-03."
+      "comment": "FlowerLock bitfield reader FALLBACK on gmd+0x788 (NSO +0xe26a8).\nCalled by FlowerLockBitfieldReader_gmd800 (+0xe258c) when the gmd+0x800 lookup misses.\nConfidence: HIGH-CONF (direct call relationship). Session 2026-06-03."
     },
     {
       "name": "PerCourseBitReader",
@@ -88,12 +88,12 @@
     {
       "name": "GetGameDataAccessor",
       "offset": "0x0059f894",
-      "comment": "Opens/returns a GameData accessor (NSO +0x59f894). Called at the top of SetCourseClearedFlagToGameData before the hash write.\nSignature unverified -- no prototype. Ref: handoff.md course-clear body."
+      "comment": "Opens/returns a GameData accessor (NSO +0x59f894). Called at the top of\nSetCourseClearedFlagToGameData before the hash write.\nConfidence: identity HIGH-CONF (handoff.md course-clear body). Signature unverified -- no prototype set."
     },
     {
       "name": "CheckGameDataAccessorResult",
       "offset": "0x005e93fc",
-      "comment": "Checks the result of a GameData write/commit (NSO +0x5e93fc). In SetCourseClearedFlagToGameData the caller does tbz w0,#0 on its return (success/fail).\nSignature unverified -- no prototype."
+      "comment": "Checks the result of a GameData write/commit (NSO +0x5e93fc). In\nSetCourseClearedFlagToGameData the caller does tbz w0,#0 on its return (success/fail).\nConfidence: identity HIGH-CONF (handoff.md course-clear body). Signature unverified -- no prototype set."
     },
     {
       "name": "FlowerLock_SyncGmd80_to_ContainerB",
@@ -103,7 +103,7 @@
     {
       "name": "CheckOverworldBridgeGate",
       "offset": "0x00935ce0",
-      "comment": "Overworld inter-world bridge/route gate evaluator (NSO +0x935ce0). Takes world_val; world-level accessibility gate (separate from Royal-Seed container-B).\nCompanion evaluator at +0x480f20 builds the accessible-worlds list. See memory smbwap-overworld-bridge-gate."
+      "comment": "Overworld inter-world bridge/route gate evaluator (NSO +0x935ce0). Takes world_val;\nworld-level accessibility gate (separate from Royal-Seed container-B). Companion evaluator at\n+0x480f20 builds the accessible-worlds list.\nConfidence: MED-CONF -- identity from memory smbwap-overworld-bridge-gate, NOT re-verified this session."
     },
     {
       "name": "HandleGameCompleteGoalNerve",
@@ -123,7 +123,7 @@
     {
       "name": "ProcessGameDataRestorePipeline",
       "offset": "0x01bd7c04",
-      "comment": "GameData save-load (restore) pipeline (NSO +0x1bd7c04). Load step 1 invokes FlowerLock_SyncGmd80_to_ContainerB (+0x6b5d6c). Session 2026-06-03."
+      "comment": "GameData save-load (restore) pipeline (NSO +0x1bd7c04). Load step 1 invokes\nFlowerLock_SyncGmd80_to_ContainerB (+0x6b5d6c).\nConfidence: HIGH-CONF (direct call relationship). Session 2026-06-03."
     },
     {
       "name": "ProcessExitCourseMgrBody",
