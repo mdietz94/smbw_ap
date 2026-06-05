@@ -18,6 +18,12 @@ that changes actual gameplay state. To find/RE these functions, see the
 **smbw-reverse-engineering** skill. The full decompile journal is at
 [`../smbw-reverse-engineering/reference/static-analysis-findings.md`](../smbw-reverse-engineering/reference/static-analysis-findings.md).
 
+> 📋 **For the consolidated current-state tables** (hash keys, container API
+> offsets, struct layout, save offsets, badge map — all present-tense with status
+> flags), see
+> [`../smbw-reverse-engineering/reference/smbw-re-map.md`](../smbw-reverse-engineering/reference/smbw-re-map.md).
+> The tables below are the grant-focused subset; the map is the superset.
+
 > ⚠️ **The single biggest trap: the save-OUT staging buffer is NOT a live-grant
 > path.** Writers anchored on file offsets (the `savedata_id` UUID scan, badge
 > offset `0x0EA0`, etc.) modify only the transient save-serialization buffer; the

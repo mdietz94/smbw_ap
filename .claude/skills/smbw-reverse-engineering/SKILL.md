@@ -27,10 +27,15 @@ hakkun equivalents are below.**
 
 ## Bundled reference (read for full detail)
 
+- [`reference/smbw-re-map.md`](reference/smbw-re-map.md) — ★ **the current-state
+  map. Read this first.** Present-tense ledger of every confirmed offset, hash
+  key, container, struct field, hook, save offset, and ruled-out lead. Use it for
+  *what is true now*; drop to the journal below only for *how we found it*.
 - [`reference/static-analysis-findings.md`](reference/static-analysis-findings.md)
   — the master RE journal: every decompile round, the GameDataMgr API surface,
-  the Murmur3 course-name hash, badge/seed sprints, ruled-out leads. Large; grep
-  it by date heading or `FUN_` address.
+  the Murmur3 course-name hash, badge/seed sprints, ruled-out leads. Append-only
+  and large (may contain superseded claims — defer to the map); grep it by date
+  heading or `FUN_` address.
 - The **smbw-save-data** skill owns the GameDataMgr grant API, container layout,
   and hash-key table (the *what to write*). This skill owns the *how to find &
   hook* it.

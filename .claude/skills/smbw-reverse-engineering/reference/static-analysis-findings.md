@@ -1,5 +1,11 @@
 # Static-analysis findings — sprint 2
 
+> 📋 **Append-only research log — not the source of current truth.** For
+> present-tense confirmed facts (offsets, hashes, structs, hooks) see
+> [smbw-re-map.md](smbw-re-map.md). This file may contain superseded claims and
+> layered corrections; read it for *how/why we found something*, the map for
+> *what is true now*.
+
 Append-only log of what each Ghidra/decompiler pass reveals. Mirrors
 the style of [save-diff-findings.md](save-diff-findings.md).
 

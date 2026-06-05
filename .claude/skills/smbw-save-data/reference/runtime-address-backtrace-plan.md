@@ -1,5 +1,11 @@
 # Runtime-address backtrace plan
 
+> 📋 **Append-only research log — superseded.** The `gmd::GameDataMgr::sInstance`
+> anchor (NSO `+0x0363F0F0`) obviated this Cheat-Engine backtrace workflow.
+> Current confirmed facts:
+> [smbw-re-map.md](../../smbw-reverse-engineering/reference/smbw-re-map.md). Kept
+> for the live-address discovery template if a non-GameDataMgr grant ever needs it.
+
 **Goal**: For each category of grantable trailing-region item (badges,
 per-course clears, etc.), identify the **live runtime memory address**
 the game's UI/state reads from. Derive a **stable pointer chain** from

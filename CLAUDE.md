@@ -34,7 +34,7 @@ Odyssey) project at `C:\Users\maxwe\Documents\smo_archipelago\` — mirror its
 | Skill | Use it for |
 |---|---|
 | **smbw-build-deploy** | Compile `subsdk9`, deploy to Ryujinx, run the client, tail the `[smbwap]` log, first-time `/setup`, end-to-end smoke tests (Win + Linux). |
-| **smbw-reverse-engineering** | Find/install a hook (Ghidra), identify Nerves & game functions, the two hook patterns, NSO address space, the crash gotchas, Ghidra scripts. Bundles the master RE decompile journal. |
+| **smbw-reverse-engineering** | Find/install a hook (Ghidra), identify Nerves & game functions, the two hook patterns, NSO address space, the crash gotchas, Ghidra scripts. Bundles the **current-state RE map** (`reference/smbw-re-map.md` — the canonical offset/hash/struct/hook ledger; read it first) + the master RE decompile journal. |
 | **smbw-save-data** | Grant AP items via the GameDataMgr API, pick the right `probe::` primitive, hash keys, container A/B/C/D layout, save-file format, save-survival/replay. |
 | **smbw-release** | Tag a version, build the `smbwonder.apworld` bundle, the pre-push release-gate audit, manual `gh release` fallback. |
 
