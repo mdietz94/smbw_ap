@@ -152,6 +152,7 @@ class SMBWManager(GameManager):
         self._lbl_checks = self._mk_label(inner, "Emitted checks: 0")
         self._lbl_deaths = self._mk_label(inner, "Deaths: 0")
         self._lbl_goal = self._mk_label(inner, "Goal: not yet")
+        self._lbl_openworld = self._mk_label(inner, "", multiline=True)
         self._lbl_seeds = self._mk_label(inner, "", multiline=True)
         self._lbl_badges = self._mk_label(inner, "", multiline=True)
 
@@ -223,6 +224,18 @@ class SMBWManager(GameManager):
             if goal_complete
             else "Goal: not yet"
         )
+
+        if getattr(ctx, "open_world", False):
+            active = getattr(ctx, "open_world_active", []) or []
+            worlds = ", ".join(f"W{n}" for n in active) if active else "(none)"
+            pr = int(getattr(ctx, "palaces_required", 0) or 0)
+            self._lbl_openworld.text = (
+                f"[b]Open-world[/b] - play: [color=80ff80]{worlds}[/color]\n"
+                f"[i]walk in from Petal Isles[/i]  "
+                f"({pr} palace{'s' if pr != 1 else ''} -> Bowser)"
+            )
+        else:
+            self._lbl_openworld.text = ""
 
         self._lbl_seeds.text = _format_seed_table(ctx)
         self._lbl_badges.text = _format_badge_list(ctx)

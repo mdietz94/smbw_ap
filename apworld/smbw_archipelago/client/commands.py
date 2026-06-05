@@ -489,3 +489,51 @@ class SMBWCommandProcessor(ClientCommandProcessor):
         lan.send_grant_hash_keyed(h, v)
         self.output(f"-> grant_hash_keyed hash=0x{h:08x} value={v}")
         return True
+
+    def _cmd_force_open_world(self, worlds_spec: str = "") -> bool:
+        """Debug: force open-world mode on the Switch without a live AP game.
+
+        Manually sends ``SetRoutableWorldsAbsolute`` + ``ApplyWorldUnlock``
+        so you can test the FlowerLock course-visibility write without
+        regenerating the AP game.  Use after the Switch connects.
+
+        ``worlds_spec`` is an AP bucket mask (hex or int, bits 0-7 =
+        W1-W6/PI/Special).  Defaults to ``0x01`` (W1 only, the safest test).
+
+        Examples::
+
+            /force_open_world          # test with W1 bit only (0x01)
+            /force_open_world 0x03     # W1 + W2
+            /force_open_world 0xff     # all 8 worlds
+        """
+        lan = getattr(self.ctx, "lan_server", None)
+        if lan is None:
+            self.output("ERROR: lan_server not wired")
+            return True
+        try:
+            mask = int(worlds_spec, 0) & 0x1FF if worlds_spec.strip() else 0x01
+        except ValueError:
+            self.output(f"ERROR: bad mask {worlds_spec!r}; use hex e.g. 0x03")
+            return True
+
+        # Force open_world state on the context so the hash provider works
+        import world_unlock_table as wut  # noqa: PLC0415 -- local import ok here
+        try:
+            from . import world_unlock_table as wut  # type: ignore[no-redef]
+        except ImportError:
+            pass
+
+        from ..client import world_unlock_table as _wut  # type: ignore[misc]
+        hashes = _wut.WORLD_UNLOCK_HASHES
+
+        lan.send_set_routable_worlds(mask)
+        lan.send_apply_world_unlock(hashes)
+        self.output(
+            f"-> SetRoutableWorldsAbsolute mask=0x{mask:03x}  "
+            f"(W1={bool(mask&1)} W2={bool(mask&2)} W3={bool(mask&4)} "
+            f"W4={bool(mask&8)} W5={bool(mask&16)} W6={bool(mask&32)} "
+            f"PI={bool(mask&64)} Sp={bool(mask&128)})")
+        self.output(
+            f"-> ApplyWorldUnlock ({len(hashes)} hashes); "
+            "watch for [unlock] FlowerLock lines in the Switch log")
+        return True

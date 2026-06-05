@@ -96,6 +96,29 @@ class SMBWonderWorld(World):
     def stage_assert_generate(cls, multiworld) -> None:
         runGenerationDataValidation()
 
+    def generate_early(self) -> None:
+        """Resolve open-world settings before regions/items/rules are
+        built.  Always sets ``self.open_world`` / ``self.active_worlds`` /
+        ``self.palaces_required`` so the World.py hooks can read them
+        unconditionally.  When open-world is on, picks the random active
+        worlds (seeded via ``self.random``), resolves the palace
+        threshold, writes it back to the option (so ``fill_slot_data``
+        exports the resolved value), and forces the goal to Bowser."""
+        from . import open_world as ow
+
+        self.open_world = bool(get_option_value(self.multiworld, self.player, "open_world"))
+        self.active_worlds = list(ow.WORLD_NUMBERS)
+        self.palaces_required = len(self.active_worlds)
+        if not self.open_world:
+            return
+
+        self.active_worlds = ow.choose_active_worlds(self)
+        self.palaces_required = ow.resolve_palaces_required(self, self.active_worlds)
+        self.options.palaces_required.value = self.palaces_required
+
+        if ow.BOWSER_VICTORY_LOCATION in victory_names:
+            self.options.goal.value = victory_names.index(ow.BOWSER_VICTORY_LOCATION)
+
     def create_regions(self):
         before_create_regions(self, self.multiworld, self.player)
 

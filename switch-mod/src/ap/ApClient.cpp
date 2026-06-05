@@ -494,6 +494,9 @@ void ApClient::handleLine(char* line, std::size_t len) {
     static bool        s_have_ws_bits = false;
     static std::uint64_t s_last_ws_lo  = 0;
     static std::uint64_t s_last_ws_hi  = 0;
+    // 2026-06 -- open-world routable-world mask dedup.
+    static bool          s_have_routable = false;
+    static std::uint16_t s_last_routable = 0;
     switch (msg.kind) {
         case InboundKind::HelloAck:
             SMBWAP_LOG_INFO(
@@ -508,6 +511,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
             s_have_seeds  = false;
             s_have_counts = false;
             s_have_ws_bits = false;
+            s_have_routable = false;
             return;
         case InboundKind::SetBadgesAbsolute: {
             const std::uint64_t bits = msg.set_badges_absolute.bits;
@@ -696,6 +700,39 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 msg.overlay_notice.ttl_ms, msg.overlay_notice.text);
             ui::setOverlayNotice(msg.overlay_notice.text,
                                  msg.overlay_notice.ttl_ms);
+            return;
+        case InboundKind::SetRoutableWorldsAbsolute: {
+            // 2026-06 -- open-world routability.  drainInbound caches into
+            // g_routable_world_mask; the FUN_7100935ce0 trampoline forces
+            // matching worlds routable.
+            const std::uint16_t mask = msg.set_routable_worlds_absolute.mask;
+            if (!s_have_routable || mask != s_last_routable) {
+                SMBWAP_LOG_INFO(
+                    "[grant] received SetRoutableWorldsAbsolute(mask=0x%03x), "
+                    "enqueued", static_cast<unsigned>(mask));
+                s_last_routable = mask;
+                s_have_routable = true;
+            }
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
+                SMBWAP_LOG_WARN(
+                    "[ring] inbound full; dropping SetRoutableWorldsAbsolute"
+                    "(mask=0x%03x)", static_cast<unsigned>(mask));
+            }
+            return;
+        }
+        case InboundKind::ApplyWorldUnlock:
+            // Open-world world/course unlock batch (2026-06).  drainInbound
+            // applies via probe::grantContainerACounter(hash, 1) for each
+            // of the wu.count hashes. Not deduplicated: sent once at connect
+            // + HelloMsg replay, not on the 2s tick.
+            SMBWAP_LOG_INFO(
+                "[unlock] received ApplyWorldUnlock(count=%u), enqueued",
+                static_cast<unsigned>(msg.apply_world_unlock.count));
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
+                SMBWAP_LOG_WARN(
+                    "[unlock] inbound full; dropping ApplyWorldUnlock(count=%u)",
+                    static_cast<unsigned>(msg.apply_world_unlock.count));
+            }
             return;
         case InboundKind::Err:
             SMBWAP_LOG_WARN("[conn] bridge reports err: %s", msg.err.reason);

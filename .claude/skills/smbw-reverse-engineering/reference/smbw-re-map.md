@@ -318,7 +318,75 @@ the `mov`/`movk` pair to reconstruct the immediate.
 
 ---
 
-## 11. Active RE (not yet confirmed — do not treat as settled)
+## 11. World map, open-world routing & route gates
+
+Drives open-world mode (walk-in from Petal Isles). Derivation /
+remaining-spike (the `FirstVisitDemo` flag hash is still unpinned):
+[docs/re-world-intro-demo-2026-06-05.md](../../../../docs/re-world-intro-demo-2026-06-05.md).
+Switch impl: `probe::applyOpenWorldEntry` (`SeedTrace.cpp`) + the
+`worldRoutable` / `worldTravel` / `courseVisible` / `routeGateForceOpen` hooks
+(`main.cpp`).
+
+**Per-world descriptor table** — NSO **`+0x29f0ba4`**, stride **`0x70`** (28 u32
+fields/record). Record order `rec0..8` = W1, Petal, W2, W3, W4, W5, W6, Special,
+**Castle**. Each u32 field is a runtime-hashed gmd container key (no static xref).
+Mask-bit→record: `kBitToRec[9] = {0,2,3,4,5,6,1,7,8}`. CONFIRMED.
+
+| record field | Role | Container |
+|---|---|---|
+| `+0x04`, `+0x08` | per-course "reached/visible" arrays = Course-Map nodes | gmd+0x80 |
+| `+0x3c` | "world discovered" byte (world-level travel) | gmd+0x20 |
+| `+0x48` / `+0x6c` | badge-house / Master-Poplin's-house shop nodes | gmd+0x20 |
+| `+0x10` / `+0x14` | Wonder-Seed reg/spec hashes (anchors to ID a record live) | — |
+
+**gmd+0x80** (Course-Map node source): `bucket=*(gmd+0x80) cap=*(+0x8c)
+limit=*(+0x70) objs=*(+0x78)`, obj stride `0x40`, `count@obj+0x20`,
+`data(u32*)@obj+0x28`. Filling a record's `+0x04`/`+0x08` first-course block
+(`{20,0,0,0}` / `{28,1<<28,0,0}`) surfaces that world's course node(s); all-zero =
+no nodes. **gmd+0x20** (discovered/shop bytes): `bucket=*(+0x20) cap=*(+0x2c)
+limit=*(+0x10) objs=*(+0x18)`, obj stride `0x18`, **byte@obj+0x16**. A shop byte
+surfaces its node only *with* the gmd+0x80 fill present. CONFIRMED (live).
+
+**World-map predicates:**
+
+| NSO offset | Role | Reads | Status |
+|---|---|---|---|
+| `+0x0935c80` | `CourseVisible` — per-node visible (overworld walk) | `actor+0x8d` visited byte + gmd bool `0xb003b5f0` | CONFIRMED (hooked: force-true) |
+| `+0x0935ce0` | `WorldRoutable` — world shows in travel TAB | gmd+0x80 `vtable[+0x20]()>=1 && data[0]&1` | CONFIRMED (hooked) |
+| `+0x0055ed80` | `WorldTravel` — travel-confirm for a world | → `FUN_710055f330` | CONFIRMED (hooked) |
+| `+0x0055f330` | world travel-availability predicate | gmd+0x20 byte OR gmd+0x80 `data[0]&1` | CONFIRMED |
+| `+0x01c235c4` | Course-Map selection handler (world-select → `"L_Btn-T_World_NoOpen"`) | — | CONFIRMED |
+
+**Route-gate / FlowerLock** (world-map route-segment "can pass"):
+
+| NSO offset | Role | Status |
+|---|---|---|
+| `+0x0383418` | route-gate body — writes lock byte at `*(actor+0x20)&~3` (0=locked, 1=open); returns 1, the byte IS the output | CONFIRMED (hooked: force-open for PI/Castle) |
+| `+0x016cbf58` | `IsDisplayFlowerLockUI` — per-route FlowerLock predicate | CONFIRMED |
+
+`FUN_7100383418` gmd inputs: master FlowerLock bool **`0x30bdd45c`** (true→locked),
+**`0x925d4260`** (container-B path), Wonder-Seed count **`0x90d4d0f2`** (≥ threshold
+→ open). The per-route lock list comes from a BYML/RomFS **`"FlowerLock"`** param on
+the route actor — **not** an addressable gmd hash. PI→world routes gate on a
+cumulative Petal-Isles Wonder-Seed count (vanilla `W4 Start` needs 10); the gate
+**recomputes from the count**, so the byte-force does not hold for seed gates — the
+AP-authoritative count is the lever (grant all PI Wonder Seeds).
+
+**World-intro `FirstVisitDemo`** (BYML): the one-time demo that moves the Poplin
+world-map NPCs and removes the route obstacle on a world's first **on-foot** entry.
+Trigger is a course-point demo condition (`"FirstVisitDemo"` → enum `0xb`, parser
+**`FUN_71009281bc`**); content is BYML/RomFS. NPCs are `WorldMapNpc` actors moved
+via `WorldMapNpcEventRailMoveParam`; the blocker is a `WorldMapNpcObstacleEventParam`
+actor. Completion flag `EndFirstVisitWorldDemo` (gmd; hash not pinned —
+runtime-hashed). **Fast-travel straight into a world skips it (obstacle stays);
+walking in from PI plays it.** HIGH-CONF.
+
+**Current-world index:** container-A hash **`0x9f5ead3c`** = in-game world index
+(`1=W1, 2=Petal, 3=W2, 4=W3, 5=W4, 6=W5, 7=W6, 8=Castle, 9=Special`). CONFIRMED.
+
+---
+
+## 12. Active RE (not yet confirmed — do not treat as settled)
 
 - **Container-D per-course Wonder-Seed persistence** — hash `0x60458608`,
   hypothesized 4-arg writer overload, save offset `0x3AF8 + 4*course_idx`. The
@@ -340,7 +408,7 @@ the `mov`/`movk` pair to reconstruct the immediate.
 
 ---
 
-## 12. Ruled out — do NOT re-derive these
+## 13. Ruled out — do NOT re-derive these
 
 | Claim seen in old notes | Reality |
 |---|---|
@@ -353,10 +421,14 @@ the `mov`/`movk` pair to reconstruct the immediate.
 | The save-OUT staging buffer (UUID `savedata_id` scan) is a grant target | It is **not** live — repopulated from live state every save |
 | `dumpPerWorldTables` yields a per-world hash record list | Those tables are schema/registry, not records (negative result) |
 | `0x0f3c` is the master owned-badges bitfield | No — `0x0EA0` is; `0x0f3c` was a mis-read |
+| Container-D (`gmd+0x800`) controls Course-Map node visibility | No — it holds Wonder-Seed / the 4-elem castle-gate arrays; filling it surfaces no nodes (the source is the **gmd+0x80** per-world record) |
+| The 85 container-A `world_unlock_table` bools open world routes | No — they write a different offset than the travel code reads (`byte@+0x16` stays 0) |
+| A `gmd+0x20` "discovered" byte alone surfaces a course node | No — the `gmd+0x80` first-course fill is required; the byte alone (or a shop byte alone) does nothing |
+| Forcing the route-gate lock byte (`FUN_7100383418`) open clears the path | Only the gate *state* — the `FirstVisitDemo` obstacle actor (BYML) still physically blocks; only the demo (normal on-foot entry) removes it |
 
 ---
 
-*Maintenance: when a §11 ACTIVE item resolves, promote it into the relevant table
+*Maintenance: when a §12 ACTIVE item resolves, promote it into the relevant table
 above with a CONFIRMED/HIGH-CONF flag and delete the spike pointer. When you
 finish a Ghidra session, run `scripts/ghidra/export_re_annotations.py` to dump
 named functions/structs into `switch-mod/syms/100/re_discovered.sym` +

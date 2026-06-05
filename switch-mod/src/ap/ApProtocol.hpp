@@ -306,6 +306,20 @@ struct WireSetWonderSeedsAbsolute {
     std::uint64_t bits_hi = 0;
 };
 
+// Open-world mode (2026-06) -- AP-authoritative set of worlds routable on
+// the overworld FROM THE START.  `mask` bit N == the world with AP bucket
+// N is routable: bit 0 = W1 ... bit 5 = W6, bit 6 = Petal Isles, bit 7 =
+// Special.  Bit 8 (kCastleMaskBit) == Castle/Bowser route open (set by the
+// client once enough palaces are cleared, alongside SetRoyalSeedsAbsolute
+// with all 6 bits).  ApFrameBridge::drainInbound caches it in
+// g_routable_world_mask; the FUN_7100935ce0 (NSO +0x935ce0) trampoline in
+// main.cpp forces a true return for any world whose bit is set.  A mask of
+// 0 means open-world inactive (the hook no-ops -> vanilla behavior).
+// 9 meaningful bits; carried as u16 for headroom.
+struct WireSetRoutableWorldsAbsolute {
+    std::uint16_t mask = 0;
+};
+
 // M3.8 -- DeathLink inbound apply.  Sent when AP bounces a DeathLink for
 // our slot.  `source` is the originating AP slot name; `cause` is the
 // free-form reason (typically "mario_died").  Sizes MUST match KillMsg
@@ -336,6 +350,21 @@ inline constexpr std::size_t kOverlayTextCap = 192;
 struct WireOverlayNotice {
     char text[kOverlayTextCap] = {};
     std::int32_t ttl_ms = 0;
+};
+
+// Open-world world/course unlock (2026-06).  Batch write of the
+// world-discovered + course-exists container-B bool state derived from a
+// fresh→100%-save diff.  All hashes carry value=1 (no per-hash value
+// field; the exclude list -- Royal Seeds, COMPLETE_GAME -- lives in
+// apworld/client/world_unlock_table.py).  Sent at connect and every
+// HelloMsg replay when open_world_active; NOT on the 2s tick (these bools
+// are set once and are not reverted by in-game actions, unlike badges/
+// seeds).  Applied on the Switch only when g_routable_world_mask != 0.
+// Max 96 hashes; current table has 85.
+inline constexpr std::size_t kWorldUnlockHashCap = 96;
+struct WireApplyWorldUnlock {
+    std::uint8_t  count = 0;
+    std::uint32_t hashes[kWorldUnlockHashCap] = {};
 };
 
 struct WireHelloAck {
@@ -369,6 +398,8 @@ enum class InboundKind : std::uint8_t {
     SetRoyalSeedsAbsolute = 12,
     SetWonderSeedsAbsolute = 13,
     OverlayNotice = 14,
+    SetRoutableWorldsAbsolute = 15,
+    ApplyWorldUnlock = 16,
 };
 
 struct InboundMsg {
@@ -388,6 +419,8 @@ struct InboundMsg {
         WireSetRoyalSeedsAbsolute set_royal_seeds_absolute;
         WireSetWonderSeedsAbsolute set_wonder_seeds_absolute;
         WireOverlayNotice overlay_notice;
+        WireSetRoutableWorldsAbsolute set_routable_worlds_absolute;
+        WireApplyWorldUnlock apply_world_unlock;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

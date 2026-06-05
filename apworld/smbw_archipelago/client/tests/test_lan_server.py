@@ -536,6 +536,45 @@ class TestSetRoyalSeedsAbsoluteOutbound(_AsyncTestCase):
         self.h.server.send_set_royal_seeds_absolute(mask=0x3F)
 
 
+class TestSetRoutableWorldsOutbound(_AsyncTestCase):
+
+    async def _drain_hello_replay(self, client: _FakeSwitch) -> None:
+        await client.send(wire.HelloMsg(mod_ver="t", game_ver="t"))
+        await client.recv()  # ack
+        await client.recv()  # replay SetBadgesAbsolute (bits=0)
+        await client.recv()  # replay SetWonderSeedCounts (all 0)
+        await asyncio.sleep(0.02)
+
+    async def test_send_set_routable_worlds_reaches_client(self):
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await self._drain_hello_replay(client)
+            # W1 + W3 + W5 routable, no Castle bit.
+            self.h.server.send_set_routable_worlds(mask=0x15)
+
+            received = await client.recv()
+            self.assertIsInstance(received, wire.SetRoutableWorldsAbsoluteMsg)
+            self.assertEqual(received.mask, 0x15)
+        finally:
+            await client.close()
+
+    async def test_send_set_routable_worlds_with_castle_bit(self):
+        client = await _FakeSwitch.connect(self.h.port)
+        try:
+            await self._drain_hello_replay(client)
+            castle = 1 << wire.SetRoutableWorldsAbsoluteMsg.CASTLE_BIT
+            self.h.server.send_set_routable_worlds(mask=0x15 | castle)
+
+            received = await client.recv()
+            self.assertEqual(received.mask, 0x15 | castle)
+        finally:
+            await client.close()
+
+    async def test_send_set_routable_worlds_with_no_client_drops(self):
+        # No client connected -> silently dropped, no exception.
+        self.h.server.send_set_routable_worlds(mask=0x15)
+
+
 class TestGrantHashKeyedOutbound(_AsyncTestCase):
 
     async def test_send_grant_hash_keyed_reaches_client(self):

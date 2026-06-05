@@ -34,6 +34,17 @@ std::uint32_t getWonderSeedCount(std::uint32_t bucket) {
     return g_wonder_seed_counts[bucket].load(std::memory_order_relaxed);
 }
 
+// AP-authoritative open-world routable-world mask.  Updated by drainInbound
+// on every SetRoutableWorldsAbsolute; read by the FUN_7100935ce0 (NSO
+// +0x935ce0) predicate trampoline in main.cpp to force a world routable.
+// Atomic so the predicate hook and drainInbound never tear the u32.  See
+// kCastleMaskBit / WireSetRoutableWorldsAbsolute for the bit layout.
+static std::atomic<std::uint32_t> g_routable_world_mask{0};
+
+std::uint32_t getRoutableWorldMask() {
+    return g_routable_world_mask.load(std::memory_order_relaxed);
+}
+
 bool enqueueNerveFire(NerveKind kind, std::uint32_t seq) {
     OutboundEvent ev;
     ev.kind = OutboundKind::NerveFire;
@@ -231,14 +242,17 @@ void drainInbound() {
     InboundMsg last_seeds{};
     InboundMsg last_wsc{};
     InboundMsg last_wsa{};
+    InboundMsg last_routable{};
     bool has_badges = false;
     bool has_seeds = false;
     bool has_wsc = false;
     bool has_wsa = false;
+    bool has_routable = false;
     int dedup_badges_skipped = 0;
     int dedup_seeds_skipped = 0;
     int dedup_wsc_skipped = 0;
     int dedup_wsa_skipped = 0;
+    int dedup_routable_skipped = 0;
 
     InboundMsg msg;
     int drained = 0;
@@ -348,6 +362,12 @@ void drainInbound() {
                 has_wsa = true;
                 break;
             }
+            case InboundKind::SetRoutableWorldsAbsolute: {
+                if (has_routable) ++dedup_routable_skipped;
+                last_routable = msg;
+                has_routable = true;
+                break;
+            }
             case InboundKind::Kill: {
                 // M3.8 DeathLink inbound apply.  synthKill writes 0 to the
                 // HP int16 at live_base + 0x38 and arms the loop guard so
@@ -367,6 +387,43 @@ void drainInbound() {
                     ok ? "applied immediately"
                        : "deferred (not killable; will retry on return "
                          "to gameplay)");
+                break;
+            }
+            case InboundKind::ApplyWorldUnlock: {
+                // Open-world world/course unlock. Apply container-A counter
+                // hashes (all value=1) derived from a fresh->100%-save diff.
+                // These are world-discovered / course-exists state hashes in
+                // container-A (NOT container-B -- using grantContainerBBool
+                // crashed the game's drain worker with a null lookup on the
+                // first boot because these hashes aren't in gmd+8 substruct).
+                //
+                // No g_routable_world_mask gate: SetRoutableWorldsAbsolute is
+                // deduped (applied after the drain loop), so by the time we
+                // reach ApplyWorldUnlock inline the mask is still 0 even in
+                // open-world mode -- the gate would always fire incorrectly.
+                // The client already suppresses this message in vanilla mode
+                // (send_apply_world_unlock no-ops on empty hashes), so no
+                // Switch-side guard is needed.
+                const auto& wu = msg.apply_world_unlock;
+                int applied = 0, refused = 0;
+                for (std::size_t i = 0;
+                     i < static_cast<std::size_t>(wu.count) && i < kWorldUnlockHashCap;
+                     ++i) {
+                    const auto bp = probe::checkContainerA();
+                    if (bp.refuse) {
+                        ++refused;
+                        SMBWAP_LOG_WARN(
+                            "[unlock] ApplyWorldUnlock: backpressure refusal "
+                            "at i=%zu hash=0x%08x (%s %u%%)",
+                            i, wu.hashes[i], bp.tightest_ring, bp.max_pct);
+                        continue;
+                    }
+                    if (probe::grantContainerACounter(wu.hashes[i], 1)) ++applied;
+                }
+                SMBWAP_LOG_INFO(
+                    "[unlock] ApplyWorldUnlock: applied=%d refused=%d total=%u",
+                    applied, refused,
+                    static_cast<unsigned>(wu.count));
                 break;
             }
             case InboundKind::HelloAck:
@@ -449,6 +506,31 @@ void drainInbound() {
             ok ? "true" : "false");
     }
 
+    if (has_routable) {
+        // Open-world (2026-06) -- AP-authoritative routable-world mask.
+        // Pure atomic store to our own static; the actual gameplay effect
+        // happens lazily when the game calls FUN_7100935ce0 and the
+        // predicate trampoline in main.cpp reads this mask.  Unlike the
+        // container writers above there's no game-memory write here, so
+        // no backpressure / scene-transition concern -- and because the
+        // client re-sends on every tick + HelloMsg, anything buffered by
+        // drainInbound's top-level gates lands within one tick of the
+        // gate opening.
+        const auto mask = last_routable.set_routable_worlds_absolute.mask;
+        g_routable_world_mask.store(mask, std::memory_order_relaxed);
+        const char* verb = coalesceVerb(
+            dedup_suffix, sizeof(dedup_suffix), dedup_routable_skipped);
+        SMBWAP_LOG_INFO(
+            "[grant] %s SetRoutableWorldsAbsolute(mask=0x%03x)%s -> cached "
+            "(W1..W6=%c%c%c%c%c%c Petal=%c Special=%c Castle=%c)",
+            verb, static_cast<unsigned>(mask), dedup_suffix,
+            (mask & 0x01) ? '1' : '0', (mask & 0x02) ? '1' : '0',
+            (mask & 0x04) ? '1' : '0', (mask & 0x08) ? '1' : '0',
+            (mask & 0x10) ? '1' : '0', (mask & 0x20) ? '1' : '0',
+            (mask & 0x40) ? '1' : '0', (mask & 0x80) ? '1' : '0',
+            (mask & (1u << kCastleMaskBit)) ? '1' : '0');
+    }
+
     if (has_wsc) {
         // 2026-05-29 -- counter write re-enabled.  See user request
         // "let's also attack the counter -- I think the crash was due
@@ -519,6 +601,13 @@ void drainInbound() {
         // while connected; this layer makes the SAVED state correct too.
         probe::pushWonderSeedContainerDCounts();
     }
+
+    // 2026-06-04 -- OPEN-WORLD COURSE VISIBILITY.  Runs on every tick when
+    // open-world is active (g_routable_world_mask != 0); no-ops otherwise.
+    // Writes FlowerLock bitmask=1 into live container-D (gmd+0x800) for every
+    // course slot that is still 0, making course nodes appear on the world map
+    // and in the teleport list.  See probe::pushFlowerLockUnlock in SeedTrace.cpp.
+    probe::pushFlowerLockUnlock();
 
     if (drained > 0) {
         SMBWAP_LOG_DEBUG("[grant] drainInbound drained %d msg(s)", drained);
