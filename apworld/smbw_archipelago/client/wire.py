@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 from .protocol import BadgeAcquiredMsg, NerveFireMsg, NerveKind, PlayReportMsg
 
@@ -441,6 +441,55 @@ class SetRoyalSeedsAbsoluteMsg:
 
 
 @dataclass(frozen=True)
+class SetRoutableWorldsAbsoluteMsg:
+    """Bridge -> Switch.  Open-world mode: AP-authoritative set of worlds
+    routable on the overworld FROM THE START (2026-06).
+
+    ``mask`` bit N == the world with AP bucket N is routable: bit 0 = W1,
+    ..., bit 5 = W6, bit 6 = Petal Isles, bit 7 = Special.  Bit 8
+    (``CASTLE_BIT``) == the Castle / Bowser route is open -- set by the
+    client once enough palaces are cleared, alongside a
+    ``SetRoyalSeedsAbsolute(0x3F)`` that actually opens the vanilla route.
+
+    Switch-side: ``ApFrameBridge::drainInbound`` caches the mask in
+    ``g_routable_world_mask``; the ``FUN_7100935ce0`` (NSO +0x935ce0)
+    trampoline forces a true return for any world whose bit is set, so it
+    becomes routable, passing through to the original predicate otherwise.
+    A mask of 0 means "open-world inactive" -- the Switch hook no-ops and
+    vanilla world-unlock behavior is byte-identical.
+
+    Idempotent absolute-overwrite, sent on the same triggers as
+    :class:`SetBadgesAbsoluteMsg`: every ReceivedItems, every Switch
+    HelloMsg (replay-on-reconnect), and the periodic ~2 s tick.
+
+    9 meaningful bits; range is ``[0, 2**16)`` for headroom (the Switch
+    decodes it as a u16).
+    """
+
+    T = "set_routable_worlds"
+
+    # Bit position of the Castle/Bowser route in the mask.  Mirrors
+    # ``kCastleMaskBit`` in ApFrameBridge.hpp.
+    CASTLE_BIT: int = 8
+
+    mask: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "mask": self.mask}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetRoutableWorldsAbsoluteMsg:
+        raw = d.get("mask")
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            raise ProtocolError(
+                f"set_routable_worlds.mask must be int, got {raw!r}")
+        if not (0 <= raw < (1 << 16)):
+            raise ProtocolError(
+                f"set_routable_worlds.mask out of range [0, 2**16): {raw}")
+        return cls(mask=raw)
+
+
+@dataclass(frozen=True)
 class SetWonderSeedCountsMsg:
     """Bridge -> Switch.  AP-authoritative Wonder Seed gate override.
 
@@ -847,6 +896,55 @@ class LogMsg:
         )
 
 
+@dataclass(frozen=True)
+class ApplyWorldUnlockMsg:
+    """Bridge -> Switch.  Open-world world/course unlock batch (2026-06).
+
+    Sends a list of container-B bool hashes (all written with value=1)
+    that unlocks world-discovered and course-exists state on a fresh save.
+    Derived from a fresh→100%-save diff; full table in
+    ``world_unlock_table.WORLD_UNLOCK_HASHES`` (85 hashes as of 2026-06-03).
+
+    The Switch applies via ``probe::grantContainerBBool(hash, 1)`` for each
+    hash when ``g_routable_world_mask != 0`` (open-world active).  Per-course
+    CLEAR flags are NOT included, so PlayReport checks still fire on first
+    real course clear.
+
+    Sent at connect (Connected handler) and on every HelloMsg replay
+    (reconnect).  NOT on the periodic 2 s tick -- these bools are set once
+    and are not reverted by in-game actions (unlike badges/seeds).
+    """
+
+    T = "apply_world_unlock"
+
+    MAX_HASHES: ClassVar[int] = 96
+
+    hashes: tuple[int, ...]
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "hashes": list(self.hashes)}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> ApplyWorldUnlockMsg:
+        raw = d.get("hashes")
+        if not isinstance(raw, list):
+            raise ProtocolError(
+                f"apply_world_unlock.hashes must be list, got {raw!r}")
+        if len(raw) > cls.MAX_HASHES:
+            raise ProtocolError(
+                f"apply_world_unlock.hashes too long: {len(raw)} > {cls.MAX_HASHES}")
+        hashes: list[int] = []
+        for i, h in enumerate(raw):
+            if not isinstance(h, int) or isinstance(h, bool):
+                raise ProtocolError(
+                    f"apply_world_unlock.hashes[{i}] must be int, got {h!r}")
+            if not (0 <= h < (1 << 32)):
+                raise ProtocolError(
+                    f"apply_world_unlock.hashes[{i}] out of range [0, 2**32): {h}")
+            hashes.append(h)
+        return cls(hashes=tuple(hashes))
+
+
 # Union of all message types -- handy for type hints on decoder return.
 WireMsg = (
     HelloMsg
@@ -856,6 +954,8 @@ WireMsg = (
     | PlayReportWireMsg
     | SetBadgesAbsoluteMsg
     | SetRoyalSeedsAbsoluteMsg
+    | SetRoutableWorldsAbsoluteMsg
+    | ApplyWorldUnlockMsg
     | GrantHashKeyedMsg
     | IncrementHashKeyedMsg
     | SetWonderSeedCountsMsg
@@ -880,6 +980,8 @@ _FROM_WIRE: dict[str, Any] = {
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     SetRoyalSeedsAbsoluteMsg.T: SetRoyalSeedsAbsoluteMsg.from_wire,
+    SetRoutableWorldsAbsoluteMsg.T: SetRoutableWorldsAbsoluteMsg.from_wire,
+    ApplyWorldUnlockMsg.T: ApplyWorldUnlockMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,
     SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,

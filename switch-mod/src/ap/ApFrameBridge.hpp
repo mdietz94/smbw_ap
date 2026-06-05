@@ -105,6 +105,19 @@ void drainInbound();
 // probe::pushWonderSeedOverride).
 std::uint32_t getWonderSeedCount(std::uint32_t bucket);
 
+// Open-world mode (2026-06): bit position of the Castle/Bowser route in
+// the routable-world mask.  Worlds W1..W6 occupy bits 0..5, Petal Isles
+// bit 6, Special bit 7; the Castle is bit 8.  Mirrors
+// wire.SetRoutableWorldsAbsoluteMsg.CASTLE_BIT on the client.
+inline constexpr std::uint32_t kCastleMaskBit = 8;
+
+// Read the AP-authoritative routable-world mask cached by drainInbound on
+// SetRoutableWorldsAbsolute.  Bit N (AP-bucket order) set == that world is
+// routable from the start; bit kCastleMaskBit set == Castle/Bowser route
+// open.  0 == open-world inactive (the FUN_7100935ce0 hook no-ops).  Safe
+// from any thread; read from the game-thread predicate trampoline.
+std::uint32_t getRoutableWorldMask();
+
 }  // namespace smbwap::ap
 
 // Forward declarations for the grant primitives that live in main.cpp's
@@ -133,6 +146,11 @@ bool setWonderSeedBitfieldAbsolute(std::uint64_t bits_lo,
 // slots, so the GrantHashKeyed dispatch routes bool hashes through
 // grantContainerBBool instead.
 bool grantContainerACounter(std::uint32_t hash, std::uint32_t value);
+
+// Open-world seed: raise a container-A counter to `floor` only when the
+// live value is below it (never lowers, preserving a higher value).  Used
+// to seed the player with purple coins at open-world start.
+bool ensureContainerACounterFloor(std::uint32_t hash, std::uint32_t floor);
 
 // Saturating add/sub on a container-A counter.  Reads the current value
 // via FUN_710012AE94 (NSO +0x0012AE94, signature
@@ -247,4 +265,19 @@ void pushWonderSeedOverrideCurrentWorld();
 // game's per-course seed detail (cosmetic) to make the world total match AP.
 // Defined in SeedTrace.cpp.
 void pushWonderSeedContainerDCounts();
+
+// 2026-06-04 -- OPEN-WORLD COURSE VISIBILITY: write bit 0 of the FlowerLock
+// per-course route bitfield (container-D hash 0x948e540d, confirmed via NSO
+// static analysis of FUN_71000E258C @ NSO+0xE258C) for every course index
+// 0..80.  The FlowerLock container at gmd+0x800 controls which course nodes
+// appear on the world map and in the teleport list.  A fresh world has all
+// FlowerLock slots at 0 -> no course nodes draw, empty teleport list.
+// Writing 1 to each slot marks every route "open" so all 81 course nodes
+// appear; the worldRoutableHook (main.cpp) already restricts which world maps
+// are accessible, so no extra scoping by world is needed.  Direct live write
+// like pushWonderSeedContainerDCounts -- no deferred queue, no Abort.
+// Write-if-zero so existing game-set values (non-zero) are preserved.
+// Only runs when g_routable_world_mask != 0 (open-world mode active).
+// Defined in SeedTrace.cpp.
+void pushFlowerLockUnlock();
 }

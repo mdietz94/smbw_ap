@@ -724,6 +724,322 @@ HkTrampoline<unsigned long long, long, unsigned*, unsigned>
             return result;
         });
 
+// =========================================================================
+// OPEN-WORLD COURSE-NODE VISIBILITY OVERRIDE
+// =========================================================================
+//
+// FUN_7100935c80 @ NSO +0x935c80 -- per-course-node visible predicate.
+// `bool FUN(long actor)`.  Called by FUN_710179f100 for each course node
+// actor on the world map to decide whether to show it.  First gate:
+//
+//   ldrb w8,[x0, #0x8d]   // load actor->initialized_byte
+//   cbnz w8, success      // non-zero → proceed to lock+gmd checks
+//   mov w0, wzr; ret      // zero → return false (hidden)
+//
+// For W1 the +0x8d byte is set at game start (W1 is always initialized).
+// For W2-W6 it is set only when the player FIRST visits that world via
+// normal progression.  On a fresh open-world save the player fast-travels
+// to W2 before ever visiting it, so +0x8d stays 0 and all W2 courses
+// remain invisible despite the WorldRoutable hook making W2 routable.
+//
+// Fix: when the AP routable mask is non-zero (open-world active) AND the
+// actor's +0x8d byte is 0 (world never visited), force return true.  The
+// original is still called for already-initialized actors (normal path).
+// Access control for palace / Bowser / badge courses is handled by the
+// level-entry death-gate hook; forcing visibility here is safe.
+//
+// PROLOGUE SAFETY: +0x935c80 is `sub sp / stp x29,x30 / add x29 / ldrb`.
+// No PC-relative instruction in first 4; (0x935c80+8)&7==0 → count=4.
+HkTrampoline<bool, long long> courseVisibleHook = hk::hook::trampoline(
+    [](long long param_1) -> bool {
+        const std::uint8_t flag_8d =
+            *reinterpret_cast<const std::uint8_t*>(
+                static_cast<std::uintptr_t>(param_1) + 0x8d);
+        const bool orig_result = courseVisibleHook.orig(param_1);
+
+        // In vanilla mode, always pass through.
+        if (!probe::isSaveLoaded()) return orig_result;
+        const std::uint32_t mask = smbwap::ap::getRoutableWorldMask();
+        if (mask == 0) return orig_result;
+
+        // Diagnostic: log every call when open-world is active so we can
+        // see whether the hook fires for W2 course nodes and what state
+        // they're in.  Budget-limited to avoid flooding.
+        static std::atomic<std::int32_t> diag_budget{64};
+        std::int32_t d = diag_budget.load(std::memory_order_relaxed);
+        while (d > 0 && !diag_budget.compare_exchange_weak(
+                   d, d - 1, std::memory_order_relaxed)) {
+        }
+        if (d > 0) {
+            SMBWAP_LOG_INFO(
+                "CourseVisible called: actor=0x%llx flag_8d=%u orig=%d "
+                "mask=0x%03x",
+                static_cast<unsigned long long>(param_1),
+                static_cast<unsigned>(flag_8d),
+                orig_result ? 1 : 0, mask);
+        }
+
+        // Open-world active: force ALL course nodes visible regardless of
+        // flag_8d or gmd bool.  This surfaces W2 courses even when the world
+        // has never been visited.  The death-gate hook handles access control
+        // for badge/Bowser courses; we bypass only the visibility predicate.
+        if (!orig_result) {
+            static std::atomic<std::int32_t> force_budget{32};
+            std::int32_t b = force_budget.load(std::memory_order_relaxed);
+            while (b > 0 && !force_budget.compare_exchange_weak(
+                       b, b - 1, std::memory_order_relaxed)) {
+            }
+            if (b > 0) {
+                SMBWAP_LOG_INFO(
+                    "CourseVisible force-true actor=0x%llx flag_8d=%u "
+                    "mask=0x%03x",
+                    static_cast<unsigned long long>(param_1),
+                    static_cast<unsigned>(flag_8d), mask);
+            }
+            return true;
+        }
+        return orig_result;
+    });
+
+// =========================================================================
+// OPEN-WORLD TRAVEL-CONFIRMATION OVERRIDE
+// =========================================================================
+//
+// FUN_710055ed80 @ NSO +0x55ed80 -- travel-destination availability check.
+// `bool FUN(int world_val)`.  Called by the travel UI (FUN_7101c235c4) to
+// decide whether any courses are selectable as destinations in the chosen
+// world.  It does an identical per-world-record lookup as FUN_7100935ce0
+// (gmd+0x80 table, vtable[+0x20] count check, *(record+0x28) & 1) so it
+// returns false for any world that has never been visited.
+//
+// Without this override the travel tab shows W2 (worldRoutableHook) but
+// clicking W2 shows "L_Btn-T_World_NoOpen" (no courses available), and the
+// player cannot confirm travel.  We force true for masked worlds so the
+// travel completes; the player is placed at W2's default entry point and
+// the world map loads, at which point courseVisibleHook makes the course
+// nodes appear.
+//
+// PROLOGUE SAFETY: first 4 instrs are `sub/stp/str/stp` -- no PC-relative.
+// adrp is at +0x1c (instruction 7), well past the 4-instruction patch.
+// (0x55ed80+8)&7==0 → count=4.
+HkTrampoline<bool, int> worldTravelHook = hk::hook::trampoline(
+    [](int world_val) -> bool {
+        const bool orig_result = worldTravelHook.orig(world_val);
+        if (!probe::isSaveLoaded()) return orig_result;
+        const std::uint32_t mask = smbwap::ap::getRoutableWorldMask();
+        if (mask == 0) return orig_result;
+
+        static constexpr signed char kWorldValToBucket[10] = {
+            -1, 0, 6, 1, 2, 3, 4, 5, -1, 7,
+        };
+        const unsigned uval = static_cast<unsigned>(world_val);
+        int bit = -1;
+        if (uval == 8) {
+            bit = static_cast<int>(smbwap::ap::kCastleMaskBit);
+        } else if (uval <= 9 && kWorldValToBucket[uval] >= 0) {
+            bit = kWorldValToBucket[uval];
+        }
+        if (bit >= 0 && (mask & (1u << bit))) {
+            static std::atomic<std::int32_t> log_budget{16};
+            std::int32_t b = log_budget.load(std::memory_order_relaxed);
+            while (b > 0 && !log_budget.compare_exchange_weak(
+                       b, b - 1, std::memory_order_relaxed)) {
+            }
+            if (b > 0) {
+                SMBWAP_LOG_INFO(
+                    "WorldTravel force-true world_val=%d bit=%d orig=%d "
+                    "mask=0x%03x",
+                    world_val, bit, orig_result ? 1 : 0, mask);
+            }
+            return true;
+        }
+        return orig_result;
+    });
+
+// =========================================================================
+// OPEN-WORLD ROUTABILITY OVERRIDE
+// =========================================================================
+//
+// FUN_7100935ce0 @ NSO +0x935ce0 -- per-world overworld-routability
+// predicate.  `bool FUN(uint32_t world_val)`.  The accessible-worlds
+// evaluator at +0x480f20 calls it 8x (world_vals 1,3,4,5,6,7,2,9 ==
+// AP buckets 0..7) and tests bit 0 of each result to build the routable
+// world list.  Castle (world_val 8) is intentionally never queried there.
+//
+// Open-world mode: drainInbound caches an AP-authoritative routable-world
+// mask (g_routable_world_mask, AP-bucket-bit indexed).  This trampoline
+// forces a `true` return for any world whose bit is set, so those worlds
+// are routable from the start; otherwise it passes through to orig() so
+// vanilla progression still works for un-forced worlds and for every
+// non-open-world session (mask == 0 -> no-op, byte-identical to vanilla).
+//
+// PROLOGUE SAFETY: +0x935ce0 is `sub/stp/stp/stp` then `adrp` at +0x14.
+// The relocator patches the first 4 instructions ((0x935ce0+8)&7==0 ->
+// count=4), all clean -- the adrp is never touched.  Direct hook is safe.
+//
+// world_val -> AP bucket is the inverse of kWorldValToBucket; Castle
+// (world_val 8) maps to kCastleMaskBit explicitly.
+HkTrampoline<bool, unsigned> worldRoutableHook = hk::hook::trampoline(
+    [](unsigned world_val) -> bool {
+        const bool orig_result = worldRoutableHook.orig(world_val);
+
+        // Gate like the WS reader substitute: only override once a save
+        // is loaded.  No scene-transition gate -- this is a pure read
+        // substitution with no game-memory write.
+        if (!probe::isSaveLoaded()) return orig_result;
+
+        const std::uint32_t mask = smbwap::ap::getRoutableWorldMask();
+        if (mask == 0) return orig_result;  // open-world inactive
+
+        // world_val -> AP-bucket bit.  Castle (8) -> kCastleMaskBit.
+        static constexpr signed char kWorldValToBucket[10] = {
+            -1, 0, 6, 1, 2, 3, 4, 5, /*8=Castle*/ -1, 7,
+        };
+        int bit = -1;
+        if (world_val == 8) {
+            bit = static_cast<int>(smbwap::ap::kCastleMaskBit);
+        } else if (world_val <= 9 && kWorldValToBucket[world_val] >= 0) {
+            bit = kWorldValToBucket[world_val];
+        }
+
+        if (bit >= 0 && (mask & (1u << bit))) {
+            // Rate-limited observability (saturating-CAS budget, same idiom
+            // as the WS reader substitute) so we don't flood the log on
+            // every world-map refresh.
+            static std::atomic<int32_t> log_budget{32};
+            int32_t b = log_budget.load(std::memory_order_relaxed);
+            while (b > 0 && !log_budget.compare_exchange_weak(
+                       b, b - 1, std::memory_order_relaxed)) {
+            }
+            if (b > 0) {
+                SMBWAP_LOG_INFO(
+                    "WorldRoutable force-true world_val=%u bit=%d orig=%d "
+                    "mask=0x%03x",
+                    world_val, bit, orig_result ? 1 : 0, mask);
+            }
+            return true;
+        }
+        return orig_result;
+    });
+
+// =========================================================================
+// OPEN-WORLD ROUTE-GATE FORCE-OPEN
+// =========================================================================
+//
+// FUN_7100383418 @ NSO +0x383418 -- the world-map route / course-point
+// "FlowerLock" gate body.  Called per route segment; it writes a lock byte
+// at *(actor+0x20) & ~3 (0 = locked, 1 = open) from a BYML/RomFS-driven
+// FlowerLock param + gmd flags (master bool 0x30bdd45c, 0x925d4260, the
+// Wonder-Seed count 0x90d4d0f2) via the sub-predicate FUN_71016cbf58.
+// Because the per-route lock is BYML-driven there is NO gmd hash to flip; the
+// only clean lever is to force the lock byte open after the original runs.
+//
+// Open-world: force EVERY route open so the player can walk Petal Isles to
+// each open world's entrance (entering plays the world's own FirstVisitDemo,
+// which moves the Poplins / removes the in-world obstacle actor), and so the
+// in-world seed-bar routes the player would otherwise be blocked on open up.
+// The Bowser-castle route opens too; access control for Bowser is the
+// level-entry Royal-Seed death-gate, not this route gate.  Open question this
+// hook is meant to answer in-game: whether forcing the lock byte also lets the
+// player physically pass, or whether the obstacle actor still blocks.
+//
+// PROLOGUE SAFETY: first 4 patched instrs are sub sp / stp x29,x30 / stp
+// x26,x25 / stp x24,x23 -- all stack setup, no PC-relative.  First adrp is at
+// +0x2c (instruction 12).  (0x383418+8)&7==0 -> count=4.  Safe.
+HkTrampoline<std::uint64_t, long long> routeGateForceOpenHook =
+    hk::hook::trampoline([](long long param_1) -> std::uint64_t {
+        const std::uint64_t r = routeGateForceOpenHook.orig(param_1);
+        if (!probe::isSaveLoaded()) return r;
+        if (smbwap::ap::getRoutableWorldMask() == 0) return r;  // vanilla
+        // Scope to PETAL ISLES (the hub the player navigates) + the CASTLE
+        // (Bowser approach).  Worlds are reached on foot from PI and left
+        // VANILLA -- forcing their internal seed-bar routes open would skip
+        // the normal per-world Wonder-Seed progression the player wants.
+        // In-game world index (container-A hash 0x9f5ead3c): 2 = Petal Isles,
+        // 8 = Castle (see kWorldValToBucket in the WS-override hook).
+        void* gmd = probe::gmdSingleton();
+        if (gmd == nullptr) return r;
+        unsigned world_val = 0;
+        containerAReaderHook.orig(reinterpret_cast<long>(gmd), &world_val,
+                                  0x9f5ead3cu);
+        if (world_val != 2u && world_val != 8u) return r;  // vanilla world
+        // Lock byte = *(actor+0x20) & ~3 (low 2 bits are flags).  Force open.
+        const std::uintptr_t slot = *reinterpret_cast<std::uintptr_t*>(
+            static_cast<std::uintptr_t>(param_1) + 0x20);
+        auto* lock = reinterpret_cast<std::uint8_t*>(slot & ~std::uintptr_t(3));
+        if (lock != nullptr && *lock != 1u) {
+            *lock = 1u;
+            static std::atomic<std::int32_t> log_budget{24};
+            std::int32_t b = log_budget.load(std::memory_order_relaxed);
+            while (b > 0 && !log_budget.compare_exchange_weak(
+                       b, b - 1, std::memory_order_relaxed)) {
+            }
+            if (b > 0) {
+                SMBWAP_LOG_INFO("RouteGate force-open actor=0x%llx lock=%p",
+                                static_cast<unsigned long long>(param_1),
+                                static_cast<void*>(lock));
+            }
+        }
+        return r;
+    });
+
+// =========================================================================
+// SCENE-CHANGE-REQUEST PROBE (toward the Bowser final-level stage-warp)
+// =========================================================================
+//
+// FUN_710061a3d8 @ NSO +0x61a3d8 -- "request scene change to <name>":
+// memcpy(name -> seqObj+0x640) then set request byte seqObj+0x690 = flag&1.
+// The world-map "enter course" path resolves a course-point to its
+// BYML-loaded stage-NAME string and calls this; the controller update loop
+// then performs the actual ChangeScene.  The final-Bowser castle barrier is
+// BYML/demo-gated and NOT openable by a gmd write (RE 2026-06-05), but this
+// loader is gate-agnostic -- it loads whatever stage name it is given.  So a
+// direct warp = call this with the castle's stage name.
+//
+// We don't know the castle stage name statically (it's a RomFS/BYML field),
+// so this PROBE logs every scene-change request's stage name + seq pointer.
+// Enter the final castle once on a 100% save and the log reveals both the
+// stage-name string to warp to AND a live seq-object pointer shape.
+//
+// PROLOGUE SAFETY: first 4 patched instrs are stp x29,x30 / stp x22,x21 /
+// stp x20,x19 / mov x29,sp -- all stack setup, no PC-relative.
+// (0x61a3d8+8)&7==0 -> count=4.  Safe.
+HkTrampoline<std::uint64_t, long, long, int> sceneChangeReqHook =
+    hk::hook::trampoline([](long seqObj, long name, int flag) -> std::uint64_t {
+        if (probe::isSaveLoaded() && name != 0) {
+            static std::atomic<std::int32_t> log_budget{200};
+            if (log_budget.fetch_sub(1) > 0) {
+                SMBWAP_LOG_INFO("[scene-req] stage='%s' flag=%d seq=0x%lx",
+                                reinterpret_cast<const char*>(name), flag,
+                                static_cast<unsigned long>(seqObj));
+            }
+        }
+        return sceneChangeReqHook.orig(seqObj, name, flag);
+    });
+
+// FUN_710055ee48 @ NSO +0x55ee48 -- the world-map "enter course/level" name
+// setter: builds the destination stage name and copies it into the world-map
+// sequence object's buffer at *(seqObj+0x640).  This is the path a level-enter
+// from the world map takes (the shop path uses FUN_710061a3d8 instead).  We
+// read the name *after* orig runs (the buffer is filled by then) to capture
+// the final-castle stage name when the player enters it.
+// PROLOGUE SAFETY: first 4 instrs sub sp / stp x29,x30 / str x21 / stp x20,x19
+// -- no PC-relative (first adrp at +0x14, instr 6).  (0x55ee48+8)&7==0 -> 4.
+HkTrampoline<std::uint64_t, long, long, long, long> courseEnterNameHook =
+    hk::hook::trampoline([](long seqObj, long a2, long a3, long a4) -> std::uint64_t {
+        const std::uint64_t r = courseEnterNameHook.orig(seqObj, a2, a3, a4);
+        if (probe::isSaveLoaded()) {
+            const char* name = *reinterpret_cast<const char* const*>(
+                static_cast<std::uintptr_t>(seqObj) + 0x640);
+            static std::atomic<std::int32_t> log_budget{100};
+            if (name != nullptr && log_budget.fetch_sub(1) > 0) {
+                SMBWAP_LOG_INFO("[course-enter] stage='%s' seq=0x%lx",
+                                name, static_cast<unsigned long>(seqObj));
+            }
+        }
+        return r;
+    });
+
 void installHook(const char* name, ::ptr offset, hk::Result rc) {
     if (rc.failed()) {
         SMBWAP_LOG_ERROR("install %s @ +0x%lx FAILED rc=0x%x",
@@ -748,7 +1064,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2g: 13 hooks + ap/ subsystem + real probe:: grants + WS reader override");
+    SMBWAP_LOG_INFO("Phase 2g: 17 hooks + ap/ subsystem + real probe:: grants + WS reader override + open-world routability + course visibility + travel confirm + route-gate force-open");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -788,6 +1104,34 @@ extern "C" void hkMain() {
     // WONDER SEED GATE OVERRIDE (reader-side substitution)
     installHook("ContainerAReader",    0x0012ae94,
                 containerAReaderHook.installAtMainOffset(0x0012ae94));
+
+    // OPEN-WORLD COURSE VISIBILITY + ROUTABILITY OVERRIDES
+    // CourseVisible: FUN_7100935c80 -- forces course-node actors with an
+    //   uninitialized +0x8d byte visible when open-world mask is non-zero.
+    installHook("CourseVisible",       0x00935c80,
+                courseVisibleHook.installAtMainOffset(0x00935c80));
+    // WorldRoutable: FUN_7100935ce0 -- forces travel-TAB to show masked worlds.
+    installHook("WorldRoutable",       0x00935ce0,
+                worldRoutableHook.installAtMainOffset(0x00935ce0));
+    // WorldTravel: FUN_710055ed80 -- forces travel-CONFIRM to allow masked
+    //   worlds even when no courses have been visited yet.
+    installHook("WorldTravel",         0x0055ed80,
+                worldTravelHook.installAtMainOffset(0x0055ed80));
+    // RouteGateForceOpen: FUN_7100383418 -- forces every world-map route
+    //   (Petal Isles bridges + in-world seed-bar paths + castle route) open
+    //   so the player can walk to each open world.  Bowser stays gated by the
+    //   Royal-Seed death-gate, not this route gate.
+    installHook("RouteGateForceOpen",  0x00383418,
+                routeGateForceOpenHook.installAtMainOffset(0x00383418));
+    // SceneChangeReq: FUN_710061a3d8 -- logs every scene-change request's
+    //   stage name + seq pointer, to capture the final-castle stage name for
+    //   a direct Bowser warp (the castle barrier is BYML/demo-gated).
+    installHook("SceneChangeReq",      0x0061a3d8,
+                sceneChangeReqHook.installAtMainOffset(0x0061a3d8));
+    // CourseEnterName: FUN_710055ee48 -- captures the stage name when entering
+    //   a level/course from the world map (the final-castle enter path).
+    installHook("CourseEnterName",     0x0055ee48,
+                courseEnterNameHook.installAtMainOffset(0x0055ee48));
 
     // DEBUG OVERLAY: NVN present-hook chain that drives the ImGui overlay.
     // No-op unless built with SMBWAP_HAS_DEBUG_RENDERER (see CMakeLists.txt

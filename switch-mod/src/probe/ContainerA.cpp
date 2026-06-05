@@ -111,6 +111,20 @@ bool grantContainerACounter(std::uint32_t hash, std::uint32_t value) {
     return true;
 }
 
+bool ensureContainerACounterFloor(std::uint32_t hash, std::uint32_t floor) {
+    // Raise a container-A counter to `floor` only when the live value is
+    // below it (absolute set via grantContainerACounter); never lowers, so
+    // a higher gameplay/AP value is preserved.  Used once at open-world
+    // start to seed the player with purple coins -- some worlds gate their
+    // first area on spending purple coins that a walk-/fast-in player lacks.
+    void* gmd = gmdSingleton();
+    if (gmd == nullptr) return false;
+    std::uint32_t cur = 0;
+    containerAReader()(gmd, &cur, hash);
+    if (cur >= floor) return false;
+    return grantContainerACounter(hash, floor);
+}
+
 bool incrementContainerACounter(std::uint32_t hash, std::int32_t delta) {
     void* gmd = gmdSingleton();
     if (gmd == nullptr) return false;

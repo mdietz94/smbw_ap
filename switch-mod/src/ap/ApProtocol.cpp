@@ -443,6 +443,68 @@ bool parseSetRoyalSeedsAbsolute(util::json::Reader& r,
     return saw_mask;
 }
 
+bool parseApplyWorldUnlock(util::json::Reader& r, WireApplyWorldUnlock& out) {
+    // "hashes" is a JSON array of u32 integers, at most kWorldUnlockHashCap.
+    // All will be applied with value=1 on the Switch side.
+    std::string_view key;
+    bool saw_hashes = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "hashes")) {
+            if (!r.enterArray()) return false;
+            std::size_t i = 0;
+            while (r.hasMoreInArray()) {
+                if (i >= kWorldUnlockHashCap) return false;
+                std::int64_t v = 0;
+                if (!r.nextInt(v)) return false;
+                if (v < 0 || v > 0xFFFFFFFFLL) return false;
+                out.hashes[i++] = static_cast<std::uint32_t>(v);
+            }
+            if (!r.exitArray()) return false;
+            out.count = static_cast<std::uint8_t>(i <= 255u ? i : 255u);
+            saw_hashes = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t iv = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(iv)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_hashes;
+}
+
+bool parseSetRoutableWorldsAbsolute(util::json::Reader& r,
+                                    WireSetRoutableWorldsAbsolute& out) {
+    // Cursor positioned just after "t":"set_routable_worlds".  One
+    // required field: "mask" -> u16 in [0, 2**16).  9 bits are
+    // meaningful (W1..W6, Petal, Special, Castle); the bridge validates
+    // the range, mirrored here against a buggy bridge.
+    std::string_view key;
+    bool saw_mask = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "mask")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0 || v > 0xFFFF) return false;
+            out.mask = static_cast<std::uint16_t>(v);
+            saw_mask = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_mask;
+}
+
 bool parseSetWonderSeedCounts(util::json::Reader& r,
                               WireSetWonderSeedCounts& out) {
     // Cursor positioned just after "t":"set_wonder_seed_counts".  One
@@ -659,6 +721,14 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::OverlayNotice;
         out.overlay_notice = WireOverlayNotice{};
         if (!parseOverlayNotice(r, out.overlay_notice)) return false;
+    } else if (std::strcmp(t_val, "set_routable_worlds") == 0) {
+        out.kind = InboundKind::SetRoutableWorldsAbsolute;
+        out.set_routable_worlds_absolute = WireSetRoutableWorldsAbsolute{};
+        if (!parseSetRoutableWorldsAbsolute(r, out.set_routable_worlds_absolute)) return false;
+    } else if (std::strcmp(t_val, "apply_world_unlock") == 0) {
+        out.kind = InboundKind::ApplyWorldUnlock;
+        out.apply_world_unlock = WireApplyWorldUnlock{};
+        if (!parseApplyWorldUnlock(r, out.apply_world_unlock)) return false;
     } else if (std::strcmp(t_val, "kill") == 0) {
         out.kind = InboundKind::Kill;
         out.kill = WireKill{};

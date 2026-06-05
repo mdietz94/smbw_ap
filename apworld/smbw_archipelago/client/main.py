@@ -86,6 +86,9 @@ async def _main(args: argparse.Namespace) -> int:
         badge_mask_provider=ctx._recompute_badge_mask,
         wonder_seed_counts_provider=ctx._recompute_wonder_seed_counts,
         wonder_seed_bits_provider=ctx._recompute_wonder_seed_bits,
+        routable_worlds_provider=ctx._recompute_routable_worlds_mask,
+        open_world_royal_seed_provider=ctx._open_world_royal_seed_mask,
+        world_unlock_hashes_provider=ctx._world_unlock_hashes,
     )
     ctx.lan_server = lan
 
