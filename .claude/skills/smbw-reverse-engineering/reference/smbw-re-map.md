@@ -205,6 +205,32 @@ project and in `re_discovered.sym`.
 | `ProcessExitCourseMgrBody` | `+0x1be3a5c` | ExitCourseMgr complete course-out (teardown + step advance); gate-entry hook candidate | ACTIVE |
 | `CheckOverworldBridgeGate` | `+0x935ce0` | overworld inter-world bridge/route gate eval `(world_val)`; companion list-builder `+0x480f20` | MED-CONF (memory-sourced, not re-verified) |
 
+### Annotation caveats — what to re-evaluate (for future agents)
+
+The Ghidra names/prototypes/comments (exported to `re_discovered.sym` /
+`re_structs.json`) carry known limitations. Re-verify before trusting these:
+
+- **`void*` pointer types** — every GameDataMgr/substruct param is typed `void*`
+  (no `GameDataMgr` struct is defined in the project; the layout is §4 here only).
+- **Decompile-verified prototypes** (trustworthy arg structure): the GameDataMgr
+  API set — `ContainerA*`/`ContainerB*` readers+writers, `SetContainerBBoolDeferred`,
+  `StageInfoHashToCourseIndex`, `GameDataMgrObjectAccessor`.
+- **Convention-only prototypes** (NOT decompile-verified): the nerve/tick set —
+  `NerveActivateOnceShared`, `SetCourseClearedFlagToGameData`,
+  `HandleGameCompleteGoalNerve`, `PlayerTickLatchTarget` — all use the single-arg
+  `void(void*)` execute convention. `PlayerTickLatchTarget` models `param_1` only
+  (likely more args) and was **created via `create_function`** (no prior
+  auto-analysis — verify its body bounds).
+- **Inferred prototype**: `HandleNerveAtomicStateBump` (from its `(this+0x68)` call site).
+- **No prototype set** (signature unverified): `Murmur3_32_CourseName`,
+  `GetGameDataAccessor`, `CheckGameDataAccessorResult`, the per-course candidates,
+  and the **6 original FlowerLock/castle functions** (2026-06-03) — those describe
+  signatures in prose but decompile still shows `undefined f(void)`.
+- **Identity, not signature, caveats**: `HandleGameCompleteGoalNerve` is static-only
+  (not live-validated); `CheckOverworldBridgeGate` is MED-CONF (memory-sourced).
+- **No Ghidra struct types** exist (`re_structs.json` `structs[]` is empty) — all
+  struct/offset knowledge is §4 above.
+
 ---
 
 ## 7. Save-file byte offsets (verification / offline editing — NOT live-writable)

@@ -6,7 +6,20 @@
     "image_base": "0x7100000000",
     "generated": "2026-06-05",
     "source": "ghidra-mcp bridge (read+write). 22 functions named/commented from smbw-re-map.md + docs on 2026-06-05 (batches 1+2); 6 pre-existing FlowerLock/castle-gate discoveries.",
-    "note": "No user-defined struct/union data types in the Ghidra project (struct layouts live in smbw-re-map.md S4). All named functions carry plate comments."
+    "note": "No user-defined struct/union data types in the Ghidra project (struct layouts live in smbw-re-map.md S4). All named functions carry plate comments.",
+    "caveats": [
+      "Pointer params to GameDataMgr/substructs are typed void* -- no GameDataMgr struct is defined in the project; struct layout lives in smbw-re-map.md S4 only.",
+      "GameDataMgr API prototypes (ContainerA/B readers+writers, SetContainerBBoolDeferred, StageInfoHashToCourseIndex, GameDataMgrObjectAccessor) ARE from decompile analysis: arg structure + value/hash order confirmed.",
+      "Nerve/tick prototypes (NerveActivateOnceShared, SetCourseClearedFlagToGameData, HandleGameCompleteGoalNerve, PlayerTickLatchTarget) use the single-arg void(void*) execute CONVENTION -- not decompile-verified.",
+      "PlayerTickLatchTarget models param_1 ONLY (likely more args); the function was created via create_function (no prior auto-analysis) -- verify body bounds.",
+      "HandleNerveAtomicStateBump prototype is INFERRED from its (this+0x68) call site.",
+      "Murmur3_32_CourseName, GetGameDataAccessor, CheckGameDataAccessorResult, and the per-course candidates have NO prototype set (signature unverified).",
+      "The 6 original FlowerLock/castle-gate functions (2026-06-03) describe signatures in prose but have NO Ghidra prototype set -- decompile still shows undefined f(void).",
+      "PerCourseBitReader / PerCourseBitfieldWriter and ProcessExitCourseMgrBody are ACTIVE/UNVERIFIED (per-course Container-D + gate-entry RE).",
+      "HandleGameCompleteGoalNerve identity is static-only -- not yet live-validated.",
+      "CheckOverworldBridgeGate identity is MED-CONF (from memory smbwap-overworld-bridge-gate, not re-verified this session).",
+      "structs[] is empty -- no user-defined Ghidra data types exist; all struct/offset knowledge is in smbw-re-map.md S4."
+    ]
   },
   "structs": [],
   "plate_comments": [
@@ -38,7 +51,7 @@
     {
       "name": "PlayerTickLatchTarget",
       "offset": "0x00273868",
-      "comment": "Player per-tick fn (NSO +0x273868). HOOK TARGET (PlayerTickLatch):\nwalks param_1 -> +0x10 -> +0x208 -> (+0 or +0x118 ver-conditional) -> HP struct, latches live_base for DeathLink. HP int16 at live_base+0x38."
+      "comment": "Player per-tick fn (NSO +0x273868). HOOK TARGET (PlayerTickLatch):\nwalks param_1 -> +0x10 -> +0x208 -> (+0 or +0x118 ver-conditional) -> HP struct, latches live_base for DeathLink. HP int16 at live_base+0x38.\nConfidence: identity CONFIRMED (live DeathLink latch). CAVEATS: prototype void(void* player) models param_1 ONLY --\nthis ~13KB-body fn likely takes more args/return not modeled. Function was CREATED by us via create_function\n(no prior Ghidra analysis at this entry) -- verify body bounds before relying on its CFG."
     },
     {
       "name": "ProcessWorldMapRouteGate",
@@ -83,7 +96,7 @@
     {
       "name": "NerveActivateOnceShared",
       "offset": "0x00559f7c",
-      "comment": "Shared one-shot Nerve activate helper (NSO +0x559f7c, 19 xrefs).\nHOOK TARGET: trampoline here, filter by nerve[0] vtable (vt_off = vtable - GetTargetStart()).\nDrives Wonder-Seed pickup (vt_off 0x3345728) + DeathLink SceneTransition (0x33fd9a8, discriminator at nerve+0x18). Ref: smbw-re-map.md S6."
+      "comment": "Shared one-shot Nerve activate helper (NSO +0x559f7c, 19 xrefs).\nHOOK TARGET: trampoline here, filter by nerve[0] vtable (vt_off = vtable - GetTargetStart()).\nDrives Wonder-Seed pickup (vt_off 0x3345728) + DeathLink SceneTransition (0x33fd9a8, discriminator at nerve+0x18).\nConfidence: identity CONFIRMED (live M1 hook). Prototype void(void* nerve) is the single-arg helper\nCONVENTION -- arg count/return NOT decompile-verified. Ref: smbw-re-map.md S6."
     },
     {
       "name": "GetGameDataAccessor",
@@ -108,7 +121,7 @@
     {
       "name": "HandleGameCompleteGoalNerve",
       "offset": "0x015b77a8",
-      "comment": "SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss nerve execute (vtable +0x3363330 slot 8) (NSO +0x15b77a8).\nHOOK TARGET: one-shot; fires when final Bowser cleared -> GoalCompleted."
+      "comment": "SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss nerve execute (vtable +0x3363330 slot 8) (NSO +0x15b77a8).\nHOOK TARGET: one-shot; fires when final Bowser cleared -> GoalCompleted.\nConfidence: identity HIGH-CONF (static RE; NOT yet live-validated -- needs an actual final-Bowser clear).\nPrototype void(void* nerve) is the Nerve-execute void(this) CONVENTION -- not decompile-verified."
     },
     {
       "name": "WonderSeedRouteGatePredicate",
@@ -133,7 +146,7 @@
     {
       "name": "SetCourseClearedFlagToGameData",
       "offset": "0x01bf28cc",
-      "comment": "SetCourseClearFlagToGameData nerve execute (slot 8, vtable +0x34b14e8) (NSO +0x1bf28cc).\nHOOK TARGET: fires once on every valid course clear -> COURSE_CLEARED. Uses is-clear key 0xdf82e9ab.\nBody calls GetGameDataAccessor (+0x59f894), StageInfoHashToCourseIndex (+0x3d3fb0), CheckGameDataAccessorResult (+0x5e93fc)."
+      "comment": "SetCourseClearFlagToGameData nerve execute (slot 8, vtable +0x34b14e8) (NSO +0x1bf28cc).\nHOOK TARGET: fires once on every valid course clear -> COURSE_CLEARED. Uses is-clear key 0xdf82e9ab.\nBody calls GetGameDataAccessor (+0x59f894), StageInfoHashToCourseIndex (+0x3d3fb0), CheckGameDataAccessorResult (+0x5e93fc).\nConfidence: identity CONFIRMED (live). Prototype void(void* nerve) is the Nerve-execute void(this)\nCONVENTION -- not decompile-verified."
     },
     {
       "name": "SetContainerBBoolDeferred",
