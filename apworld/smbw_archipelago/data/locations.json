@@ -4398,7 +4398,7 @@
     "category": [
       "Badges"
     ],
-    "requires": [],
+    "requires": "|Sensor Badge|",
     "region": "W5 Start"
   },
   {

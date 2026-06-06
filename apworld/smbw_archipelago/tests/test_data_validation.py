@@ -104,6 +104,7 @@ def test_known_blocking_badges_are_progression(items):
     for name in (
         "Auto Super Mushroom Badge",
         "Rhythm Jump Badge",
+        "Sensor Badge",
         "Sound Off? Badge",
     ):
         assert name in by_name, f"missing item {name!r}"
