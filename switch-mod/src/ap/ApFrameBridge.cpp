@@ -137,8 +137,11 @@ void drainInbound() {
         // Throttled log so the operator can see the gate is intentional
         // without flooding -- NerveActivateOnce fires many times per
         // second.
-        static std::atomic<std::uint32_t> s_skip_log_budget{20};
-        if (s_skip_log_budget.fetch_sub(1, std::memory_order_relaxed) > 0) {
+        // Monotonic count-up (fetch_sub on an unsigned underflows past 0 to
+        // UINT32_MAX and logs forever -- drainInbound now runs every frame
+        // from playerTickLatchHook, so the old budget spammed once exhausted).
+        static std::atomic<std::uint32_t> s_skip_log_count{0};
+        if (s_skip_log_count.fetch_add(1, std::memory_order_relaxed) < 20) {
             const auto pending = inboundRing().pendingApprox();
             SMBWAP_LOG_DEBUG(
                 "[grant] drainInbound: save not loaded yet; buffering "
@@ -166,8 +169,10 @@ void drainInbound() {
     // messages sit in the SPSC ring (256 cap, ample for 3 s of 1.5
     // msg/s).
     if (probe::isInSceneTransitionWindow()) {
-        static std::atomic<std::uint32_t> s_trans_log_budget{20};
-        if (s_trans_log_budget.fetch_sub(1, std::memory_order_relaxed) > 0) {
+        // Monotonic count-up; see the save-not-loaded gate above for why a
+        // fetch_sub budget underflows and spams under per-frame draining.
+        static std::atomic<std::uint32_t> s_trans_log_count{0};
+        if (s_trans_log_count.fetch_add(1, std::memory_order_relaxed) < 20) {
             const auto pending = inboundRing().pendingApprox();
             SMBWAP_LOG_DEBUG(
                 "[grant] drainInbound: scene transition active; "

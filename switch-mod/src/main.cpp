@@ -338,6 +338,24 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
     [](void* param_1, void* param_2) -> void {
         probe::serviceDeathLink(param_1);
+        // Drain inbound grants here too -- the per-frame player tick is the
+        // only steady (~60 Hz) drain site.  The other drain sites
+        // (nerveActivateOnceHook, course-clear, game-goal) are all Nerve-
+        // driven, and Nerve activations are BURSTY: they fire on state
+        // changes (powerups, transitions, enemy events) but are nearly
+        // absent during calm gameplay.  An inbound Kill (DeathLink / gate
+        // bounce) that arrives while the player is just standing/running
+        // would otherwise sit unpopped in the ring until the next Nerve
+        // happened to fire -- the observed "received Kill ... never drained
+        // in this level" bug (2026-06-05).  drainInbound is single-atomic-
+        // load cheap when the ring is empty and self-gates on isSaveLoaded
+        // / isInSceneTransitionWindow, so calling it every frame is safe.
+        // Runs AFTER serviceDeathLink (so g_live_base/g_live_player are
+        // refreshed this frame -> synthKill's freshBase succeeds) and
+        // BEFORE orig (so a freshly-applied HP=0 is seen by the death check
+        // inside the tick this same frame).  Same game thread as the Nerve
+        // drain sites, so the SPSC ring keeps a single consumer.
+        smbwap::ap::drainInbound();
         playerTickLatchHook.orig(param_1, param_2);
         // NOTE(imgui-overlay): the overlay's per-frame draw is intentionally
         // NOT driven from here — PlayerTickLatch is a logic tick. It's driven

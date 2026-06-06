@@ -452,7 +452,10 @@ void applyOpenWorldEntry(void* gmd_v) {
     static const char* const kWorldName[9] = {
         "W1", "W2", "W3", "W4", "W5", "W6", "Petal", "Special", "Castle"};
 
-    static std::atomic<std::uint32_t> log_budget{24};
+    // Monotonic count-up capped at 24 (NOT a fetch_sub budget: an unsigned
+    // fetch_sub underflows past 0 to UINT32_MAX and then logs forever -- this
+    // function runs per-frame, so that produced ~1600 spam lines/session).
+    static std::atomic<std::uint32_t> log_count{0};
     for (int bit = 0; bit < 9; ++bit) {
         if ((mask & (1u << bit)) == 0) continue;
         const std::uintptr_t rec =
@@ -493,7 +496,7 @@ void applyOpenWorldEntry(void* gmd_v) {
             if (*by == 0) *by = 1u;
         }
 
-        if (log_budget.fetch_sub(1) > 0) {
+        if (log_count.fetch_add(1, std::memory_order_relaxed) < 24) {
             SMBWAP_LOG_INFO(
                 "[open-world] %s (bit=%d rec=%d) first-course entry applied",
                 kWorldName[bit], bit, kBitToRec[bit]);
