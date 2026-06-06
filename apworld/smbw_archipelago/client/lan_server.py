@@ -726,6 +726,23 @@ class LanServer:
                 peer, msg.mod_ver, msg.game_ver, msg.pid)
             await self._send(wire.HelloAckMsg(
                 ok=True, bridge_ver=BRIDGE_VERSION))
+            # A fresh handshake means the Switch (re)booted -- the game was
+            # quit/reloaded, or Ryujinx restarted.  The player is at
+            # title/save-select, NOT inside a course, so clear any stale
+            # in-course latch.  Without this, quitting mid-gate-bounce and
+            # reloading leaves ``in_course`` True with the old
+            # ``current_course``, so the client still thinks you're in the
+            # gated level (and an armed gate-kill loop keeps counting); the
+            # quit fires no ``course_result`` to clear it.  Clearing the
+            # flag makes ``_gate_check_stop`` report "player left the
+            # course" and the loop stops on its next (<=1 s) tick.  A real
+            # in-course state re-establishes on the next ``course_in``.
+            if self._state.is_in_course():
+                log.info(
+                    "switch hello: clearing stale in-course state "
+                    "(reboot/reload while the client thought we were "
+                    "in a course)")
+            self._state.mark_course_exited()
             # Replay-on-HelloMsg: push the current AP-known badge mask
             # immediately so the Switch's container-C bitfield matches
             # AP's view from the moment the connection is up.  This is

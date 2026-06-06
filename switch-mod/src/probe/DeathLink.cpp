@@ -35,6 +35,39 @@
 //      the next active-gameplay frame (so the death lands when you're
 //      back in play instead of being lost).
 //
+// 2026-06-05 reliability rework #2 (gate-kill / DeathLink "fires but never
+// lands" -- a synthKill storm with no resulting DEATH_DETECTED, captured
+// live).  Root cause found by decompiling the player tick's death check
+// (PlayerTickLatchTarget, NSO +0x2743c0..+0x710027594c):
+//
+//     if (*(short*)(hp_struct + 0x38) < 1) {            // HP <= 0
+//       if (*(char*)(player + 0x110f) == 0              // EDGE LATCH must be 0
+//           && (*(char*)(player + 0x110f) = 1,          //   <-- set to 1 FIRST,
+//               DAT_7103625850 != 0)                    //   THEN scene-validity test
+//           && *(long*)(DAT_7103625850 + 0x40) != 0) {
+//         /* write the per-character death-request flag into scene+0x40 */
+//       }
+//     }
+//     // the HP>0 branch (NSO +0x2743cc) clears player+0x110f back to 0.
+//
+// Death is EDGE-triggered: it fires only on the frame HP first goes <=0
+// *and* the latch at player+0x110f is 0.  The latch is set to 1 BEFORE
+// the scene-validity test, so any frame the scene global is momentarily
+// null (scene transition, Wonder effect, i-frames, or the `tbnz w8,#0xe`
+// guard at +0x7100274394 skipping the whole check) poisons the latch to 1
+// WITHOUT requesting a death -- and because we keep HP pinned at 0, the
+// HP>0 branch that would clear the latch never runs.  A one-shot HP write
+// then no-ops forever (the observed storm).
+//
+// Fix: a synthetic kill is no longer a single HP write.  An inbound Kill
+// opens a short "kill window" (kKillActiveTtlTicks); while it's open,
+// serviceDeathLink RE-ARMS the edge latch (player+0x110f = 0) AND rewrites
+// HP=0 EVERY frame, so the death fires on the next frame the scene is
+// valid regardless of an earlier poisoned latch.  The window closes the
+// instant a DEATH_DETECTED is observed (consumeSyntheticDeathThisFrame) or
+// the TTL expires.  Clearing player+0x110f is exactly what the game's own
+// HP>0 branch does each living frame, so the write is safe.
+//
 // Direct port of switch-mod/src/program/main.cpp:1960-2077, reworked.
 
 #include "probe/DeathLink.hpp"
@@ -72,12 +105,36 @@ constexpr std::uint64_t kSynthGuardTicks = kTicksPerSec;  // 1 s
 // a buried kill can't fire minutes later in an unrelated level.
 constexpr std::uint64_t kPendingKillTtlTicks = 30ULL * kTicksPerSec;  // 30 s
 
+// Active "kill window" TTL.  While open, serviceDeathLink re-arms the
+// death edge latch + rewrites HP=0 every frame so a transient poisoned
+// latch / scene-null frame can't permanently block the kill (see the
+// 2026-06-05 header).  1.5 s is many gameplay frames -- ample to catch a
+// scene-valid frame -- yet short enough that it stops hammering quickly if
+// the death genuinely can't be applied (it overlaps the 30 s pending retry
+// for the longer not-killable-at-all case).  Closed early on the first
+// observed DEATH_DETECTED.
+constexpr std::uint64_t kKillActiveTtlTicks = (3ULL * kTicksPerSec) / 2;  // 1.5 s
+
+// Offset of the player's death EDGE latch (byte).  PlayerTickLatchTarget
+// reads it at the HP<=0 branch (NSO +0x710027593c) -- death fires only when
+// it is 0 -- and the HP>0 branch (+0x2743cc) clears it each living frame.
+// x23 = player + 0x794; latch = [x23 + 0x97b] => player + 0x110f.
+constexpr std::ptrdiff_t kDeathEdgeLatchOff = 0x110f;
+
 // Stable pointer to the live HP-bearing struct, refreshed every frame.
 // 0 means "not yet seen" (pre-first-level).
 std::atomic<std::uintptr_t> g_live_base{0};
+// The player object (PlayerTickLatch param_1), refreshed every frame in
+// lockstep with g_live_base.  Needed to re-arm the edge latch above (it
+// lives on the player, not on the HP sub-struct).  0 = not yet seen.
+std::atomic<std::uintptr_t> g_live_player{0};
 // svc system tick of the last successful g_live_base refresh.  Drives the
 // freshness check above.
 std::atomic<std::uint64_t> g_live_base_tick{0};
+
+// Deadline tick of the open kill window (0 = closed).  While now < this,
+// serviceDeathLink re-applies the synthetic kill every fresh frame.
+std::atomic<std::uint64_t> g_kill_active_deadline{0};
 
 // Loop guard as a DEADLINE tick (0 = disarmed), not a sticky bool.  Set by
 // synthKill right before the HP=0 write so the SceneTransition Nerve
@@ -127,12 +184,24 @@ std::uintptr_t freshBase(std::uint64_t now) {
     return base;
 }
 
-// Arm the loop guard and write HP=0.  Caller guarantees `base` is fresh.
-void fireSynthKill(std::uintptr_t base, std::uint64_t now) {
+// Arm the loop guard, re-arm the death edge latch, and write HP=0.  Caller
+// guarantees `base` is fresh.  `player` may be 0 (latch re-arm skipped) but
+// is normally the live player paired with `base`.
+//
+// Re-arming the edge latch (player+0x110f = 0) is the crux of the
+// 2026-06-05 fix: it guarantees the HP<=0 branch sees an un-poisoned latch
+// this frame, so the death request fires even if a prior attempt set the
+// latch to 1 without completing a death.
+void fireSynthKill(std::uintptr_t base, std::uintptr_t player,
+                   std::uint64_t now) {
     // Arm the guard BEFORE the write so a death-handler tick that races
     // against us still sees it.
     g_synth_guard_deadline.store(now + kSynthGuardTicks,
                                  std::memory_order_release);
+    if (player != 0) {
+        *reinterpret_cast<volatile std::int8_t*>(player + kDeathEdgeLatchOff)
+            = 0;
+    }
     *reinterpret_cast<volatile std::int16_t*>(base + 0x38) = 0;
 }
 
@@ -141,12 +210,16 @@ void fireSynthKill(std::uintptr_t base, std::uint64_t now) {
 void serviceDeathLink(void* param_1) {
     const std::uint64_t now = hk::svc::getSystemTick();
 
-    // 1) Refresh the live HP struct every frame.  Latch-once goes stale
-    //    after the first scene transition (the struct is re-allocated).
+    // 1) Refresh the live HP struct + player every frame, in lockstep.
+    //    Latch-once goes stale after the first scene transition (the
+    //    struct is re-allocated).  hp_struct derives from param_1, so a
+    //    non-null hp_struct implies a non-null player.
     const std::uintptr_t hp_struct = walkToHpStruct(param_1);
     if (hp_struct != 0) {
         const auto prev = g_live_base.exchange(hp_struct,
                                                std::memory_order_acq_rel);
+        g_live_player.store(reinterpret_cast<std::uintptr_t>(param_1),
+                            std::memory_order_release);
         g_live_base_tick.store(now, std::memory_order_release);
         if (prev == 0) {
             // First acquisition only -- not per frame.
@@ -159,6 +232,8 @@ void serviceDeathLink(void* param_1) {
     // 2) Service a pending inbound DeathLink that couldn't fire when it
     //    arrived (player was mid-transition / in a menu).  Fire as soon as
     //    we're back in a killable state; expire if we never get there.
+    //    Firing opens the kill window so step 3 keeps re-applying it (a
+    //    single write is unreliable -- see the 2026-06-05 header).
     const auto deadline = g_pending_kill_deadline.load(std::memory_order_acquire);
     if (deadline != 0) {
         if (now > deadline) {
@@ -170,10 +245,34 @@ void serviceDeathLink(void* param_1) {
             const auto base = freshBase(now);
             if (base != 0) {
                 g_pending_kill_deadline.store(0, std::memory_order_release);
-                fireSynthKill(base, now);
+                g_kill_active_deadline.store(now + kKillActiveTtlTicks,
+                                             std::memory_order_release);
+                fireSynthKill(base, g_live_player.load(std::memory_order_acquire),
+                              now);
                 SMBWAP_LOG_INFO(
                     "[deathlink] pending kill applied on return to "
                     "gameplay (HP=0 @ %p)", reinterpret_cast<void*>(base));
+            }
+        }
+    }
+
+    // 3) Keep an open kill window alive: while it hasn't expired and a
+    //    DEATH_DETECTED hasn't yet closed it, re-arm the death edge latch
+    //    and rewrite HP=0 on EVERY fresh frame.  This is what makes a
+    //    synthetic kill land reliably across a poisoned latch / transient
+    //    scene-null frame (the death fires on the first frame the scene is
+    //    valid).  No per-frame log -- this runs at ~60 Hz while armed.
+    const auto kill_deadline =
+        g_kill_active_deadline.load(std::memory_order_acquire);
+    if (kill_deadline != 0) {
+        if (now > kill_deadline) {
+            g_kill_active_deadline.store(0, std::memory_order_release);
+        } else {
+            const auto base = freshBase(now);
+            if (base != 0) {
+                fireSynthKill(base,
+                              g_live_player.load(std::memory_order_acquire),
+                              now);
             }
         }
     }
@@ -195,11 +294,21 @@ bool consumeSyntheticDeathThisFrame() {
             "this DEATH_DETECTED as genuine (not suppressing)");
         return false;
     }
+    // Our synthetic death landed -- close the kill window so step 3 stops
+    // re-applying HP=0 (otherwise it would keep hammering for the rest of
+    // the TTL and could clobber the respawn).
+    g_kill_active_deadline.store(0, std::memory_order_release);
     return true;  // within window -> this death is our synthetic one, suppress
 }
 
 bool synthKill() {
     const std::uint64_t now = hk::svc::getSystemTick();
+    // Open the kill window unconditionally: even if we can't write this
+    // exact frame, serviceDeathLink re-applies on the next fresh frame
+    // within the TTL.  (The 30 s pending retry still covers the case where
+    // the player isn't killable for longer than the window.)
+    g_kill_active_deadline.store(now + kKillActiveTtlTicks,
+                                 std::memory_order_release);
     const auto base = freshBase(now);
     if (base == 0) {
         // Either never seen, or live_base went stale: player isn't in an
@@ -208,14 +317,16 @@ bool synthKill() {
     }
     // Poison detector: an already-armed guard means the PRIOR synthetic
     // death's DEATH_DETECTED was never observed -- that kill likely didn't
-    // land.  Harmless now (guard auto-expires) but worth surfacing.
+    // land.  Harmless now (guard auto-expires + the window re-applies) but
+    // worth surfacing.
     if (g_synth_guard_deadline.load(std::memory_order_acquire) != 0) {
         SMBWAP_LOG_WARN(
             "[deathlink] synthKill: prior synthetic death's DEATH_DETECTED "
             "never observed -- previous kill may not have landed");
     }
-    fireSynthKill(base, now);
-    SMBWAP_LOG_INFO("[deathlink] synthKill: HP=0 @ %p (live_base fresh)",
+    fireSynthKill(base, g_live_player.load(std::memory_order_acquire), now);
+    SMBWAP_LOG_INFO("[deathlink] synthKill: HP=0 @ %p (live_base fresh; "
+                    "kill window open ~1.5s, re-arming edge latch)",
                     reinterpret_cast<void*>(base));
     return true;
 }

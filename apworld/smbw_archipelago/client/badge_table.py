@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import json
 import logging
-import os
+import pkgutil
 from typing import Final
 
 
@@ -138,13 +138,16 @@ def mapped_bits() -> set[int]:
     return set(_NAME_TO_ID.values())
 
 
-# Path to the apworld's items.json -- the source of truth for the 24
-# badge item names.  badge_table.py lives at
-# apworld/smbw_archipelago/client/badge_table.py; items.json lives at
-# apworld/smbw_archipelago/data/items.json.
-_ITEMS_JSON = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    os.pardir, "data", "items.json")
+# items.json (the source of truth for the 24 badge item names) lives at
+# the apworld root: apworld/smbw_archipelago/data/items.json, one level up
+# from this `client` subpackage.  Read it with pkgutil.get_data (NOT
+# os.path + open): the standalone Archipelago install loads the world
+# straight from the zipped `.apworld` without extracting it, so an
+# os.path/open read resolves to a path *inside* the zip and fails with
+# ENOENT (only the dev junction, an extracted folder, made open() work).
+# Mirrors Data.load_data_file's zip-safe loader.  __package__ here is
+# "<root>.client"; the data dir hangs off "<root>".
+_ROOT_PKG = (__package__ or "").rsplit(".", 1)[0]
 
 
 def all_badge_item_names() -> list[str]:
@@ -152,10 +155,14 @@ def all_badge_item_names() -> list[str]:
     'Badge'.  This is the canonical 24-name list; the probe loop uses
     it to know which items still need an internal_id mapping."""
     try:
-        with open(_ITEMS_JSON, encoding="utf-8") as f:
-            entries = json.load(f)
-    except (OSError, json.JSONDecodeError) as e:
-        log.warning("badge_table: can't read %s: %s", _ITEMS_JSON, e)
+        raw = pkgutil.get_data(_ROOT_PKG, "data/items.json")
+        if raw is None:
+            raise FileNotFoundError("data/items.json not found in package")
+        entries = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError) as e:
+        log.warning(
+            "badge_table: can't read data/items.json from package %r: %s",
+            _ROOT_PKG, e)
         return []
     return [e["name"] for e in entries if "Badge" in e.get("name", "")]
 
