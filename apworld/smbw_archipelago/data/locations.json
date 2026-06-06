@@ -3832,7 +3832,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "|Sensor Badge|"
+    "requires": []
   },
   {
     "name": "W5: Upshroom Downshroom - Wonder Seed",
@@ -3840,7 +3840,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "|Sensor Badge| AND {OptOne(|Wonder Effect - Musical|)}"
+    "requires": "{OptOne(|Wonder Effect - Musical|)}"
   },
   {
     "name": "W5: Upshroom Downshroom - Top of Flag",
@@ -3849,7 +3849,7 @@
       "World 5",
       "Gold Flag"
     ],
-    "requires": "|Sensor Badge|"
+    "requires": []
   },
   {
     "name": "W5: Upshroom Downshroom - 10 Coin #1",
@@ -3858,7 +3858,7 @@
       "World 5",
       "10 Coin"
     ],
-    "requires": "|Sensor Badge|"
+    "requires": []
   },
   {
     "name": "W5: Upshroom Downshroom - 10 Coin #2",
@@ -3867,7 +3867,7 @@
       "World 5",
       "10 Coin"
     ],
-    "requires": "|Sensor Badge|"
+    "requires": []
   },
   {
     "name": "W5: Upshroom Downshroom - 10 Coin #3",
@@ -3876,7 +3876,7 @@
       "World 5",
       "10 Coin"
     ],
-    "requires": "|Sensor Badge|"
+    "requires": []
   },
   {
     "name": "W5: Taily's Toxic Pond - Normal Exit",
