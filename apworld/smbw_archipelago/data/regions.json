@@ -10,14 +10,14 @@
     "connects_to": [
       "W1 10 Seeds"
     ],
-    "requires": "|W1 Wonder Seed:3|"
+    "requires": "|W1 Wonder Seed:3| AND |Parachute Cap Badge|"
   },
   "W1 10 Seeds": {
     "connects_to": [
       "W1 Post-Bulrush Express",
       "W1 14 Seeds"
     ],
-    "requires": "|W1 Wonder Seed:10|"
+    "requires": "|W1 Wonder Seed:10| AND |Auto Super Mushroom Badge|"
   },
   "W1 Post-Bulrush Express": {
     "connects_to": [
@@ -103,7 +103,7 @@
     "connects_to": [
       "W3 10 Seeds"
     ],
-    "requires": "|W3 Wonder Seed:4|"
+    "requires": "|W3 Wonder Seed:4| AND |Crouching High Jump Badge|"
   },
   "W3 10 Seeds": {
     "connects_to": [
