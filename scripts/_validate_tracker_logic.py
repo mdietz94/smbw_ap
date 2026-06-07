@@ -25,6 +25,10 @@ name2code = {it["name"]: im[STARTING_INDEX + i] for i, it in enumerate(items) if
 code2name = {c: n for n, c in name2code.items()}
 name2count = {it["name"]: int(it.get("count", 1)) for it in items}
 ROYAL = ["W1 Royal Seed", "W2 Royal Seed", "W3 Royal Seed", "W4 Royal Seed", "W5 Royal Seed", "W6 Royal Seed"]
+# Buttons / Wonder Effects / Wonder Flower are granted at start: the tracker
+# never gates on them, so the reference model must treat them as always held.
+ALWAYS_AVAILABLE = {it["name"] for it in items
+                    if set(it.get("category", [])) & {"Button", "Wonder Effect", "Wonder Flower"}}
 
 
 # ---- independent Python port of Rules.py checkRequireStringForArea ---------- #
@@ -145,14 +149,17 @@ def random_inv():
     for it in items:
         nm = it["name"]
         mx = name2count[nm]
-        # bias: often 0, sometimes full/partial
-        r = random.random()
-        if r < 0.45:
-            c = 0
-        elif mx == 1:
-            c = 1
+        if nm in ALWAYS_AVAILABLE:
+            c = mx  # granted at start -> always held
         else:
-            c = random.randint(1, mx)
+            # bias: often 0, sometimes full/partial
+            r = random.random()
+            if r < 0.45:
+                c = 0
+            elif mx == 1:
+                c = 1
+            else:
+                c = random.randint(1, mx)
         if c:
             inv_names[nm] = c
             inv_codes[name2code[nm]] = c

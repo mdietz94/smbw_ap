@@ -14,10 +14,11 @@ PopTracker access rules and writes them into a checkout of the tracker:
     one rule per AP location id, and a `smbw_loc(id)` dispatcher.  Counted/seed
     gates compile to `HAS(code, n, n)`; the `|@Royal Seed:N|` category compiles
     to a `smbw_royal(n)` sum helper.
-  * `items/logic_item.json` -- hidden toggle items for the button / Wonder-Effect
-    / Wonder-Flower / power-up codes the apworld gates on.  The tracker already
-    maps these in autotracking/item_mapping.lua but never defined item objects
-    for them, so `HAS()` would read 0 forever without this file.
+  * `items/logic_item.json` -- hidden toggle items for codes the apworld gates on
+    that the tracker maps in autotracking/item_mapping.lua but never defined item
+    objects for (so `HAS()` would read 0 forever).  Buttons / Wonder Effects /
+    the Wonder Flower are treated as always-granted (see
+    ALWAYS_AVAILABLE_CATEGORIES) and so are NOT gated on and NOT emitted here.
   * each `locations/*.json` section gets `"access_rules": ["$smbw_loc|<apid>"]`
     injected (surgical text insert, minimal diff).
   * `scripts/init.lua` gains a `require` for the generated logic; the two import
@@ -89,6 +90,12 @@ def parse_location_mapping(tracker: Path) -> dict[int, str]:
 # --------------------------------------------------------------------------- #
 ROYAL_CODES = ["w1royalseed", "w2royalseed", "w3royalseed", "w4royalseed", "w5royalseed", "w6royalseed"]
 
+# Item categories the player effectively always has from the start of the game
+# (controller buttons, Wonder Effects, the Wonder Flower).  The apworld lists
+# them as pool items for completeness, but in practice they're always granted,
+# so the tracker treats any logic that gates on them as already satisfied.
+ALWAYS_AVAILABLE_CATEGORIES = {"Button", "Wonder Effect", "Wonder Flower"}
+
 _TOKEN = re.compile(
     r"""\s*(?:
         (?P<lparen>\() |
@@ -103,9 +110,14 @@ _TOKEN = re.compile(
 
 
 class Compiler:
-    def __init__(self, name2code: dict[str, str], name2count: dict[str, int]):
+    def __init__(self, name2code: dict[str, str], name2count: dict[str, int],
+                 always_available: set[str] | None = None):
         self.name2code = name2code
         self.name2count = name2count
+        # Item names the player always has (buttons, Wonder Effects, Wonder
+        # Flower) -- granted at start in our game, so the tracker never gates on
+        # them.  Any reference to one compiles to `true` and drops out.
+        self.always_available = always_available or set()
         self.used_codes: set[str] = set()
 
     # -- atom helpers ------------------------------------------------------- #
@@ -127,6 +139,9 @@ class Compiler:
             for c in ROYAL_CODES:
                 self.used_codes.add(c)
             return f"smbw_royal({int(cnt)})"
+
+        if iname in self.always_available:
+            return "true"
 
         code = self.name2code[iname]
         n = int(cnt)
@@ -217,8 +232,12 @@ class Compiler:
         if kind == "ATOM":
             return node[1]
         args = [self._emit(n) for n in node[1]]
-        # collapse trivially-true args
-        args = [a for a in args if a != "true"]
+        if kind == "OR":
+            # any always-true branch makes the whole OR always-true
+            if any(a == "true" for a in args):
+                return "true"
+        else:  # AND: drop always-true terms
+            args = [a for a in args if a != "true"]
         if not args:
             return "true"
         if len(args) == 1:
@@ -285,7 +304,9 @@ def main():
         if apid in item_map:
             code2type[item_map[apid]] = "consumable" if name2count[it["name"]] > 1 else "toggle"
 
-    comp = Compiler(name2code, name2count)
+    always_available = {it["name"] for it in items
+                        if set(it.get("category", [])) & ALWAYS_AVAILABLE_CATEGORIES}
+    comp = Compiler(name2code, name2count, always_available)
 
     # -- compile region full() expressions -------------------------------- #
     order, parents = topo_order(regions)
@@ -458,7 +479,12 @@ def inject_access_rules(tracker, loc_map, loc_rules):
             indent = m.group(1)
             insert = f'{indent}"access_rules": ["$smbw_loc|{apid}"],\n'
             ins_at = m.end()
-            text = text[:ins_at] + insert + text[ins_at:]
+            # idempotent: if an access_rules line already follows, replace it
+            existing = re.compile(r'[ \t]*"access_rules"\s*:[^\n]*\n').match(text, ins_at)
+            if existing:
+                text = text[:ins_at] + insert + text[existing.end():]
+            else:
+                text = text[:ins_at] + insert + text[ins_at:]
             scan = ins_at + len(insert)
             file_hits += 1
         if file_hits:
