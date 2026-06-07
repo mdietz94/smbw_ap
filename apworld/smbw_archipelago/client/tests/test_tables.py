@@ -371,21 +371,26 @@ class TestLocationTable(unittest.TestCase):
                 metadata={"coin_index": 0})
             self.assertEqual(lookup_name(check), expected)
 
-    def test_badge_locations_present_for_every_mapped_badge(self):
-        """Every entry in badge_table._BADGES should resolve to SOME
-        AP location.  The default pattern is "<Name> Obtained" but the
-        apworld has one asymmetric case (All Bubble Flower Badge ->
-        All Bubble Power Badge Obtained); location_table's override
-        map handles that.  This test just checks every badge resolves;
-        the items-json-cross-check above asserts the resolved name
-        actually exists."""
-        from ..location_table import _BADGE_LOCATION_NAME_OVERRIDES
+    def test_shop_badges_resolve_course_badges_do_not(self):
+        """Only shop-purchased badges are AP checks: each resolves to its
+        "<Name> Obtained" location (with the All Bubble Flower Badge ->
+        All Bubble Power Badge Obtained override).  Course / Badge
+        Challenge badges are granted but not checked, so they resolve to
+        None.  The items-json-cross-check above asserts each resolved
+        name actually exists in locations.json."""
+        from ..location_table import (
+            _BADGE_LOCATION_NAME_OVERRIDES, _SHOP_BADGE_ITEM_NAMES)
         for name, bit, _ in _BADGES:
             check = CheckEmitted(
                 kind=CheckKind.BADGE_ACQUIRED, stage_key=bit)
-            expected = _BADGE_LOCATION_NAME_OVERRIDES.get(
-                name, f"{name} Obtained")
-            self.assertEqual(lookup_name(check), expected)
+            if name in _SHOP_BADGE_ITEM_NAMES:
+                expected = _BADGE_LOCATION_NAME_OVERRIDES.get(
+                    name, f"{name} Obtained")
+                self.assertEqual(lookup_name(check), expected)
+            else:
+                self.assertIsNone(
+                    lookup_name(check),
+                    f"course badge {name!r} should not be an AP check")
 
     def test_badge_location_unmapped_id_returns_none(self):
         check = CheckEmitted(kind=CheckKind.BADGE_ACQUIRED, stage_key=99)

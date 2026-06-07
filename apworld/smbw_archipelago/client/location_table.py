@@ -512,19 +512,52 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     (CheckKind.NORMAL_EXIT, _STAGE_WONDER): "Special: WONDER? - Normal Exit",
 }
 
-# M2.3 badge entries.  AP location names usually follow the pattern
-# ``"<Badge Item Name> Obtained"``, but the apworld has one naming
-# asymmetry: items.json calls the bubble badge "All Bubble Flower Badge"
-# while locations.json calls the corresponding check
-# "All Bubble Power Badge Obtained".  The override map below patches
-# that single case; all 23 others follow the canonical pattern.
+# Badge AP checks.  Only badges *purchased at a Poplin Shop* are AP
+# locations; badges handed out by courses / Badge Challenges are no
+# longer checks (the apworld dropped their ``"<Badge> Obtained"``
+# locations -- only the shop badges remain in data/locations.json).
+# Course badges are still AP *items* (``_BADGES`` keeps all 24 so the
+# grant/bitfield path still owns them, and the logic gates still need
+# them) -- they're just not checks, so we don't map them to a location.
+# A BADGE_ACQUIRED CheckEmitted for a course badge therefore resolves
+# to ``None`` in ``lookup_name`` and is dropped before any LocationCheck
+# goes out.  Keep this set in sync with the badge "Obtained" locations
+# in data/locations.json.
+#
+# Item names (not location names): ``_BADGES`` carries the items.json
+# spelling, including the bubble badge's "All Bubble Flower Badge"
+# asymmetry (its location is "All Bubble Power Badge Obtained", patched
+# by the override map below).
+_SHOP_BADGE_ITEM_NAMES: Final[frozenset[str]] = frozenset({
+    "Coin Reward Badge",
+    "Add ! Blocks Badge",
+    "Safety Bounce Badge",
+    "Timed High Jump Badge",
+    "Fast Dash Badge",
+    "Coin Magnet Badge",
+    "All Elephant Power Badge",
+    "All Fire Power Badge",
+    "All Bubble Flower Badge",
+    "All Drill Power Badge",
+})
+
 _BADGE_LOCATION_NAME_OVERRIDES: Final[dict[str, str]] = {
     "All Bubble Flower Badge": "All Bubble Power Badge Obtained",
 }
 
 
+def is_checkable_badge(item_name: str) -> bool:
+    """True if this badge AP item has a corresponding ``"<Badge>
+    Obtained"`` AP location -- i.e. it's a shop-purchased badge.  Course
+    /  Badge-Challenge badges return False: they're granted but not
+    checked."""
+    return item_name in _SHOP_BADGE_ITEM_NAMES
+
+
 def _populate_badge_entries() -> None:
     for name, bit, _confidence in _BADGES:
+        if name not in _SHOP_BADGE_ITEM_NAMES:
+            continue  # course-granted badge: not an AP check
         loc = _BADGE_LOCATION_NAME_OVERRIDES.get(name, f"{name} Obtained")
         _TABLE[(CheckKind.BADGE_ACQUIRED, bit)] = loc
 

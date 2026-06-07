@@ -34,7 +34,9 @@ _ARCHIPELAGO_AVAILABLE = _try_import_archipelago()
     "ensure conftest.py is loaded); skipping badge-autoemit tests.")
 class TestContextBadgeAutoEmit(unittest.IsolatedAsyncioTestCase):
 
-    # Spring Feet Badge: internal_id 4, location "Spring Feet Badge Obtained"
+    # Spring Feet Badge: internal_id 4.  A *course* badge -- granted by
+    # AP but NOT an AP check, so it has no "<Badge> Obtained" location
+    # and its auto-emit is dropped before any LocationCheck goes out.
     SPRING_FEET_ITEM_ID = 100
     SPRING_FEET_LOC_ID = 500
     SPRING_FEET_BIT = 4
@@ -122,7 +124,10 @@ class TestContextBadgeAutoEmit(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.ctx.send_msgs.await_count, first_send_count,
                          "second receipt of the same badge re-sent")
 
-    async def test_multiple_badges_in_one_batch_each_get_a_check(self):
+    async def test_mixed_batch_sends_shop_badge_drops_course_badge(self):
+        # Coin Reward is a shop badge (-> AP check); Spring Feet is a
+        # course badge (granted but not checked).  Only the shop badge's
+        # LocationCheck should go out.
         await self.ctx._handle_received_items({"items": [
             {"item": self.SPRING_FEET_ITEM_ID},
             {"item": self.COIN_REWARD_ITEM_ID},
@@ -133,8 +138,8 @@ class TestContextBadgeAutoEmit(unittest.IsolatedAsyncioTestCase):
             for m in msg:
                 if m.get("cmd") == "LocationChecks":
                     loc_ids.update(m["locations"])
-        self.assertEqual(
-            loc_ids, {self.SPRING_FEET_LOC_ID, self.COIN_REWARD_LOC_ID})
+        self.assertEqual(loc_ids, {self.COIN_REWARD_LOC_ID})
+        self.assertNotIn(self.SPRING_FEET_LOC_ID, loc_ids)
 
     # ---- Negative paths -----------------------------------------------
 
