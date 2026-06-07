@@ -1317,7 +1317,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": "OptOne(|R Button|)} OR {OptOne(|Y Button|)}"
+    "requires": "{OptOne(|R Button|)} OR {OptOne(|Y Button|)}"
   },
   {
     "name": "W2: Condarts Away! - 10 Coin #1",
