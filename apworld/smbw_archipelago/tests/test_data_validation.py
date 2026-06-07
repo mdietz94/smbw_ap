@@ -123,7 +123,8 @@ def test_progression_wall_badges_gate_regions():
     gates were each removed in the past as "spurious" under the old
     "badges auto-present in their own challenge level" filter; the current
     "a level that grants a badge requires that badge" rule makes them mandatory.
-    Keep them. See LOGIC_COMPARISON.md.
+    Keep them. See the smbw-logic skill
+    (.claude/skills/smbw-logic/reference/logic-reconciliation.md).
     """
     regions = _load_json("regions.json")
     expected = {

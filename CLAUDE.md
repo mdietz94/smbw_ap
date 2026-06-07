@@ -34,6 +34,7 @@ Odyssey) project at `C:\Users\maxwe\Documents\smo_archipelago\` — mirror its
 | Skill | Use it for |
 |---|---|
 | **smbw-build-deploy** | Compile `subsdk9`, deploy to Ryujinx, run the client, tail the `[smbwap]` log, first-time `/setup`, end-to-end smoke tests (Win + Linux). |
+| **smbw-logic** | Edit/reason about the apworld **logic** — `data/{items,locations,regions}.json`, `Rules.py`/`Regions.py`/`Options.py`/`DataValidation.py`. The seed-toll region model, the **badge progression-wall softlock rule**, adding region/location gates, generation + beatability testing. Bundles the logic-reconciliation record. |
 | **smbw-reverse-engineering** | Find/install a hook (Ghidra), identify Nerves & game functions, the two hook patterns, NSO address space, the crash gotchas, Ghidra scripts. Bundles the **current-state RE map** (`reference/smbw-re-map.md` — the canonical offset/hash/struct/hook ledger; read it first) + the master RE decompile journal. |
 | **smbw-save-data** | Grant AP items via the GameDataMgr API, pick the right `probe::` primitive, hash keys, container A/B/C/D layout, save-file format, save-survival/replay. |
 | **smbw-release** | Tag a version, build the `smbwonder.apworld` bundle, the pre-push release-gate audit, manual `gh release` fallback. |
@@ -98,7 +99,9 @@ reference moved into the skills (a redirect stub marks each moved file).
   `m4-runbook.md` — sources behind the build-deploy/release skills (the
   m4-runbook's `python -m bridge` command is stale; the client is now
   `python -m apworld.smbw_archipelago.client.main`).
-- `LOGIC_COMPARISON.md` — the logic-PDF reconciliation record.
+- `LOGIC_COMPARISON.md` (root) — now a redirect stub; the logic-PDF
+  reconciliation record moved into the **smbw-logic** skill
+  (`.claude/skills/smbw-logic/reference/logic-reconciliation.md`).
 
 ## Game artifacts
 
