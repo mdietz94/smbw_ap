@@ -907,44 +907,12 @@
     "requires": []
   },
   {
-    "name": "Parachute Cap Badge Obtained",
-    "region": "W1 3 Seeds",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Parachute Cap Badge|"
-  },
-  {
-    "name": "Wall-Climb Jump Badge Obtained",
-    "region": "W1 10 Seeds",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Wall-Climb Jump Badge|"
-  },
-  {
     "name": "Coin Reward Badge Obtained",
     "region": "W1 3 Seeds",
     "category": [
       "Badges"
     ],
     "requires": []
-  },
-  {
-    "name": "Auto Super Mushroom Badge Obtained",
-    "region": "W1 10 Seeds",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Auto Super Mushroom Badge|"
-  },
-  {
-    "name": "Jet Run Badge Obtained",
-    "region": "W1 Post-Jet Run",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Jet Run Badge|"
   },
   {
     "region": "PI Pre-W2",
@@ -1941,22 +1909,6 @@
     "requires": []
   },
   {
-    "name": "Dolphin Kick Badge Obtained",
-    "region": "PI Pre-W2",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|R Button|)} AND {OptOne(|Up|)}"
-  },
-  {
-    "name": "Floating High Jump Badge Obtained",
-    "region": "W2 4 Seeds",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Floating High Jump Badge|"
-  },
-  {
     "name": "Add ! Blocks Badge Obtained",
     "region": "PI Pre-W2 2 Seeds",
     "category": [
@@ -1971,14 +1923,6 @@
       "Badges"
     ],
     "requires": []
-  },
-  {
-    "name": "Spring Feet Badge Obtained",
-    "region": "W2 Post-Jump",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Spring Feet Badge|"
   },
   {
     "name": "W2: Fluff-Puff Peaks Cabin - Wonder Seed",
@@ -2588,14 +2532,6 @@
       "10 Coin"
     ],
     "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
-  },
-  {
-    "name": "Crouching High Jump Badge Obtained",
-    "region": "W3 4 Seeds",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Crouching High Jump Badge|"
   },
   {
     "name": "PI: Jewel-Block Cave - Normal Exit",
@@ -3509,22 +3445,6 @@
     "requires": []
   },
   {
-    "name": "Rhythm Jump Badge Obtained",
-    "region": "W4 Start",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Rhythm Jump Badge| AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Musical|)}"
-  },
-  {
-    "name": "Invisibility Badge Obtained",
-    "region": "W4 Post-Invis",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Invisibility Badge|"
-  },
-  {
     "name": "PI: Petal Isles Flying Battleship - Normal Exit",
     "region": "PI 8 Seeds",
     "category": [
@@ -3757,14 +3677,6 @@
       "10 Coin"
     ],
     "requires": []
-  },
-  {
-    "name": "Boosting Spin Jump Badge Obtained",
-    "region": "PI 8 Seeds",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Boosting Spin Jump Badge|"
   },
   {
     "name": "Special: Way of the Goomba - Normal Exit",
@@ -4384,22 +4296,6 @@
       "10 Coin"
     ],
     "requires": "{OptOne(|Wonder Effect - Skydive|)}"
-  },
-  {
-    "name": "Grappling Vine Badge Obtained",
-    "region": "W5 6 Seeds",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
-  },
-  {
-    "name": "Sensor Badge Obtained",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Sensor Badge|",
-    "region": "W5 Start"
   },
   {
     "name": "Coin Magnet Badge Obtained",
@@ -5636,14 +5532,6 @@
     ],
     "requires": "|Sound Off? Badge|",
     "victory": true
-  },
-  {
-    "name": "Sound Off? Badge Obtained",
-    "region": "Post-Badge",
-    "category": [
-      "Badges"
-    ],
-    "requires": "|Sound Off? Badge|"
   },
   {
     "name": "W5: Operation Poplin Rescue - Wonder Seed",

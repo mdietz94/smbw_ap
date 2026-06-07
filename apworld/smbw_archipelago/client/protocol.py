@@ -108,8 +108,10 @@ class CheckKind(str, Enum):
     TEN_COIN = "ten_coin"                # 306 AP checks (102 courses × 3)
                                          # CheckEmitted.metadata["coin_index"]
                                          # is 0/1/2 — see docs/m2.2-runbook.md.
-    BADGE_ACQUIRED = "badge_acquired"    # 24 AP checks (M2.3) — stage_key
-                                         # holds the badge bit position
+    BADGE_ACQUIRED = "badge_acquired"    # 10 AP checks (shop badges only;
+                                         # course-granted badges are items
+                                         # but not checks) — stage_key holds
+                                         # the badge bit position
                                          # (== SMBW internal_id).
     SHOP_SEED = "shop_seed"              # ≤18 AP checks (Poplin Shops +
                                          # Poplin Houses).  stage_key encodes

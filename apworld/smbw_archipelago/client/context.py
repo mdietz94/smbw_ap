@@ -990,6 +990,17 @@ class SMBWContext(CommonContext):
             return
         name = lookup_name(check)
         if name is None:
+            # A BADGE_ACQUIRED check for a course-granted badge has no AP
+            # location by design (only shop badges are checks) -- drop it
+            # quietly rather than nagging about a missing table entry.
+            if (check.kind == CheckKind.BADGE_ACQUIRED
+                    and badge_table.name_for_internal_id(check.stage_key)
+                    is not None):
+                log.debug(
+                    "badge bit %d (%s) is course-granted, not an AP check; "
+                    "dropping", check.stage_key,
+                    badge_table.name_for_internal_id(check.stage_key))
+                return
             log.info(
                 "no AP location name for kind=%s stage_key=%d (table needs "
                 "extending)",

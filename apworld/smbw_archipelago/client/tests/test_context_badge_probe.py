@@ -140,16 +140,17 @@ class TestContextBadgeProbe(unittest.IsolatedAsyncioTestCase):
         from ..protocol import CheckEmitted, CheckKind
         from unittest.mock import AsyncMock
         self.ctx.send_msgs = AsyncMock()
+        # Coin Reward (bit 9) is a shop badge -> a real AP check.
         # Probe active -> drop.
-        self.ctx.set_badge_probe_mask(1 << 4)
+        self.ctx.set_badge_probe_mask(1 << 9)
         await self.ctx.handle_check_emitted(CheckEmitted(
-            kind=CheckKind.BADGE_ACQUIRED, stage_key=4))
+            kind=CheckKind.BADGE_ACQUIRED, stage_key=9))
         self.ctx.send_msgs.assert_not_called()
         # Clear probe -> next BADGE_ACQUIRED check goes through.
-        self.ctx._location_name_to_id = {"Spring Feet Badge Obtained": 999}
+        self.ctx._location_name_to_id = {"Coin Reward Badge Obtained": 999}
         self.ctx.set_badge_probe_mask(None)
         await self.ctx.handle_check_emitted(CheckEmitted(
-            kind=CheckKind.BADGE_ACQUIRED, stage_key=4))
+            kind=CheckKind.BADGE_ACQUIRED, stage_key=9))
         self.ctx.send_msgs.assert_awaited_once()
 
     # ---- runtime invalid-bit set ------------------------------------
