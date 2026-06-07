@@ -786,6 +786,14 @@ class SMBWContext(CommonContext):
         logs it; truncated to the wire cap downstream)."""
         if ev.gate_kind == GateKind.ROYAL_SEEDS:
             return f"Locked: need {ev.requirement} Royal Seeds to face Bowser"
+        # BADGE gate: ev.requirement is the container-C internal_id, which
+        # is exactly the key badge_table maps to the AP item name.  Name
+        # the specific badge when we know it; fall back to the generic
+        # phrasing for an unmapped bit (badge_table is incomplete -- see
+        # its _BADGES list).
+        name = badge_table.name_for_internal_id(ev.requirement)
+        if name is not None:
+            return f"Locked: missing the {name} for this challenge"
         return "Locked: missing the AP badge for this challenge"
 
     def _gate_check_stop(self, ev: GateEntered) -> str | None:
