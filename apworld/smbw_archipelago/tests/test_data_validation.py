@@ -111,6 +111,36 @@ def test_known_blocking_badges_are_progression(items):
         assert _is_progression(by_name[name]), f"{name} must be progression"
 
 
+def test_progression_wall_badges_gate_regions():
+    """Pin the three badge-granting levels that are *progression walls*.
+
+    Vanilla forces the player to clear these levels to physically advance
+    through their world, and each level requires (and would grant) a badge.
+    Because Wonder Seeds are pool items, the seeds-only region gates can't see
+    these walls, so without an explicit badge requirement on the region
+    transition the fill is free to bury the badge in a later world and softlock
+    the seed (this is exactly how Parachute Cap landed in W6 once). These three
+    gates were each removed in the past as "spurious" under the old
+    "badges auto-present in their own challenge level" filter; the current
+    "a level that grants a badge requires that badge" rule makes them mandatory.
+    Keep them. See LOGIC_COMPARISON.md.
+    """
+    regions = _load_json("regions.json")
+    expected = {
+        # region -> badge that must gate entry (the wall inside/at that region)
+        "W1 3 Seeds": "Parachute Cap Badge",        # Badge House in Pipe-Rock
+        "W1 10 Seeds": "Auto Super Mushroom Badge",  # Wiggler Race Mountaineering!
+        "W3 4 Seeds": "Crouching High Jump Badge",   # POOF! Crouching High Jump I
+    }
+    for region, badge in expected.items():
+        assert region in regions, f"missing region {region!r}"
+        requires = regions[region].get("requires", "")
+        assert f"|{badge}|" in requires, (
+            f"region {region!r} must gate on |{badge}| (progression wall) "
+            f"but requires == {requires!r} -- removing this re-introduces a softlock"
+        )
+
+
 def test_generation_data_validation_passes():
     """The full Manual generation validation pass must not raise.
 
