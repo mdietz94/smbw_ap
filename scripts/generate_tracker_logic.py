@@ -13,7 +13,10 @@ PopTracker access rules and writes them into a checkout of the tracker:
     implementing AP reachability (full(R) = R.requires AND OR(full(parents))),
     one rule per AP location id, and a `smbw_loc(id)` dispatcher.  Counted/seed
     gates compile to `HAS(code, n, n)`; the `|@Royal Seed:N|` category compiles
-    to a `smbw_royal(n)` sum helper.
+    to a `smbw_royal(n)` sum helper.  Both standard and open-world modes are
+    emitted: when slot_data says open_world, each active world hangs off the
+    start (`smbw_world_active`), Bowser gates on the active-world palace count
+    (`smbw_open_palaces`), and the Petal-Isles / Special-World hub is stripped.
   * `items/logic_item.json` -- hidden toggle items for codes the apworld gates on
     that the tracker maps in autotracking/item_mapping.lua but never defined item
     objects for (so `HAS()` would read 0 forever).  Buttons / Wonder Effects /
@@ -95,6 +98,28 @@ ROYAL_CODES = ["w1royalseed", "w2royalseed", "w3royalseed", "w4royalseed", "w5ro
 # them as pool items for completeness, but in practice they're always granted,
 # so the tracker treats any logic that gates on them as already satisfied.
 ALWAYS_AVAILABLE_CATEGORIES = {"Button", "Wonder Effect", "Wonder Flower"}
+
+# Open-world mode (open_world.py): the linear PI spine is removed, each active
+# world hangs directly off the start, and Bowser gates on a palace count.  The
+# tracker switches to this shape at runtime when slot_data says open_world.
+# Mirrors open_world.py's is_hub_region / BOWSER_* constants.
+OPEN_HUB_EXTRA = {"Pre-W4 Special", "Special End", "Post-Badge"}
+OPEN_BOWSER_REGION = "World Bowser"
+OPEN_GOAL_LOCATION = "PI: Bowser's Rage Stage - Royal Seed"
+# In open-world these are precollected (PI) / stripped (Special), so any gate on
+# them is always satisfied -- treat as always-available when compiling the
+# open-world variant of the world-entry rules.
+OPEN_FREE_SEEDS = {"Petal Isles Wonder Seed", "Special World Wonder Seed"}
+
+
+def world_start_num(region: str):
+    """World number n for a `W<n> Start` region, else None."""
+    m = re.fullmatch(r"W(\d) Start", region)
+    return int(m.group(1)) if m else None
+
+
+def is_hub_region(region: str) -> bool:
+    return region.startswith("PI ") or region in OPEN_HUB_EXTRA
 
 _TOKEN = re.compile(
     r"""\s*(?:
@@ -307,10 +332,16 @@ def main():
     always_available = {it["name"] for it in items
                         if set(it.get("category", [])) & ALWAYS_AVAILABLE_CATEGORIES}
     comp = Compiler(name2code, name2count, always_available)
+    # Second compiler for the open-world world-entry rules: PI / Special seeds
+    # are precollected/stripped there, so treat them as always-available too.
+    comp_open = Compiler(name2code, name2count, always_available | OPEN_FREE_SEEDS)
 
     # -- compile region full() expressions -------------------------------- #
+    # region_expr[region] = (standard_body, open_world_body_or_None).  A None
+    # open body means the region behaves identically in both modes (its standard
+    # body bottoms out at the mode-aware world roots below).
     order, parents = topo_order(regions)
-    region_expr: dict[str, str] = {}
+    region_expr: dict[str, tuple] = {}
     for region in order:
         info = regions[region]
         req_expr = comp.compile(info.get("requires", "") or "")
@@ -330,10 +361,25 @@ def main():
             body = parts[0]                  # already a HAS/region-call/ANY/ALL -> returns a level
         else:
             body = "ALL(" + ", ".join(parts) + ")"
-        region_expr[region] = body
+
+        # open-world overrides: world roots, the Bowser palace gate, and the
+        # removed hub regions.
+        ws = world_start_num(region)
+        if ws is not None:
+            open_req = comp_open.compile(info.get("requires", "") or "")
+            open_body = (f"ALL(smbw_world_active({ws}))" if open_req == "true"
+                         else f"ALL(smbw_world_active({ws}), {open_req})")
+        elif region == OPEN_BOWSER_REGION:
+            open_body = "smbw_open_palaces()"
+        elif is_hub_region(region):
+            open_body = "ACCESS_NONE"        # hub regions are stripped in open-world
+        else:
+            open_body = None                 # intra-world chain -> same in both modes
+        region_expr[region] = (body, open_body)
 
     # -- compile per-location rules --------------------------------------- #
-    loc_rules: dict[int, str] = {}   # apid -> lua expr
+    # loc_rules[apid] = (standard_body, open_world_body_or_None).
+    loc_rules: dict[int, tuple] = {}
     skipped_no_path = []
     for idx, loc in enumerate(locations):
         apid = LOC_BASE + idx
@@ -343,11 +389,13 @@ def main():
         region = loc.get("region")
         rexpr = region_func_name(region) + "()" if region in regions else "ACCESS_NORMAL"
         lexpr = comp.compile(loc.get("requires", "") or "")
-        if lexpr == "true":
-            body = rexpr
-        else:
-            body = f"ALL({rexpr}, {lexpr})"
-        loc_rules[apid] = body
+        body = rexpr if lexpr == "true" else f"ALL({rexpr}, {lexpr})"
+        # In open-world the non-goal World Bowser locations are stripped (only the
+        # forced goal remains); everything else inherits its mode-aware region.
+        open_body = ("ACCESS_NONE"
+                     if region == OPEN_BOWSER_REGION and loc["name"] != OPEN_GOAL_LOCATION
+                     else None)
+        loc_rules[apid] = (body, open_body)
 
     write_lua(tracker, regions, order, region_expr, loc_rules)
     write_logic_items(tracker, comp.used_codes, code2type)
@@ -374,6 +422,31 @@ def write_lua(tracker, regions, order, region_expr, loc_rules):
     L.append("local RCACHE = {}")
     L.append('ScriptHost:AddWatchForCode("smbw_logic_invalidate", "*", function() GEN = GEN + 1 end)')
     L.append("")
+    L.append("-- Open-world mode: SLOT_DATA (set by autotracking/archipelago.lua) carries")
+    L.append('-- open_world (0/1), open_world_active (list of active world numbers) and')
+    L.append("-- palaces_required.  When off / unset, the standard linear-spine logic runs.")
+    L.append("local function SMBW_OPEN()")
+    L.append("    return SLOT_DATA ~= nil and (SLOT_DATA.open_world == 1 or SLOT_DATA.open_world == true)")
+    L.append("end")
+    L.append("local function smbw_world_active(n)")
+    L.append("    if not (SLOT_DATA and SLOT_DATA.open_world_active) then return false end")
+    L.append("    for _, w in ipairs(SLOT_DATA.open_world_active) do")
+    L.append("        if w == n then return true end")
+    L.append("    end")
+    L.append("    return false")
+    L.append("end")
+    L.append("-- Bowser gate in open-world: enough active-world Royal Seeds (palaces) cleared.")
+    L.append("function smbw_open_palaces()")
+    L.append("    local active = (SLOT_DATA and SLOT_DATA.open_world_active) or {}")
+    L.append("    local need = (SLOT_DATA and SLOT_DATA.palaces_required) or #active")
+    L.append("    local have = 0")
+    L.append("    for _, n in ipairs(active) do")
+    L.append('        if Tracker:ProviderCountForCode("w" .. n .. "royalseed") > 0 then have = have + 1 end')
+    L.append("    end")
+    L.append("    if have >= tonumber(need) then return ACCESS_NORMAL end")
+    L.append("    return ACCESS_NONE")
+    L.append("end")
+    L.append("")
     L.append("-- |@Royal Seed:n| category gate -- sum of the six world Royal Seeds.")
     L.append("function smbw_royal(n)")
     L.append("    local c = " + "\n        + ".join(f'Tracker:ProviderCountForCode("{c}")' for c in ROYAL_CODES))
@@ -384,22 +457,30 @@ def write_lua(tracker, regions, order, region_expr, loc_rules):
     L.append("-- Region reachability (topologically ordered: parents before children).")
     for region in order:
         fn = region_func_name(region)
-        body = region_expr[region]
-        if body in ("ACCESS_NORMAL", "ACCESS_NONE"):
-            L.append(f"local function {fn}() return {body} end")
+        std, open_body = region_expr[region]
+        if open_body is None and std in ("ACCESS_NORMAL", "ACCESS_NONE"):
+            L.append(f"local function {fn}() return {std} end")
+            continue
+        L.append(f"local function {fn}()")
+        L.append(f'    local hit = RCACHE["{fn}"]')
+        L.append("    if hit and hit.gen == GEN then return hit.v end")
+        if open_body is None:
+            L.append(f"    local v = {std}")
         else:
-            L.append(f"local function {fn}()")
-            L.append(f'    local hit = RCACHE["{fn}"]')
-            L.append("    if hit and hit.gen == GEN then return hit.v end")
-            L.append(f"    local v = {body}")
-            L.append(f'    RCACHE["{fn}"] = {{gen = GEN, v = v}}')
-            L.append("    return v")
-            L.append("end")
+            L.append("    local v")
+            L.append(f"    if SMBW_OPEN() then v = {open_body} else v = {std} end")
+        L.append(f'    RCACHE["{fn}"] = {{gen = GEN, v = v}}')
+        L.append("    return v")
+        L.append("end")
     L.append("")
     L.append("-- Per-AP-location access rules.")
     L.append("local LOC = {}")
     for apid in sorted(loc_rules):
-        L.append(f'LOC["{apid}"] = function() return {loc_rules[apid]} end')
+        std, open_body = loc_rules[apid]
+        if open_body is None:
+            L.append(f'LOC["{apid}"] = function() return {std} end')
+        else:
+            L.append(f'LOC["{apid}"] = function() if SMBW_OPEN() then return {open_body} end return {std} end')
     L.append("")
     L.append("function smbw_loc(id)")
     L.append("    local f = LOC[id]")

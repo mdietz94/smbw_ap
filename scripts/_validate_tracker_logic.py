@@ -111,6 +111,61 @@ def py_loc_access(loc, inv):
     return pyeval(loc.get("requires", "") or "", inv)
 
 
+# ---- open-world reference model (mirrors open_world.py) --------------------- #
+GOAL = "PI: Bowser's Rage Stage - Royal Seed"
+
+def world_of_region(r):
+    if len(r) >= 3 and r[0] == "W" and r[1].isdigit() and r[2] == " ":
+        return int(r[1])
+    return None
+
+def is_hub(r):
+    return r.startswith("PI ") or r in ("Pre-W4 Special", "Special End", "Post-Badge")
+
+def is_world_start(r):
+    return bool(re.fullmatch(r"W\d Start", r))
+
+def open_full(region, inv_open, active, memo):
+    """Intra-world reachability: world roots are reachable iff active; only
+    same-world parent edges survive (open_world.py severs the rest)."""
+    if region in memo:
+        return memo[region]
+    info = regions[region]
+    if not pyeval(info.get("requires", "") or "", inv_open):
+        memo[region] = False
+        return False
+    if is_world_start(region):
+        memo[region] = world_of_region(region) in active
+        return memo[region]
+    w = world_of_region(region)
+    intra = [p for p in parents[region] if world_of_region(p) == w]
+    res = any(open_full(p, inv_open, active, memo) for p in intra) if intra else False
+    memo[region] = res
+    return res
+
+def py_open_access(loc, inv, active, P):
+    region = loc.get("region")
+    name = loc["name"]
+    inv_open = dict(inv)
+    for nm in ALWAYS_AVAILABLE | {"Petal Isles Wonder Seed", "Special World Wonder Seed"}:
+        inv_open[nm] = name2count.get(nm, 1)   # precollected / always-granted
+    if region == "World Bowser":
+        if name != GOAL:
+            return False                        # stripped in open-world
+        royals = sum(1 for n in active if inv.get(f"W{n} Royal Seed", 0) > 0)
+        if royals < P:
+            return False
+        return pyeval(loc.get("requires", "") or "", inv_open)
+    if is_hub(region):
+        return False                            # hub stripped
+    w = world_of_region(region)
+    if w is not None and w not in active:
+        return False
+    if region in regions and not open_full(region, inv_open, active, {}):
+        return False
+    return pyeval(loc.get("requires", "") or "", inv_open)
+
+
 # ---- lua side -------------------------------------------------------------- #
 lua = LuaRuntime(unpack_returned_tuples=True)
 INV = {}  # code -> count, shared with lua via closure
@@ -171,26 +226,45 @@ def main():
     # region values would be stale across inventories. Reload the generated chunk
     # each inventory to reset RCACHE. (Cheap enough for validation.)
     gen_src = (TRK / "scripts/logic/smbw_generated_logic.lua").read_text()
-    N = 300
+    N = 200
     mism = 0
+    NORMAL = int(lua.globals().ACCESS_NORMAL)
     apids = [STARTING_INDEX + 500 + i for i in range(len(locations)) if (STARTING_INDEX + 500 + i) in lm]
     idx_by_apid = {STARTING_INDEX + 500 + i: i for i in range(len(locations))}
     random.seed(1234)
-    for t in range(N):
-        inv_names, inv_codes = random_inv()
+
+    def run_scenario(inv_codes, slot_data_lua, py_access):
+        nonlocal mism
         INV.clear(); INV.update(inv_codes)
-        lua.execute(gen_src)  # fresh RCACHE
+        lua.globals().SLOT_DATA = slot_data_lua
+        lua.execute(gen_src)  # fresh RCACHE + re-reads SLOT_DATA at call time
         sl = lua.globals().smbw_loc
         for apid in apids:
             loc = locations[idx_by_apid[apid]]
-            py = py_loc_access(loc, inv_names)
-            lv = int(sl(str(apid))) >= int(lua.globals().ACCESS_NORMAL)
+            py = py_access(loc)
+            lv = int(sl(str(apid))) >= NORMAL
             if py != lv:
                 mism += 1
-                if mism <= 15:
+                if mism <= 20:
                     print(f"MISMATCH apid={apid} {loc['name']!r} py={py} lua={lv}")
                     print(f"   region={loc.get('region')} requires={loc.get('requires')!r}")
-    print(f"checked {N} inventories x {len(apids)} locations = {N*len(apids)} evals; mismatches={mism}")
+
+    checks = 0
+    for t in range(N):
+        inv_names, inv_codes = random_inv()
+        # standard mode
+        run_scenario(inv_codes, None, lambda loc: py_loc_access(loc, inv_names))
+        checks += len(apids)
+        # open-world mode: random active set + palace threshold
+        k = random.randint(1, 6)
+        active = sorted(random.sample(range(1, 7), k))
+        P = random.randint(1, k)
+        sd = lua.table_from({"open_world": 1,
+                             "open_world_active": lua.table_from(active),
+                             "palaces_required": P})
+        run_scenario(inv_codes, sd, lambda loc, a=active, p=P: py_open_access(loc, inv_names, a, p))
+        checks += len(apids)
+    print(f"checked {checks} evals across standard + open-world; mismatches={mism}")
 
 
 if __name__ == "__main__":
