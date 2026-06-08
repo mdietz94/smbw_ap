@@ -599,6 +599,24 @@ _populate_badge_entries()
 # Locations marked TODO have the apworld AP name pre-filled but no
 # (world_no, npc_id) yet; lookup_name will return None and the bridge
 # logs a debug line until the entry is filled in.
+
+
+def pr_world_no_to_ap_world(world_no: int) -> int | None:
+    """Inverse of the AP-prefix → PlayReport ``world_no`` offset rule
+    documented above: map a PlayReport ``world_no`` back to the apworld's
+    numbered world (1..6, matching ``open_world.WORLD_NUMBERS`` and the
+    ``open_world_active`` slot_data list).
+
+    Returns ``None`` for slots that are NOT one of the six numbered
+    overworlds -- Petal Isles (``world_no=2``, the hub), Castle/Bowser
+    (``world_no=8``), and the Special world (``world_no=9``).  Used by the
+    open-world level-entry gate to decide whether a badge course belongs
+    to a world the player is actually playing."""
+    if world_no == 1:
+        return 1
+    if 3 <= world_no <= 7:
+        return world_no - 1
+    return None
 _SHOP_SEED_TABLE: Final[dict[tuple[int, int, int], str]] = {
     # W1 Poplin Shop — captured 2026-05-25
     # (AP "W1" → PR world_no=1, npc_id=2; W1 overworld stage 3567658589)

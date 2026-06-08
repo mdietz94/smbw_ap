@@ -27,6 +27,7 @@ from ..location_table import (
     _TABLE,
     _TEN_COIN_TABLE,
     lookup_name,
+    pr_world_no_to_ap_world,
 )
 from ..protocol import CheckEmitted, CheckKind
 from ..royal_seed_table import (
@@ -395,6 +396,24 @@ class TestLocationTable(unittest.TestCase):
     def test_badge_location_unmapped_id_returns_none(self):
         check = CheckEmitted(kind=CheckKind.BADGE_ACQUIRED, stage_key=99)
         self.assertIsNone(lookup_name(check))
+
+    # ---- PlayReport world_no -> AP world mapping --------------------
+
+    def test_pr_world_no_to_ap_world_numbered_worlds(self):
+        # The six numbered overworlds (PI takes the world_no=2 slot, so
+        # W2..W6 are shifted up by one).
+        self.assertEqual(pr_world_no_to_ap_world(1), 1)  # W1
+        self.assertEqual(pr_world_no_to_ap_world(3), 2)  # W2
+        self.assertEqual(pr_world_no_to_ap_world(4), 3)  # W3
+        self.assertEqual(pr_world_no_to_ap_world(5), 4)  # W4
+        self.assertEqual(pr_world_no_to_ap_world(6), 5)  # W5
+        self.assertEqual(pr_world_no_to_ap_world(7), 6)  # W6
+
+    def test_pr_world_no_to_ap_world_non_numbered_slots(self):
+        self.assertIsNone(pr_world_no_to_ap_world(2))  # Petal Isles (hub)
+        self.assertIsNone(pr_world_no_to_ap_world(8))  # Castle / Bowser
+        self.assertIsNone(pr_world_no_to_ap_world(9))  # Special world
+        self.assertIsNone(pr_world_no_to_ap_world(0))  # unknown / default
 
 
 class TestRoyalSeedTable(unittest.TestCase):
