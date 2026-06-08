@@ -73,7 +73,7 @@ GAME_NAME = "Super Mario Bros Wonder"
 # (Special: Wonder Gauntlet - Normal Exit, Special: WONDER? - Normal
 # Exit) reach CLIENT_GOAL via ``handle_check_emitted`` matching the
 # goal name on a normal LocationCheck.
-GOAL_LOCATION_NAME_BOWSER = "PI: Bowser's Rage Stage - Royal Seed"
+GOAL_LOCATION_NAME_BOWSER = "BC: Bowser's Rage Stage - Royal Seed"
 
 
 # Open-world: bit position of the Castle/Bowser route in the routable-

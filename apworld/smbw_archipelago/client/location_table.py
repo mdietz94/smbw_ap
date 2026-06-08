@@ -171,11 +171,11 @@ _STAGE_SPELUNKING: Final[int] = 0x13F9E775   # PI: Spelunking!
 _STAGE_PETAL_MEDDLE: Final[int] = 0x28382D44   # PI: Petal Meddle
 _STAGE_WAY_OF_THE_GOOMBA: Final[int] = 0xDFE44219   # Special: Way of the Goomba
 _STAGE_MUNCHER_FIELDS: Final[int] = 0x19B2169C   # PI: Muncher Fields
-_STAGE_MISSILE_MEG_MAYHEM: Final[int] = 0x4866EB2F   # PI: Missile Meg Mayhem
-_STAGE_HIGH_VOLTAGE_GAUNTLET: Final[int] = 0x6C3B527E   # PI: High-Voltage Gauntlet
-_STAGE_EVADE_THE_SEEKER_BULLET_BILLS: Final[int] = 0x7A214398   # PI: Evade the Seeker Bullet Bills!
-_STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS: Final[int] = 0x33A5034F   # PI: KnuckleFest Bowser's Blazing Beats
-_STAGE_BOWSER_S_RAGE_STAGE: Final[int] = 0x6895BF00   # PI: Bowser's Rage Stage
+_STAGE_MISSILE_MEG_MAYHEM: Final[int] = 0x4866EB2F   # BC: Missile Meg Mayhem
+_STAGE_HIGH_VOLTAGE_GAUNTLET: Final[int] = 0x6C3B527E   # BC: High-Voltage Gauntlet
+_STAGE_EVADE_THE_SEEKER_BULLET_BILLS: Final[int] = 0x7A214398   # BC: Evade the Seeker Bullet Bills!
+_STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS: Final[int] = 0x33A5034F   # BC: KnuckleFest Bowser's Blazing Beats
+_STAGE_BOWSER_S_RAGE_STAGE: Final[int] = 0x6895BF00   # BC: Bowser's Rage Stage
 _STAGE_WONDER_GAUNTLET: Final[int] = 0x4871EB85   # Special: Wonder Gauntlet
 _STAGE_BADGE_MARATHON: Final[int] = 0x3029665D   # Special: Badge Marathon
 _STAGE_WONDER: Final[int] = 0x2D438F37   # Special: WONDER?
@@ -491,19 +491,19 @@ _TABLE: Final[dict[tuple[CheckKind, int], str]] = {
     (CheckKind.NORMAL_EXIT, _STAGE_MUNCHER_FIELDS): "PI: Muncher Fields - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_MUNCHER_FIELDS): "PI: Muncher Fields - Top of Flag",
     (CheckKind.WONDER_SEED, _STAGE_MUNCHER_FIELDS): "PI: Muncher Fields - Wonder Seed",
-    (CheckKind.NORMAL_EXIT, _STAGE_MISSILE_MEG_MAYHEM): "PI: Missile Meg Mayhem - Normal Exit",
-    (CheckKind.TOP_OF_FLAG, _STAGE_MISSILE_MEG_MAYHEM): "PI: Missile Meg Mayhem - Top of Flag",
-    (CheckKind.WONDER_SEED, _STAGE_MISSILE_MEG_MAYHEM): "PI: Missile Meg Mayhem - Wonder Seed",
-    (CheckKind.NORMAL_EXIT, _STAGE_HIGH_VOLTAGE_GAUNTLET): "PI: High-Voltage Gauntlet - Normal Exit",
-    (CheckKind.TOP_OF_FLAG, _STAGE_HIGH_VOLTAGE_GAUNTLET): "PI: High-Voltage Gauntlet - Top of Flag",
-    (CheckKind.WONDER_SEED, _STAGE_HIGH_VOLTAGE_GAUNTLET): "PI: High-Voltage Gauntlet - Wonder Seed",
-    (CheckKind.NORMAL_EXIT, _STAGE_EVADE_THE_SEEKER_BULLET_BILLS): "PI: Evade the Seeker Bullet Bills! - Normal Exit",
-    (CheckKind.TOP_OF_FLAG, _STAGE_EVADE_THE_SEEKER_BULLET_BILLS): "PI: Evade the Seeker Bullet Bills! - Top of Flag",
-    (CheckKind.WONDER_SEED, _STAGE_EVADE_THE_SEEKER_BULLET_BILLS): "PI: Evade the Seeker Bullet Bills! - Wonder Seed",
-    (CheckKind.NORMAL_EXIT, _STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS): "PI: KnuckleFest Bowser's Blazing Beats - Normal Exit",
-    (CheckKind.TOP_OF_FLAG, _STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS): "PI: KnuckleFest Bowser's Blazing Beats - Top of Flag",
-    (CheckKind.WONDER_SEED, _STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS): "PI: KnuckleFest Bowser's Blazing Beats - Wonder Seed",
-    (CheckKind.PALACE_CLEAR, _STAGE_BOWSER_S_RAGE_STAGE): "PI: Bowser's Rage Stage - Royal Seed",
+    (CheckKind.NORMAL_EXIT, _STAGE_MISSILE_MEG_MAYHEM): "BC: Missile Meg Mayhem - Normal Exit",
+    (CheckKind.TOP_OF_FLAG, _STAGE_MISSILE_MEG_MAYHEM): "BC: Missile Meg Mayhem - Top of Flag",
+    (CheckKind.WONDER_SEED, _STAGE_MISSILE_MEG_MAYHEM): "BC: Missile Meg Mayhem - Wonder Seed",
+    (CheckKind.NORMAL_EXIT, _STAGE_HIGH_VOLTAGE_GAUNTLET): "BC: High-Voltage Gauntlet - Normal Exit",
+    (CheckKind.TOP_OF_FLAG, _STAGE_HIGH_VOLTAGE_GAUNTLET): "BC: High-Voltage Gauntlet - Top of Flag",
+    (CheckKind.WONDER_SEED, _STAGE_HIGH_VOLTAGE_GAUNTLET): "BC: High-Voltage Gauntlet - Wonder Seed",
+    (CheckKind.NORMAL_EXIT, _STAGE_EVADE_THE_SEEKER_BULLET_BILLS): "BC: Evade the Seeker Bullet Bills! - Normal Exit",
+    (CheckKind.TOP_OF_FLAG, _STAGE_EVADE_THE_SEEKER_BULLET_BILLS): "BC: Evade the Seeker Bullet Bills! - Top of Flag",
+    (CheckKind.WONDER_SEED, _STAGE_EVADE_THE_SEEKER_BULLET_BILLS): "BC: Evade the Seeker Bullet Bills! - Wonder Seed",
+    (CheckKind.NORMAL_EXIT, _STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS): "BC: KnuckleFest Bowser's Blazing Beats - Normal Exit",
+    (CheckKind.TOP_OF_FLAG, _STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS): "BC: KnuckleFest Bowser's Blazing Beats - Top of Flag",
+    (CheckKind.WONDER_SEED, _STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS): "BC: KnuckleFest Bowser's Blazing Beats - Wonder Seed",
+    (CheckKind.PALACE_CLEAR, _STAGE_BOWSER_S_RAGE_STAGE): "BC: Bowser's Rage Stage - Royal Seed",
     (CheckKind.NORMAL_EXIT, _STAGE_WONDER_GAUNTLET): "Special: Wonder Gauntlet - Normal Exit",
     (CheckKind.TOP_OF_FLAG, _STAGE_WONDER_GAUNTLET): "Special: Wonder Gauntlet - Top of Flag",
     (CheckKind.WONDER_SEED, _STAGE_WONDER_GAUNTLET): "Special: Wonder Gauntlet - Wonder Seed",
@@ -983,18 +983,18 @@ _TEN_COIN_TABLE: Final[dict[tuple[int, int], str]] = {
     (_STAGE_MUNCHER_FIELDS, 0): "PI: Muncher Fields - 10 Coin #1",
     (_STAGE_MUNCHER_FIELDS, 1): "PI: Muncher Fields - 10 Coin #2",
     (_STAGE_MUNCHER_FIELDS, 2): "PI: Muncher Fields - 10 Coin #3",
-    (_STAGE_MISSILE_MEG_MAYHEM, 0): "PI: Missile Meg Mayhem - 10 Coin #1",
-    (_STAGE_MISSILE_MEG_MAYHEM, 1): "PI: Missile Meg Mayhem - 10 Coin #2",
-    (_STAGE_MISSILE_MEG_MAYHEM, 2): "PI: Missile Meg Mayhem - 10 Coin #3",
-    (_STAGE_HIGH_VOLTAGE_GAUNTLET, 0): "PI: High-Voltage Gauntlet - 10 Coin #1",
-    (_STAGE_HIGH_VOLTAGE_GAUNTLET, 1): "PI: High-Voltage Gauntlet - 10 Coin #2",
-    (_STAGE_HIGH_VOLTAGE_GAUNTLET, 2): "PI: High-Voltage Gauntlet - 10 Coin #3",
-    (_STAGE_EVADE_THE_SEEKER_BULLET_BILLS, 0): "PI: Evade the Seeker Bullet Bills! - 10 Coin #1",
-    (_STAGE_EVADE_THE_SEEKER_BULLET_BILLS, 1): "PI: Evade the Seeker Bullet Bills! - 10 Coin #2",
-    (_STAGE_EVADE_THE_SEEKER_BULLET_BILLS, 2): "PI: Evade the Seeker Bullet Bills! - 10 Coin #3",
-    (_STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS, 0): "PI: KnuckleFest Bowser's Blazing Beats - 10 Coin #1",
-    (_STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS, 1): "PI: KnuckleFest Bowser's Blazing Beats - 10 Coin #2",
-    (_STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS, 2): "PI: KnuckleFest Bowser's Blazing Beats - 10 Coin #3",
+    (_STAGE_MISSILE_MEG_MAYHEM, 0): "BC: Missile Meg Mayhem - 10 Coin #1",
+    (_STAGE_MISSILE_MEG_MAYHEM, 1): "BC: Missile Meg Mayhem - 10 Coin #2",
+    (_STAGE_MISSILE_MEG_MAYHEM, 2): "BC: Missile Meg Mayhem - 10 Coin #3",
+    (_STAGE_HIGH_VOLTAGE_GAUNTLET, 0): "BC: High-Voltage Gauntlet - 10 Coin #1",
+    (_STAGE_HIGH_VOLTAGE_GAUNTLET, 1): "BC: High-Voltage Gauntlet - 10 Coin #2",
+    (_STAGE_HIGH_VOLTAGE_GAUNTLET, 2): "BC: High-Voltage Gauntlet - 10 Coin #3",
+    (_STAGE_EVADE_THE_SEEKER_BULLET_BILLS, 0): "BC: Evade the Seeker Bullet Bills! - 10 Coin #1",
+    (_STAGE_EVADE_THE_SEEKER_BULLET_BILLS, 1): "BC: Evade the Seeker Bullet Bills! - 10 Coin #2",
+    (_STAGE_EVADE_THE_SEEKER_BULLET_BILLS, 2): "BC: Evade the Seeker Bullet Bills! - 10 Coin #3",
+    (_STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS, 0): "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #1",
+    (_STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS, 1): "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #2",
+    (_STAGE_KNUCKLEFEST_BOWSER_S_BLAZING_BEATS, 2): "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #3",
     (_STAGE_WONDER_GAUNTLET, 0): "Special: Wonder Gauntlet - 10 Coin #1",
     (_STAGE_WONDER_GAUNTLET, 1): "Special: Wonder Gauntlet - 10 Coin #2",
     (_STAGE_WONDER_GAUNTLET, 2): "Special: Wonder Gauntlet - 10 Coin #3",

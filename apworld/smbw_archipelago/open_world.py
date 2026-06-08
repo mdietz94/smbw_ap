@@ -32,7 +32,7 @@ WORLD_NUMBERS = (1, 2, 3, 4, 5, 6)
 BOWSER_REGION = "World Bowser"
 
 # Goal location open-world forces; must exist in Locations.victory_names.
-BOWSER_VICTORY_LOCATION = "PI: Bowser's Rage Stage - Royal Seed"
+BOWSER_VICTORY_LOCATION = "BC: Bowser's Rage Stage - Royal Seed"
 
 # Hub / Special-World spine regions that are not prefixed "PI ".
 _EXTRA_HUB_REGIONS = frozenset({
@@ -209,7 +209,7 @@ def strip_inactive_locations(world: World, multiworld: MultiWorld, player: int, 
     "All <X> Power Badge Obtained" meta-locations.  None of those are reachable
     in open-world -- the player only plays the selected worlds -- so leaving
     them in logic lets AP place progression items the player can never reach
-    (observed: a required badge landing on PI: High-Voltage Gauntlet).  Strip
+    (observed: a required badge landing on BC: High-Voltage Gauntlet).  Strip
     everything in ``World Bowser`` except the goal location itself."""
     active = set(active_worlds)
     for region in _player_regions(multiworld, player):

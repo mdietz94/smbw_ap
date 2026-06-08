@@ -112,7 +112,7 @@ def py_loc_access(loc, inv):
 
 
 # ---- open-world reference model (mirrors open_world.py) --------------------- #
-GOAL = "PI: Bowser's Rage Stage - Royal Seed"
+GOAL = "BC: Bowser's Rage Stage - Royal Seed"
 
 def world_of_region(r):
     if len(r) >= 3 and r[0] == "W" and r[1].isdigit() and r[2] == " ":
