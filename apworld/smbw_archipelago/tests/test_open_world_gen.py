@@ -72,6 +72,24 @@ class TestOpenWorldGeneration(unittest.TestCase):
             if n is not None:
                 self.assertIn(n, active, f"leaked inactive seed item {name!r}")
 
+    def test_inactive_wonder_seeds_precollected(self):
+        multiworld, world = _gen({"open_world": 1, "open_world_count": 3})
+        active = set(world.active_worlds)
+        precollected = [i.name for i in multiworld.precollected_items[1]]
+
+        for n in range(1, 7):
+            name = f"W{n} Wonder Seed"
+            want = int(world.item_name_to_item[name].get("count", 0))
+            got = precollected.count(name)
+            if n in active:
+                self.assertEqual(got, 0, f"active world W{n} should not be granted its Wonder Seeds")
+            else:
+                self.assertEqual(got, want, f"inactive world W{n} should be granted all {want} Wonder Seeds")
+
+        # Royal Seeds are never precollected (active or inactive).
+        for n in range(1, 7):
+            self.assertEqual(precollected.count(f"W{n} Royal Seed"), 0)
+
     def test_palaces_required_sentinel_equals_count(self):
         _, world = _gen({"open_world": 1, "open_world_count": 4, "palaces_required": 0})
         self.assertEqual(world.palaces_required, 4)

@@ -102,6 +102,32 @@ def precollect_petal_wonder_seeds(world, multiworld, player) -> int:
     return count
 
 
+def precollect_inactive_wonder_seeds(world, multiworld, player, active_worlds) -> int:
+    """Open-world: grant the player every Wonder Seed for the worlds they are
+    NOT playing.
+
+    Inactive worlds' locations were stripped, so their Wonder Seeds have no home
+    in the pool (``inactive_item_pool`` removes them).  Rather than just dropping
+    them silently, push a precollected copy of each into the player's starting
+    inventory: the client buckets received Wonder Seeds per world and pushes the
+    count to the Switch, so the skipped worlds show up with their Wonder-Seed
+    counters already full -- making it obvious the player doesn't need to play
+    them.  (Royal Seeds for inactive worlds stay removed: the Bowser gate only
+    counts active-world Royal Seeds.)  Returns the number granted."""
+    active = set(active_worlds)
+    granted = 0
+    for n in WORLD_NUMBERS:
+        if n in active:
+            continue
+        name = f"W{n} Wonder Seed"
+        item_def = world.item_name_to_item.get(name, {})
+        count = int(item_def.get("count", 0))
+        for _ in range(count):
+            multiworld.push_precollected(world.create_item(name))
+            granted += 1
+    return granted
+
+
 def choose_active_worlds(world: World) -> list:
     """Randomly pick ``open_world_count`` distinct worlds (seeded via
     ``world.random``).  Returns a sorted list of world numbers."""
