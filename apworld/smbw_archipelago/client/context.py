@@ -44,7 +44,7 @@ from . import royal_seed_table
 from . import wonder_seed_table
 from . import world_unlock_table
 from .commands import SMBWCommandProcessor
-from .location_table import lookup_name
+from .location_table import lookup_name, pr_world_no_to_ap_world
 from .protocol import (
     CheckEmitted,
     CheckKind,
@@ -739,6 +739,21 @@ class SMBWContext(CommonContext):
         if not self.entry_gating_enabled:
             return
 
+        # Open-world: don't bounce the player out of a badge course that
+        # isn't part of this seed's logic.  The worlds you aren't playing
+        # (and Petal Isles / the Special world) still have their course
+        # state unlocked on the Switch, so the player can walk into a
+        # badge-granting course whose badge AP never places -- gating it
+        # would be an unsatisfiable lock on content they don't need.
+        if not self._gate_course_in_logic(ev):
+            log.info(
+                "entered gated stage_key=0x%08x (%s req=%d) in a world "
+                "outside this open-world seed's logic (world_no=%d); "
+                "not gating",
+                ev.stage_key & 0xFFFFFFFF, ev.gate_kind.value,
+                ev.requirement, ev.world_no)
+            return
+
         # Deliberately NOT gated on being connected to AP: a player who
         # disconnects (or never connects) must NOT be able to sequence-
         # break into gated content offline.  When not connected,
@@ -761,6 +776,32 @@ class SMBWContext(CommonContext):
             GATE_KILL_DELAY_S)
         self._gate_kill_task = asyncio.create_task(
             self._gate_kill_loop(ev), name="smbw-gate-kill")
+
+    def _gate_course_in_logic(self, ev: GateEntered) -> bool:
+        """Open-world only: is the badge course the player just entered
+        part of *this* seed's logic?
+
+        In open-world mode the worlds you are not playing are stripped
+        from the item/location pool (their Wonder Seeds are precollected
+        so their counters show full), yet every world's course state stays
+        unlocked on the Switch -- so the player can wander into an inactive
+        world (or Petal Isles / the Special world) and walk into a badge-
+        granting course whose badge AP never places.  Bouncing them out is
+        pointless: the requirement can never be satisfied and they don't
+        need to clear it.  Treat a BADGE gate as in-logic only when its
+        course maps to one of the active numbered worlds; PI/Castle/Special
+        (``pr_world_no_to_ap_world`` -> ``None``) and inactive numbered
+        worlds are out of logic.
+
+        Always ``True`` outside open-world mode (every world is in logic)
+        and for non-badge gates -- the final-Bowser ROYAL_SEEDS gate must
+        always fire."""
+        if not self.open_world:
+            return True
+        if ev.gate_kind != GateKind.BADGE:
+            return True
+        ap_world = pr_world_no_to_ap_world(ev.world_no)
+        return ap_world is not None and ap_world in self.open_world_active
 
     def _gate_requirement_met(self, ev: GateEntered) -> bool:
         """True iff the player satisfies the gate's AP-item requirement.

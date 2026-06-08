@@ -253,6 +253,84 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
             self.assertIn("royal seed", kwargs["cause"].lower())
             self.state.mark_course_exited()
 
+    # ---- Open-world: only gate badge courses that are in logic -------
+
+    def _badge_gate_world(self, world_no: int, stage_key: int | None = None):
+        return self._GateEntered(
+            stage_key=stage_key if stage_key is not None else self.BADGE_STAGE,
+            gate_kind=self._GateKind.BADGE,
+            requirement=self.BADGE_ID,
+            world_no=world_no,
+        )
+
+    def test_in_logic_true_outside_open_world(self):
+        # Standard mode: every world is in logic regardless of world_no.
+        self.assertFalse(self.ctx.open_world)
+        self.assertTrue(
+            self.ctx._gate_course_in_logic(self._badge_gate_world(4)))
+
+    def test_in_logic_active_numbered_world(self):
+        self.ctx.open_world = True
+        self.ctx.open_world_active = [3]  # AP world 3 == PlayReport world_no 4
+        self.assertTrue(
+            self.ctx._gate_course_in_logic(self._badge_gate_world(4)))
+
+    def test_in_logic_inactive_numbered_world(self):
+        self.ctx.open_world = True
+        self.ctx.open_world_active = [1, 2]
+        self.assertFalse(
+            self.ctx._gate_course_in_logic(self._badge_gate_world(4)))  # AP 3
+
+    def test_in_logic_petal_isles_out_of_logic(self):
+        # PlayReport world_no=2 is the Petal Isles hub -- never a numbered
+        # active world, so its badge courses are out of logic.
+        self.ctx.open_world = True
+        self.ctx.open_world_active = [1, 2, 3]
+        self.assertFalse(
+            self.ctx._gate_course_in_logic(self._badge_gate_world(2)))
+
+    def test_in_logic_royal_seeds_gate_always_in_logic(self):
+        # The final-Bowser ROYAL_SEEDS gate is never world-filtered.
+        self.ctx.open_world = True
+        self.ctx.open_world_active = [1]
+        self.assertTrue(self.ctx._gate_course_in_logic(self._bowser_gate()))
+
+    async def test_open_world_inactive_world_badge_not_gated(self):
+        self.ctx.open_world = True
+        self.ctx.open_world_active = [1, 2]  # AP world 3 (world_no 4) inactive
+        self._enter(self.BADGE_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._badge_gate_world(4))
+            self.assertIsNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.ctx.lan_server.send_kill.assert_not_called()
+
+    async def test_open_world_active_world_badge_still_gated(self):
+        self.ctx.open_world = True
+        self.ctx.open_world_active = [3]  # AP world 3 (world_no 4) active
+        self._enter(self.BADGE_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._badge_gate_world(4))
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(
+                self.ctx.lan_server.send_kill.call_count, 1)
+            self.state.mark_course_exited()
+
+    async def test_open_world_bowser_gate_unaffected_by_world_filter(self):
+        # Even with a tiny active-world set, the Bowser gate still fires
+        # when the player lacks the Royal Seeds.
+        self.ctx.open_world = True
+        self.ctx.open_world_active = [1]
+        self.ctx._recompute_royal_seed_mask.return_value = 0b011111  # only 5
+        self._enter(self.BOWSER_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._bowser_gate())
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(
+                self.ctx.lan_server.send_kill.call_count, 1)
+            self.state.mark_course_exited()
+
     # ---- Connected slot_data toggle ---------------------------------
 
     async def test_connected_slot_data_disables_gating(self):
