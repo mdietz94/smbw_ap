@@ -105,7 +105,7 @@ ALWAYS_AVAILABLE_CATEGORIES = {"Button", "Wonder Effect", "Wonder Flower"}
 # Mirrors open_world.py's is_hub_region / BOWSER_* constants.
 OPEN_HUB_EXTRA = {"Pre-W4 Special", "Special End", "Post-Badge"}
 OPEN_BOWSER_REGION = "World Bowser"
-OPEN_GOAL_LOCATION = "PI: Bowser's Rage Stage - Royal Seed"
+OPEN_GOAL_LOCATION = "BC: Bowser's Rage Stage - Royal Seed"
 # In open-world these are precollected (PI) / stripped (Special), so any gate on
 # them is always satisfied -- treat as always-available when compiling the
 # open-world variant of the world-entry rules.

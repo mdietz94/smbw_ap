@@ -139,7 +139,7 @@ the natural path is reliable.
 - Does the W3 "Royal Seed Mansion" behave differently from the other
   five palaces?  It's the odd-one-out structurally (a mansion, a secret
   exit, no Bowser Jr. boss) and the PlayReport room mix may differ.
-- Is the goal Royal Seed (`PI: Bowser's Rage Stage - Royal Seed`)
+- Is the goal Royal Seed (`BC: Bowser's Rage Stage - Royal Seed`)
   affected by this same gate?  The Bowser Rage stage isn't paired with
   an AP "Royal Seed" item so the gate never trips -- but if a future
   rando mode adds it, the same fix would need to apply.

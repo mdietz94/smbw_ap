@@ -228,7 +228,7 @@ _PALACE_STAGE_KEYS: frozenset[int] = frozenset({
     0x1969941E,  # W4: Sunbaked Desert Palace
     0x87E6D263,  # W5: Operation Poplin Rescue
     0x7E523816,  # W6: Deep Magma Bog Palace
-    0x6895BF00,  # PI: Bowser's Rage Stage
+    0x6895BF00,  # BC: Bowser's Rage Stage
 })
 
 
@@ -273,7 +273,7 @@ _FAKE_EXIT_STAGE_KEYS: frozenset[int] = frozenset({
 # Final-Bowser gate: Bowser's Rage Stage requires the player hold all
 # six AP Royal Seeds, mirroring the vanilla final-castle gate.
 
-_FINAL_BOWSER_STAGE_KEY: int = 0x6895BF00  # PI: Bowser's Rage Stage
+_FINAL_BOWSER_STAGE_KEY: int = 0x6895BF00  # BC: Bowser's Rage Stage
 _FINAL_BOWSER_REQUIRED_ROYAL_SEEDS: int = 6
 
 

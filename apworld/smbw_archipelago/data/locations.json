@@ -5127,7 +5127,7 @@
     "requires": []
   },
   {
-    "name": "PI: Missile Meg Mayhem - Normal Exit",
+    "name": "BC: Missile Meg Mayhem - Normal Exit",
     "region": "World Bowser",
     "category": [
       "Petal Isles"
@@ -5135,7 +5135,7 @@
     "requires": []
   },
   {
-    "name": "PI: Missile Meg Mayhem - Wonder Seed",
+    "name": "BC: Missile Meg Mayhem - Wonder Seed",
     "region": "World Bowser",
     "category": [
       "Petal Isles"
@@ -5143,7 +5143,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)}"
   },
   {
-    "name": "PI: Missile Meg Mayhem - Top of Flag",
+    "name": "BC: Missile Meg Mayhem - Top of Flag",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5152,7 +5152,7 @@
     "requires": []
   },
   {
-    "name": "PI: Missile Meg Mayhem - 10 Coin #1",
+    "name": "BC: Missile Meg Mayhem - 10 Coin #1",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5161,7 +5161,7 @@
     "requires": []
   },
   {
-    "name": "PI: Missile Meg Mayhem - 10 Coin #2",
+    "name": "BC: Missile Meg Mayhem - 10 Coin #2",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5170,7 +5170,7 @@
     "requires": []
   },
   {
-    "name": "PI: Missile Meg Mayhem - 10 Coin #3",
+    "name": "BC: Missile Meg Mayhem - 10 Coin #3",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5179,7 +5179,7 @@
     "requires": []
   },
   {
-    "name": "PI: High-Voltage Gauntlet - Normal Exit",
+    "name": "BC: High-Voltage Gauntlet - Normal Exit",
     "region": "World Bowser",
     "category": [
       "Petal Isles"
@@ -5187,7 +5187,7 @@
     "requires": []
   },
   {
-    "name": "PI: High-Voltage Gauntlet - Wonder Seed",
+    "name": "BC: High-Voltage Gauntlet - Wonder Seed",
     "region": "World Bowser",
     "category": [
       "Petal Isles"
@@ -5195,7 +5195,7 @@
     "requires": "{OptOne(|Wonder Effect - Metal Cap|)}"
   },
   {
-    "name": "PI: High-Voltage Gauntlet - Top of Flag",
+    "name": "BC: High-Voltage Gauntlet - Top of Flag",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5204,7 +5204,7 @@
     "requires": []
   },
   {
-    "name": "PI: High-Voltage Gauntlet - 10 Coin #1",
+    "name": "BC: High-Voltage Gauntlet - 10 Coin #1",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5213,7 +5213,7 @@
     "requires": []
   },
   {
-    "name": "PI: High-Voltage Gauntlet - 10 Coin #2",
+    "name": "BC: High-Voltage Gauntlet - 10 Coin #2",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5222,7 +5222,7 @@
     "requires": []
   },
   {
-    "name": "PI: High-Voltage Gauntlet - 10 Coin #3",
+    "name": "BC: High-Voltage Gauntlet - 10 Coin #3",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5231,7 +5231,7 @@
     "requires": []
   },
   {
-    "name": "PI: Evade the Seeker Bullet Bills! - Normal Exit",
+    "name": "BC: Evade the Seeker Bullet Bills! - Normal Exit",
     "region": "World Bowser",
     "category": [
       "Petal Isles"
@@ -5239,7 +5239,7 @@
     "requires": []
   },
   {
-    "name": "PI: Evade the Seeker Bullet Bills! - Wonder Seed",
+    "name": "BC: Evade the Seeker Bullet Bills! - Wonder Seed",
     "region": "World Bowser",
     "category": [
       "Petal Isles"
@@ -5247,7 +5247,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)}"
   },
   {
-    "name": "PI: Evade the Seeker Bullet Bills! - Top of Flag",
+    "name": "BC: Evade the Seeker Bullet Bills! - Top of Flag",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5256,7 +5256,7 @@
     "requires": []
   },
   {
-    "name": "PI: Evade the Seeker Bullet Bills! - 10 Coin #1",
+    "name": "BC: Evade the Seeker Bullet Bills! - 10 Coin #1",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5265,7 +5265,7 @@
     "requires": []
   },
   {
-    "name": "PI: Evade the Seeker Bullet Bills! - 10 Coin #2",
+    "name": "BC: Evade the Seeker Bullet Bills! - 10 Coin #2",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5274,7 +5274,7 @@
     "requires": []
   },
   {
-    "name": "PI: Evade the Seeker Bullet Bills! - 10 Coin #3",
+    "name": "BC: Evade the Seeker Bullet Bills! - 10 Coin #3",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5283,7 +5283,7 @@
     "requires": []
   },
   {
-    "name": "PI: KnuckleFest Bowser's Blazing Beats - Normal Exit",
+    "name": "BC: KnuckleFest Bowser's Blazing Beats - Normal Exit",
     "region": "World Bowser",
     "category": [
       "Petal Isles"
@@ -5291,7 +5291,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)}"
   },
   {
-    "name": "PI: KnuckleFest Bowser's Blazing Beats - Wonder Seed",
+    "name": "BC: KnuckleFest Bowser's Blazing Beats - Wonder Seed",
     "region": "World Bowser",
     "category": [
       "Petal Isles"
@@ -5299,7 +5299,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)}"
   },
   {
-    "name": "PI: KnuckleFest Bowser's Blazing Beats - Top of Flag",
+    "name": "BC: KnuckleFest Bowser's Blazing Beats - Top of Flag",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5308,7 +5308,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)}"
   },
   {
-    "name": "PI: KnuckleFest Bowser's Blazing Beats - 10 Coin #1",
+    "name": "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #1",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5317,7 +5317,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)}"
   },
   {
-    "name": "PI: KnuckleFest Bowser's Blazing Beats - 10 Coin #2",
+    "name": "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #2",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5326,7 +5326,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)}"
   },
   {
-    "name": "PI: KnuckleFest Bowser's Blazing Beats - 10 Coin #3",
+    "name": "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #3",
     "region": "World Bowser",
     "category": [
       "Petal Isles",
@@ -5335,7 +5335,7 @@
     "requires": "{OptOne(|Wonder Effect - Environment|)}"
   },
   {
-    "name": "PI: Bowser's Rage Stage - Royal Seed",
+    "name": "BC: Bowser's Rage Stage - Royal Seed",
     "region": "World Bowser",
     "victory": true,
     "category": [

@@ -43,7 +43,7 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
 
     BADGE_STAGE = 0xDADED63E   # W1 Wall-Climb Jump I -> badge 34
     BADGE_ID = 34
-    BOWSER_STAGE = 0x6895BF00  # PI: Bowser's Rage Stage
+    BOWSER_STAGE = 0x6895BF00  # BC: Bowser's Rage Stage
 
     async def asyncSetUp(self) -> None:  # type: ignore[override]
         from .. import context as context_mod
