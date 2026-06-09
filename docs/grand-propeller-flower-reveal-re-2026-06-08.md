@@ -359,6 +359,30 @@ the node+road bits for the worlds open in the seed (or all, for full PI→W4→W
 reachability). Open design Qs: full-network vs per-open-world; gate ToCastle (bit 6) +
 W6 road behind the palace threshold (currently bit 6 is unconditional).
 
+## ★ BOWSER CLOUD PIRANHAS — gated on Royal Seeds, not route bits (2026-06-09)
+
+The cloud-piranha BARRIER around Bowser's Kingdom is the **`WorldMapCloudPackun`**
+obstacle actor (gparam `WorldMapCloudPackunParam` @ `0x710295ef9f`; sibling
+`WorldMapUnlockDemoPackun`; deletion SEL `WM_WhilePackunCloudDelete` /
+`WM_PackunCloudDeleteFin`). Setting the route-graph bits draws the ROADS but does
+**not** remove these obstacles — they are gated on **palace-clear / Royal-Seed**
+progression:
+- Every wonder-seed-cutscene diff we built the route bits from **lacked Royal
+  Seeds** — those are granted at *palace clears* (save timeline: one Royal Seed
+  per world, all 6 by `w6-pre cutscene`).
+- The palace clears set per-course-clear state (e.g. W3 → `0xcce21270` bit 61) +
+  the Royal-Seed container-B bool — never in the cutscene footprints.
+- Open-world test logged `Castle=0` (palace threshold unmet) → ~no Royal Seeds →
+  every piranha present. Consistent.
+
+**FIX (deployed):** force all 6 Royal-Seed container-B bools
+(`0x55815859 0x49abba86 0xb550d8d6 0x1dcf7f6e 0x0d5a3e00 0xd4660d2b`) ON when
+open-world is active, inside the existing AP-authoritative `SetRoyalSeedsAbsolute`
+sync ([switch-mod/src/ap/ApFrameBridge.cpp](switch-mod/src/ap/ApFrameBridge.cpp))
+so they are never reverted. Maintainer choice: **unconditional** in open-world
+(premature Bowser is handled by the gate-kill; only the in-game bools are written,
+AP item state untouched).
+
 ## Still open (next RE steps)
 
 1. **Confirm `bit 2 = W3` and that the W4/5/6 PI routes use ConditionType=5.** Track A's
