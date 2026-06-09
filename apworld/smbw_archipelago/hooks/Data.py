@@ -30,4 +30,13 @@ def after_load_meta_file(meta_table: dict) -> dict:
 # Universal Tracker compatibility — return True from this hook if you
 # mutated the world such that AP needs to regenerate state.
 def hook_interpret_slot_data(world, player: int, slot_data: dict) -> bool:
+    if "open_world_active" in slot_data:
+        # Pin the active worlds from slot_data so generate_early won't
+        # re-roll them via world.random.  In a Universal Tracker
+        # single-player regeneration the RNG state at generate_early time
+        # differs from the original multi-player game, so re-rolling would
+        # silently select the wrong worlds and cause UT to see only the
+        # first world as available (the others aren't wired into Manual).
+        world._ow_pinned_active_worlds = [int(n) for n in slot_data["open_world_active"]]
+        return True
     return False

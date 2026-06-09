@@ -103,7 +103,13 @@ class SMBWonderWorld(World):
         unconditionally.  When open-world is on, picks the random active
         worlds (seeded via ``self.random``), resolves the palace
         threshold, writes it back to the option (so ``fill_slot_data``
-        exports the resolved value), and forces the goal to Bowser."""
+        exports the resolved value), and forces the goal to Bowser.
+
+        Universal Tracker compatibility: if ``interpret_slot_data`` already
+        pinned ``_ow_pinned_active_worlds`` from slot_data, those worlds are
+        used instead of the random roll — the RNG state in a UT single-player
+        regeneration differs from the original multi-player game, so re-rolling
+        would select the wrong set of worlds."""
         from . import open_world as ow
 
         self.open_world = bool(get_option_value(self.multiworld, self.player, "open_world"))
@@ -112,7 +118,8 @@ class SMBWonderWorld(World):
         if not self.open_world:
             return
 
-        self.active_worlds = ow.choose_active_worlds(self)
+        pinned = getattr(self, "_ow_pinned_active_worlds", None)
+        self.active_worlds = pinned if pinned is not None else ow.choose_active_worlds(self)
         self.palaces_required = ow.resolve_palaces_required(self, self.active_worlds)
         self.options.palaces_required.value = self.palaces_required
 
