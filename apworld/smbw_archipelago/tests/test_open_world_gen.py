@@ -121,6 +121,31 @@ class TestOpenWorldGeneration(unittest.TestCase):
         self.assertEqual(victory.parent_region.name, "World Bowser")
 
 
+class TestUniversalTrackerCompat(unittest.TestCase):
+    """Verify that interpret_slot_data → generate_early produces the same
+    active-world set recorded in slot_data (Universal Tracker regression)."""
+
+    def test_pinned_worlds_survive_generate_early(self):
+        # 1. Generate with seed 1234 to capture slot_data.
+        _, world_orig = _gen({"open_world": 1, "open_world_count": 3}, seed=1234)
+        slot_data = world_orig.fill_slot_data()
+        pinned = slot_data["open_world_active"]
+        self.assertEqual(len(pinned), 3)
+
+        # 2. Generate a second world with a different seed (different random
+        #    state → different random world selection without the fix).
+        _, world_ut = _gen({"open_world": 1, "open_world_count": 3}, seed=9999)
+
+        # 3. Simulate Universal Tracker: interpret_slot_data then generate_early.
+        world_ut.interpret_slot_data(slot_data)
+        self.assertTrue(hasattr(world_ut, "_ow_pinned_active_worlds"),
+                        "interpret_slot_data must set _ow_pinned_active_worlds")
+        world_ut.generate_early()
+
+        # 4. active_worlds must match slot_data, not the seed-9999 random roll.
+        self.assertEqual(sorted(world_ut.active_worlds), sorted(pinned))
+
+
 class TestOpenWorldRegression(unittest.TestCase):
     def test_open_world_off_keeps_linear_spine(self):
         multiworld, world = _gen({"open_world": 0})
