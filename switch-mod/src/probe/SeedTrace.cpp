@@ -503,47 +503,45 @@ void applyOpenWorldEntry(void* gmd_v) {
         }
     }
 
-    // Grand Propeller Flower world-reveal route gate (RE 2026-06-08).
+    // Grand Propeller Flower world-reveal route gates (RE 2026-06-08).
     // The world-map route evaluator ProcessWorldMapRouteGate (NSO+0x377280)
-    // re-derives every route on each world-map (re)load.  For a route whose
-    // CoursePointInfo ConditionType==5 (GrandPropellerFlowerDemo) it calls
-    // FUN_7101b70610(demoType), which returns container-C bitfield 0x35bf61af
-    // bit[demoType] (GrandPropellerFlowerDemoType: 0 AfterSavanna=W1 .. 2
-    // AfterWa=W3 .. 6 ToCastle).  Because the route is predicate-derived from
-    // this bit (NOT a one-time demo-animation side effect), setting the bit
-    // opens the route on the next map build -- no cutscene needed:
-    //   bit 2 (AfterWa)  -> the post-W3 reveal -> W4/W5/W6 route cluster
-    //   bit 6 (ToCastle) -> Bowser's Castle path
-    // See docs/grand-propeller-flower-reveal-re-2026-06-08.md.  Idempotent
-    // (single-bit OR); latch once both writes land so we don't churn every
-    // drain.  NOTE: castle is set unconditionally in open-world here for
-    // testing -- a later pass may gate bit 6 behind the palaces threshold to
-    // mirror the kCastleMaskBit / _bowser_opened client latch.
+    // re-derives every route on each world-map (re)load from gmd state -- the
+    // reveal cutscenes are NOT one-time animations, they just set persistent
+    // container-C bits (confirmed for W3 by an inverse save-revert test:
+    // reverting the bytes destroyed the road).  So setting the full per-world
+    // reveal footprint draws the entire PI->W2..W6->Bowser road network with no
+    // cutscene playing.  Bits recovered from per-world wonder-seed cutscene
+    // save-diffs ("wN-pre cutscene" -> "wN-post cutscene"), mapped to
+    // (container-C hash, bit) via the save's (hash, blob-offset) index:
+    //   node 0x35bf61af bit = GrandPropellerFlowerDemoType (1=W2 .. 5=W6, 6=ToCastle)
+    //   road bits = per-reveal world-map-graph bitfields (0xbcc1ef0e is a
+    //   SHARED accumulating field -> OR the individual bits, never overwrite).
+    // ToCastle/Bowser (node bit 6) is set unconditionally (maintainer choice
+    // 2026-06-08).  See docs/grand-propeller-flower-reveal-re-2026-06-08.md.
+    // Idempotent single-bit ORs; latch once every write lands so we don't churn.
     static std::atomic<bool> s_reveal_bits_done{false};
     if (!s_reveal_bits_done.load(std::memory_order_relaxed)) {
-        // NODE bits: container-C 0x35bf61af, bit = GrandPropellerFlowerDemoType
-        // (2 = AfterWa/W3 -> W4 node emerges, 6 = ToCastle -> Bowser node).
+        static const struct {
+            std::uint32_t hash;
+            std::uint32_t bit;
+        } kRevealBits[] = {
+            // node markers (0x35bf61af): W2..W6 + ToCastle
+            {0x35bf61afu, 1u}, {0x35bf61afu, 2u}, {0x35bf61afu, 3u},
+            {0x35bf61afu, 4u}, {0x35bf61afu, 5u}, {0x35bf61afu, 6u},
+            {0xbcc1ef0eu, 2u}, {0xbcc1ef0eu, 8u}, {0x09bfe967u, 1u},  // W2 roads
+            {0xbcc1ef0eu, 9u}, {0x57df969bu, 1u}, {0x2309a645u, 12u}, // W3 roads
+            {0x9d25ce3bu, 1u},                                       // W4 road
+            {0x40c00dd7u, 2u}, {0xf5411212u, 3u},                    // W5 roads
+            {0x52781dfdu, 1u},                                       // W6 road (+Bowser)
+        };
         bool ok = true;
-        ok = setContainerCBit(0x35bf61afu, 2u, true) && ok;
-        ok = setContainerCBit(0x35bf61afu, 6u, true) && ok;
-        // ROAD bits: the W3-end reveal cutscene ALSO draws the PI->W4/5/6 road
-        // by setting three world-map-graph container-C bitfields.  Recovered
-        // 2026-06-08 from the save-diff "w3 end" -> "w3-post cutscene" and
-        // confirmed live-state-driven by the inverse revert test (reverting
-        // these destroyed the road).  ProcessWorldMapRouteGate (NSO+0x377280)
-        // re-reads them on every world-map load, so setting them draws the road
-        // without the cutscene playing.  Save offsets 0x0ced/0x0d14/0x0e89 ->
-        // these (hash,bit) via the save's (hash,blob-offset) index.
-        // See docs/grand-propeller-flower-reveal-re-2026-06-08.md.
-        ok = setContainerCBit(0xbcc1ef0eu, 9u, true) && ok;
-        ok = setContainerCBit(0x57df969bu, 1u, true) && ok;
-        ok = setContainerCBit(0x2309a645u, 12u, true) && ok;
+        for (const auto& rb : kRevealBits)
+            ok = setContainerCBit(rb.hash, rb.bit, true) && ok;
         if (ok) {
             s_reveal_bits_done.store(true, std::memory_order_relaxed);
             SMBWAP_LOG_INFO(
-                "[open-world] reveal NODE+ROAD bits set: node 0x35bf61af "
-                "bit2(W4/5/6)+bit6(Castle); road 0xbcc1ef0e:9 0x57df969b:1 "
-                "0x2309a645:12");
+                "[open-world] full reveal footprint applied "
+                "(0x35bf61af nodes 1-6 + W2-W6 road bits)");
         }
     }
 }

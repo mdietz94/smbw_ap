@@ -325,6 +325,36 @@ accumulates per-world), so the per-world bit map must be tabulated (have W2/W3 d
 W4/5/6/Special diffs for full coverage). For now W3→W4/5/6 is wired unconditionally in
 open-world.
 
+## ★ PER-WORLD REVEAL BIT MAP (2026-06-08, W2–W6 captured)
+
+Hash-mapped diffs of each world's wonder-seed reveal cutscene (`"wN-pre cutscene"` →
+`"wN-post cutscene"`), trailing bytes → `(container-C hash : bit)` via the save's
+`(hash, blob-offset)` index. **node bit = `0x35bf61af`** increments per world (the
+GrandPropellerFlowerDemoType enum); **road bits** are per-reveal:
+
+| reveal | node `0x35bf61af` | road bits (hash:bit) |
+|---|---|---|
+| W2 (AfterYama) | bit 1 | `0xbcc1ef0e`:2, `0xbcc1ef0e`:8, `0x09bfe967`:1 |
+| **W3 (AfterWa)** ✅ deployed | bit 2 | `0xbcc1ef0e`:9, `0x57df969b`:1, `0x2309a645`:12 |
+| W4 (AfterSabaku) | bit 3 | `0x9d25ce3b`:1 |
+| W5 (AfterKin) | bit 4 | `0x40c00dd7`:2, `0xf5411212`:3 |
+| W6 (AfterNettai) | bit 5 | `0x52781dfd`:1 |
+| ToCastle (Bowser) | bit 6 | (W6 cutscene "also opens Bowser road" — likely `0x52781dfd`:1 above; bit 6 may be the node only) |
+
+Notes:
+- `0xbcc1ef0e` is a **shared accumulating** world-map-graph bitfield (W2 adds bits 2/8,
+  W3 adds bit 9, the W5 battleship adds bit 6) — must OR per-world, never overwrite.
+- **W4 PI wonder-seed gate** (`"w4-pre/post-castle-gate"`) sets `0x05983371`:4 — that's
+  the gate-cleared flag (separate from the reveal).
+- **Transient pair-region flags** (set by reveal, missed by fresh→100% diff, like W3's
+  `0x20fced8b`): W6 sets `0xa23922fa` + `0xe02a5e43`. (Footprint, not road-drawing.)
+- `0x3d17a42a @ save 0x50c8` changes in every diff = savedata-UUID noise.
+
+GENERALIZATION PLAN: a per-world reveal table `{world: (node_bit, [(hash,bit)...])}`; set
+the node+road bits for the worlds open in the seed (or all, for full PI→W4→W5→W6
+reachability). Open design Qs: full-network vs per-open-world; gate ToCastle (bit 6) +
+W6 road behind the palace threshold (currently bit 6 is unconditional).
+
 ## Still open (next RE steps)
 
 1. **Confirm `bit 2 = W3` and that the W4/5/6 PI routes use ConditionType=5.** Track A's
