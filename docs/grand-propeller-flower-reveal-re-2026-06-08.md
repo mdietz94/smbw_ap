@@ -347,7 +347,11 @@ Notes:
 - **W4 PI wonder-seed gate** (`"w4-pre/post-castle-gate"`) sets `0x05983371`:4 — that's
   the gate-cleared flag (separate from the reveal).
 - **Transient pair-region flags** (set by reveal, missed by fresh→100% diff, like W3's
-  `0x20fced8b`): W6 sets `0xa23922fa` + `0xe02a5e43`. (Footprint, not road-drawing.)
+  `0x20fced8b`): W6 sets `0xa23922fa` + `0xe02a5e43` — these **clear the cloud-piranha
+  barrier around Bowser's Kingdom** (live-diagnosed 2026-06-08: with node+road set but
+  these omitted, the barrier stayed up). Added to `WORLD_UNLOCK_HASHES`. So the cloud
+  piranhas (overworld route barriers) are cleared by the reveal's transient pair flags,
+  while the container-C bits draw the roads.
 - `0x3d17a42a @ save 0x50c8` changes in every diff = savedata-UUID noise.
 
 GENERALIZATION PLAN: a per-world reveal table `{world: (node_bit, [(hash,bit)...])}`; set

@@ -129,4 +129,11 @@ WORLD_UNLOCK_HASHES: Final[tuple[int, ...]] = (
     # set in probe::applyOpenWorldEntry (SeedTrace.cpp).  Kept here as genuine
     # world-reveal state.  See docs/grand-propeller-flower-reveal-re-2026-06-08.md.
     0x20fced8b,  # pair 270 (w3-end cutscene), transient W4/5/6-reveal flag
+    # W6 reveal cutscene ("w6-pre" -> "w6-post cutscene") sets these two
+    # transient pair-region flags in addition to the node+road bits.  With the
+    # node+road set but these omitted, the cloud-piranha BARRIER around Bowser's
+    # Kingdom stayed up -- these are what clear it (the W6 analog of 0x20fced8b).
+    # Live-diagnosed 2026-06-08.
+    0xa23922fa,  # w6-cutscene transient flag (Bowser-Kingdom barrier clear)
+    0xe02a5e43,  # w6-cutscene transient flag (Bowser-Kingdom barrier clear)
 )
