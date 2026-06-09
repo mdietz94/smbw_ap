@@ -525,27 +525,32 @@ void applyOpenWorldEntry(void* gmd_v) {
             std::uint32_t hash;
             std::uint32_t bit;
         } kRevealBits[] = {
-            // node markers (0x35bf61af): W2..W6 + ToCastle
-            {0x35bf61afu, 1u}, {0x35bf61afu, 2u}, {0x35bf61afu, 3u},
-            {0x35bf61afu, 4u}, {0x35bf61afu, 5u}, {0x35bf61afu, 6u},
-            // World-map route-graph bitfields -- FULL accumulated bit sets, not
-            // just per-cutscene deltas.  The cloud-piranha barriers around
-            // Bowser's Kingdom are removed INCREMENTALLY across the whole W2..W6
-            // progression (each cutscene / battleship / gate step removes one),
-            // so a fresh open-world save needs every accumulated bit, not only
-            // the ones each wonder-seed cutscene flips.  Recovered from a
-            // pre-W2 -> w6-post-cutscene span diff (2026-06-08).  0xbcc1ef0e is
-            // the shared accumulating field (one bit per progression event:
-            // 2/8=W2, 9=W3, 6=W5-battleship, 3/11/12/13=other steps).
-            {0xbcc1ef0eu, 2u},  {0xbcc1ef0eu, 3u},  {0xbcc1ef0eu, 6u},
+            // World-map route-graph bitfields -- the COMPLETE absolute bit set
+            // from a fully-progressed (W1..W6) save, NOT per-cutscene deltas.
+            // The cloud-piranha barriers around Bowser's Kingdom are removed
+            // incrementally across the whole progression (each cutscene /
+            // battleship / gate / Royal-Seed step removes one), so a fresh
+            // open-world save needs every accumulated bit.  Read as the absolute
+            // set bits per record (bounded by each record's count/length) in
+            // "w6-post cutscene"; the W1-era bits (0x35bf61af:0, 0xbcc1ef0e:
+            // 1/5/7/17, 0x2309a645:5/11) live in the pre-W2 baseline and were
+            // invisible to the earlier pre-W2->w6 span diff.  0xbcc1ef0e is the
+            // shared accumulating field (one bit per progression event).
+            // node markers (0x35bf61af): W1..W6 (bit 0..5) + ToCastle (bit 6)
+            {0x35bf61afu, 0u}, {0x35bf61afu, 1u}, {0x35bf61afu, 2u},
+            {0x35bf61afu, 3u}, {0x35bf61afu, 4u}, {0x35bf61afu, 5u},
+            {0x35bf61afu, 6u},
+            {0xbcc1ef0eu, 1u},  {0xbcc1ef0eu, 2u},  {0xbcc1ef0eu, 3u},
+            {0xbcc1ef0eu, 5u},  {0xbcc1ef0eu, 6u},  {0xbcc1ef0eu, 7u},
             {0xbcc1ef0eu, 8u},  {0xbcc1ef0eu, 9u},  {0xbcc1ef0eu, 11u},
-            {0xbcc1ef0eu, 12u}, {0xbcc1ef0eu, 13u},
-            {0x09bfe967u, 1u},                                       // W2
-            {0x57df969bu, 1u}, {0x2309a645u, 12u},                   // W3
-            {0x9d25ce3bu, 1u},                                       // W4
-            {0x40c00dd7u, 2u},                                       // W5
-            {0xf5411212u, 1u}, {0xf5411212u, 2u}, {0xf5411212u, 3u}, // W5 (full)
-            {0x52781dfdu, 1u},                                       // W6 (+Bowser)
+            {0xbcc1ef0eu, 12u}, {0xbcc1ef0eu, 13u}, {0xbcc1ef0eu, 17u},
+            {0x09bfe967u, 1u},
+            {0x57df969bu, 1u},
+            {0x2309a645u, 5u}, {0x2309a645u, 11u}, {0x2309a645u, 12u},
+            {0x9d25ce3bu, 1u},
+            {0x40c00dd7u, 2u},
+            {0xf5411212u, 1u}, {0xf5411212u, 2u}, {0xf5411212u, 3u},
+            {0x52781dfdu, 1u},
         };
         bool ok = true;
         for (const auto& rb : kRevealBits)
