@@ -1002,6 +1002,36 @@ HkTrampoline<std::uint64_t, long long> routeGateForceOpenHook =
     });
 
 // =========================================================================
+// FIRST-VISIT-DEMO-DONE FLAG (clears the Bowser cloud-piranha barrier)
+// =========================================================================
+//
+// FUN_7101b5c600 @ NSO +0x1b5c600 -- the dedicated reader for the per-world
+// `EndFirstVisitWorldDemo` boolean (param = per-world GameData key; returns the
+// container-B bool 0/1).  RE 2026-06-09: the world-map `WorldMapCloudPackun`
+// obstacle actors -- the "cloud piranhas" ringing Bowser's Kingdom -- are gated
+// on this per-world "first-visit/unlock demo already played" flag.  An
+// open-world player never plays those demos, so the flag stays 0 and every
+// piranha stays up, blocking Bowser.  The per-world keys are resolved at runtime
+// from BYML-populated descriptor tables (NSO+0x29f0f94, zero in the file), so
+// there is NO static hash to write -- a reader hook is the only handle.  This
+// function is the EXCLUSIVE reader of the EndFirstVisitWorldDemo flag (verified:
+// its sole caller is GetFlagEndFirstVisitWorldDemo), so forcing it to 1 affects
+// only that flag.  In open-world, report DONE (1) for every world so all cloud
+// packuns take their delete path and Bowser is reachable.  Bowser entry itself
+// stays gated by the Royal-Seed death-gate, not these obstacles.
+//
+// PROLOGUE SAFETY: first 4 patched instrs are sub sp / stp x29,x30 / add x29 /
+// sturb wzr -- no PC-relative (the cbz is the 5th, at +0x10).
+// (0x1b5c600+8)&7==0 -> count=4.  Safe.
+HkTrampoline<std::uint64_t, std::uint64_t> firstVisitDoneHook =
+    hk::hook::trampoline([](std::uint64_t key) -> std::uint64_t {
+        if (key != 0u && smbwap::ap::getRoutableWorldMask() != 0u) {
+            return 1u;  // open-world: every world's first-visit demo "done"
+        }
+        return firstVisitDoneHook.orig(key);
+    });
+
+// =========================================================================
 // SCENE-CHANGE-REQUEST PROBE (toward the Bowser final-level stage-warp)
 // =========================================================================
 //
@@ -1150,6 +1180,12 @@ extern "C" void hkMain() {
     //   a level/course from the world map (the final-castle enter path).
     installHook("CourseEnterName",     0x0055ee48,
                 courseEnterNameHook.installAtMainOffset(0x0055ee48));
+    // FirstVisitDemoDone: FUN_7101b5c600 -- the EndFirstVisitWorldDemo bool
+    //   reader.  Force it to report "done" in open-world so the cloud-piranha
+    //   obstacles around Bowser's Kingdom (WorldMapCloudPackun) delete
+    //   themselves and Bowser becomes reachable.
+    installHook("FirstVisitDemoDone",  0x01b5c600,
+                firstVisitDoneHook.installAtMainOffset(0x01b5c600));
 
     // DEBUG OVERLAY: NVN present-hook chain that drives the ImGui overlay.
     // No-op unless built with SMBWAP_HAS_DEBUG_RENDERER (see CMakeLists.txt
