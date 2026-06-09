@@ -119,4 +119,14 @@ WORLD_UNLOCK_HASHES: Final[tuple[int, ...]] = (
     0xa45048b6,  # pair 125
     0xbf40af4f,  # pair 127
     0x5ac1e406,  # pair 264
+    # --- transient world-reveal flags (NOT from the fresh->100% diff) ---
+    # The fresh->100% diff structurally misses flags that are 0 at BOTH
+    # endpoints (set during a reveal, cleared by completion).  Recovered
+    # 2026-06-08 from the W3-end "unlocks W4/5/6" cutscene diff
+    # ("w3 end" -> "w3-post cutscene"): the only cutscene boolean not already
+    # in this table.  NOTE: this flag is part of the reveal footprint but is
+    # NOT what draws the PI->W4/5/6 road -- that is three container-C bitfields
+    # set in probe::applyOpenWorldEntry (SeedTrace.cpp).  Kept here as genuine
+    # world-reveal state.  See docs/grand-propeller-flower-reveal-re-2026-06-08.md.
+    0x20fced8b,  # pair 270 (w3-end cutscene), transient W4/5/6-reveal flag
 )
