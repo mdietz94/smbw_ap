@@ -475,9 +475,18 @@ void drainInbound() {
         // in-game palace clear that ran ahead of AP releasing the
         // matching seed item.
         const auto mask = last_seeds.set_royal_seeds_absolute.mask;
+        // Open-world: the cloud-piranha barrier around Bowser's Kingdom is
+        // gated on having all 6 Royal Seeds (palace clears), NOT the world-map
+        // route bits (RE 2026-06-09).  Force all 6 on in open-world so the
+        // barrier clears and Bowser is reachable.  Over-granting is harmless
+        // here: a premature Bowser attempt is handled by the gate-kill, and
+        // the AP server's own item state is unaffected (this only writes the
+        // in-game container-B bools).  Routing it through this AP-authoritative
+        // sync (rather than applyOpenWorldEntry) means it is never reverted.
+        const bool open_world = getRoutableWorldMask() != 0u;
         std::uint32_t granted = 0;
         for (std::size_t i = 0; i < kRoyalSeedCount; ++i) {
-            const std::uint32_t bit_v = (mask >> i) & 1u;
+            const std::uint32_t bit_v = open_world ? 1u : ((mask >> i) & 1u);
             if (probe::grantContainerBBool(kRoyalSeedHashes[i], bit_v)) {
                 if (bit_v) ++granted;
             }
