@@ -562,6 +562,30 @@ void applyOpenWorldEntry(void* gmd_v) {
                 "(0x35bf61af nodes 1-6 + W2-W6 road bits)");
         }
     }
+
+    // Open-world: force all 6 Royal Seed container-B bools so the cloud-piranha
+    // barrier around Bowser's Kingdom clears (RE 2026-06-09: it is gated on
+    // palace-clear / Royal-Seed progression, not the route bits).  Done HERE,
+    // not only in the SetRoyalSeedsAbsolute sync, because that sync only runs
+    // when AP actually has seeds to send -- a fresh open-world seed has none,
+    // so the override there never fired.  applyOpenWorldEntry runs every drain
+    // in open-world, so this always applies.  The sync override (ApFrameBridge)
+    // also forces all 6 in open-world, so an AP partial-mask update never
+    // reverts these.  Unconditional (maintainer choice); premature Bowser is
+    // handled by the gate-kill, AP item state is untouched.
+    static std::atomic<bool> s_royal_seeds_done{false};
+    if (!s_royal_seeds_done.load(std::memory_order_relaxed)) {
+        static const std::uint32_t kRoyal[] = {
+            0x55815859u, 0x49abba86u, 0xb550d8d6u,
+            0x1dcf7f6eu, 0x0d5a3e00u, 0xd4660d2bu};
+        bool ok = true;
+        for (std::uint32_t h : kRoyal) ok = grantContainerBBool(h, 1u) && ok;
+        if (ok) {
+            s_royal_seeds_done.store(true, std::memory_order_relaxed);
+            SMBWAP_LOG_INFO(
+                "[open-world] forced all 6 Royal Seed bools (Bowser barrier)");
+        }
+    }
 }
 
 void pushFlowerLockUnlock() {
