@@ -388,12 +388,24 @@
 		"count":  1,
     
 		"name": "Drill Mushroom",
-    
+
 		"category": [
       "Power-Up"
     ],
-    
+
 		"progression": true
+  },
+  {
+
+		"count":  1,
+
+		"name": "Super Mushroom",
+
+		"category": [
+      "Power-Up"
+    ],
+
+		"useful": true
   },
   {
     

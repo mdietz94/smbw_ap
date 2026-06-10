@@ -352,6 +352,13 @@ class SMBWonderWorld(World):
         if isinstance(goal_idx, int) and 0 <= goal_idx < len(victory_names):
             slot_data["goal_location_name"] = victory_names[goal_idx]
 
+        # Power-Up items are real pool items as of 2026-06-10 (no longer
+        # precollected via starting_items).  This marker tells the client
+        # to gate in-level power-up pickups behind their AP items (the
+        # Switch-side ItemGet deny mask).  Older seeds lack the key, so
+        # the client leaves pickups vanilla for them.
+        slot_data["powerup_gating"] = True
+
         slot_data = after_fill_slot_data(slot_data, self, self.multiworld, self.player)
 
         return slot_data

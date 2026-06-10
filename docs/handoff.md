@@ -488,12 +488,15 @@ follow-up PR removes it entirely.
 - **M2.2 10-coin** (306 checks) — ✅ **bridge implementation shipped 2026-05-25**; see [docs/m2.2-runbook.md](m2.2-runbook.md).  No Ghidra needed — `course_result` PlayReport's `big_flower_coin_course_{in,out}` bool[3] gives both detection AND per-instance identity for free.  ~30 LoC across [apworld/smbw_archipelago/client/{protocol,state,processor,location_table}.py](../apworld/smbw_archipelago/client/processor.py) + 21 new tests (224 total pass).  Two open items: (a) the diff-semantics interpretation is unproven by existing fixtures, **needs one empirical capture** where a 10-coin is collected within a single run; (b) `_TEN_COIN_TABLE` has 2 of 102 non-palace courses mapped, the rest fill in incrementally per playthrough.
 - **M3.2 badge follow-ups** — UI-slot mask hash `0x6d1b5c25` write may be
   needed for newly-granted badges to appear in the equip UI.
-- ~~**M3.1 power-up grant**~~ — **deferred to M7** (2026-05-25).  AP
-  server now precollects all 4 Power-Ups via `starting_items` in
-  [apworld/smbw_archipelago/data/game.json](../apworld/smbw_archipelago/data/game.json);
-  player begins every seed with Elephant / Fire / Bubble / Drill in
-  hand and no AP grant ever fires for them.  RE notes preserved in
-  milestones.md "M3.1 — power-up grant" for when the work resumes.
+- ~~**M3.1 power-up shuffling**~~ — ✅ **SHIPPED 2026-06-10** via the
+  *negation* model: Power-Ups (plus a new Super Mushroom item) are pool
+  items again, and receiving the AP item unlocks the ability to *collect*
+  that power-up in-level — the Switch's ItemGet deny-mask hook (NSO
+  `+0x3c4050`, the engine's own DrillDig pickup-permission mechanism)
+  blocks pickups of unreceived types.  No grant write needed.  See
+  milestones.md "M3.1" + the smbw-reverse-engineering map §14.  Old
+  seeds (precollect-era) stay vanilla via the `powerup_gating`
+  slot_data marker.
 - ~~**M3.4 character roster unlock**~~ — **deferred to M7**
   (2026-05-25).  AP server precollects all 12 Character items via the
   same `starting_items` block; full roster unlocked from the start.

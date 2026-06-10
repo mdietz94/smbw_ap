@@ -459,18 +459,21 @@ class SMBWCommandProcessor(ClientCommandProcessor):
         return True
 
     def _cmd_deny_powerups(self, spec: str = "") -> bool:
-        """Debug: negate power-up pickups on the Switch (M3.1/M5 spike).
+        """Debug: override the power-up pickup deny mask on the Switch.
 
-        Sends a ``SetItemGetDenyMaskMsg`` -- the Switch strips the named
-        item types from the player's "can pick up" bitmask, so touching a
-        denied power-up does nothing (the item stays, exactly like items
-        during a drill-dig).  Idempotent; replayed on HelloMsg.
+        Normally the mask is AP-authoritative: every gated power-up whose
+        AP item hasn't been received is denied (the item stays in the
+        level when touched, exactly like items during a drill-dig).  This
+        command sets a manual OVERRIDE that wins over the AP-derived mask
+        until cleared (mirror of `/badge_probe`); the 2 s tick keeps
+        re-asserting whichever is active.
 
         Usage:
           ``/deny_powerups``           -> deny all 4 (fire/elephant/drill/bubble)
-          ``/deny_powerups 0``         -> restore vanilla pickups
+          ``/deny_powerups 0``         -> override: nothing denied
           ``/deny_powerups fire,drill``-> deny a named subset
           ``/deny_powerups 0x40024``   -> raw mask (bit table in wire.py)
+          ``/deny_powerups ap``        -> clear the override (AP-authoritative)
         """
         from . import wire as _wire
         names = {
@@ -487,6 +490,12 @@ class SMBWCommandProcessor(ClientCommandProcessor):
         if lan is None:
             self.output("ERROR: lan_server not wired")
             return True
+        if spec.strip().lower() in ("ap", "auto", "clear"):
+            self.ctx.set_itemget_deny_override(None)
+            self.output(
+                "-> deny override cleared (AP-authoritative mask "
+                f"0x{self.ctx._recompute_itemget_deny_mask():x})")
+            return True
         if not spec:
             mask = _wire.SetItemGetDenyMaskMsg.AP_POWER_UPS_MASK
         else:
@@ -499,17 +508,19 @@ class SMBWCommandProcessor(ClientCommandProcessor):
                     if part not in names:
                         self.output(
                             f"ERROR: unknown item {part!r} "
-                            f"(known: {', '.join(sorted(names))})")
+                            f"(known: {', '.join(sorted(names))} -- or 'ap' "
+                            f"to clear the override)")
                         return True
                     mask |= 1 << names[part]
             if not (0 <= mask < (1 << 32)):
                 self.output(f"ERROR: mask 0x{mask:x} out of range [0, 2**32)")
                 return True
-        lan.send_set_itemget_deny(mask)
+        self.ctx.set_itemget_deny_override(mask)
         denied = [n for n, b in sorted(names.items()) if mask >> b & 1]
         self.output(
-            f"-> set_itemget_deny mask=0x{mask:x}"
-            f" ({'vanilla pickups' if mask == 0 else 'denied: ' + ', '.join(denied)})")
+            f"-> set_itemget_deny override mask=0x{mask:x}"
+            f" ({'nothing denied' if mask == 0 else 'denied: ' + ', '.join(denied)})"
+            f" -- /deny_powerups ap to restore AP-authoritative")
         return True
 
     def _cmd_grant_hash(self, hash_spec: str = "", value_spec: str = "") -> bool:

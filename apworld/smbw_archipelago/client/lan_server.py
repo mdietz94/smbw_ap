@@ -207,6 +207,12 @@ GrantMsg = (
 )
 
 
+# Power-up pickup gating (2026-06-10): returns the ItemGet deny mask to
+# assert on the Switch (0 = vanilla pickups).  AP-authoritative analog of
+# :data:`BadgeMaskProvider` -- replayed on HelloMsg and the periodic tick,
+# and pushed by SMBWContext on Connected + every ReceivedItems.
+ItemGetDenyProvider = Callable[[], int]
+
 # Open-world mode (2026-06) providers, analogs of :data:`BadgeMaskProvider`.
 # ``RoutableWorldsProvider`` returns the AP-authoritative routable-world
 # mask (see :class:`wire.SetRoutableWorldsAbsoluteMsg`); 0 means open-world
@@ -253,6 +259,7 @@ class LanServer:
         routable_worlds_provider: RoutableWorldsProvider | None = None,
         open_world_royal_seed_provider: OpenWorldRoyalSeedProvider | None = None,
         world_unlock_hashes_provider: WorldUnlockHashesProvider | None = None,
+        itemget_deny_provider: ItemGetDenyProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
@@ -265,6 +272,7 @@ class LanServer:
         self._routable_worlds_provider = routable_worlds_provider
         self._open_world_royal_seed_provider = open_world_royal_seed_provider
         self._world_unlock_hashes_provider = world_unlock_hashes_provider
+        self._itemget_deny_provider = itemget_deny_provider
 
         self._server: asyncio.base_events.Server | None = None
 
@@ -1112,12 +1120,23 @@ class LanServer:
         self.send_set_royal_seeds_absolute(int(mask))
 
     def _push_itemget_deny_now(self) -> None:
-        """Replay the last power-up pickup deny mask (HelloMsg handshake).
-        No-op while the mask is 0 -- vanilla pickups need no message
-        because a fresh Switch boot starts with an all-zero deny mask."""
-        if self._itemget_deny_mask == 0:
+        """Push the AP-authoritative power-up deny mask (HelloMsg replay +
+        periodic tick).  Pulls from the provider when wired (the
+        SMBWContext recompute, which folds in the `/deny_powerups`
+        override); otherwise replays the last explicitly sent mask.
+        No-op while the mask is 0 AND nothing non-zero was ever sent --
+        a fresh Switch boot already starts with an all-zero deny mask."""
+        if self._itemget_deny_provider is not None:
+            try:
+                mask = int(self._itemget_deny_provider())
+            except Exception:
+                log.exception("itemget_deny_provider raised; skipping sync")
+                return
+        else:
+            mask = self._itemget_deny_mask
+        if mask == 0 and self._itemget_deny_mask == 0:
             return
-        self.send_set_itemget_deny(self._itemget_deny_mask)
+        self.send_set_itemget_deny(mask)
 
     async def _idempotent_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
@@ -1142,6 +1161,7 @@ class LanServer:
                 self._push_wonder_seed_bits_now()
                 self._push_routable_worlds_now()
                 self._push_open_world_royal_seeds_now()
+                self._push_itemget_deny_now()
         except asyncio.CancelledError:
             raise
         except Exception:
