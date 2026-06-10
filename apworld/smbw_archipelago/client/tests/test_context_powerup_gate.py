@@ -37,7 +37,6 @@ class TestContextPowerupGate(unittest.IsolatedAsyncioTestCase):
     ELEPHANT_ITEM_ID = 301
     DRILL_ITEM_ID = 302
     BUBBLE_ITEM_ID = 303
-    MUSHROOM_ITEM_ID = 304
     OTHER_ITEM_ID = 310
 
     async def asyncSetUp(self) -> None:  # type: ignore[override]
@@ -68,7 +67,6 @@ class TestContextPowerupGate(unittest.IsolatedAsyncioTestCase):
             self.ELEPHANT_ITEM_ID: "Elephant Fruit",
             self.DRILL_ITEM_ID: "Drill Mushroom",
             self.BUBBLE_ITEM_ID: "Bubble Flower",
-            self.MUSHROOM_ITEM_ID: "Super Mushroom",
             self.OTHER_ITEM_ID: "Standee",
         }.get(i, f"?{i}")
 
@@ -107,9 +105,15 @@ class TestContextPowerupGate(unittest.IsolatedAsyncioTestCase):
     def test_all_items_means_vanilla(self) -> None:
         self.ctx.powerup_gating = True
         self._recv(self.FIRE_ITEM_ID, self.ELEPHANT_ITEM_ID,
-                   self.DRILL_ITEM_ID, self.BUBBLE_ITEM_ID,
-                   self.MUSHROOM_ITEM_ID)
+                   self.DRILL_ITEM_ID, self.BUBBLE_ITEM_ID)
         self.assertEqual(self.ctx._recompute_itemget_deny_mask(), 0)
+
+    def test_super_mushroom_not_gated(self) -> None:
+        # 2026-06-10 decision: regular Super Mushrooms stay vanilla
+        # pickups -- bit 1 (Kinoko) is never in the AP-derived mask.
+        self.ctx.powerup_gating = True
+        self.assertFalse(self.powerup_table.GATED_MASK & (1 << 1))
+        self.assertNotIn("Super Mushroom", self.powerup_table.DENY_BIT_FOR_ITEM)
 
     def test_non_powerup_items_ignored(self) -> None:
         self.ctx.powerup_gating = True

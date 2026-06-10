@@ -489,14 +489,14 @@ follow-up PR removes it entirely.
 - **M3.2 badge follow-ups** — UI-slot mask hash `0x6d1b5c25` write may be
   needed for newly-granted badges to appear in the equip UI.
 - ~~**M3.1 power-up shuffling**~~ — ✅ **SHIPPED 2026-06-10** via the
-  *negation* model: Power-Ups (plus a new Super Mushroom item) are pool
-  items again, and receiving the AP item unlocks the ability to *collect*
-  that power-up in-level — the Switch's ItemGet deny-mask hook (NSO
-  `+0x3c4050`, the engine's own DrillDig pickup-permission mechanism)
-  blocks pickups of unreceived types.  No grant write needed.  See
-  milestones.md "M3.1" + the smbw-reverse-engineering map §14.  Old
-  seeds (precollect-era) stay vanilla via the `powerup_gating`
-  slot_data marker.
+  *negation* model: the 4 Power-Ups are pool items again, and receiving
+  the AP item unlocks the ability to *collect* that power-up in-level —
+  the Switch's ItemGet deny-mask hook (NSO `+0x3c4050`, the engine's own
+  DrillDig pickup-permission mechanism) blocks pickups of unreceived
+  types.  No grant write needed.  Regular Super Mushrooms stay vanilla
+  by design.  See milestones.md "M3.1" + the smbw-reverse-engineering
+  map §14.  Old seeds (precollect-era) stay vanilla via the
+  `powerup_gating` slot_data marker.
 - ~~**M3.4 character roster unlock**~~ — **deferred to M7**
   (2026-05-25).  AP server precollects all 12 Character items via the
   same `starting_items` block; full roster unlocked from the start.

@@ -18,7 +18,6 @@ from __future__ import annotations
 
 # AP item name -> deny-mask bit position.
 DENY_BIT_FOR_ITEM: dict[str, int] = {
-    "Super Mushroom": 1,    # Kinoko
     "Fire Flower": 2,       # FireFlower
     "Elephant Fruit": 5,    # ElephantSuit
     "Drill Mushroom": 12,   # DrillSuit
@@ -26,7 +25,10 @@ DENY_BIT_FOR_ITEM: dict[str, int] = {
 }
 
 # Every bit the AP integration gates.  Pickups for types outside this mask
-# (stars, 1-UPs, keys, Wonder items, coins) are never denied.
+# (regular Super Mushrooms, stars, 1-UPs, keys, Wonder items, coins) are
+# never denied -- the Super Mushroom stays a vanilla pickup by design
+# (2026-06-10 decision; bit 1 / Kinoko remains available to the
+# /deny_powerups override for experiments).
 GATED_MASK: int = 0
 for _bit in DENY_BIT_FOR_ITEM.values():
     GATED_MASK |= 1 << _bit
