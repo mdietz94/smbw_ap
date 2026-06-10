@@ -556,6 +556,50 @@ class SetItemGetDenyMaskMsg:
 
 
 @dataclass(frozen=True)
+class SetBadgeShopStateMsg:
+    """Bridge -> Switch.  AP-authoritative Poplin badge-shop ownership.
+
+    Two badge-internal-id-indexed masks (bit == internal_id == the index
+    into the owned bitfield):
+
+      * ``managed`` -- badges whose shop display state AP owns.  Bits NOT
+        in this mask keep the vanilla (in-game-bit-driven) shop behavior.
+      * ``sold``    -- of the managed badges, the ones already obtained
+        (AP location checked or check-in-flight) -> show SOLD OUT.  A
+        managed badge not in ``sold`` shows purchasable regardless of the
+        in-game owned/purchased bits, so an AP-granted-but-unbought badge
+        can still be bought to complete its shop check.
+
+    Idempotent absolute-overwrite; safe to replay on HelloMsg / tick.
+    Switch-side: applied directly on the rx thread via
+    ``probe::setBadgeShopState`` (consumed by the computeItemStates
+    trampoline).  ``managed == 0`` restores vanilla shop behavior.
+    """
+
+    T = "set_badge_shop_state"
+
+    managed: int = 0
+    sold: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "managed": self.managed, "sold": self.sold}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetBadgeShopStateMsg:
+        managed = d.get("managed")
+        sold = d.get("sold")
+        for label, raw in (("managed", managed), ("sold", sold)):
+            if not isinstance(raw, int) or isinstance(raw, bool):
+                raise ProtocolError(
+                    f"set_badge_shop_state.{label} must be int, got {raw!r}")
+            if not (0 <= raw < (1 << 64)):
+                raise ProtocolError(
+                    f"set_badge_shop_state.{label} out of range "
+                    f"[0, 2**64): {raw}")
+        return cls(managed=managed, sold=sold)
+
+
+@dataclass(frozen=True)
 class SetWonderSeedCountsMsg:
     """Bridge -> Switch.  AP-authoritative Wonder Seed gate override.
 
@@ -1043,6 +1087,7 @@ WireMsg = (
     | SetRoutableWorldsAbsoluteMsg
     | ApplyWorldUnlockMsg
     | SetItemGetDenyMaskMsg
+    | SetBadgeShopStateMsg
     | GrantHashKeyedMsg
     | IncrementHashKeyedMsg
     | SetWonderSeedCountsMsg
@@ -1070,6 +1115,7 @@ _FROM_WIRE: dict[str, Any] = {
     SetRoutableWorldsAbsoluteMsg.T: SetRoutableWorldsAbsoluteMsg.from_wire,
     ApplyWorldUnlockMsg.T: ApplyWorldUnlockMsg.from_wire,
     SetItemGetDenyMaskMsg.T: SetItemGetDenyMaskMsg.from_wire,
+    SetBadgeShopStateMsg.T: SetBadgeShopStateMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,
     SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,

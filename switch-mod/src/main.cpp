@@ -35,6 +35,7 @@
 #include "ap/ApClient.hpp"
 #include "ap/ApFrameBridge.hpp"
 #include "ap/ApProtocol.hpp"
+#include "probe/BadgeShop.hpp"
 #include "probe/DeathLink.hpp"
 #include "probe/Gates.hpp"
 #include "probe/Gmd.hpp"
@@ -1193,6 +1194,54 @@ HkTrampoline<void, void*, void*> itemGetMaskBuildHook = hk::hook::trampoline(
         probe::applyItemGetDenyMask(component);
     });
 
+// BadgeShopComputeItemStates @ NSO +0x1c3f6a4
+// (UIBadgeShopScreen_computeItemStates).  Rebuilds every shop row's
+// display-state enum (item+0x20) from the badge owned/purchased GameData
+// bits.  After orig() we override the AP-managed badge rows so the shop
+// reflects AP's view of ownership rather than the in-game bits -- see
+// probe/BadgeShop.hpp.  Inert until the bridge sets a non-zero managed
+// mask.  PROLOGUE SAFETY: first 5 instrs sub sp / stp x29,x30 / stp x28,x27
+// / stp x26,x25 / stp x24,x23 -- no PC-relative (first adrp is instr ~25).
+HkTrampoline<void, void*> badgeShopComputeStatesHook = hk::hook::trampoline(
+    [](void* screen) -> void {
+        badgeShopComputeStatesHook.orig(screen);
+        probe::applyBadgeShopItemStates(screen);
+    });
+
+// BadgeShopPurchaseCommit @ NSO +0x1c4072c (FUN_7101c4072c, the
+// UIBadgeShopScreen "cPurchaseConfirmation" state execute).  On a confirmed
+// BADGE buy it grants the badge exactly once, gated behind an affordability
+// check, and sets a write-once done byte at screen+0x6f8.  We detect that
+// single 0->1 edge across orig() -- with the dispatch kind at screen+0x6a8
+// == 0 (badge case) -- and emit a BadgeAcquired so the bridge fires the
+// shop check even when AP had already set the owned bit (the case the
+// bitfield-diff path in setBadgeBitfieldAbsolute misses).  The just-bought
+// badge internal_id stays live at screen+0x6ac after the grant.  PROLOGUE
+// SAFETY: first 5 instrs stp x29,x30,[sp,#-0x50]! / str x25 / stp x24,x23 /
+// stp x22,x21 / stp x20,x19 -- no PC-relative (first adrp deep in body).
+HkTrampoline<void, void*> badgeShopPurchaseCommitHook = hk::hook::trampoline(
+    [](void* screen) -> void {
+        std::int32_t kind = 0;
+        std::uint8_t done_before = 1;
+        if (screen != nullptr) {
+            auto* base = reinterpret_cast<unsigned char*>(screen);
+            kind = *reinterpret_cast<std::int32_t*>(base + 0x6a8);
+            done_before = *reinterpret_cast<std::uint8_t*>(base + 0x6f8);
+        }
+        badgeShopPurchaseCommitHook.orig(screen);
+        if (screen == nullptr) return;
+        auto* base = reinterpret_cast<unsigned char*>(screen);
+        const std::uint8_t done_after =
+            *reinterpret_cast<std::uint8_t*>(base + 0x6f8);
+        // kind 0 == badge buy; done byte transitions 0->1 only inside the
+        // afford-checked, id-valid success block -- a true per-purchase edge.
+        if (kind == 0 && done_before == 0 && done_after != 0) {
+            const std::int32_t id =
+                *reinterpret_cast<std::int32_t*>(base + 0x6ac);
+            probe::onBadgeShopPurchase(id);
+        }
+    });
+
 void installHook(const char* name, ::ptr offset, hk::Result rc) {
     if (rc.failed()) {
         SMBWAP_LOG_ERROR("install %s @ +0x%lx FAILED rc=0x%x",
@@ -1304,6 +1353,13 @@ extern "C" void hkMain() {
     //   probe/ItemGetGate.hpp for the RE notes + per-item bit table.
     installHook("ItemGetMaskBuild",    0x003c4050,
                 itemGetMaskBuildHook.installAtMainOffset(0x003c4050));
+    // BADGE SHOP AP-AUTHORITATIVE OWNERSHIP (2026-06-10).  Both inert until
+    // the bridge pushes a non-zero managed mask (SetBadgeShopState).  See
+    // probe/BadgeShop.hpp for the RE + the proven UIBadgeShopScreen offsets.
+    installHook("BadgeShopComputeStates", 0x01c3f6a4,
+                badgeShopComputeStatesHook.installAtMainOffset(0x01c3f6a4));
+    installHook("BadgeShopPurchaseCommit", 0x01c4072c,
+                badgeShopPurchaseCommitHook.installAtMainOffset(0x01c4072c));
     // DEBUG OVERLAY: NVN present-hook chain that drives the ImGui overlay.
     // No-op unless built with SMBWAP_HAS_DEBUG_RENDERER (see CMakeLists.txt
     // + docs/handoff-imgui-overlay.md).

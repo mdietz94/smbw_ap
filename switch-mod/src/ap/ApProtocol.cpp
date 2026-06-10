@@ -544,6 +544,42 @@ bool parseSetItemGetDenyMask(util::json::Reader& r,
     return saw_mask;
 }
 
+bool parseSetBadgeShopState(util::json::Reader& r,
+                            WireSetBadgeShopState& out) {
+    // Cursor positioned just after "t":"set_badge_shop_state".  Two
+    // required u64 fields: "managed" and "sold" (bit == badge internal_id).
+    // Badge ids are < 64 so the meaningful bits fit comfortably in the
+    // positive int64 range the JSON reader yields.
+    std::string_view key;
+    bool saw_managed = false;
+    bool saw_sold = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "managed")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0) return false;
+            out.managed = static_cast<std::uint64_t>(v);
+            saw_managed = true;
+        } else if (sv_eq(key, "sold")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0) return false;
+            out.sold = static_cast<std::uint64_t>(v);
+            saw_sold = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_managed && saw_sold;
+}
+
 bool parseSetWonderSeedCounts(util::json::Reader& r,
                               WireSetWonderSeedCounts& out) {
     // Cursor positioned just after "t":"set_wonder_seed_counts".  One
@@ -772,6 +808,10 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::SetItemGetDenyMask;
         out.set_itemget_deny_mask = WireSetItemGetDenyMask{};
         if (!parseSetItemGetDenyMask(r, out.set_itemget_deny_mask)) return false;
+    } else if (std::strcmp(t_val, "set_badge_shop_state") == 0) {
+        out.kind = InboundKind::SetBadgeShopState;
+        out.set_badge_shop_state = WireSetBadgeShopState{};
+        if (!parseSetBadgeShopState(r, out.set_badge_shop_state)) return false;
     } else if (std::strcmp(t_val, "kill") == 0) {
         out.kind = InboundKind::Kill;
         out.kill = WireKill{};

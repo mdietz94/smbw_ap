@@ -554,15 +554,31 @@ def is_checkable_badge(item_name: str) -> bool:
     return item_name in _SHOP_BADGE_ITEM_NAMES
 
 
+# Shop-badge internal_id -> "<Badge> Obtained" AP location name.  Built
+# alongside ``_TABLE`` so the badge-shop AP-ownership path (the Switch
+# computeItemStates override) and the inbound/outbound check paths share one
+# source of truth for "which badges are shop checks".
+_SHOP_BADGE_ID_TO_LOCATION: Final[dict[int, str]] = {}
+
+
 def _populate_badge_entries() -> None:
     for name, bit, _confidence in _BADGES:
         if name not in _SHOP_BADGE_ITEM_NAMES:
             continue  # course-granted badge: not an AP check
         loc = _BADGE_LOCATION_NAME_OVERRIDES.get(name, f"{name} Obtained")
         _TABLE[(CheckKind.BADGE_ACQUIRED, bit)] = loc
+        _SHOP_BADGE_ID_TO_LOCATION[bit] = loc
 
 
 _populate_badge_entries()
+
+
+def shop_badge_location_names() -> dict[int, str]:
+    """badge internal_id -> "<Badge> Obtained" AP location name, for every
+    badge sold at a Poplin shop (the AP shop checks).  The internal_id is
+    the bit index the Switch badge-shop override (SetBadgeShopState) keys
+    on.  Returns a copy so callers can't mutate the table."""
+    return dict(_SHOP_BADGE_ID_TO_LOCATION)
 
 
 # (world_no, npc_id, item_value) -> AP location name for SHOP_SEED checks.

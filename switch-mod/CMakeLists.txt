@@ -35,6 +35,7 @@ set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/probe/ContainerA.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/ContainerB.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/ContainerC.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/BadgeShop.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/DeathLink.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/Diagnostics.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/Gates.cpp

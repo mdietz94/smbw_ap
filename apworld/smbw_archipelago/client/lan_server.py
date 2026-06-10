@@ -213,6 +213,15 @@ GrantMsg = (
 # and pushed by SMBWContext on Connected + every ReceivedItems.
 ItemGetDenyProvider = Callable[[], int]
 
+# AP-authoritative badge-shop ownership (2026-06).  Returns the
+# ``(managed_mask, sold_mask)`` pair (bit == badge internal_id) the Switch
+# applies to the Poplin badge-shop display (see
+# :class:`wire.SetBadgeShopStateMsg`).  ``managed_mask == 0`` means the
+# feature is inert (vanilla shop).  Replayed on HelloMsg + the periodic
+# tick so the shop state survives Switch reboots / save reloads and tracks
+# newly-checked shop locations.
+BadgeShopStateProvider = Callable[[], "tuple[int, int]"]
+
 # Open-world mode (2026-06) providers, analogs of :data:`BadgeMaskProvider`.
 # ``RoutableWorldsProvider`` returns the AP-authoritative routable-world
 # mask (see :class:`wire.SetRoutableWorldsAbsoluteMsg`); 0 means open-world
@@ -260,6 +269,7 @@ class LanServer:
         open_world_royal_seed_provider: OpenWorldRoyalSeedProvider | None = None,
         world_unlock_hashes_provider: WorldUnlockHashesProvider | None = None,
         itemget_deny_provider: ItemGetDenyProvider | None = None,
+        badge_shop_state_provider: BadgeShopStateProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
@@ -273,6 +283,7 @@ class LanServer:
         self._open_world_royal_seed_provider = open_world_royal_seed_provider
         self._world_unlock_hashes_provider = world_unlock_hashes_provider
         self._itemget_deny_provider = itemget_deny_provider
+        self._badge_shop_state_provider = badge_shop_state_provider
 
         self._server: asyncio.base_events.Server | None = None
 
@@ -290,6 +301,11 @@ class LanServer:
         # :meth:`send_set_itemget_deny` (0 = vanilla pickups).  Kept so a
         # HelloMsg (Switch reboot / reconnect) replays the gate.
         self._itemget_deny_mask: int = 0
+
+        # Last badge-shop ownership masks pushed via
+        # :meth:`send_set_badge_shop_state` ((0, 0) = vanilla shop).  Kept
+        # so a HelloMsg replays the shop state on Switch reboot / reconnect.
+        self._badge_shop_state: tuple[int, int] = (0, 0)
 
         # Per-hash coalesce buffer for ``send_increment_hash_keyed``;
         # see :class:`_DrainIncrementsSentinel` for the why.  Lives on
@@ -462,6 +478,34 @@ class LanServer:
             log.error(
                 "send_set_itemget_deny(mask=0x%x): outbound queue full; "
                 "dropping", mask)
+
+    def send_set_badge_shop_state(self, managed: int, sold: int) -> None:
+        """Enqueue a SetBadgeShopState (AP-authoritative Poplin badge-shop
+        ownership) to the active Switch client.  ``managed`` and ``sold``
+        are badge-internal-id-indexed masks (see
+        :class:`wire.SetBadgeShopStateMsg`).  ``managed == 0`` restores
+        vanilla shop behavior.
+
+        Idempotent absolute-overwrite; replayed on HelloMsg via
+        :meth:`_push_badge_shop_state_now` so a Switch reboot mid-session
+        re-applies the shop state."""
+        msg = wire.SetBadgeShopStateMsg(managed=managed, sold=sold)
+        self._badge_shop_state = (managed, sold)
+        if self._send_queue is None:
+            log.warning(
+                "send_set_badge_shop_state(managed=0x%x sold=0x%x): no "
+                "Switch client connected; dropping (will replay on "
+                "HelloMsg)", managed, sold)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug(
+                "send_set_badge_shop_state: enqueued managed=0x%x sold=0x%x",
+                managed, sold)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_badge_shop_state(managed=0x%x sold=0x%x): outbound "
+                "queue full; dropping", managed, sold)
 
     def send_apply_world_unlock(
         self,
@@ -827,6 +871,11 @@ class LanServer:
             # mask so a Switch reboot mid-session keeps ungranted
             # power-ups untouchable.  No-op while the mask is 0.
             self._push_itemget_deny_now()
+            # Badge-shop AP ownership (2026-06-10): re-assert which shop
+            # badges are sold-out vs purchasable so the shop reflects AP's
+            # view after a Switch reboot / save reload.  No-op while no
+            # shop badge is managed.
+            self._push_badge_shop_state_now()
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -1138,6 +1187,27 @@ class LanServer:
             return
         self.send_set_itemget_deny(mask)
 
+    def _push_badge_shop_state_now(self) -> None:
+        """Push the AP-authoritative badge-shop ownership masks (HelloMsg
+        replay + periodic tick).  Pulls from the provider when wired (the
+        SMBWContext recompute, which folds in newly-checked shop locations);
+        otherwise replays the last explicitly sent pair.  No-op while the
+        managed mask is 0 AND nothing non-zero was ever sent -- a fresh
+        Switch boot already starts with vanilla shop behavior."""
+        if self._badge_shop_state_provider is not None:
+            try:
+                managed, sold = self._badge_shop_state_provider()
+                managed, sold = int(managed), int(sold)
+            except Exception:
+                log.exception(
+                    "badge_shop_state_provider raised; skipping sync")
+                return
+        else:
+            managed, sold = self._badge_shop_state
+        if managed == 0 and self._badge_shop_state == (0, 0):
+            return
+        self.send_set_badge_shop_state(managed, sold)
+
     async def _idempotent_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
         current AP-known badge mask, Royal Seed mask, AND per-world
@@ -1162,6 +1232,7 @@ class LanServer:
                 self._push_routable_worlds_now()
                 self._push_open_world_royal_seeds_now()
                 self._push_itemget_deny_now()
+                self._push_badge_shop_state_now()
         except asyncio.CancelledError:
             raise
         except Exception:
