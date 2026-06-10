@@ -43,6 +43,7 @@ from ..royal_seed_table import (
 )
 from ..world_unlock_table import (
     WORLD_UNLOCK_BOOL_HASHES,
+    WORLD_UNLOCK_DROPPED_HASHES,
     WORLD_UNLOCK_HASHES,
     WORLD_UNLOCK_INT_HASHES,
 )
@@ -585,9 +586,20 @@ class TestWorldUnlockTable(unittest.TestCase):
     }
 
     def test_category_split_shape(self):
-        self.assertEqual(len(WORLD_UNLOCK_BOOL_HASHES), 84)
+        # Curated allowlist (2026-06-09): the per-world W_* progress flags
+        # and completion records from the fresh->100% diff are NOT sent --
+        # they revealed closed worlds' courses (the "W6 levels unlocked"
+        # bug) and marked live events/rewards as already done.  See
+        # WORLD_UNLOCK_DROPPED_HASHES in world_unlock_table.py.
+        self.assertEqual(len(WORLD_UNLOCK_BOOL_HASHES), 14)
         self.assertEqual(
             WORLD_UNLOCK_INT_HASHES, (0x5AC1E406, 0x20FCED8B))
+
+    def test_dropped_list_disjoint_from_sent(self):
+        self.assertEqual(len(WORLD_UNLOCK_DROPPED_HASHES), 70)
+        self.assertEqual(
+            set(WORLD_UNLOCK_DROPPED_HASHES) & set(WORLD_UNLOCK_HASHES),
+            set())
 
     def test_lists_disjoint_and_combined(self):
         bool_set = set(WORLD_UNLOCK_BOOL_HASHES)
