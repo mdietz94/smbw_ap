@@ -193,6 +193,16 @@ class SMBWContext(CommonContext):
         # the course the player is currently inside (None when idle); it
         # is replaced/cancelled on every new gated entry and on shutdown.
         self.entry_gating_enabled: bool = True
+        # Badge-specific sub-toggle.  Defaults OFF: badge-level entry
+        # gate-kills are disabled everywhere unless explicitly turned on.
+        # When False, BADGE-kind entry gates never arm (and any in-flight
+        # badge kill self-stops within one countdown tick via
+        # ``_gate_check_stop``) -- but the final-Bowser ROYAL_SEEDS gate is
+        # unaffected.  Master ``entry_gating_enabled`` still wins (off there
+        # disables everything).  Set from slot_data
+        # ``badge_level_entry_gating`` (also defaults False) and
+        # live-toggleable via the ``/badge_gate_kills on`` command.
+        self.badge_entry_gating_enabled: bool = False
         self._gate_kill_task: asyncio.Task[None] | None = None
 
         # M2.3 known-invalid bits the user has confirmed (via
@@ -292,6 +302,16 @@ class SMBWContext(CommonContext):
                     "level_entry_gating: %s (from slot_data)",
                     "ENABLED" if eg else "disabled")
             self.entry_gating_enabled = eg
+            # Badge-specific sub-toggle (default OFF; badge gate-kills are
+            # disabled everywhere unless the slot opts in or the player runs
+            # ``/badge_gate_kills on``).  The Royal-Seed/Bowser gate is
+            # governed only by ``level_entry_gating`` above and is unaffected.
+            beg = bool(slot_data.get("badge_level_entry_gating", False))
+            if beg != self.badge_entry_gating_enabled:
+                log.info(
+                    "badge_level_entry_gating: %s (from slot_data)",
+                    "ENABLED" if beg else "disabled")
+            self.badge_entry_gating_enabled = beg
 
             # Open-world mode.  The apworld injects ``open_world_active``
             # (the random active world set) and ``palaces_required`` into
@@ -747,6 +767,13 @@ class SMBWContext(CommonContext):
         if not self.entry_gating_enabled:
             return
 
+        if ev.gate_kind == GateKind.BADGE and not self.badge_entry_gating_enabled:
+            log.info(
+                "entered badge-gated stage_key=0x%08x (req=%d) but badge "
+                "entry-gating is disabled -- not arming a kill",
+                ev.stage_key & 0xFFFFFFFF, ev.requirement)
+            return
+
         # Open-world: don't bounce the player out of a badge course that
         # isn't part of this seed's logic.  The worlds you aren't playing
         # (and Petal Isles / the Special world) still have their course
@@ -895,6 +922,8 @@ class SMBWContext(CommonContext):
         per-second overlay countdown."""
         if not self.entry_gating_enabled:
             return "gating disabled"
+        if ev.gate_kind == GateKind.BADGE and not self.badge_entry_gating_enabled:
+            return "badge gating disabled"
         if not self.bridge_state.is_in_course():
             return "player left the course"
         cur = self.bridge_state.current_course

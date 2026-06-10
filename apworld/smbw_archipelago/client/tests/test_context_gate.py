@@ -136,6 +136,7 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
     # ---- handle_gate_entered: arming decisions ----------------------
 
     async def test_satisfied_requirement_does_not_arm(self):
+        self.ctx.badge_entry_gating_enabled = True  # default OFF; opt in
         self.ctx._recompute_badge_mask.return_value = (1 << self.BADGE_ID)
         self._enter(self.BADGE_STAGE)
         await self.ctx.handle_gate_entered(self._badge_gate())
@@ -146,6 +147,8 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         # Anti-cheat: a player who isn't connected to AP must still be
         # gated -- otherwise they could sequence-break offline.  With no
         # recorded item, the requirement is unmet, so the loop arms.
+        # (Badge gating defaults OFF, so opt in for this badge-gate test.)
+        self.ctx.badge_entry_gating_enabled = True
         self.ctx.slot = None  # not connected
         self._enter(self.BADGE_STAGE)
         with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
@@ -164,6 +167,7 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         self.ctx.lan_server.send_kill.assert_not_called()
 
     async def test_unmet_requirement_arms_task(self):
+        self.ctx.badge_entry_gating_enabled = True  # default OFF; opt in
         self._enter(self.BADGE_STAGE)
         with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 100.0):
             # Huge delay -> task is created but no kill fires during the test.
@@ -175,6 +179,7 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
     # ---- _gate_kill_loop: kill + re-arm + stop conditions -----------
 
     async def test_kill_fires_and_rearms_then_stops_on_exit(self):
+        self.ctx.badge_entry_gating_enabled = True  # default OFF; opt in
         self._enter(self.BADGE_STAGE)
         with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
             await self.ctx.handle_gate_entered(self._badge_gate())
@@ -197,6 +202,7 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(self.ctx._gate_kill_task)
 
     async def test_loop_stops_when_item_acquired_midway(self):
+        self.ctx.badge_entry_gating_enabled = True  # default OFF; opt in
         self._enter(self.BADGE_STAGE)
         with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
             await self.ctx.handle_gate_entered(self._badge_gate())
@@ -212,6 +218,7 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
                 self.ctx.lan_server.send_kill.call_count, settled)
 
     async def test_loop_stops_when_moved_to_other_course(self):
+        self.ctx.badge_entry_gating_enabled = True  # default OFF; opt in
         self._enter(self.BADGE_STAGE)
         with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
             await self.ctx.handle_gate_entered(self._badge_gate())
@@ -229,6 +236,7 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
                 self.ctx.lan_server.send_kill.call_count, settled)
 
     async def test_new_gate_entry_supersedes_old_task(self):
+        self.ctx.badge_entry_gating_enabled = True  # default OFF; opt in
         self._enter(self.BADGE_STAGE)
         with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 100.0):
             await self.ctx.handle_gate_entered(self._badge_gate())
@@ -310,6 +318,7 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
             self.ctx.lan_server.send_kill.assert_not_called()
 
     async def test_open_world_active_world_badge_still_gated(self):
+        self.ctx.badge_entry_gating_enabled = True  # default OFF; opt in
         self.ctx.open_world = True
         self.ctx.open_world_active = [3]  # AP world 3 (world_no 4) active
         self._enter(self.BADGE_STAGE)
@@ -351,6 +360,90 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         self.ctx.entry_gating_enabled = False
         await self.ctx._handle_ap_package("Connected", {"slot_data": {}})
         self.assertTrue(self.ctx.entry_gating_enabled)
+
+    # ---- Badge-specific gate sub-toggle -----------------------------
+
+    async def test_badge_gating_disabled_does_not_arm(self):
+        # Master gating ON, but the badge sub-toggle OFF -> a badge gate
+        # never arms a kill even when the badge is missing.
+        self.assertTrue(self.ctx.entry_gating_enabled)
+        self.ctx.badge_entry_gating_enabled = False
+        self._enter(self.BADGE_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._badge_gate())
+            self.assertIsNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.ctx.lan_server.send_kill.assert_not_called()
+
+    async def test_badge_gating_disabled_bowser_still_gates(self):
+        # Disabling badge gates must NOT disable the Royal-Seed/Bowser gate.
+        self.ctx.badge_entry_gating_enabled = False
+        self.ctx._recompute_royal_seed_mask.return_value = 0b011111  # only 5
+        self._enter(self.BOWSER_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._bowser_gate())
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(
+                self.ctx.lan_server.send_kill.call_count, 1)
+            self.state.mark_course_exited()
+
+    async def test_badge_gating_disable_stops_inflight_badge_kill(self):
+        # An in-flight badge kill self-stops within one countdown tick once
+        # the sub-toggle flips off (via _gate_check_stop).
+        self.ctx.badge_entry_gating_enabled = True  # default OFF; opt in
+        self._enter(self.BADGE_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._badge_gate())
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(
+                self.ctx.lan_server.send_kill.call_count, 1)
+            self.ctx.badge_entry_gating_enabled = False
+            await asyncio.sleep(0.05)
+            settled = self.ctx.lan_server.send_kill.call_count
+            await asyncio.sleep(0.05)
+            self.assertEqual(
+                self.ctx.lan_server.send_kill.call_count, settled)
+            self.state.mark_course_exited()
+
+    async def test_connected_slot_data_disables_badge_gating_only(self):
+        # Pre-enable (default is OFF) so the slot_data False is what flips it.
+        self.ctx.badge_entry_gating_enabled = True
+        await self.ctx._handle_ap_package(
+            "Connected", {"slot_data": {"badge_level_entry_gating": False}})
+        self.assertFalse(self.ctx.badge_entry_gating_enabled)
+        # Master gating untouched (still defaults ON).
+        self.assertTrue(self.ctx.entry_gating_enabled)
+
+    async def test_connected_slot_data_can_enable_badge_gating(self):
+        # The slot can opt back in even though the default is OFF.
+        self.assertFalse(self.ctx.badge_entry_gating_enabled)
+        await self.ctx._handle_ap_package(
+            "Connected", {"slot_data": {"badge_level_entry_gating": True}})
+        self.assertTrue(self.ctx.badge_entry_gating_enabled)
+
+    async def test_connected_badge_gating_defaults_off(self):
+        # With the key absent, badge gating stays OFF (the new default).
+        self.ctx.badge_entry_gating_enabled = True
+        await self.ctx._handle_ap_package("Connected", {"slot_data": {}})
+        self.assertFalse(self.ctx.badge_entry_gating_enabled)
+
+    async def test_badge_gate_kills_on_re_enables_and_badge_gate_arms(self):
+        # The /badge_gate_kills on command re-enables the default-OFF badge
+        # gate, after which a badge entry without the badge arms a kill.
+        from ..commands import SMBWCommandProcessor
+        self.assertFalse(self.ctx.badge_entry_gating_enabled)
+        proc = SMBWCommandProcessor(self.ctx)
+        proc.output = MagicMock()
+        proc._cmd_badge_gate_kills("on")
+        self.assertTrue(self.ctx.badge_entry_gating_enabled)
+        self._enter(self.BADGE_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._badge_gate())
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(
+                self.ctx.lan_server.send_kill.call_count, 1)
+            self.state.mark_course_exited()
 
 
 if __name__ == "__main__":
