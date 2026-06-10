@@ -39,6 +39,12 @@ hakkun equivalents are below.**
 - The **smbw-save-data** skill owns the GameDataMgr grant API, container layout,
   and hash-key table (the *what to write*). This skill owns the *how to find &
   hook* it.
+- The **smbw-romfs-datamining** skill owns the **offline** path: resolve any named
+  GameData flag → hash + container category straight from the RomFS
+  (`GameDataList.Product.100`), no Ghidra. Reach for it before a Ghidra session
+  when you can name the flag — it's far faster than hunting a runtime-hashed key in
+  the decompiler (the key never appears as a constant; see the ARM64 gotcha below).
+  It cracked the open-world Bowser approach after two wrong Ghidra-only hypotheses.
 
 ## The two hook patterns (hakkun)
 
@@ -157,11 +163,23 @@ them — see `kDeathDiscriminator_Val` in main.cpp.
   — byte-searching for a 32-bit hash constant returns near-zero hits because the
   constant is built via `mov`/`movk` pairs, not stored as a literal.
 
-## Hash function
+## Hash function — Murmur3-32 (seed 0), for BOTH course names and field names
 
-`FUN_71003D4110` is **Murmur3-32 (seed 0)** over 81 hardcoded course-name
-strings (identified by the constant signature `0xcc9e2d51 / 0x1b873593 /
-0xe6546b64 / …`). The hash function for *field* names (flower_coin etc.) is still
-unknown — Murmur3 of the obvious English names doesn't match; likely internal /
-Japanese / precomputed. Not blocking: the verified hashes are tabulated in the
-**smbw-save-data** skill.
+`FUN_71003D4110` is **Murmur3-32 (seed 0)** over the name as UTF-8 bytes (strlen
+length — the NUL is not hashed). Identified by the constant signature
+`0xcc9e2d51 / 0x1b873593 / 0xe6546b64 / 0x85ebca6b / 0xc2b2ae35`.
+
+**CORRECTION (2026-06-09): the *field/flag*-name hash is the SAME murmur3** — the
+long-standing "field-name hash is internal/unknown" note is **resolved**. The trick
+was the **dotted full name**: a GameData Struct member hashes as
+`murmur3("StructName.MemberName")`, not the bare member. Proof:
+`murmur3("IsChangeEnvEnterKoopaCastle") == 0xe02a5e43` (independently recovered from
+a save diff) + all `WorldMapCloudPackunVanishInfo` members verify. ⟹ you can now
+compute any flag's hash offline from its name — see **smbw-romfs-datamining** for
+the workflow + the `GameDataList` schema that lists every flag's hash, category, and
+`SaveFileIndex`.
+
+**ARM64 gotcha (still applies):** at the use site the 32-bit hash is materialized via
+`mov`/`movk` pairs, never stored as a literal — byte-searching for a hash constant
+returns near-zero hits. Walk the `mov`/`movk` pair to reconstruct it, or (better)
+get the value from the name via murmur3.
