@@ -130,6 +130,18 @@ namespace probe {
 // grantBadgeBit primitive (deleted).
 bool setBadgeBitfieldAbsolute(std::uint64_t bits);
 
+// 2026-06-10 -- force-unequip AP-disabled badges.  Companion to
+// setBadgeBitfieldAbsolute: clearing the OWNED bitfield does NOT clear
+// the EQUIPPED field, so a level/shop that grants+auto-equips an
+// AP-disabled badge still shows it equipped/available.  This walks both
+// equipped-badge EnumArrays (EquipBadgeSave.BadgeId 0xcfba9bf8 saved,
+// CoursePlayerEquipBadge.BadgeId 0xf30cb2e2 per-level) and resets any
+// slot referencing a badge NOT in `owned_mask` (bit == internal_id) to
+// the "Invalid" sentinel.  Called on the same triggers as
+// setBadgeBitfieldAbsolute (ReceivedItems / HelloMsg / ~2 s tick).
+// Returns true if at least one equip field was located.
+bool clearEquippedBadgesNotOwned(std::uint64_t owned_mask);
+
 // 2026-05-29 -- AP-authoritative per-course Wonder Seed bitfield sync.
 // Overwrites the entire 128-bit container-C bitfield at hash 0x60458608
 // to the absolute value (bits_lo, bits_hi).  Bit N = Wonder Seed for
