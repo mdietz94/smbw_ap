@@ -41,6 +41,12 @@ from ..royal_seed_table import (
     is_royal_seed_item,
     palace_stage_key_for_item,
 )
+from ..world_unlock_table import (
+    WORLD_UNLOCK_BOOL_HASHES,
+    WORLD_UNLOCK_DROPPED_HASHES,
+    WORLD_UNLOCK_HASHES,
+    WORLD_UNLOCK_INT_HASHES,
+)
 
 
 # tests/ -> client/ -> smbw_archipelago/ ; data lives at smbw_archipelago/data/.
@@ -559,6 +565,62 @@ class TestCoinTable(unittest.TestCase):
         coin_names = {n for n, _, _ in _COIN_ITEMS}
         self.assertEqual(coin_names & badge_names, set())
         self.assertEqual(coin_names & seed_names, set())
+
+
+class TestWorldUnlockTable(unittest.TestCase):
+    """Pins the 2026-06-09 GameDataList category split.
+
+    The two switch-side writers are not interchangeable:
+    grantContainerACounter silently no-ops on Bool-category hashes and
+    grantContainerBBool null-derefs on Int-category ones, so a hash
+    landing in the wrong list is either a dead grant or a crash.  The
+    split was audited against RomFS GameDataList.Product.100; these
+    tests pin the audited shape so an edit can't silently merge them.
+    """
+
+    # The six WorldMapCloudPackunVanishInfo.IsVanish* bools that
+    # probe::applyOpenWorldEntry also force-grants switch-side.
+    IS_VANISH = {
+        0xC687FB5F, 0xCFF5F3D2, 0x048BC39C,
+        0x1677F038, 0x95539EC5, 0x7F6E8A47,
+    }
+
+    def test_category_split_shape(self):
+        # Curated allowlist (2026-06-09): the per-world W_* progress flags
+        # and completion records from the fresh->100% diff are NOT sent --
+        # they revealed closed worlds' courses (the "W6 levels unlocked"
+        # bug) and marked live events/rewards as already done.  See
+        # WORLD_UNLOCK_DROPPED_HASHES in world_unlock_table.py.
+        self.assertEqual(len(WORLD_UNLOCK_BOOL_HASHES), 14)
+        self.assertEqual(
+            WORLD_UNLOCK_INT_HASHES, (0x5AC1E406, 0x20FCED8B))
+
+    def test_dropped_list_disjoint_from_sent(self):
+        self.assertEqual(len(WORLD_UNLOCK_DROPPED_HASHES), 70)
+        self.assertEqual(
+            set(WORLD_UNLOCK_DROPPED_HASHES) & set(WORLD_UNLOCK_HASHES),
+            set())
+
+    def test_lists_disjoint_and_combined(self):
+        bool_set = set(WORLD_UNLOCK_BOOL_HASHES)
+        int_set = set(WORLD_UNLOCK_INT_HASHES)
+        self.assertEqual(len(bool_set), len(WORLD_UNLOCK_BOOL_HASHES))
+        self.assertEqual(bool_set & int_set, set())
+        self.assertEqual(
+            WORLD_UNLOCK_HASHES,
+            WORLD_UNLOCK_INT_HASHES + WORLD_UNLOCK_BOOL_HASHES)
+
+    def test_all_hashes_u32(self):
+        for h in WORLD_UNLOCK_HASHES:
+            self.assertTrue(0 <= h < (1 << 32), f"0x{h:x} not u32")
+
+    def test_is_vanish_bools_present_in_bool_list(self):
+        self.assertLessEqual(self.IS_VANISH, set(WORLD_UNLOCK_BOOL_HASHES))
+
+    def test_no_royal_seed_or_complete_game_hashes(self):
+        # AP owns the Royal Seeds; the game owns COMPLETE_GAME.
+        forbidden = set(ROYAL_SEED_HASHES) | {0x5D3EC9B4}
+        self.assertEqual(set(WORLD_UNLOCK_HASHES) & forbidden, set())
 
 
 if __name__ == "__main__":

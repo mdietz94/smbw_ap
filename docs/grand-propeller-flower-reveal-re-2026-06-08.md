@@ -325,6 +325,133 @@ accumulates per-world), so the per-world bit map must be tabulated (have W2/W3 d
 W4/5/6/Special diffs for full coverage). For now W3→W4/5/6 is wired unconditionally in
 open-world.
 
+## ★ PER-WORLD REVEAL BIT MAP (2026-06-08, W2–W6 captured)
+
+Hash-mapped diffs of each world's wonder-seed reveal cutscene (`"wN-pre cutscene"` →
+`"wN-post cutscene"`), trailing bytes → `(container-C hash : bit)` via the save's
+`(hash, blob-offset)` index. **node bit = `0x35bf61af`** increments per world (the
+GrandPropellerFlowerDemoType enum); **road bits** are per-reveal:
+
+| reveal | node `0x35bf61af` | road bits (hash:bit) |
+|---|---|---|
+| W2 (AfterYama) | bit 1 | `0xbcc1ef0e`:2, `0xbcc1ef0e`:8, `0x09bfe967`:1 |
+| **W3 (AfterWa)** ✅ deployed | bit 2 | `0xbcc1ef0e`:9, `0x57df969b`:1, `0x2309a645`:12 |
+| W4 (AfterSabaku) | bit 3 | `0x9d25ce3b`:1 |
+| W5 (AfterKin) | bit 4 | `0x40c00dd7`:2, `0xf5411212`:3 |
+| W6 (AfterNettai) | bit 5 | `0x52781dfd`:1 |
+| ToCastle (Bowser) | bit 6 | (W6 cutscene "also opens Bowser road" — likely `0x52781dfd`:1 above; bit 6 may be the node only) |
+
+Notes:
+- `0xbcc1ef0e` is a **shared accumulating** world-map-graph bitfield (W2 adds bits 2/8,
+  W3 adds bit 9, the W5 battleship adds bit 6) — must OR per-world, never overwrite.
+- **W4 PI wonder-seed gate** (`"w4-pre/post-castle-gate"`) sets `0x05983371`:4 — that's
+  the gate-cleared flag (separate from the reveal).
+- **Transient pair-region flags** (set by reveal, missed by fresh→100% diff, like W3's
+  `0x20fced8b`): W6 sets `0xa23922fa` + `0xe02a5e43` — these **clear the cloud-piranha
+  barrier around Bowser's Kingdom** (live-diagnosed 2026-06-08: with node+road set but
+  these omitted, the barrier stayed up). Added to `WORLD_UNLOCK_HASHES`. So the cloud
+  piranhas (overworld route barriers) are cleared by the reveal's transient pair flags,
+  while the container-C bits draw the roads.
+- `0x3d17a42a @ save 0x50c8` changes in every diff = savedata-UUID noise.
+
+GENERALIZATION PLAN: a per-world reveal table `{world: (node_bit, [(hash,bit)...])}`; set
+the node+road bits for the worlds open in the seed (or all, for full PI→W4→W5→W6
+reachability). Open design Qs: full-network vs per-open-world; gate ToCastle (bit 6) +
+W6 road behind the palace threshold (currently bit 6 is unconditional).
+
+## ★★ BOWSER CLOUD PIRANHAS — SOLVED via RomFS GameDataList (2026-06-09, supersedes the section below)
+
+Both prior hypotheses (Royal Seeds; EndFirstVisitWorldDemo) were wrong — the user
+correctly flagged that FirstVisitDemo is the *opening* cutscene, while the piranhas
+clear on *post-castle* progression. Ground truth recovered by extracting the RomFS
+(hactool on the base NSP + titlekey from the .tik) and reading the data directly:
+
+- **The six piranhas are six per-world actors**: `Pack/Actor/WObjCommonPackunCloud
+  {Savanna,Yama,Wa,Sabaku,Kin,Nettai}.pack.zs`, gparam = just `{WorldNo: "<world>"}`.
+- Their AI graph (`AI/WObjCommonPackunCloud*.root.ainb`) binds blackboard properties
+  `WorldMapCloudPackunVanishInfo.IsVanish<World>` via `ActorPropertyBinder`, plus
+  `GetEnumFromGameData`/`CompareInt` against `ExecuteGrandPropellerFlowerDemoType`
+  (the transient "which reveal demo is playing now" enum) for the live vanish anim.
+- **`GameData/GameDataList.Product.100.byml.zs`** (BYML v7) is the full GameData
+  schema: every flag's murmur hash, category (Bool/Int/Enum/Struct/...), default,
+  and `SaveFileIndex`. Struct[42] = `WorldMapCloudPackunVanishInfo`, 9 members
+  mapping member-name-hash → full-flag-hash (full names are dotted:
+  `WorldMapCloudPackunVanishInfo.IsVanishWa`).
+- **MurmurHash3 x86_32 seed 0 over the (dotted) name = the save/pair-region hash.**
+  Validated: `IsChangeEnvEnterKoopaCastle` → `0xe02a5e43` (a flag we'd already
+  recovered empirically from the W6-cutscene save diff), and all 9 struct members
+  verify against their full-name hashes.
+
+The six SAVED per-cloud vanish bools (set these → piranhas gone on map load):
+
+| flag (dotted name suffix) | hash | GameDataList |
+|---|---|---|
+| IsVanishSavanna | `0xc687fb5f` | Bool[234] save=0 |
+| IsVanishYama    | `0xcff5f3d2` | Bool[236] save=0 |
+| IsVanishWa      | `0x048bc39c` | Bool[235] save=0 |
+| IsVanishSabaku  | `0x1677f038` | Bool[233] save=0 |
+| IsVanishKin     | `0x95539ec5` | Bool[231] save=0 |
+| IsVanishNettai  | `0x7f6e8a47` | Bool[232] save=0 |
+
+(`IsRequestVanish`/`IsEndVanishAnim`/`IsAnimeReset` are the other 3 members,
+SaveFileIndex −1 = transient, leave alone.)
+
+**Why every prior attempt failed:** all six hashes were ALREADY in the client's
+`WORLD_UNLOCK_HASHES` (from the fresh→100% diff) — but that channel's Switch
+handler writes via `grantContainerACounter` (the **Int**-container writer), which
+is a silent no-op for **Bool**-category entries. 86 of the 88 table hashes are
+Bool-category, so nearly the whole table never landed; worlds still opened because
+`applyOpenWorldEntry`'s gmd+0x80 record fill did that work independently. (The
+historical "grantContainerBBool crashed on these hashes" note that motivated the
+switch to the counter writer was almost certainly the 1–2 *Int*-category hashes in
+the list (`0x5ac1e406`, later `0x20fced8b`) null-derefing the game's Bool setter.)
+
+**FIX (deployed 2026-06-09):** grant the six IsVanish bools via
+`grantContainerBBool` (the path that demonstrably lands — Royal Seeds) in
+`probe::applyOpenWorldEntry` (SeedTrace.cpp), latched. The `FirstVisitDemoDone`
+reader hook (c647e85) was reverted — wrong target.
+
+**CASTLE FLY-IN NODE (2026-06-09, after the piranhas cleared):** the entry point
+into Castle Bowser is `WObjCommonMiniKoopaTeleportFlowerA` on the **World002
+(Petal Isles) map** (`BancMapUnit/World002.bcett.byml`, obj2000, WorldMapId 12 →
+World008 "Castle"). It is **Create-linked** from `WorldMapObjKoopaCastleEntranceGround`
+(obj2176, via a LogicalSignalORTag), whose AI reads the saved bool
+**`WorldMapKoopaCastleEntranceDemoInfo.IsAppear` = `0xc06bd61e`** (Bool[245],
+save=0; `.IsRequestAppear` `0x1313dba6` is transient). Also in WORLD_UNLOCK_HASHES
+(pair 73) and equally dead through the Int writer — added to the switch-side Bool
+grant block. Bonus logic data: World002's `GateTable` shows the five inter-area
+gates need 5/8/10/12/15 Wonder Seeds (`NeedNumOfWonderSeed`).
+
+**Durable RE infrastructure from this pass** (scripts in `C:\Users\maxwe\Documents\
+smbw_re_tmp\`): `byml_parse.py` (BYML v7 → JSON), `sarc_extract.py` (.pack.zs),
+`hash_lookup.py` (murmur3 name → GameDataList category/index). Extracted romfs at
+`smbw_re_tmp\romfs\`. Any named GameData flag can now be resolved to its hash +
+container category offline — no Ghidra needed.
+
+## ~~BOWSER CLOUD PIRANHAS — gated on Royal Seeds, not route bits (2026-06-09)~~ (superseded)
+
+The cloud-piranha BARRIER around Bowser's Kingdom is the **`WorldMapCloudPackun`**
+obstacle actor (gparam `WorldMapCloudPackunParam` @ `0x710295ef9f`; sibling
+`WorldMapUnlockDemoPackun`; deletion SEL `WM_WhilePackunCloudDelete` /
+`WM_PackunCloudDeleteFin`). Setting the route-graph bits draws the ROADS but does
+**not** remove these obstacles — they are gated on **palace-clear / Royal-Seed**
+progression:
+- Every wonder-seed-cutscene diff we built the route bits from **lacked Royal
+  Seeds** — those are granted at *palace clears* (save timeline: one Royal Seed
+  per world, all 6 by `w6-pre cutscene`).
+- The palace clears set per-course-clear state (e.g. W3 → `0xcce21270` bit 61) +
+  the Royal-Seed container-B bool — never in the cutscene footprints.
+- Open-world test logged `Castle=0` (palace threshold unmet) → ~no Royal Seeds →
+  every piranha present. Consistent.
+
+**FIX (deployed):** force all 6 Royal-Seed container-B bools
+(`0x55815859 0x49abba86 0xb550d8d6 0x1dcf7f6e 0x0d5a3e00 0xd4660d2b`) ON when
+open-world is active, inside the existing AP-authoritative `SetRoyalSeedsAbsolute`
+sync ([switch-mod/src/ap/ApFrameBridge.cpp](switch-mod/src/ap/ApFrameBridge.cpp))
+so they are never reverted. Maintainer choice: **unconditional** in open-world
+(premature Bowser is handled by the gate-kill; only the in-game bools are written,
+AP item state untouched).
+
 ## Still open (next RE steps)
 
 1. **Confirm `bit 2 = W3` and that the W4/5/6 PI routes use ConditionType=5.** Track A's

@@ -353,18 +353,24 @@ struct WireOverlayNotice {
 };
 
 // Open-world world/course unlock (2026-06).  Batch write of the
-// world-discovered + course-exists container-B bool state derived from a
-// fresh→100%-save diff.  All hashes carry value=1 (no per-hash value
-// field; the exclude list -- Royal Seeds, COMPLETE_GAME -- lives in
-// apworld/client/world_unlock_table.py).  Sent at connect and every
-// HelloMsg replay when open_world_active; NOT on the 2s tick (these bools
-// are set once and are not reverted by in-game actions, unlike badges/
-// seeds).  Applied on the Switch only when g_routable_world_mask != 0.
-// Max 96 hashes; current table has 85.
+// world-discovered + course-exists state derived from a fresh→100%-save
+// diff, split by GameDataList category because the writers are NOT
+// interchangeable (2026-06-09 audit): "hashes" are Int-category ->
+// probe::grantContainerACounter; "bool_hashes" are Bool-category ->
+// probe::grantContainerBBool (grantContainerACounter silently no-ops on
+// Bool hashes; grantContainerBBool null-derefs on Int ones).  All hashes
+// carry value=1 (no per-hash value field; the exclude list -- Royal
+// Seeds, COMPLETE_GAME -- lives in apworld/client/world_unlock_table.py).
+// Sent at connect and every HelloMsg replay when open_world_active; NOT
+// on the 2s tick (these flags are set once and are not reverted by
+// in-game actions, unlike badges/seeds).
+// Max 96 hashes per list; current table has 2 int + 84 bool.
 inline constexpr std::size_t kWorldUnlockHashCap = 96;
 struct WireApplyWorldUnlock {
     std::uint8_t  count = 0;
+    std::uint8_t  bool_count = 0;
     std::uint32_t hashes[kWorldUnlockHashCap] = {};
+    std::uint32_t bool_hashes[kWorldUnlockHashCap] = {};
 };
 
 struct WireHelloAck {

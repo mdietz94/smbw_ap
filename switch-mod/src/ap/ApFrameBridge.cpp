@@ -395,12 +395,16 @@ void drainInbound() {
                 break;
             }
             case InboundKind::ApplyWorldUnlock: {
-                // Open-world world/course unlock. Apply container-A counter
-                // hashes (all value=1) derived from a fresh->100%-save diff.
-                // These are world-discovered / course-exists state hashes in
-                // container-A (NOT container-B -- using grantContainerBBool
-                // crashed the game's drain worker with a null lookup on the
-                // first boot because these hashes aren't in gmd+8 substruct).
+                // Open-world world/course unlock (all value=1), derived from
+                // a fresh->100%-save diff and split by GameDataList category
+                // (2026-06-09 audit): wu.hashes are Int-category ->
+                // grantContainerACounter (container A); wu.bool_hashes are
+                // Bool-category -> grantContainerBBool (gmd+8 substruct).
+                // The writers are NOT interchangeable: the counter writer
+                // silently no-ops on Bool hashes (why the 84 bools never
+                // landed pre-split) and the bool writer null-derefs on Int
+                // hashes (the historical "crashed the drain worker on first
+                // boot" was the 2 Int hashes going through it).
                 //
                 // No g_routable_world_mask gate: SetRoutableWorldsAbsolute is
                 // deduped (applied after the drain loop), so by the time we
@@ -410,7 +414,7 @@ void drainInbound() {
                 // (send_apply_world_unlock no-ops on empty hashes), so no
                 // Switch-side guard is needed.
                 const auto& wu = msg.apply_world_unlock;
-                int applied = 0, refused = 0;
+                int applied_int = 0, applied_bool = 0, refused = 0;
                 for (std::size_t i = 0;
                      i < static_cast<std::size_t>(wu.count) && i < kWorldUnlockHashCap;
                      ++i) {
@@ -419,16 +423,29 @@ void drainInbound() {
                         ++refused;
                         SMBWAP_LOG_WARN(
                             "[unlock] ApplyWorldUnlock: backpressure refusal "
-                            "at i=%zu hash=0x%08x (%s %u%%)",
+                            "at int i=%zu hash=0x%08x (%s %u%%)",
                             i, wu.hashes[i], bp.tightest_ring, bp.max_pct);
                         continue;
                     }
-                    if (probe::grantContainerACounter(wu.hashes[i], 1)) ++applied;
+                    if (probe::grantContainerACounter(wu.hashes[i], 1))
+                        ++applied_int;
+                }
+                for (std::size_t i = 0;
+                     i < static_cast<std::size_t>(wu.bool_count) && i < kWorldUnlockHashCap;
+                     ++i) {
+                    // grantContainerBBool does its own gmd-null +
+                    // backpressure checks and returns false on refusal.
+                    if (probe::grantContainerBBool(wu.bool_hashes[i], 1))
+                        ++applied_bool;
+                    else
+                        ++refused;
                 }
                 SMBWAP_LOG_INFO(
-                    "[unlock] ApplyWorldUnlock: applied=%d refused=%d total=%u",
-                    applied, refused,
-                    static_cast<unsigned>(wu.count));
+                    "[unlock] ApplyWorldUnlock: applied int=%d/%u bool=%d/%u "
+                    "refused=%d",
+                    applied_int, static_cast<unsigned>(wu.count),
+                    applied_bool, static_cast<unsigned>(wu.bool_count),
+                    refused);
                 break;
             }
             case InboundKind::HelloAck:
@@ -475,9 +492,18 @@ void drainInbound() {
         // in-game palace clear that ran ahead of AP releasing the
         // matching seed item.
         const auto mask = last_seeds.set_royal_seeds_absolute.mask;
+        // Open-world: the cloud-piranha barrier around Bowser's Kingdom is
+        // gated on having all 6 Royal Seeds (palace clears), NOT the world-map
+        // route bits (RE 2026-06-09).  Force all 6 on in open-world so the
+        // barrier clears and Bowser is reachable.  Over-granting is harmless
+        // here: a premature Bowser attempt is handled by the gate-kill, and
+        // the AP server's own item state is unaffected (this only writes the
+        // in-game container-B bools).  Routing it through this AP-authoritative
+        // sync (rather than applyOpenWorldEntry) means it is never reverted.
+        const bool open_world = getRoutableWorldMask() != 0u;
         std::uint32_t granted = 0;
         for (std::size_t i = 0; i < kRoyalSeedCount; ++i) {
-            const std::uint32_t bit_v = (mask >> i) & 1u;
+            const std::uint32_t bit_v = open_world ? 1u : ((mask >> i) & 1u);
             if (probe::grantContainerBBool(kRoyalSeedHashes[i], bit_v)) {
                 if (bit_v) ++granted;
             }

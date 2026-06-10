@@ -503,47 +503,120 @@ void applyOpenWorldEntry(void* gmd_v) {
         }
     }
 
-    // Grand Propeller Flower world-reveal route gate (RE 2026-06-08).
+    // Grand Propeller Flower world-reveal route gates (RE 2026-06-08).
     // The world-map route evaluator ProcessWorldMapRouteGate (NSO+0x377280)
-    // re-derives every route on each world-map (re)load.  For a route whose
-    // CoursePointInfo ConditionType==5 (GrandPropellerFlowerDemo) it calls
-    // FUN_7101b70610(demoType), which returns container-C bitfield 0x35bf61af
-    // bit[demoType] (GrandPropellerFlowerDemoType: 0 AfterSavanna=W1 .. 2
-    // AfterWa=W3 .. 6 ToCastle).  Because the route is predicate-derived from
-    // this bit (NOT a one-time demo-animation side effect), setting the bit
-    // opens the route on the next map build -- no cutscene needed:
-    //   bit 2 (AfterWa)  -> the post-W3 reveal -> W4/W5/W6 route cluster
-    //   bit 6 (ToCastle) -> Bowser's Castle path
-    // See docs/grand-propeller-flower-reveal-re-2026-06-08.md.  Idempotent
-    // (single-bit OR); latch once both writes land so we don't churn every
-    // drain.  NOTE: castle is set unconditionally in open-world here for
-    // testing -- a later pass may gate bit 6 behind the palaces threshold to
-    // mirror the kCastleMaskBit / _bowser_opened client latch.
+    // re-derives every route on each world-map (re)load from gmd state -- the
+    // reveal cutscenes are NOT one-time animations, they just set persistent
+    // container-C bits (confirmed for W3 by an inverse save-revert test:
+    // reverting the bytes destroyed the road).  So setting the full per-world
+    // reveal footprint draws the entire PI->W2..W6->Bowser road network with no
+    // cutscene playing.  Bits recovered from per-world wonder-seed cutscene
+    // save-diffs ("wN-pre cutscene" -> "wN-post cutscene"), mapped to
+    // (container-C hash, bit) via the save's (hash, blob-offset) index:
+    //   node 0x35bf61af bit = GrandPropellerFlowerDemoType (1=W2 .. 5=W6, 6=ToCastle)
+    //   road bits = per-reveal world-map-graph bitfields (0xbcc1ef0e is a
+    //   SHARED accumulating field -> OR the individual bits, never overwrite).
+    // ToCastle/Bowser (node bit 6) is set unconditionally (maintainer choice
+    // 2026-06-08).  See docs/grand-propeller-flower-reveal-re-2026-06-08.md.
+    // Idempotent single-bit ORs; latch once every write lands so we don't churn.
     static std::atomic<bool> s_reveal_bits_done{false};
     if (!s_reveal_bits_done.load(std::memory_order_relaxed)) {
-        // NODE bits: container-C 0x35bf61af, bit = GrandPropellerFlowerDemoType
-        // (2 = AfterWa/W3 -> W4 node emerges, 6 = ToCastle -> Bowser node).
+        static const struct {
+            std::uint32_t hash;
+            std::uint32_t bit;
+        } kRevealBits[] = {
+            // World-map route-graph bitfields -- the COMPLETE absolute bit set
+            // from a fully-progressed (W1..W6) save, NOT per-cutscene deltas.
+            // The cloud-piranha barriers around Bowser's Kingdom are removed
+            // incrementally across the whole progression (each cutscene /
+            // battleship / gate / Royal-Seed step removes one), so a fresh
+            // open-world save needs every accumulated bit.  Read as the absolute
+            // set bits per record (bounded by each record's count/length) in
+            // "w6-post cutscene"; the W1-era bits (0x35bf61af:0, 0xbcc1ef0e:
+            // 1/5/7/17, 0x2309a645:5/11) live in the pre-W2 baseline and were
+            // invisible to the earlier pre-W2->w6 span diff.  0xbcc1ef0e is the
+            // shared accumulating field (one bit per progression event).
+            // node markers (0x35bf61af): W1..W6 (bit 0..5) + ToCastle (bit 6)
+            {0x35bf61afu, 0u}, {0x35bf61afu, 1u}, {0x35bf61afu, 2u},
+            {0x35bf61afu, 3u}, {0x35bf61afu, 4u}, {0x35bf61afu, 5u},
+            {0x35bf61afu, 6u},
+            {0xbcc1ef0eu, 1u},  {0xbcc1ef0eu, 2u},  {0xbcc1ef0eu, 3u},
+            {0xbcc1ef0eu, 5u},  {0xbcc1ef0eu, 6u},  {0xbcc1ef0eu, 7u},
+            {0xbcc1ef0eu, 8u},  {0xbcc1ef0eu, 9u},  {0xbcc1ef0eu, 11u},
+            {0xbcc1ef0eu, 12u}, {0xbcc1ef0eu, 13u}, {0xbcc1ef0eu, 17u},
+            {0x09bfe967u, 1u},
+            {0x57df969bu, 1u},
+            {0x2309a645u, 5u}, {0x2309a645u, 11u}, {0x2309a645u, 12u},
+            {0x9d25ce3bu, 1u},
+            {0x40c00dd7u, 2u},
+            {0xf5411212u, 1u}, {0xf5411212u, 2u}, {0xf5411212u, 3u},
+            {0x52781dfdu, 1u},
+        };
         bool ok = true;
-        ok = setContainerCBit(0x35bf61afu, 2u, true) && ok;
-        ok = setContainerCBit(0x35bf61afu, 6u, true) && ok;
-        // ROAD bits: the W3-end reveal cutscene ALSO draws the PI->W4/5/6 road
-        // by setting three world-map-graph container-C bitfields.  Recovered
-        // 2026-06-08 from the save-diff "w3 end" -> "w3-post cutscene" and
-        // confirmed live-state-driven by the inverse revert test (reverting
-        // these destroyed the road).  ProcessWorldMapRouteGate (NSO+0x377280)
-        // re-reads them on every world-map load, so setting them draws the road
-        // without the cutscene playing.  Save offsets 0x0ced/0x0d14/0x0e89 ->
-        // these (hash,bit) via the save's (hash,blob-offset) index.
-        // See docs/grand-propeller-flower-reveal-re-2026-06-08.md.
-        ok = setContainerCBit(0xbcc1ef0eu, 9u, true) && ok;
-        ok = setContainerCBit(0x57df969bu, 1u, true) && ok;
-        ok = setContainerCBit(0x2309a645u, 12u, true) && ok;
+        for (const auto& rb : kRevealBits)
+            ok = setContainerCBit(rb.hash, rb.bit, true) && ok;
         if (ok) {
             s_reveal_bits_done.store(true, std::memory_order_relaxed);
             SMBWAP_LOG_INFO(
-                "[open-world] reveal NODE+ROAD bits set: node 0x35bf61af "
-                "bit2(W4/5/6)+bit6(Castle); road 0xbcc1ef0e:9 0x57df969b:1 "
-                "0x2309a645:12");
+                "[open-world] full reveal footprint applied "
+                "(0x35bf61af nodes 1-6 + W2-W6 road bits)");
+        }
+    }
+
+    // Open-world: force all 6 Royal Seed container-B bools so the cloud-piranha
+    // barrier around Bowser's Kingdom clears (RE 2026-06-09: it is gated on
+    // palace-clear / Royal-Seed progression, not the route bits).  Done HERE,
+    // not only in the SetRoyalSeedsAbsolute sync, because that sync only runs
+    // when AP actually has seeds to send -- a fresh open-world seed has none,
+    // so the override there never fired.  applyOpenWorldEntry runs every drain
+    // in open-world, so this always applies.  The sync override (ApFrameBridge)
+    // also forces all 6 in open-world, so an AP partial-mask update never
+    // reverts these.  Unconditional (maintainer choice); premature Bowser is
+    // handled by the gate-kill, AP item state is untouched.
+    static std::atomic<bool> s_royal_seeds_done{false};
+    if (!s_royal_seeds_done.load(std::memory_order_relaxed)) {
+        static const std::uint32_t kRoyal[] = {
+            0x55815859u, 0x49abba86u, 0xb550d8d6u,
+            0x1dcf7f6eu, 0x0d5a3e00u, 0xd4660d2bu};
+        bool ok = true;
+        for (std::uint32_t h : kRoyal) ok = grantContainerBBool(h, 1u) && ok;
+        if (ok) {
+            s_royal_seeds_done.store(true, std::memory_order_relaxed);
+            SMBWAP_LOG_INFO(
+                "[open-world] forced all 6 Royal Seed bools (Bowser barrier)");
+        }
+    }
+
+    // Open-world: the Bowser cloud-piranha barrier is six WorldMapCloudPackun
+    // actors whose despawn state IS six saved GameData bools (RomFS
+    // GameDataList Struct "WorldMapCloudPackunVanishInfo", one IsVanish<world>
+    // per cloud; hashes = murmur3 of the dotted full names, verified against
+    // the GameDataList.Product.100 schema).  These six are in the client's
+    // WORLD_UNLOCK_HASHES, but that channel writes via grantContainerACounter
+    // (the Int container) -- a silent no-op for Bool-category entries -- which
+    // is why every prior route-bit / Royal-Seed attempt left the piranhas up.
+    // Write them through the Bool path that demonstrably lands (Royal Seeds).
+    static std::atomic<bool> s_cloud_vanish_done{false};
+    if (!s_cloud_vanish_done.load(std::memory_order_relaxed)) {
+        static const std::uint32_t kCloudVanish[] = {
+            0xc687fb5fu,   // WorldMapCloudPackunVanishInfo.IsVanishSavanna
+            0xcff5f3d2u,   // .IsVanishYama
+            0x048bc39cu,   // .IsVanishWa
+            0x1677f038u,   // .IsVanishSabaku
+            0x95539ec5u,   // .IsVanishKin
+            0x7f6e8a47u,   // .IsVanishNettai
+            // The castle fly-in node: WObjCommonMiniKoopaTeleportFlowerA on
+            // the Petal Isles map (World002) is Create-linked from
+            // WorldMapObjKoopaCastleEntranceGround, whose AI reads this saved
+            // bool.  Without it the piranhas clear but no entry point spawns.
+            0xc06bd61eu};  // WorldMapKoopaCastleEntranceDemoInfo.IsAppear
+        bool ok = true;
+        for (std::uint32_t h : kCloudVanish) ok = grantContainerBBool(h, 1u) && ok;
+        if (ok) {
+            s_cloud_vanish_done.store(true, std::memory_order_relaxed);
+            SMBWAP_LOG_INFO(
+                "[open-world] forced the 6 WorldMapCloudPackun IsVanish bools "
+                "+ KoopaCastleEntrance IsAppear (Bowser approach)");
         }
     }
 }

@@ -216,9 +216,12 @@ GrantMsg = (
 # open-world state survives Switch reboots / save reloads.
 RoutableWorldsProvider = Callable[[], int]
 OpenWorldRoyalSeedProvider = Callable[[], "int | None"]
-# Returns the tuple of world-unlock hashes to send on connect/HelloMsg, or
-# an empty tuple when open-world is inactive.
-WorldUnlockHashesProvider = Callable[[], "tuple[int, ...]"]
+# Returns the (int_hashes, bool_hashes) world-unlock pair to send on
+# connect/HelloMsg, or two empty tuples when open-world is inactive.
+# Split by GameDataList category: Int -> grantContainerACounter,
+# Bool -> grantContainerBBool (the writers are not interchangeable).
+WorldUnlockHashesProvider = Callable[
+    [], "tuple[tuple[int, ...], tuple[int, ...]]"]
 
 
 class LanServer:
@@ -420,35 +423,43 @@ class LanServer:
                 "send_set_routable_worlds(mask=0x%x): outbound queue full; "
                 "dropping", mask)
 
-    def send_apply_world_unlock(self, hashes: tuple[int, ...]) -> None:
+    def send_apply_world_unlock(
+        self,
+        hashes: tuple[int, ...],
+        bool_hashes: tuple[int, ...] = (),
+    ) -> None:
         """Enqueue an ApplyWorldUnlock (open-world, 2026-06) to the Switch.
 
-        Sends ``hashes`` as a batch of container-B bool writes (all
-        value=1).  The Switch applies them when ``g_routable_world_mask != 0``
-        (open-world active), setting world-discovered and course-exists
-        state without touching Royal Seeds or COMPLETE_GAME.
+        Sends the unlock hashes split by GameDataList category (all written
+        value=1): ``hashes`` are Int-category (container-A counter writes),
+        ``bool_hashes`` are Bool-category (container-B bool writes).  The
+        Switch applies them when open-world is active, setting
+        world-discovered and course-exists state without touching Royal
+        Seeds or COMPLETE_GAME.
 
         Sent at connect (Connected handler in SMBWContext) and replayed on
         every HelloMsg so the unlock survives Switch reboots/save reloads.
-        NOT sent on the periodic 2 s tick (these bools persist and are not
+        NOT sent on the periodic 2 s tick (these flags persist and are not
         reverted by in-game actions, unlike badges/seeds).
         """
-        if not hashes:
+        if not hashes and not bool_hashes:
             return
-        msg = wire.ApplyWorldUnlockMsg(hashes=hashes)
+        msg = wire.ApplyWorldUnlockMsg(hashes=hashes, bool_hashes=bool_hashes)
         if self._send_queue is None:
             log.warning(
                 "send_apply_world_unlock: no Switch client connected; "
-                "dropping (%d hashes)", len(hashes))
+                "dropping (%d int + %d bool hashes)",
+                len(hashes), len(bool_hashes))
             return
         try:
             self._send_queue.put_nowait(msg)
             log.info(
-                "send_apply_world_unlock: enqueued %d hashes", len(hashes))
+                "send_apply_world_unlock: enqueued %d int + %d bool hashes",
+                len(hashes), len(bool_hashes))
         except asyncio.QueueFull:
             log.error(
                 "send_apply_world_unlock: outbound queue full; dropping "
-                "(%d hashes)", len(hashes))
+                "(%d int + %d bool hashes)", len(hashes), len(bool_hashes))
 
     def send_kill(self, source: str, cause: str) -> None:
         """Enqueue a Kill (M3.8 DeathLink inbound) to the active Switch.
@@ -1028,21 +1039,22 @@ class LanServer:
     def _push_world_unlock_now(self) -> None:
         """Send the world-unlock hash table to the Switch (open-world only).
 
-        Calls the provider to get the hash tuple and enqueues an
-        ``ApplyWorldUnlockMsg``.  No-op when the provider is not wired
-        (non-open-world sessions) or returns an empty tuple.  Called
-        from HelloMsg dispatch alongside ``_push_routable_worlds_now``
-        so the unlock state replays on reconnect.  NOT called from the
-        periodic tick -- these bools are set once and not reverted.
+        Calls the provider to get the (int_hashes, bool_hashes) pair and
+        enqueues an ``ApplyWorldUnlockMsg``.  No-op when the provider is
+        not wired (non-open-world sessions) or returns empty tuples.
+        Called from HelloMsg dispatch alongside
+        ``_push_routable_worlds_now`` so the unlock state replays on
+        reconnect.  NOT called from the periodic tick -- these flags are
+        set once and not reverted.
         """
         if self._world_unlock_hashes_provider is None:
             return
         try:
-            hashes = self._world_unlock_hashes_provider()
+            int_hashes, bool_hashes = self._world_unlock_hashes_provider()
         except Exception:
             log.exception("world_unlock_hashes_provider raised; skipping")
             return
-        self.send_apply_world_unlock(hashes)
+        self.send_apply_world_unlock(int_hashes, bool_hashes)
 
     def _push_open_world_royal_seeds_now(self) -> None:
         """Open-world only: once Bowser is unlocked, re-force the Royal

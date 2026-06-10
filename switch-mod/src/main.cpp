@@ -1150,7 +1150,6 @@ extern "C" void hkMain() {
     //   a level/course from the world map (the final-castle enter path).
     installHook("CourseEnterName",     0x0055ee48,
                 courseEnterNameHook.installAtMainOffset(0x0055ee48));
-
     // DEBUG OVERLAY: NVN present-hook chain that drives the ImGui overlay.
     // No-op unless built with SMBWAP_HAS_DEBUG_RENDERER (see CMakeLists.txt
     // + docs/handoff-imgui-overlay.md).
