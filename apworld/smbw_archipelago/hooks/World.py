@@ -102,6 +102,76 @@ def after_create_items(item_pool: list, world: World, multiworld: MultiWorld, pl
 _OW_REGION_BACKUP_ATTR = "_ow_region_requires_backup"
 
 
+def _course_prefix(location_name: str) -> str:
+    """The "course" a location belongs to = the text before the final ' - '.
+
+    e.g. "W2: Hot-Hot Hot! - Top of Flag" -> "W2: Hot-Hot Hot!".  Locations
+    with no ' - ' (none today, but be defensive) map to their full name."""
+    return location_name.rsplit(" - ", 1)[0]
+
+
+def apply_badge_gated_courses(world: World, multiworld: MultiWorld, player: int):
+    """Gate the entry of user-chosen courses on user-chosen badge(s).
+
+    Reads the ``badge_gated_courses`` OptionDict (course name -> badge name or
+    list of badge names) and ANDs a "has all listed badges" requirement onto
+    every location belonging to that course, so none of the course's checks are
+    reachable until the badge(s) arrive from AP.
+
+    Because Badge items are progression items already in the pool, AP fill
+    satisfies the constraint by placing the badge somewhere reachable first; a
+    gated course that is also a forced progression wall is already covered by
+    the region-layer walls in regions.json.  Unknown course or badge names
+    abort generation with a clear ValidationError.
+    """
+    from ..DataValidation import ValidationError
+    from ..Data import item_table
+
+    gates = getattr(world.options, "badge_gated_courses", None)
+    gates = dict(getattr(gates, "value", {}) or {}) if gates is not None else {}
+    if not gates:
+        return
+
+    # Build the set of valid course prefixes and valid badge item names.
+    all_locations = [loc for region in multiworld.regions
+                     if region.player == player
+                     for loc in region.locations]
+    course_to_locations: dict[str, list] = {}
+    for loc in all_locations:
+        course_to_locations.setdefault(_course_prefix(loc.name), []).append(loc)
+
+    valid_badges = {item["name"] for item in item_table
+                    if "Badge" in item.get("category", [])}
+
+    for course_name, badge_spec in gates.items():
+        if course_name not in course_to_locations:
+            raise ValidationError(
+                "badge_gated_courses: course %r is misspelled or does not "
+                "exist (expected a course prefix like 'W2: Hot-Hot Hot!')."
+                % (course_name,))
+
+        badge_names = [badge_spec] if isinstance(badge_spec, str) else list(badge_spec)
+        if not badge_names:
+            continue
+        for badge in badge_names:
+            if badge not in valid_badges:
+                raise ValidationError(
+                    "badge_gated_courses: badge %r (gating course %r) is "
+                    "misspelled or is not a Badge item." % (badge, course_name))
+
+        # AND the badge requirement onto every check in the course.  add_rule
+        # composes with the existing access rule via "and", which is exactly
+        # "you also need these badges to enter this course".
+        from worlds.generic.Rules import add_rule
+
+        def make_badge_rule(needed=tuple(badge_names)):
+            return lambda state: all(state.has(b, player) for b in needed)
+
+        rule = make_badge_rule()
+        for loc in course_to_locations[course_name]:
+            add_rule(loc, rule)
+
+
 # Called before rules for accessing regions and locations are created. Not clear why you'd want this, but it's here.
 def before_set_rules(world: World, multiworld: MultiWorld, player: int):
     # Open-world mode: drop the cross-world entry gates baked into each
@@ -146,6 +216,9 @@ def after_set_rules(world: World, multiworld: MultiWorld, player: int):
 
         bowser = multiworld.get_entrance(getConnectionName("Manual", BOWSER_REGION), player)
         bowser.access_rule = make_bowser_gate(world.active_worlds, world.palaces_required, player)
+
+    # Gate arbitrary courses' entry on possessing specific badge(s).
+    apply_badge_gated_courses(world, multiworld, player)
 
     # Use this hook to modify the access rules for a given location
 
