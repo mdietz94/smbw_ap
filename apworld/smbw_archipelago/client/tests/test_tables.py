@@ -27,6 +27,7 @@ from ..location_table import (
     _TABLE,
     _TEN_COIN_TABLE,
     lookup_name,
+    pr_world_no_to_ap_world,
 )
 from ..protocol import CheckEmitted, CheckKind
 from ..royal_seed_table import (
@@ -39,6 +40,11 @@ from ..royal_seed_table import (
     hash_for_item,
     is_royal_seed_item,
     palace_stage_key_for_item,
+)
+from ..world_unlock_table import (
+    WORLD_UNLOCK_BOOL_HASHES,
+    WORLD_UNLOCK_HASHES,
+    WORLD_UNLOCK_INT_HASHES,
 )
 
 
@@ -396,6 +402,24 @@ class TestLocationTable(unittest.TestCase):
         check = CheckEmitted(kind=CheckKind.BADGE_ACQUIRED, stage_key=99)
         self.assertIsNone(lookup_name(check))
 
+    # ---- PlayReport world_no -> AP world mapping --------------------
+
+    def test_pr_world_no_to_ap_world_numbered_worlds(self):
+        # The six numbered overworlds (PI takes the world_no=2 slot, so
+        # W2..W6 are shifted up by one).
+        self.assertEqual(pr_world_no_to_ap_world(1), 1)  # W1
+        self.assertEqual(pr_world_no_to_ap_world(3), 2)  # W2
+        self.assertEqual(pr_world_no_to_ap_world(4), 3)  # W3
+        self.assertEqual(pr_world_no_to_ap_world(5), 4)  # W4
+        self.assertEqual(pr_world_no_to_ap_world(6), 5)  # W5
+        self.assertEqual(pr_world_no_to_ap_world(7), 6)  # W6
+
+    def test_pr_world_no_to_ap_world_non_numbered_slots(self):
+        self.assertIsNone(pr_world_no_to_ap_world(2))  # Petal Isles (hub)
+        self.assertIsNone(pr_world_no_to_ap_world(8))  # Castle / Bowser
+        self.assertIsNone(pr_world_no_to_ap_world(9))  # Special world
+        self.assertIsNone(pr_world_no_to_ap_world(0))  # unknown / default
+
 
 class TestRoyalSeedTable(unittest.TestCase):
 
@@ -540,6 +564,51 @@ class TestCoinTable(unittest.TestCase):
         coin_names = {n for n, _, _ in _COIN_ITEMS}
         self.assertEqual(coin_names & badge_names, set())
         self.assertEqual(coin_names & seed_names, set())
+
+
+class TestWorldUnlockTable(unittest.TestCase):
+    """Pins the 2026-06-09 GameDataList category split.
+
+    The two switch-side writers are not interchangeable:
+    grantContainerACounter silently no-ops on Bool-category hashes and
+    grantContainerBBool null-derefs on Int-category ones, so a hash
+    landing in the wrong list is either a dead grant or a crash.  The
+    split was audited against RomFS GameDataList.Product.100; these
+    tests pin the audited shape so an edit can't silently merge them.
+    """
+
+    # The six WorldMapCloudPackunVanishInfo.IsVanish* bools that
+    # probe::applyOpenWorldEntry also force-grants switch-side.
+    IS_VANISH = {
+        0xC687FB5F, 0xCFF5F3D2, 0x048BC39C,
+        0x1677F038, 0x95539EC5, 0x7F6E8A47,
+    }
+
+    def test_category_split_shape(self):
+        self.assertEqual(len(WORLD_UNLOCK_BOOL_HASHES), 84)
+        self.assertEqual(
+            WORLD_UNLOCK_INT_HASHES, (0x5AC1E406, 0x20FCED8B))
+
+    def test_lists_disjoint_and_combined(self):
+        bool_set = set(WORLD_UNLOCK_BOOL_HASHES)
+        int_set = set(WORLD_UNLOCK_INT_HASHES)
+        self.assertEqual(len(bool_set), len(WORLD_UNLOCK_BOOL_HASHES))
+        self.assertEqual(bool_set & int_set, set())
+        self.assertEqual(
+            WORLD_UNLOCK_HASHES,
+            WORLD_UNLOCK_INT_HASHES + WORLD_UNLOCK_BOOL_HASHES)
+
+    def test_all_hashes_u32(self):
+        for h in WORLD_UNLOCK_HASHES:
+            self.assertTrue(0 <= h < (1 << 32), f"0x{h:x} not u32")
+
+    def test_is_vanish_bools_present_in_bool_list(self):
+        self.assertLessEqual(self.IS_VANISH, set(WORLD_UNLOCK_BOOL_HASHES))
+
+    def test_no_royal_seed_or_complete_game_hashes(self):
+        # AP owns the Royal Seeds; the game owns COMPLETE_GAME.
+        forbidden = set(ROYAL_SEED_HASHES) | {0x5D3EC9B4}
+        self.assertEqual(set(WORLD_UNLOCK_HASHES) & forbidden, set())
 
 
 if __name__ == "__main__":

@@ -517,23 +517,19 @@ class SMBWCommandProcessor(ClientCommandProcessor):
             return True
 
         # Force open_world state on the context so the hash provider works
-        import world_unlock_table as wut  # noqa: PLC0415 -- local import ok here
-        try:
-            from . import world_unlock_table as wut  # type: ignore[no-redef]
-        except ImportError:
-            pass
-
         from ..client import world_unlock_table as _wut  # type: ignore[misc]
-        hashes = _wut.WORLD_UNLOCK_HASHES
+        int_hashes = _wut.WORLD_UNLOCK_INT_HASHES
+        bool_hashes = _wut.WORLD_UNLOCK_BOOL_HASHES
 
         lan.send_set_routable_worlds(mask)
-        lan.send_apply_world_unlock(hashes)
+        lan.send_apply_world_unlock(int_hashes, bool_hashes)
         self.output(
             f"-> SetRoutableWorldsAbsolute mask=0x{mask:03x}  "
             f"(W1={bool(mask&1)} W2={bool(mask&2)} W3={bool(mask&4)} "
             f"W4={bool(mask&8)} W5={bool(mask&16)} W6={bool(mask&32)} "
             f"PI={bool(mask&64)} Sp={bool(mask&128)})")
         self.output(
-            f"-> ApplyWorldUnlock ({len(hashes)} hashes); "
-            "watch for [unlock] FlowerLock lines in the Switch log")
+            f"-> ApplyWorldUnlock ({len(int_hashes)} int + "
+            f"{len(bool_hashes)} bool hashes); "
+            "watch for [unlock] lines in the Switch log")
         return True

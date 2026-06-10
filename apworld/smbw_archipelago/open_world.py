@@ -32,7 +32,7 @@ WORLD_NUMBERS = (1, 2, 3, 4, 5, 6)
 BOWSER_REGION = "World Bowser"
 
 # Goal location open-world forces; must exist in Locations.victory_names.
-BOWSER_VICTORY_LOCATION = "PI: Bowser's Rage Stage - Royal Seed"
+BOWSER_VICTORY_LOCATION = "BC: Bowser's Rage Stage - Royal Seed"
 
 # Hub / Special-World spine regions that are not prefixed "PI ".
 _EXTRA_HUB_REGIONS = frozenset({
@@ -100,6 +100,32 @@ def precollect_petal_wonder_seeds(world, multiworld, player) -> int:
     for _ in range(count):
         multiworld.push_precollected(world.create_item(PETAL_WONDER_SEED_ITEM))
     return count
+
+
+def precollect_inactive_wonder_seeds(world, multiworld, player, active_worlds) -> int:
+    """Open-world: grant the player every Wonder Seed for the worlds they are
+    NOT playing.
+
+    Inactive worlds' locations were stripped, so their Wonder Seeds have no home
+    in the pool (``inactive_item_pool`` removes them).  Rather than just dropping
+    them silently, push a precollected copy of each into the player's starting
+    inventory: the client buckets received Wonder Seeds per world and pushes the
+    count to the Switch, so the skipped worlds show up with their Wonder-Seed
+    counters already full -- making it obvious the player doesn't need to play
+    them.  (Royal Seeds for inactive worlds stay removed: the Bowser gate only
+    counts active-world Royal Seeds.)  Returns the number granted."""
+    active = set(active_worlds)
+    granted = 0
+    for n in WORLD_NUMBERS:
+        if n in active:
+            continue
+        name = f"W{n} Wonder Seed"
+        item_def = world.item_name_to_item.get(name, {})
+        count = int(item_def.get("count", 0))
+        for _ in range(count):
+            multiworld.push_precollected(world.create_item(name))
+            granted += 1
+    return granted
 
 
 def choose_active_worlds(world: World) -> list:
@@ -183,7 +209,7 @@ def strip_inactive_locations(world: World, multiworld: MultiWorld, player: int, 
     "All <X> Power Badge Obtained" meta-locations.  None of those are reachable
     in open-world -- the player only plays the selected worlds -- so leaving
     them in logic lets AP place progression items the player can never reach
-    (observed: a required badge landing on PI: High-Voltage Gauntlet).  Strip
+    (observed: a required badge landing on BC: High-Voltage Gauntlet).  Strip
     everything in ``World Bowser`` except the goal location itself."""
     active = set(active_worlds)
     for region in _player_regions(multiworld, player):

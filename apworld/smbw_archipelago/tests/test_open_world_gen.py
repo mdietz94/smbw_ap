@@ -72,6 +72,24 @@ class TestOpenWorldGeneration(unittest.TestCase):
             if n is not None:
                 self.assertIn(n, active, f"leaked inactive seed item {name!r}")
 
+    def test_inactive_wonder_seeds_precollected(self):
+        multiworld, world = _gen({"open_world": 1, "open_world_count": 3})
+        active = set(world.active_worlds)
+        precollected = [i.name for i in multiworld.precollected_items[1]]
+
+        for n in range(1, 7):
+            name = f"W{n} Wonder Seed"
+            want = int(world.item_name_to_item[name].get("count", 0))
+            got = precollected.count(name)
+            if n in active:
+                self.assertEqual(got, 0, f"active world W{n} should not be granted its Wonder Seeds")
+            else:
+                self.assertEqual(got, want, f"inactive world W{n} should be granted all {want} Wonder Seeds")
+
+        # Royal Seeds are never precollected (active or inactive).
+        for n in range(1, 7):
+            self.assertEqual(precollected.count(f"W{n} Royal Seed"), 0)
+
     def test_palaces_required_sentinel_equals_count(self):
         _, world = _gen({"open_world": 1, "open_world_count": 4, "palaces_required": 0})
         self.assertEqual(world.palaces_required, 4)
@@ -101,6 +119,31 @@ class TestOpenWorldGeneration(unittest.TestCase):
         victory = multiworld.get_location(BOWSER_VICTORY_LOCATION, 1)
         self.assertEqual(victory.item.name, "__Victory__")
         self.assertEqual(victory.parent_region.name, "World Bowser")
+
+
+class TestUniversalTrackerCompat(unittest.TestCase):
+    """Verify that interpret_slot_data → generate_early produces the same
+    active-world set recorded in slot_data (Universal Tracker regression)."""
+
+    def test_pinned_worlds_survive_generate_early(self):
+        # 1. Generate with seed 1234 to capture slot_data.
+        _, world_orig = _gen({"open_world": 1, "open_world_count": 3}, seed=1234)
+        slot_data = world_orig.fill_slot_data()
+        pinned = slot_data["open_world_active"]
+        self.assertEqual(len(pinned), 3)
+
+        # 2. Generate a second world with a different seed (different random
+        #    state → different random world selection without the fix).
+        _, world_ut = _gen({"open_world": 1, "open_world_count": 3}, seed=9999)
+
+        # 3. Simulate Universal Tracker: interpret_slot_data then generate_early.
+        world_ut.interpret_slot_data(slot_data)
+        self.assertTrue(hasattr(world_ut, "_ow_pinned_active_worlds"),
+                        "interpret_slot_data must set _ow_pinned_active_worlds")
+        world_ut.generate_early()
+
+        # 4. active_worlds must match slot_data, not the seed-9999 random roll.
+        self.assertEqual(sorted(world_ut.active_worlds), sorted(pinned))
 
 
 class TestOpenWorldRegression(unittest.TestCase):

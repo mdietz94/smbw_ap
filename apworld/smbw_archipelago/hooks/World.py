@@ -56,13 +56,20 @@ def before_create_items_starting(item_pool: list, world: World, multiworld: Mult
 # The item pool after starting items are processed but before filler is added, in case you want to see the raw item pool at that stage
 def before_create_items_filler(item_pool: list, world: World, multiworld: MultiWorld, player: int) -> list:
     # Open-world mode: drop the seed items for inactive worlds plus the
-    # Petal Isles / Special World seeds (their locations were removed), and
-    # grant the player ALL Petal Isles Wonder Seeds at start so the hub's
-    # PI -> world route gates are open and the player can walk to each world.
+    # Petal Isles / Special World seeds (their locations were removed), grant
+    # the player ALL Petal Isles Wonder Seeds at start so the hub's PI -> world
+    # route gates are open and the player can walk to each world, and grant the
+    # Wonder Seeds of every inactive world so their counters show full (a visual
+    # cue that those worlds can be skipped).
     if getattr(world, "open_world", False):
-        from ..open_world import inactive_item_pool, precollect_petal_wonder_seeds
+        from ..open_world import (
+            inactive_item_pool,
+            precollect_petal_wonder_seeds,
+            precollect_inactive_wonder_seeds,
+        )
         item_pool = inactive_item_pool(item_pool, world.active_worlds)
         precollect_petal_wonder_seeds(world, multiworld, player)
+        precollect_inactive_wonder_seeds(world, multiworld, player, world.active_worlds)
 
     # Use this hook to remove items from the item pool
     itemNamesToRemove = [] # List of item names
