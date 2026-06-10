@@ -89,6 +89,83 @@ _BADGES: Final[list[tuple[str, int, str]]] = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# Equipped-badge identity (force-unequip support, 2026-06-10).
+#
+# Clearing a badge's OWNED bit (the container-C bitfield) does NOT clear
+# the separate EQUIPPED field, so a level/shop that grants+auto-equips a
+# badge AP has disabled would still show it equipped/available.  The
+# equipped-badge identity lives in two EnumArray GameData fields resolved
+# offline from the RomFS GameDataList.Product.100 schema (see
+# smbw-romfs-datamining):
+#
+#   EquipBadgeSave.BadgeId         hash 0xCFBA9BF8  EnumArray[4]  save=0  (persisted)
+#   CoursePlayerEquipBadge.BadgeId hash 0xF30CB2E2  EnumArray[4]  save=-1 (per-level)
+#
+# Each slot stores the badge's *enum value* (NOT the internal_id).  The
+# "no badge" sentinel is ``BADGE_INVALID_ENUM_VALUE`` (also the field's
+# DefaultValue).  ``internal_id k`` maps to enum value
+# ``_BADGE_ENUM_VALUES[k]``; the Switch decodes an equip slot's enum value
+# back to its internal_id and resets the slot to Invalid when that badge
+# isn't in the AP-authoritative owned mask.  This table is the Python
+# mirror of ``kBadgeEnumValues`` in ``switch-mod/src/probe/ContainerC.cpp``
+# -- keep the two in sync.  Generated from GameDataList
+# EquipBadgeSave.BadgeId.Values (index k+1 == BadgeId{k}); spot-checked
+# against the RE map's save-file equipped identities (BadgeId34 =
+# 0xE41B1ABA Wall-Climb, BadgeId46 = 0xB77086E2 Auto Super Mushroom).
+
+EQUIP_BADGE_SAVE_HASH: Final[int] = 0xCFBA9BF8
+COURSE_PLAYER_EQUIP_HASH: Final[int] = 0xF30CB2E2
+BADGE_INVALID_ENUM_VALUE: Final[int] = 2117934662  # 0x7E3D1E46
+
+# internal_id -> equipped-badge enum value (BadgeId00..BadgeId58).
+_BADGE_ENUM_VALUES: Final[list[int]] = [
+    0x6BCC257B, 0x074AFFB5, 0x1F65A370, 0x8C9688B2, 0xE9F7789A, 0x780BCC5A,
+    0x6D1BC278, 0x6B24A10B, 0xCD133BA3, 0x6A0E48EA, 0x2B973461, 0x3E79EB0E,
+    0x579B6C6F, 0xCFF9EBC4, 0x62A664A5, 0x5F56923E, 0x2E388BB6, 0xCF21767A,
+    0xB7A10FCA, 0x2124CE3E, 0x6E17FB3B, 0x5EF0D828, 0x40963B31, 0xF7DFA3F6,
+    0x1C68D88E, 0xE1732189, 0x5F280E18, 0xB75BE3AC, 0x25BD3F73, 0x2A683A70,
+    0x7139A3B0, 0x95B023CA, 0x1F4AB322, 0xC987232E, 0xE41B1ABA, 0xA8E86054,
+    0x750BD47A, 0xD8C87B70, 0x549668A6, 0x88C1807D, 0x20BC18B1, 0xD79571F3,
+    0x3A666542, 0x911775BF, 0xF890D349, 0x2D82A63D, 0xB77086E2, 0x897A6180,
+    0x37E75951, 0x64C3909F, 0xF221F7E9, 0xEE9F4657, 0xF6F2CCD6, 0x2575E18C,
+    0x8F45C1AC, 0xC0158662, 0xC602AF3C, 0x8B6447BD, 0xDF593FCA,
+]
+
+_ENUM_VALUE_TO_ID: Final[dict[int, int]] = {
+    v: i for i, v in enumerate(_BADGE_ENUM_VALUES)
+}
+
+
+def equip_enum_value_for_internal_id(internal_id: int) -> int | None:
+    """Enum value the equipped-badge EnumArray stores for ``internal_id``,
+    or ``None`` if the id is outside the BadgeId00..58 range."""
+    if 0 <= internal_id < len(_BADGE_ENUM_VALUES):
+        return _BADGE_ENUM_VALUES[internal_id]
+    return None
+
+
+def internal_id_for_equip_enum_value(enum_value: int) -> int | None:
+    """Reverse of :func:`equip_enum_value_for_internal_id`.  Returns the
+    badge internal_id an equip-slot enum value refers to, ``-1``-style
+    ``None`` for the Invalid sentinel or any unrecognized value."""
+    if enum_value == BADGE_INVALID_ENUM_VALUE:
+        return None
+    return _ENUM_VALUE_TO_ID.get(enum_value)
+
+
+def disabled_badge_internal_ids(owned_mask: int) -> set[int]:
+    """Badge internal_ids that are NOT in ``owned_mask`` (the
+    AP-authoritative owned set).  An equipped badge whose internal_id is
+    in this set must be force-unequipped on the Switch.  Used by tests to
+    pin the disabled-set semantics that ``clearEquippedBadgesNotOwned``
+    applies subsdk-side from the same mask."""
+    return {
+        bit for bit in range(len(_BADGE_ENUM_VALUES))
+        if not ((owned_mask >> bit) & 1)
+    }
+
+
 _NAME_TO_ID: Final[dict[str, int]] = {name: bit for name, bit, _ in _BADGES}
 
 # Reverse lookup for M2.3 outbound badge-check detection: the Switch
