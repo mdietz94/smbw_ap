@@ -359,7 +359,65 @@ the node+road bits for the worlds open in the seed (or all, for full PI→W4→W
 reachability). Open design Qs: full-network vs per-open-world; gate ToCastle (bit 6) +
 W6 road behind the palace threshold (currently bit 6 is unconditional).
 
-## ★ BOWSER CLOUD PIRANHAS — gated on Royal Seeds, not route bits (2026-06-09)
+## ★★ BOWSER CLOUD PIRANHAS — SOLVED via RomFS GameDataList (2026-06-09, supersedes the section below)
+
+Both prior hypotheses (Royal Seeds; EndFirstVisitWorldDemo) were wrong — the user
+correctly flagged that FirstVisitDemo is the *opening* cutscene, while the piranhas
+clear on *post-castle* progression. Ground truth recovered by extracting the RomFS
+(hactool on the base NSP + titlekey from the .tik) and reading the data directly:
+
+- **The six piranhas are six per-world actors**: `Pack/Actor/WObjCommonPackunCloud
+  {Savanna,Yama,Wa,Sabaku,Kin,Nettai}.pack.zs`, gparam = just `{WorldNo: "<world>"}`.
+- Their AI graph (`AI/WObjCommonPackunCloud*.root.ainb`) binds blackboard properties
+  `WorldMapCloudPackunVanishInfo.IsVanish<World>` via `ActorPropertyBinder`, plus
+  `GetEnumFromGameData`/`CompareInt` against `ExecuteGrandPropellerFlowerDemoType`
+  (the transient "which reveal demo is playing now" enum) for the live vanish anim.
+- **`GameData/GameDataList.Product.100.byml.zs`** (BYML v7) is the full GameData
+  schema: every flag's murmur hash, category (Bool/Int/Enum/Struct/...), default,
+  and `SaveFileIndex`. Struct[42] = `WorldMapCloudPackunVanishInfo`, 9 members
+  mapping member-name-hash → full-flag-hash (full names are dotted:
+  `WorldMapCloudPackunVanishInfo.IsVanishWa`).
+- **MurmurHash3 x86_32 seed 0 over the (dotted) name = the save/pair-region hash.**
+  Validated: `IsChangeEnvEnterKoopaCastle` → `0xe02a5e43` (a flag we'd already
+  recovered empirically from the W6-cutscene save diff), and all 9 struct members
+  verify against their full-name hashes.
+
+The six SAVED per-cloud vanish bools (set these → piranhas gone on map load):
+
+| flag (dotted name suffix) | hash | GameDataList |
+|---|---|---|
+| IsVanishSavanna | `0xc687fb5f` | Bool[234] save=0 |
+| IsVanishYama    | `0xcff5f3d2` | Bool[236] save=0 |
+| IsVanishWa      | `0x048bc39c` | Bool[235] save=0 |
+| IsVanishSabaku  | `0x1677f038` | Bool[233] save=0 |
+| IsVanishKin     | `0x95539ec5` | Bool[231] save=0 |
+| IsVanishNettai  | `0x7f6e8a47` | Bool[232] save=0 |
+
+(`IsRequestVanish`/`IsEndVanishAnim`/`IsAnimeReset` are the other 3 members,
+SaveFileIndex −1 = transient, leave alone.)
+
+**Why every prior attempt failed:** all six hashes were ALREADY in the client's
+`WORLD_UNLOCK_HASHES` (from the fresh→100% diff) — but that channel's Switch
+handler writes via `grantContainerACounter` (the **Int**-container writer), which
+is a silent no-op for **Bool**-category entries. 86 of the 88 table hashes are
+Bool-category, so nearly the whole table never landed; worlds still opened because
+`applyOpenWorldEntry`'s gmd+0x80 record fill did that work independently. (The
+historical "grantContainerBBool crashed on these hashes" note that motivated the
+switch to the counter writer was almost certainly the 1–2 *Int*-category hashes in
+the list (`0x5ac1e406`, later `0x20fced8b`) null-derefing the game's Bool setter.)
+
+**FIX (deployed 2026-06-09):** grant the six IsVanish bools via
+`grantContainerBBool` (the path that demonstrably lands — Royal Seeds) in
+`probe::applyOpenWorldEntry` (SeedTrace.cpp), latched. The `FirstVisitDemoDone`
+reader hook (c647e85) was reverted — wrong target.
+
+**Durable RE infrastructure from this pass** (scripts in `C:\Users\maxwe\Documents\
+smbw_re_tmp\`): `byml_parse.py` (BYML v7 → JSON), `sarc_extract.py` (.pack.zs),
+`hash_lookup.py` (murmur3 name → GameDataList category/index). Extracted romfs at
+`smbw_re_tmp\romfs\`. Any named GameData flag can now be resolved to its hash +
+container category offline — no Ghidra needed.
+
+## ~~BOWSER CLOUD PIRANHAS — gated on Royal Seeds, not route bits (2026-06-09)~~ (superseded)
 
 The cloud-piranha BARRIER around Bowser's Kingdom is the **`WorldMapCloudPackun`**
 obstacle actor (gparam `WorldMapCloudPackunParam` @ `0x710295ef9f`; sibling

@@ -586,6 +586,34 @@ void applyOpenWorldEntry(void* gmd_v) {
                 "[open-world] forced all 6 Royal Seed bools (Bowser barrier)");
         }
     }
+
+    // Open-world: the Bowser cloud-piranha barrier is six WorldMapCloudPackun
+    // actors whose despawn state IS six saved GameData bools (RomFS
+    // GameDataList Struct "WorldMapCloudPackunVanishInfo", one IsVanish<world>
+    // per cloud; hashes = murmur3 of the dotted full names, verified against
+    // the GameDataList.Product.100 schema).  These six are in the client's
+    // WORLD_UNLOCK_HASHES, but that channel writes via grantContainerACounter
+    // (the Int container) -- a silent no-op for Bool-category entries -- which
+    // is why every prior route-bit / Royal-Seed attempt left the piranhas up.
+    // Write them through the Bool path that demonstrably lands (Royal Seeds).
+    static std::atomic<bool> s_cloud_vanish_done{false};
+    if (!s_cloud_vanish_done.load(std::memory_order_relaxed)) {
+        static const std::uint32_t kCloudVanish[] = {
+            0xc687fb5fu,   // WorldMapCloudPackunVanishInfo.IsVanishSavanna
+            0xcff5f3d2u,   // .IsVanishYama
+            0x048bc39cu,   // .IsVanishWa
+            0x1677f038u,   // .IsVanishSabaku
+            0x95539ec5u,   // .IsVanishKin
+            0x7f6e8a47u};  // .IsVanishNettai
+        bool ok = true;
+        for (std::uint32_t h : kCloudVanish) ok = grantContainerBBool(h, 1u) && ok;
+        if (ok) {
+            s_cloud_vanish_done.store(true, std::memory_order_relaxed);
+            SMBWAP_LOG_INFO(
+                "[open-world] forced all 6 WorldMapCloudPackun IsVanish bools "
+                "(Bowser cloud piranhas)");
+        }
+    }
 }
 
 void pushFlowerLockUnlock() {
