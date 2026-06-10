@@ -68,9 +68,18 @@ class TestOpenWorldGeneration(unittest.TestCase):
         item_names = [i.name for i in multiworld.itempool if i.player == 1]
         for name in item_names:
             self.assertNotIn(name, ("Petal Isles Wonder Seed", "Special World Wonder Seed"))
-            n = world_of_region(name) if (name.endswith(" Royal Seed") or name.endswith(" Wonder Seed")) else None
-            if n is not None:
-                self.assertIn(n, active, f"leaked inactive seed item {name!r}")
+            # Inactive worlds' WONDER seeds are stripped (precollected instead);
+            # their ROYAL seeds are KEPT -- all six are required to face Bowser.
+            if name.endswith(" Wonder Seed"):
+                n = world_of_region(name)
+                if n is not None:
+                    self.assertIn(n, active, f"leaked inactive Wonder Seed {name!r}")
+
+        # All six Royal Seeds stay in the pool regardless of the active set.
+        royal_in_pool = {n for n in item_names if n.endswith(" Royal Seed")}
+        self.assertEqual(
+            royal_in_pool, {f"W{n} Royal Seed" for n in range(1, 7)},
+            "all six Royal Seeds must remain in the pool in open-world")
 
     def test_inactive_wonder_seeds_precollected(self):
         multiworld, world = _gen({"open_world": 1, "open_world_count": 3})
@@ -89,6 +98,26 @@ class TestOpenWorldGeneration(unittest.TestCase):
         # Royal Seeds are never precollected (active or inactive).
         for n in range(1, 7):
             self.assertEqual(precollected.count(f"W{n} Royal Seed"), 0)
+
+    def test_bowser_castle_courses_active_metas_stripped(self):
+        # Bowser's Castle is always part of open-world: every BC: course
+        # location stays in the pool (regardless of which worlds are active),
+        # while the four non-course "All <X> Power Badge Obtained" metas are
+        # stripped.
+        multiworld, _ = _gen({"open_world": 1, "open_world_count": 2})
+        wb = multiworld.get_region("World Bowser", 1)
+        names = {loc.name for loc in wb.locations}
+        self.assertTrue(names, "World Bowser should keep its BC: courses")
+        self.assertTrue(all(n.startswith("BC:") for n in names),
+                        f"non-course location leaked into World Bowser: {names}")
+        for course in ("Missile Meg Mayhem", "High-Voltage Gauntlet",
+                       "Evade the Seeker Bullet Bills!",
+                       "KnuckleFest Bowser's Blazing Beats",
+                       "Bowser's Rage Stage"):
+            self.assertTrue(any(course in n for n in names),
+                            f"BC course {course!r} missing from the pool")
+        self.assertFalse(any("Power Badge Obtained" in n for n in names),
+                         "the All-Power-Badge metas should be stripped")
 
     def test_palaces_required_sentinel_equals_count(self):
         _, world = _gen({"open_world": 1, "open_world_count": 4, "palaces_required": 0})
@@ -113,6 +142,31 @@ class TestOpenWorldGeneration(unittest.TestCase):
             with self.subTest(count=count):
                 multiworld, _ = _gen({"open_world": 1, "open_world_count": count}, seed=2000 + count, fill=True)
                 self.assertTrue(multiworld.can_beat_game(), f"open-world N={count} should be beatable")
+
+    def test_no_castle_item_is_a_bowser_prerequisite(self):
+        # Anti-softlock: the player must be able to open Bowser's Castle
+        # (hold all six Royal Seeds + reach palaces_required palaces) using
+        # ONLY items found outside the Castle.  Otherwise a Castle item would
+        # be a prerequisite for entering the Castle -- a deadlock the runtime
+        # death-gate would hit (can't enter to grab it without first clearing
+        # a palace that item gates).  The palace-reachability term in
+        # make_bowser_gate is what forces fill to keep prerequisites out.
+        for count in (1, 3, 6):
+            with self.subTest(count=count):
+                multiworld, _ = _gen(
+                    {"open_world": 1, "open_world_count": count},
+                    seed=4000 + count, fill=True)
+                state = CollectionState(multiworld)
+                for loc in multiworld.get_filled_locations(1):
+                    if loc.parent_region is not None \
+                            and loc.parent_region.name == "World Bowser":
+                        continue
+                    if loc.item is not None:
+                        state.collect(loc.item, prevent_sweep=True)
+                self.assertTrue(
+                    state.can_reach_region("World Bowser", 1),
+                    f"a Bowser's Castle item is a prerequisite for entering "
+                    f"the Castle (count={count})")
 
     def test_victory_placed_on_bowser(self):
         multiworld, world = _gen({"open_world": 1, "open_world_count": 2})

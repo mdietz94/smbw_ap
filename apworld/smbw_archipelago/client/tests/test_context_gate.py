@@ -75,6 +75,10 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         # tested in isolation from the item-table lookup plumbing.
         self.ctx._recompute_badge_mask = MagicMock(return_value=0)
         self.ctx._recompute_royal_seed_mask = MagicMock(return_value=0)
+        # In-game palace-clear count (the open-world anti-cheese half of the
+        # final-Bowser gate); stubbed so gate tests don't need the location
+        # reverse map.  Default 0 = no palaces cleared in-game.
+        self.ctx._palaces_cleared_in_game = MagicMock(return_value=0)
 
         self.ctx.lan_server = MagicMock()
 
@@ -319,10 +323,14 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
 
     async def test_open_world_bowser_gate_unaffected_by_world_filter(self):
         # Even with a tiny active-world set, the Bowser gate still fires
-        # when the player lacks the Royal Seeds.
+        # when the player lacks the Royal Seeds.  Open-world demands all six
+        # AP Royal Seeds (plus palaces_required palaces cleared in-game);
+        # here the player holds none, so the world-filter never applies and
+        # the gate arms.
         self.ctx.open_world = True
         self.ctx.open_world_active = [1]
-        self.ctx._recompute_royal_seed_mask.return_value = 0b011111  # only 5
+        self.ctx.palaces_required = 1
+        self.ctx._recompute_royal_seed_mask.return_value = 0  # holds none
         self._enter(self.BOWSER_STAGE)
         with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
             await self.ctx.handle_gate_entered(self._bowser_gate())

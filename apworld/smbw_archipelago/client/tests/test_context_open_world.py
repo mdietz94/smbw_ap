@@ -2,9 +2,13 @@
 
 Pins: Connected reads ``open_world_active`` / ``palaces_required`` from
 slot_data and pushes the routable-world mask; receiving enough active
-Royal Seeds forces all six seeds + flags the Castle routable exactly
-once; the routable/royal-seed providers return the right values for the
-LanServer replay path; and non-open-world seeds stay a no-op.
+Royal Seeds flags the Castle routable exactly once but does NOT win the
+seed (the goal is actually beating Bowser, same as vanilla); the
+final-Bowser death-gate demands all six AP Royal Seeds AND
+``palaces_required`` palaces cleared in the player's own game; the
+routable/royal-seed providers return the
+right values for the LanServer replay path; and non-open-world seeds stay
+a no-op.
 
 Same Archipelago-availability guard pattern as the other test_context_*
 files.
@@ -72,6 +76,16 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
     async def _connect(self, slot_data: dict) -> None:
         await self.ctx._handle_ap_package("Connected", {"slot_data": slot_data})
 
+    def _client_goal_sent(self) -> bool:
+        """True iff any send_msgs call carried a StatusUpdate(CLIENT_GOAL)."""
+        from NetUtils import ClientStatus  # type: ignore
+        for call in self.ctx.send_msgs.call_args_list:
+            for msg in call.args[0]:
+                if (msg.get("cmd") == "StatusUpdate"
+                        and msg.get("status") == ClientStatus.CLIENT_GOAL):
+                    return True
+        return False
+
     # ---- Connected ----------------------------------------------------
 
     async def test_connected_reads_open_world_slot_data(self):
@@ -125,6 +139,88 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
         await self.ctx._handle_received_items({"items": [{"item": self.W1_SEED}]})
         self.assertFalse(self.ctx._bowser_opened)
         self.ctx.lan_server.send_set_royal_seeds_absolute.assert_not_called()
+
+    # ---- Goal is beating Bowser, not holding seeds --------------------
+
+    async def test_threshold_does_not_signal_goal(self):
+        """Meeting the Royal-Seed threshold opens the Castle route but must
+        NOT win the seed -- open-world now mirrors vanilla, where the goal is
+        actually defeating Bowser."""
+        await self._connect({"open_world_active": [1, 3, 5], "palaces_required": 2})
+        self.ctx.send_msgs.reset_mock()
+        self.ctx.items_received = [{"item": self.W1_SEED}, {"item": self.W3_SEED}]
+        await self.ctx._handle_received_items(
+            {"items": [{"item": self.W1_SEED}, {"item": self.W3_SEED}]})
+        self.assertTrue(self.ctx._bowser_opened)
+        self.assertFalse(self.ctx._goal_status_sent)
+        self.assertFalse(self._client_goal_sent())
+
+    async def test_bowser_clear_signals_goal(self):
+        """Defeating Bowser (GameGoalReached Nerve -> handle_goal_completed)
+        is what wins an open-world seed."""
+        from ..protocol import GoalCompleted
+        await self._connect({
+            "open_world_active": [1, 3, 5],
+            "palaces_required": 2,
+            "goal_location_name": "BC: Bowser's Rage Stage - Royal Seed",
+        })
+        self.ctx.send_msgs.reset_mock()
+        await self.ctx.handle_goal_completed(GoalCompleted(seq=1))
+        self.assertTrue(self.ctx._goal_status_sent)
+        self.assertTrue(self._client_goal_sent())
+
+    # ---- Final-Bowser death-gate: all six seeds + palaces cleared -----
+
+    async def test_bowser_gate_requires_all_seeds_and_palaces(self):
+        """Open-world Bowser gate: must hold ALL six AP Royal Seeds AND have
+        cleared palaces_required palaces in the player's own game."""
+        from ..protocol import GateEntered, GateKind
+        await self._connect({"open_world_active": [1, 3, 5], "palaces_required": 2})
+        ev = GateEntered(
+            stage_key=0x6895BF00, gate_kind=GateKind.ROYAL_SEEDS,
+            requirement=6, world_no=8, course_no=0)
+        self.ctx._recompute_royal_seed_mask = MagicMock()
+        self.ctx._palaces_cleared_in_game = MagicMock()
+
+        # All six seeds + 2 palaces cleared -> satisfied.
+        self.ctx._recompute_royal_seed_mask.return_value = 0b111111
+        self.ctx._palaces_cleared_in_game.return_value = 2
+        self.assertTrue(self.ctx._gate_requirement_met(ev))
+
+        # All six seeds but only 1 palace cleared in-game -> bounce.
+        self.ctx._palaces_cleared_in_game.return_value = 1
+        self.assertFalse(self.ctx._gate_requirement_met(ev))
+
+        # Five seeds (missing one) even with palaces cleared -> bounce.
+        self.ctx._recompute_royal_seed_mask.return_value = 0b011111
+        self.ctx._palaces_cleared_in_game.return_value = 2
+        self.assertFalse(self.ctx._gate_requirement_met(ev))
+
+        # The kill message names both conditions.
+        cause = self.ctx._gate_kill_cause(ev)
+        self.assertIn("6 AP Royal Seeds", cause)
+        self.assertIn("2 palaces", cause)
+
+    async def test_palaces_cleared_counts_checked_locations(self):
+        """_palaces_cleared_in_game counts checked palace-clear AP locations
+        (persistent server state), keyed off the Royal-Seed table's palace
+        stage_keys -- the final Bowser stage is not among them."""
+        from .. import royal_seed_table
+        from ..location_table import lookup_name
+        from ..protocol import CheckEmitted, CheckKind
+        await self._connect({"open_world_active": [1, 3, 5], "palaces_required": 2})
+        names = [
+            lookup_name(CheckEmitted(kind=CheckKind.PALACE_CLEAR, stage_key=sk))
+            for sk in royal_seed_table.PALACE_STAGE_KEYS
+        ]
+        self.assertTrue(all(names), "all six palace locations must resolve")
+        self.ctx._location_name_to_id = {n: 1000 + i for i, n in enumerate(names)}
+
+        self.ctx.checked_locations = set()
+        self.assertEqual(self.ctx._palaces_cleared_in_game(), 0)
+        # Two distinct palace locations checked -> 2 (an unrelated id ignored).
+        self.ctx.checked_locations = {1000, 1002, 55555}
+        self.assertEqual(self.ctx._palaces_cleared_in_game(), 2)
 
     # ---- Providers (LanServer replay path) ----------------------------
 
