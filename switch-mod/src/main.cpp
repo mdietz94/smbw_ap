@@ -1002,6 +1002,122 @@ HkTrampoline<std::uint64_t, long long> routeGateForceOpenHook =
     });
 
 // =========================================================================
+// OPEN-WORLD PETAL-ISLES INTRA-WORLD COURSE ROADS (course-clear-gated)
+// =========================================================================
+//
+// The roads WITHIN Petal Isles that connect its courses normally only draw
+// after the player clears the prerequisite level.  In open-world the player
+// walks/fast-travels in without ever clearing those levels, so the connecting
+// roads stay undrawn and block navigation.
+//
+// The world-map route evaluator ProcessWorldMapRouteGate (NSO +0x377280) and
+// its two sibling per-route evaluators (FUN_71005840f0, FUN_71003791a0)
+// re-derive every route on each world-map (re)load by switching on the
+// route's CoursePointInfo ConditionType (the enum from FUN_71009281bc):
+//   1 ClearAppointedCourse · 2 WonderSeed-count · 3 ClearLinkedCourse ·
+//   4 OpenAppointedCourse · 5 GrandPropellerFlowerDemo · 7 FlowerLock · ...
+// When a case's predicate returns 1 the segment is added to the drawn-routes
+// list (FUN_71003797f0 -> FUN_7101b75f60) -- so the predicate result IS
+// "draw this road", and forcing it open draws the road with no cutscene
+// (the same live-confirmed mechanism as the W3->W4/5/6 reveal roads; see
+// docs/grand-propeller-flower-reveal-re-2026-06-08.md).
+//
+// Petal Isles' connecting roads (WorldMapInfo002 CourseTable, offline RE)
+// use the course-clear-derived conditions:
+//   * Course5  -> ClearLinkedCourse    (case 3, leaf FUN_7100584eb0)
+//   * Course12 -> ClearAppointedCourse (case 1, leaf FUN_7100585420)
+// OpenAppointedCourse (case 4, leaf FUN_71005852d0) is the sibling form used
+// by other worlds' equivalents; we cover it too so the same hook generalises.
+// The WonderSeed-count case (2) is already handled by the AP-authoritative
+// Wonder Seed reader override (containerAReaderHook), and FlowerLock (7) by
+// routeGateForceOpenHook -- so the only gap left for the intra-world roads is
+// the course-clear cases.
+//
+// LEVER (task option (a) -- preferred): rather than granting course-clear
+// flags (which would pollute AP check / goal state), we hook the three CLEAN
+// leaf predicates and force them "open" when open-world is active AND the
+// player is currently on the Petal Isles map (in-game world index == 2, read
+// from container-A hash 0x9f5ead3c, identical to routeGateForceOpenHook).
+// No persistent state is written; AP course-clear state is untouched.
+//
+// SCOPE: gated to Petal Isles (world_val 2) ONLY, mirroring
+// routeGateForceOpenHook -- the other worlds are walked into on foot and left
+// VANILLA so their per-world course progression is unaffected.  All three
+// leaf predicates have only route-gate evaluators as callers
+// (ProcessWorldMapRouteGate / FUN_71005840f0 / FUN_71003791a0), so forcing
+// them is on-purpose for every call site.
+//
+// PROLOGUE SAFETY (verified via Ghidra disassembly):
+//   * FUN_7100585420: sub sp / stp x4 -- first adrp at +0x44 (instr 17).
+//   * FUN_71005852d0: sub sp / stp x4 -- first adrp at +0x78 (instr 30).
+//   * FUN_7100584eb0: sub sp / stp x6 -- first adrp at +0xd4 (instr 53).
+//   All clean in the first 4 instructions; (off+8)&7==0 -> count=4.
+
+// Shared gate: returns true iff open-world is active, a save is loaded, and
+// the player is currently on the Petal Isles world map (world_val == 2).
+// Reads the in-game world index via the (already-installed) container-A
+// reader trampoline -- recursive Orig() bypasses our substitution and is
+// pure, so it is recursion-safe.
+bool openWorldPetalIslesActive() {
+    if (!probe::isSaveLoaded()) return false;
+    if (smbwap::ap::getRoutableWorldMask() == 0) return false;  // vanilla
+    void* gmd = probe::gmdSingleton();
+    if (gmd == nullptr) return false;
+    unsigned world_val = 0;
+    containerAReaderHook.orig(reinterpret_cast<long>(gmd), &world_val,
+                              0x9f5ead3cu);
+    return world_val == 2u;  // 2 == Petal Isles (container-A 0x9f5ead3c)
+}
+
+// Rate-limited "[petal-road] forced open" log shared by the three hooks.
+void logPetalRoadForce(const char* which) {
+    static std::atomic<std::int32_t> log_budget{24};
+    std::int32_t b = log_budget.load(std::memory_order_relaxed);
+    while (b > 0 && !log_budget.compare_exchange_weak(
+               b, b - 1, std::memory_order_relaxed)) {
+    }
+    if (b > 0) {
+        SMBWAP_LOG_INFO("[petal-road] %s force-open (open-world, PI)", which);
+    }
+}
+
+// FUN_7100585420 @ NSO +0x585420 -- ClearAppointedCourse route predicate
+// (ConditionType case 1).  `uint FUN(route)` returning & 1 = road open.
+HkTrampoline<unsigned, long> clearAppointedCourseHook = hk::hook::trampoline(
+    [](long route) -> unsigned {
+        const unsigned r = clearAppointedCourseHook.orig(route);
+        if ((r & 1u) != 0u) return r;            // already open -> pass through
+        if (!openWorldPetalIslesActive()) return r;
+        logPetalRoadForce("ClearAppointedCourse");
+        return 1u;
+    });
+
+// FUN_71005852d0 @ NSO +0x5852d0 -- OpenAppointedCourse route predicate
+// (ConditionType case 4).  `uint FUN(route)` returning & 1 = road open.
+HkTrampoline<unsigned, long> openAppointedCourseHook = hk::hook::trampoline(
+    [](long route) -> unsigned {
+        const unsigned r = openAppointedCourseHook.orig(route);
+        if ((r & 1u) != 0u) return r;
+        if (!openWorldPetalIslesActive()) return r;
+        logPetalRoadForce("OpenAppointedCourse");
+        return 1u;
+    });
+
+// FUN_7100584eb0 @ NSO +0x584eb0 -- ClearLinkedCourse leaf predicate
+// (ConditionType case 3; `bool FUN(courseClearRecord, courseId)` -- reads the
+// per-course-clear container-C bitfield for the linked prerequisite course).
+// Forcing it true reports the linked course "cleared" for route-draw purposes
+// only (no write to the course-clear container, so AP check state is intact).
+HkTrampoline<bool, long, unsigned> clearLinkedCourseHook = hk::hook::trampoline(
+    [](long record, unsigned course_id) -> bool {
+        const bool r = clearLinkedCourseHook.orig(record, course_id);
+        if (r) return true;                       // already cleared -> pass
+        if (!openWorldPetalIslesActive()) return r;
+        logPetalRoadForce("ClearLinkedCourse");
+        return true;
+    });
+
+// =========================================================================
 // SCENE-CHANGE-REQUEST PROBE (toward the Bowser final-level stage-warp)
 // =========================================================================
 //
@@ -1082,7 +1198,7 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
-    SMBWAP_LOG_INFO("Phase 2g: 17 hooks + ap/ subsystem + real probe:: grants + WS reader override + open-world routability + course visibility + travel confirm + route-gate force-open");
+    SMBWAP_LOG_INFO("Phase 2g: 20 hooks + ap/ subsystem + real probe:: grants + WS reader override + open-world routability + course visibility + travel confirm + route-gate force-open + Petal-Isles intra-world course roads");
 
     // CORE_INIT (Phase 2a)
     installHook("CreateRootHeap",          0x005a66f8,
@@ -1141,6 +1257,20 @@ extern "C" void hkMain() {
     //   Royal-Seed death-gate, not this route gate.
     installHook("RouteGateForceOpen",  0x00383418,
                 routeGateForceOpenHook.installAtMainOffset(0x00383418));
+    // OPEN-WORLD PETAL-ISLES INTRA-WORLD COURSE ROADS: force the three
+    //   course-clear-derived route-gate leaf predicates open (only on the
+    //   Petal Isles map, only in open-world) so the roads that connect PI's
+    //   courses draw without the player having cleared the prerequisite
+    //   levels.  No persistent / AP course-clear state is written.
+    //   ClearAppointedCourse (case 1): FUN_7100585420.
+    installHook("ClearAppointedCourse", 0x00585420,
+                clearAppointedCourseHook.installAtMainOffset(0x00585420));
+    //   OpenAppointedCourse (case 4): FUN_71005852d0.
+    installHook("OpenAppointedCourse",  0x005852d0,
+                openAppointedCourseHook.installAtMainOffset(0x005852d0));
+    //   ClearLinkedCourse (case 3): FUN_7100584eb0.
+    installHook("ClearLinkedCourse",    0x00584eb0,
+                clearLinkedCourseHook.installAtMainOffset(0x00584eb0));
     // SceneChangeReq: FUN_710061a3d8 -- logs every scene-change request's
     //   stage name + seq pointer, to capture the final-castle stage name for
     //   a direct Bowser warp (the castle barrier is BYML/demo-gated).
