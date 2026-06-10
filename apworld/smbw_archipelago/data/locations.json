@@ -589,7 +589,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Wall-Climb Jump I - Top of Flag",
@@ -598,7 +598,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": "|Wall-Climb Jump Badge| AND {OptOne(|Y Button|)}"
+    "requires": "{OptOne(|Y Button|)}"
   },
   {
     "name": "W1: Wall-Climb Jump I - 10 Coin #1",
@@ -607,7 +607,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Wall-Climb Jump I - 10 Coin #2",
@@ -616,7 +616,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Wall-Climb Jump I - 10 Coin #3",
@@ -625,7 +625,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge| AND {OptOne(|Y Button|)}"
+    "requires": "{OptOne(|Y Button|)}"
   },
   {
     "name": "W1: Pipe-Rock Rumble - Wonder Seed",
@@ -772,7 +772,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Jet Run I - Top of Flag",
@@ -781,7 +781,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Jet Run I - 10 Coin #1",
@@ -790,7 +790,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Jet Run I - 10 Coin #2",
@@ -799,7 +799,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Jet Run I - 10 Coin #3",
@@ -808,7 +808,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "Special: Bounce, Bounce, Bounce - Normal Exit",
@@ -980,7 +980,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|Up|)} AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|Up|)} AND {OptOne(|R Button|)}"
   },
   {
     "name": "PI: Dolphin Kick I - Top of Flag",
@@ -989,7 +989,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|Up|)} AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|Up|)} AND {OptOne(|R Button|)}"
   },
   {
     "name": "PI: Dolphin Kick I - 10 Coin #1",
@@ -998,7 +998,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|Up|)} AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|Up|)} AND {OptOne(|R Button|)}"
   },
   {
     "name": "PI: Dolphin Kick I - 10 Coin #2",
@@ -1007,7 +1007,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|Up|)} AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|Up|)} AND {OptOne(|R Button|)}"
   },
   {
     "name": "PI: Dolphin Kick I - 10 Coin #3",
@@ -1016,7 +1016,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|Up|)} AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|Up|)} AND {OptOne(|R Button|)}"
   },
   {
     "name": "PI: Robbird Cove - Normal Exit",
@@ -1240,7 +1240,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "|Wall-Climb Jump Badge| AND ({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
+    "requires": "({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
   },
   {
     "name": "W2: Wall-Climb Jump II - Top of Flag",
@@ -1249,7 +1249,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": "|Wall-Climb Jump Badge| AND ({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
+    "requires": "({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
   },
   {
     "name": "W2: Wall-Climb Jump II - 10 Coin #1",
@@ -1258,7 +1258,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge| AND ({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
+    "requires": "({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
   },
   {
     "name": "W2: Wall-Climb Jump II - 10 Coin #2",
@@ -1267,7 +1267,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge| AND ({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
+    "requires": "({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
   },
   {
     "name": "W2: Wall-Climb Jump II - 10 Coin #3",
@@ -1276,7 +1276,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge| AND ({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
+    "requires": "({OptOne(|R Button|)} OR {OptOne(|Y Button|)})"
   },
   {
     "name": "W2: Puzzling Park - Wonder Seed",
@@ -1464,7 +1464,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Floating High Jump I - Top of Flag",
@@ -1473,7 +1473,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #1",
@@ -1482,7 +1482,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #2",
@@ -1491,7 +1491,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #3",
@@ -1500,7 +1500,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge| AND {OptOne(|Y Button|)}"
+    "requires": "{OptOne(|Y Button|)}"
   },
   {
     "name": "W2: Fluff-Puff Kerfuff - Wonder Seed",
@@ -1551,7 +1551,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Spring Feet I - Top of Flag",
@@ -1560,7 +1560,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Spring Feet I - 10 Coin #1",
@@ -1569,7 +1569,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Spring Feet I - 10 Coin #2",
@@ -1578,7 +1578,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Spring Feet I - 10 Coin #3",
@@ -1587,7 +1587,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "Special: Climb to the Beat - Normal Exit",
@@ -1946,7 +1946,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Dolphin Kick II - Top of Flag",
@@ -1955,7 +1955,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|R Button|)} AND {OptOne(|Y Button|)}"
+    "requires": "{OptOne(|R Button|)} AND {OptOne(|Y Button|)}"
   },
   {
     "name": "PI: Dolphin Kick II - 10 Coin #1",
@@ -1964,7 +1964,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Dolphin Kick II - 10 Coin #2",
@@ -1973,7 +1973,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Dolphin Kick II - 10 Coin #3",
@@ -1982,7 +1982,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Dolphin Kick Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Swimming! - Normal Exit",
@@ -2194,7 +2194,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W3: Crouching High Jump I - Top of Flag",
@@ -2203,7 +2203,7 @@
       "World 3",
       "Gold Flag"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W3: Crouching High Jump I - 10 Coin #1",
@@ -2212,7 +2212,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W3: Crouching High Jump I - 10 Coin #2",
@@ -2221,7 +2221,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W3: Crouching High Jump I - 10 Coin #3",
@@ -2230,7 +2230,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W3: The Midway Trial - Normal Exit",
@@ -3127,7 +3127,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Crouching High Jump II - Top of Flag",
@@ -3136,7 +3136,7 @@
       "World 4",
       "Gold Flag"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Crouching High Jump II - 10 Coin #1",
@@ -3145,7 +3145,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Crouching High Jump II - 10 Coin #2",
@@ -3154,7 +3154,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Crouching High Jump II - 10 Coin #3",
@@ -3163,7 +3163,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Crouching High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Invisibility I - Normal Exit",
@@ -3171,7 +3171,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Invisibility I - Top of Flag",
@@ -3180,7 +3180,7 @@
       "World 4",
       "Gold Flag"
     ],
-    "requires": "|Invisibility Badge| AND {OptOne(|Y Button|)}"
+    "requires": "{OptOne(|Y Button|)}"
   },
   {
     "name": "W4: Invisibility I - 10 Coin #1",
@@ -3189,7 +3189,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Invisibility I - 10 Coin #2",
@@ -3198,7 +3198,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Invisibility I - 10 Coin #3",
@@ -3207,7 +3207,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Sunbaked Skirmish - Wonder Seed",
@@ -3597,7 +3597,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Boosting Spin Jump I - Top of Flag",
@@ -3606,7 +3606,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #1",
@@ -3615,7 +3615,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #2",
@@ -3624,7 +3624,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #3",
@@ -3633,7 +3633,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "PI: Spelunking! - Wonder Seed",
@@ -4096,7 +4096,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W5: Grappling Vine I - Top of Flag",
@@ -4105,7 +4105,7 @@
       "World 5",
       "Gold Flag"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W5: Grappling Vine I - 10 Coin #1",
@@ -4114,7 +4114,7 @@
       "World 5",
       "10 Coin"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W5: Grappling Vine I - 10 Coin #2",
@@ -4123,7 +4123,7 @@
       "World 5",
       "10 Coin"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W5: Grappling Vine I - 10 Coin #3",
@@ -4132,7 +4132,7 @@
       "World 5",
       "10 Coin"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W5: Fungi Funk - Wonder Seed",
@@ -4690,7 +4690,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Floating High Jump II - Top of Flag",
@@ -4699,7 +4699,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #1",
@@ -4708,7 +4708,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #2",
@@ -4717,7 +4717,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #3",
@@ -4726,7 +4726,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Boosting Spin Jump II - Normal Exit",
@@ -4734,7 +4734,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)} AND |Drill Mushroom|"
+    "requires": "{OptOne(|R Button|)} AND |Drill Mushroom|"
   },
   {
     "name": "W6: Boosting Spin Jump II - Top of Flag",
@@ -4743,7 +4743,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)} AND |Drill Mushroom|"
+    "requires": "{OptOne(|R Button|)} AND |Drill Mushroom|"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #1",
@@ -4752,7 +4752,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)} AND |Drill Mushroom|"
+    "requires": "{OptOne(|R Button|)} AND |Drill Mushroom|"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #2",
@@ -4761,7 +4761,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)} AND |Drill Mushroom|"
+    "requires": "{OptOne(|R Button|)} AND |Drill Mushroom|"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #3",
@@ -4770,7 +4770,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND {OptOne(|R Button|)} AND |Drill Mushroom|"
+    "requires": "{OptOne(|R Button|)} AND |Drill Mushroom|"
   },
   {
     "name": "W6: Grappling Vine II - Normal Exit",
@@ -4778,7 +4778,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W6: Grappling Vine II - Top of Flag",
@@ -4787,7 +4787,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W6: Grappling Vine II - 10 Coin #1",
@@ -4796,7 +4796,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W6: Grappling Vine II - 10 Coin #2",
@@ -4805,7 +4805,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W6: Grappling Vine II - 10 Coin #3",
@@ -4814,7 +4814,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Grappling Vine Badge| AND {OptOne(|R Button|)}"
+    "requires": "{OptOne(|R Button|)}"
   },
   {
     "name": "W6: Magma Flare-Up - Wonder Seed",
@@ -4948,7 +4948,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Jet Run II - Top of Flag",
@@ -4957,7 +4957,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Jet Run II - 10 Coin #1",
@@ -4966,7 +4966,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Jet Run II - 10 Coin #2",
@@ -4975,7 +4975,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Jet Run II - 10 Coin #3",
@@ -4984,7 +4984,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Jet Run Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Invisibility II - Normal Exit",
@@ -4992,7 +4992,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Invisibility II - Top of Flag",
@@ -5001,7 +5001,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Invisibility II - 10 Coin #1",
@@ -5010,7 +5010,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Invisibility II - 10 Coin #2",
@@ -5019,7 +5019,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Invisibility II - 10 Coin #3",
@@ -5028,7 +5028,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Spring Feet II - Normal Exit",
@@ -5036,7 +5036,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Spring Feet II - Top of Flag",
@@ -5045,7 +5045,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Spring Feet II - 10 Coin #1",
@@ -5054,7 +5054,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Spring Feet II - 10 Coin #2",
@@ -5063,7 +5063,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Spring Feet II - 10 Coin #3",
@@ -5072,7 +5072,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "region": "W6 Post-Spring",
