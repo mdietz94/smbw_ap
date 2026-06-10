@@ -90,6 +90,18 @@ ROUTABLE_CASTLE_BIT = 8
 # the obstacle in place; see docs/re-world-intro-demo-2026-06-05.md).
 ROUTABLE_PETAL_BIT = 6
 
+# Open-world: World 1 is AP bucket 0 (= mask bit 0).  Unlike W2..W6, W1 is
+# NOT walk-connected to Petal Isles, so the walk-in model can never reach it
+# -- fast-travel (selecting W1 in the world-travel UI and teleporting to its
+# first course) is the ONLY way in.  When W1 is active we therefore set its
+# routable bit so the Switch hooks (worldRoutable/worldTravel/courseVisible +
+# applyOpenWorldEntry's first-course fill, all keyed on bit 0 == W1) surface
+# W1 as a fast-travel destination landing on 1-1.  Done only when W1 is in
+# the active set -- W1 is never travelable when it is not active.
+ROUTABLE_W1_BIT = 0
+# AP world number for World 1 (open_world_active uses 1-based world numbers).
+OPEN_WORLD_W1 = 1
+
 
 # Level-entry gate (kill the player if they sequence-broke into a course
 # AP logic gates).  The Switch can't physically block course entry, so
@@ -595,6 +607,14 @@ class SMBWContext(CommonContext):
         # node-filled, its internal seed-bar gates intact.  Castle stays
         # routable once Bowser is unlocked so the final fight is reachable.
         mask = (1 << ROUTABLE_PETAL_BIT)
+        # World 1 EXCEPTION (2026-06-09): W1 is not walk-connected to Petal
+        # Isles, so the walk-in path can never reach it.  When W1 is active we
+        # add its routable bit so it shows up as a fast-travel destination and
+        # teleports the player to 1-1 (the Switch first-course fill +
+        # worldRoutable/worldTravel/courseVisible hooks all key on bit 0 == W1).
+        # Only when active -- W1 is never travelable otherwise.
+        if OPEN_WORLD_W1 in self.open_world_active:
+            mask |= (1 << ROUTABLE_W1_BIT)
         if self._bowser_opened:
             mask |= (1 << ROUTABLE_CASTLE_BIT)
         return mask
