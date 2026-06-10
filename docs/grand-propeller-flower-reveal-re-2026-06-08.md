@@ -411,6 +411,17 @@ the list (`0x5ac1e406`, later `0x20fced8b`) null-derefing the game's Bool setter
 `probe::applyOpenWorldEntry` (SeedTrace.cpp), latched. The `FirstVisitDemoDone`
 reader hook (c647e85) was reverted — wrong target.
 
+**CASTLE FLY-IN NODE (2026-06-09, after the piranhas cleared):** the entry point
+into Castle Bowser is `WObjCommonMiniKoopaTeleportFlowerA` on the **World002
+(Petal Isles) map** (`BancMapUnit/World002.bcett.byml`, obj2000, WorldMapId 12 →
+World008 "Castle"). It is **Create-linked** from `WorldMapObjKoopaCastleEntranceGround`
+(obj2176, via a LogicalSignalORTag), whose AI reads the saved bool
+**`WorldMapKoopaCastleEntranceDemoInfo.IsAppear` = `0xc06bd61e`** (Bool[245],
+save=0; `.IsRequestAppear` `0x1313dba6` is transient). Also in WORLD_UNLOCK_HASHES
+(pair 73) and equally dead through the Int writer — added to the switch-side Bool
+grant block. Bonus logic data: World002's `GateTable` shows the five inter-area
+gates need 5/8/10/12/15 Wonder Seeds (`NeedNumOfWonderSeed`).
+
 **Durable RE infrastructure from this pass** (scripts in `C:\Users\maxwe\Documents\
 smbw_re_tmp\`): `byml_parse.py` (BYML v7 → JSON), `sarc_extract.py` (.pack.zs),
 `hash_lookup.py` (murmur3 name → GameDataList category/index). Extracted romfs at

@@ -604,14 +604,19 @@ void applyOpenWorldEntry(void* gmd_v) {
             0x048bc39cu,   // .IsVanishWa
             0x1677f038u,   // .IsVanishSabaku
             0x95539ec5u,   // .IsVanishKin
-            0x7f6e8a47u};  // .IsVanishNettai
+            0x7f6e8a47u,   // .IsVanishNettai
+            // The castle fly-in node: WObjCommonMiniKoopaTeleportFlowerA on
+            // the Petal Isles map (World002) is Create-linked from
+            // WorldMapObjKoopaCastleEntranceGround, whose AI reads this saved
+            // bool.  Without it the piranhas clear but no entry point spawns.
+            0xc06bd61eu};  // WorldMapKoopaCastleEntranceDemoInfo.IsAppear
         bool ok = true;
         for (std::uint32_t h : kCloudVanish) ok = grantContainerBBool(h, 1u) && ok;
         if (ok) {
             s_cloud_vanish_done.store(true, std::memory_order_relaxed);
             SMBWAP_LOG_INFO(
-                "[open-world] forced all 6 WorldMapCloudPackun IsVanish bools "
-                "(Bowser cloud piranhas)");
+                "[open-world] forced the 6 WorldMapCloudPackun IsVanish bools "
+                "+ KoopaCastleEntrance IsAppear (Bowser approach)");
         }
     }
 }
