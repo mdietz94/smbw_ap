@@ -482,6 +482,16 @@ void drainInbound() {
             "setBadgeBitfieldAbsolute returned %s",
             verb, static_cast<unsigned long long>(bits), dedup_suffix,
             ok ? "true" : "false");
+        // Force-unequip any badge AP did NOT grant (2026-06-10).  The
+        // owned-bitfield overwrite above does not touch the equipped-badge
+        // EnumArrays, so a level/shop that auto-equips an AP-disabled badge
+        // would otherwise still show it equipped/available.  `bits` is the
+        // exact AP-authoritative owned set, so any equipped badge whose bit
+        // is 0 here is one AP disabled -> reset that equip slot to Invalid.
+        const bool uneq = probe::clearEquippedBadgesNotOwned(bits);
+        SMBWAP_LOG_INFO(
+            "[grant] clearEquippedBadgesNotOwned(owned=0x%016llx) -> %s",
+            static_cast<unsigned long long>(bits), uneq ? "true" : "false");
     }
 
     if (has_seeds) {

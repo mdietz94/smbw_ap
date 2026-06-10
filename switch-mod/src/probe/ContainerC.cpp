@@ -191,6 +191,168 @@ bool setContainerCBit(std::uint32_t hash, std::uint32_t bit_index, bool value) {
 // ~2 s tick.  Idempotent absolute-overwrite -- same input always
 // produces the same final state, so a missed tick is silently
 // recovered by the next one.
+// ---------------------------------------------------------------------------
+// Force-unequip AP-disabled badges (2026-06-10).
+//
+// The bug: when AP has NOT placed a badge, `setBadgeBitfieldAbsolute`
+// clears its OWNED bit (good), but a level / shop / badge-house that
+// grants+auto-equips the badge ALSO writes the badge's identity into
+// the EQUIPPED field, which `setBadgeBitfieldAbsolute` never touches.
+// Result: the disabled badge still shows as equipped/available in the
+// badge menu even though it isn't owned.  Owned-clear alone is
+// insufficient; we must ALSO clear the equipped field.
+//
+// The equipped-badge identity is a SEPARATE GameData field (resolved
+// offline from RomFS GameDataList.Product.100 -- see smbw-romfs-
+// datamining):
+//
+//   EquipBadgeSave.BadgeId      hash 0xcfba9bf8  EnumArray[4]  save=0  (persisted)
+//   CoursePlayerEquipBadge.BadgeId hash 0xf30cb2e2 EnumArray[4] save=-1 (per-level)
+//
+// Both are EnumArrays of 4 u32 slots.  Each slot holds the *enum value*
+// of the equipped badge (NOT the internal_id) -- index k+1 of the enum
+// table is BadgeId{k}.  The sentinel "no badge" value is `Invalid` ==
+// 2117934662 (0x7E3D1E46), which is also both arrays' DefaultValue.
+// The decoded enum values match the save-file equipped identities in
+// the RE map (BadgeId34=0xe41b1aba Wall-Climb, BadgeId46=0xb77086e2
+// Auto Super Mushroom).
+//
+// EnumArrays live in the typed-virtual container "B-2" at gmd+0x2b0
+// (bucket gmd+0x2c0, count gmd+0x2cc, limit gmd+0x2b0, struct array
+// gmd+0x2b8 stride 0x50, data pointer at struct+0x28) -- per the
+// FUN_7100221128 reader decompile (static-analysis-findings "Updated
+// GameDataMgr container map").  The scalar Enum writer FUN_71003877c4
+// targets the DIFFERENT B-1 container (gmd+0x260) and only stores a
+// single u32, so it CANNOT write a 4-slot EnumArray; we write the slot
+// array directly, mirroring findContainerCData's open-address probe.
+//
+// ⚠️ NEEDS LIVE TEST + OFFSET CONFIRMATION: the gmd+0x2b0 container
+// layout is from static analysis only; it has never been live-written.
+// The write is gated defensively (null/bounds checks, data pointer
+// sanity) so a wrong offset degrades to a no-op rather than a crash.
+//
+// internal_id <-> enum-value table (BadgeId{internal_id} = enum value),
+// generated from GameDataList EquipBadgeSave.BadgeId.Values.  Used to
+// decode "which badge is in this equip slot" so we can compare against
+// the AP owned mask.
+struct BadgeEnumEntry { std::uint32_t enum_value; std::uint8_t internal_id; };
+constexpr BadgeEnumEntry kBadgeEnumValues[] = {
+    {0x6bcc257bu, 0}, {0x074affb5u, 1}, {0x1f65a370u, 2}, {0x8c9688b2u, 3},
+    {0xe9f7789au, 4}, {0x780bcc5au, 5}, {0x6d1bc278u, 6}, {0x6b24a10bu, 7},
+    {0xcd133ba3u, 8}, {0x6a0e48eau, 9}, {0x2b973461u, 10}, {0x3e79eb0eu, 11},
+    {0x579b6c6fu, 12}, {0xcff9ebc4u, 13}, {0x62a664a5u, 14}, {0x5f56923eu, 15},
+    {0x2e388bb6u, 16}, {0xcf21767au, 17}, {0xb7a10fcau, 18}, {0x2124ce3eu, 19},
+    {0x6e17fb3bu, 20}, {0x5ef0d828u, 21}, {0x40963b31u, 22}, {0xf7dfa3f6u, 23},
+    {0x1c68d88eu, 24}, {0xe1732189u, 25}, {0x5f280e18u, 26}, {0xb75be3acu, 27},
+    {0x25bd3f73u, 28}, {0x2a683a70u, 29}, {0x7139a3b0u, 30}, {0x95b023cau, 31},
+    {0x1f4ab322u, 32}, {0xc987232eu, 33}, {0xe41b1abau, 34}, {0xa8e86054u, 35},
+    {0x750bd47au, 36}, {0xd8c87b70u, 37}, {0x549668a6u, 38}, {0x88c1807du, 39},
+    {0x20bc18b1u, 40}, {0xd79571f3u, 41}, {0x3a666542u, 42}, {0x911775bfu, 43},
+    {0xf890d349u, 44}, {0x2d82a63du, 45}, {0xb77086e2u, 46}, {0x897a6180u, 47},
+    {0x37e75951u, 48}, {0x64c3909fu, 49}, {0xf221f7e9u, 50}, {0xee9f4657u, 51},
+    {0xf6f2ccd6u, 52}, {0x2575e18cu, 53}, {0x8f45c1acu, 54}, {0xc0158662u, 55},
+    {0xc602af3cu, 56}, {0x8b6447bdu, 57}, {0xdf593fcau, 58},
+};
+constexpr std::uint32_t kBadgeInvalidEnumValue = 2117934662u;  // 0x7E3D1E46
+constexpr std::uint32_t kEquipBadgeSaveHash       = 0xcfba9bf8u;
+constexpr std::uint32_t kCoursePlayerEquipHash    = 0xf30cb2e2u;
+constexpr std::uint32_t kEquipSlotCount           = 4u;
+
+namespace {
+
+// Decode an equip-slot enum value to its badge internal_id, or return
+// -1 for the "Invalid" sentinel / any unrecognized value.
+int badgeInternalIdForEnum(std::uint32_t enum_value) {
+    if (enum_value == kBadgeInvalidEnumValue) return -1;
+    for (const auto& e : kBadgeEnumValues) {
+        if (e.enum_value == enum_value) return e.internal_id;
+    }
+    return -1;
+}
+
+// Walk container B-2 (the typed-virtual container at gmd+0x2b0) for
+// `hash`; return the data pointer to its EnumArray storage (a
+// uint32_t[OriginalSize]), or nullptr if not found.  Mirrors
+// findContainerCData but for the B-2 layout.
+std::uint32_t* findEnumArrayData(std::uint32_t hash) {
+    auto* gmd = reinterpret_cast<unsigned char*>(gmdSingleton());
+    if (gmd == nullptr) return nullptr;
+
+    auto deref8 = [](unsigned char* p, std::ptrdiff_t off) -> std::uintptr_t {
+        return *reinterpret_cast<std::uintptr_t*>(p + off);
+    };
+    auto deref4 = [](unsigned char* p, std::ptrdiff_t off) -> std::uint32_t {
+        return *reinterpret_cast<std::uint32_t*>(p + off);
+    };
+
+    const std::uint32_t  limit        = deref4(gmd, 0x2b0);  // struct count cap
+    const std::uintptr_t obj_array    = deref8(gmd, 0x2b8);  // struct array (stride 0x50)
+    const std::uintptr_t bucket       = deref8(gmd, 0x2c0);  // bucket array (8-byte entries)
+    const std::uint32_t  bucket_count = deref4(gmd, 0x2cc);
+    if (bucket == 0 || bucket_count == 0 || bucket_count > 4096
+        || obj_array == 0 || limit == 0 || limit > 4096) {
+        return nullptr;
+    }
+
+    std::uint32_t initial = hash % bucket_count;
+    std::uint32_t cur = initial;
+    do {
+        const std::uintptr_t entry = bucket + static_cast<std::uintptr_t>(cur) * 8;
+        const std::uint32_t key = *reinterpret_cast<std::uint32_t*>(entry);
+        if (key == hash) {
+            std::uint32_t idx = *reinterpret_cast<std::uint32_t*>(entry + 4);
+            if (idx >= limit) return nullptr;
+            return *reinterpret_cast<std::uint32_t**>(
+                obj_array + static_cast<std::uintptr_t>(idx) * 0x50 + 0x28);
+        }
+        if (key == 0) return nullptr;
+        cur = (cur + 1) % bucket_count;
+    } while (cur != initial);
+    return nullptr;
+}
+
+// Clear any equip slot of `hash`'s EnumArray that references a badge
+// NOT present in `owned_mask` (bit == internal_id).  Returns the number
+// of slots cleared (>=0), or -1 if the field couldn't be located.
+int clearEquipFieldNotOwned(std::uint32_t hash, std::uint64_t owned_mask) {
+    std::uint32_t* slots = findEnumArrayData(hash);
+    if (slots == nullptr) return -1;
+
+    int cleared = 0;
+    for (std::uint32_t s = 0; s < kEquipSlotCount; ++s) {
+        const std::uint32_t cur = slots[s];
+        if (cur == kBadgeInvalidEnumValue) continue;
+        const int internal_id = badgeInternalIdForEnum(cur);
+        if (internal_id < 0) continue;  // unrecognized value -- leave it alone
+        const bool owned = (owned_mask >> internal_id) & 1u;
+        if (!owned) {
+            slots[s] = kBadgeInvalidEnumValue;
+            ++cleared;
+        }
+    }
+    return cleared;
+}
+
+}  // namespace
+
+bool clearEquippedBadgesNotOwned(std::uint64_t owned_mask) {
+    const int saved  = clearEquipFieldNotOwned(kEquipBadgeSaveHash, owned_mask);
+    const int course = clearEquipFieldNotOwned(kCoursePlayerEquipHash, owned_mask);
+
+    static std::atomic<std::uint32_t> log_budget{16};
+    if (log_budget.fetch_sub(1) > 0) {
+        SMBWAP_LOG_INFO(
+            "ClearEquippedNotOwned: owned=0x%016llx EquipBadgeSave=%d "
+            "CoursePlayerEquip=%d",
+            static_cast<unsigned long long>(owned_mask), saved, course);
+    }
+    // Success if at least one of the two fields was located.  A -1/-1
+    // result means neither EnumArray field is live yet (pre-save-select
+    // / wrong offset) -- report false so the caller knows nothing was
+    // applied, but the badge owned-clear still ran independently.
+    return saved >= 0 || course >= 0;
+}
+
 bool setWonderSeedBitfieldAbsolute(std::uint64_t bits_lo, std::uint64_t bits_hi) {
     constexpr std::uint32_t kWonderSeedBitfieldHash = 0x60458608u;
     std::uint32_t* data = findContainerCData(kWonderSeedBitfieldHash);
