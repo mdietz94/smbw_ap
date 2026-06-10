@@ -45,7 +45,11 @@ from . import royal_seed_table
 from . import wonder_seed_table
 from . import world_unlock_table
 from .commands import SMBWCommandProcessor
-from .location_table import lookup_name, pr_world_no_to_ap_world
+from .location_table import (
+    lookup_name,
+    pr_world_no_to_ap_world,
+    shop_badge_location_names,
+)
 from .protocol import (
     CheckEmitted,
     CheckKind,
@@ -376,6 +380,13 @@ class SMBWContext(CommonContext):
                     self.lan_server.send_apply_world_unlock(
                         *self._world_unlock_hashes())
 
+            # Badge-shop AP ownership: push the shop masks now that the
+            # reverse maps + checked_locations (carried by Connected) are
+            # available, so a returning player's already-bought badges show
+            # sold-out and AP-granted-but-unbought ones show purchasable
+            # before they walk into a shop.
+            self._push_badge_shop_state()
+
             # Tell the AP server the player is in-game so item routing
             # starts flowing.  ClientStatus.CLIENT_PLAYING.
             try:
@@ -393,6 +404,15 @@ class SMBWContext(CommonContext):
 
         if cmd == "ReceivedItems":
             await self._handle_received_items(args)
+            return
+
+        if cmd == "RoomUpdate":
+            # ``checked_locations`` may grow (our own checks confirmed, or
+            # another slot's collect) -- re-push the badge-shop sold mask so
+            # a freshly-obtained shop badge flips to sold-out.  super()
+            # already merged the update into self.checked_locations.
+            if "checked_locations" in args:
+                self._push_badge_shop_state()
             return
 
     def _rebuild_reverse_maps_from_context(self) -> None:
@@ -460,6 +480,47 @@ class SMBWContext(CommonContext):
         lan = self.lan_server
         if lan is not None:
             lan.send_set_itemget_deny(self._recompute_itemget_deny_mask())
+
+    def _recompute_badge_shop_state(self) -> tuple[int, int]:
+        """Compute the AP-authoritative Poplin badge-shop masks the Switch
+        applies to the shop display (see ``wire.SetBadgeShopStateMsg``).
+
+        ``managed`` = every badge sold at a Poplin shop (an AP shop check):
+        AP owns those rows' display state regardless of the in-game
+        owned/purchased bits.  ``sold`` = the managed badges whose
+        "<Badge> Obtained" location is already obtained -- server-confirmed
+        (:attr:`checked_locations`) OR sent this session
+        (:attr:`_sent_loc_ids`, optimistic so a just-bought badge shows
+        sold-out immediately rather than flickering back to purchasable
+        during the AP round-trip).
+
+        ``managed`` needs no AP-id resolution (it's the static set of shop
+        badge internal_ids), so it's correct even before the DataPackage
+        reverse maps exist; ``sold`` resolves each badge's location name to
+        its AP id and stays empty until the maps are built (a Connected /
+        periodic-tick push then corrects it).  This is the
+        ``badge_shop_state_provider`` the LAN server replays on HelloMsg +
+        the 2 s tick.
+        """
+        managed = 0
+        sold = 0
+        obtained = set(self.checked_locations) | self._sent_loc_ids
+        for internal_id, loc_name in shop_badge_location_names().items():
+            managed |= (1 << internal_id)
+            loc_id = self._location_name_to_id.get(loc_name)
+            if loc_id is not None and loc_id in obtained:
+                sold |= (1 << internal_id)
+        return managed, sold
+
+    def _push_badge_shop_state(self) -> None:
+        """Recompute + push the badge-shop masks to the Switch now.  No-op
+        when no Switch client is bound (the LAN server replays on the next
+        HelloMsg / tick)."""
+        lan = self.lan_server
+        if lan is None:
+            return
+        managed, sold = self._recompute_badge_shop_state()
+        lan.send_set_badge_shop_state(managed, sold)
 
     def _recompute_badge_mask(self) -> int:
         """Walk :attr:`items_received` and compute the absolute owned-badge
@@ -751,22 +812,13 @@ class SMBWContext(CommonContext):
                 log.debug(
                     "badge item received: %r (id=%s) -- covered by "
                     "SetBadgesAbsolute push", item_name, item_id)
-                # Auto-resolve the "<Badge> Obtained" location at grant
-                # time.  Why: the Switch's badge bitfield serves dual
-                # duty -- Mario equips from it AND the Poplin shop
-                # refuses to sell any bit it sees set.  Granting via
-                # AP sets the bit immediately, locking the shop and
-                # making the in-game purchase that would normally
-                # complete the location unreachable.
-                bit = badge_table.grant_internal_id_for_item(item_name)
-                if bit is not None:
-                    check = CheckEmitted(
-                        kind=CheckKind.BADGE_ACQUIRED,
-                        stage_key=bit,
-                        metadata={"source": "ap_grant"},
-                    )
-                    if self.bridge_state.emit_check(check):
-                        await self.handle_check_emitted(check)
+                # NOTE: we no longer auto-resolve the "<Badge> Obtained"
+                # shop location on grant.  The Switch badge-shop override
+                # (SetBadgeShopState) now keeps an AP-granted-but-unbought
+                # shop badge PURCHASABLE -- despite its owned bit being set
+                # so Mario can equip it -- so the player completes the shop
+                # check by actually buying it (the purchase-commit hook
+                # fires BADGE_ACQUIRED).  See _recompute_badge_shop_state.
                 continue
             if wonder_seed_table.is_wonder_seed_item(item_name):
                 log.debug(
@@ -1250,6 +1302,13 @@ class SMBWContext(CommonContext):
                       name, loc_id)
             return
         self._sent_loc_ids.add(loc_id)
+        # Badge-shop AP ownership: a just-emitted shop-badge check means the
+        # row should flip to SOLD OUT now.  Push optimistically off
+        # ``_sent_loc_ids`` so it doesn't flicker back to purchasable during
+        # the AP round-trip (the periodic tick / RoomUpdate would catch it
+        # within ~2 s otherwise).
+        if check.kind == CheckKind.BADGE_ACQUIRED:
+            self._push_badge_shop_state()
         # TEN_COIN refund: the game already added 10 to the player's
         # flower_coin counter when the block was hit; AP is the sole
         # authority over what each 10-coin block actually grants, so

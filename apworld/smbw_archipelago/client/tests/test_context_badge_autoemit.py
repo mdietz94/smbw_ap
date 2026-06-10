@@ -1,14 +1,19 @@
-"""Tests for the AP-grant -> BADGE_ACQUIRED auto-emit path.
+"""Tests for badge-receipt handling after the AP-authoritative shop
+ownership change (2026-06-10).
 
-When the bridge receives a badge item from AP, the Switch's container-C
-bitfield gets the bit set immediately -- which also tells the Poplin
-shop the badge is "already owned" and locks the in-game purchase.
-That makes the matching ``"<Badge> Obtained"`` location unreachable
-unless the bridge resolves it directly at grant time.  These tests
-pin that auto-emit behavior.
+Previously, receiving a shop badge from AP auto-emitted its "<Badge>
+Obtained" LocationCheck, because setting the owned bit also told the
+Poplin shop the badge was already owned and locked the in-game purchase.
 
-Same Archipelago-availability guard pattern as the other
-test_context_* files.
+That coupling is gone: the Switch badge-shop override (SetBadgeShopState)
+keeps an AP-granted-but-unbought shop badge purchasable, so the player
+completes the check by actually buying it.  These tests pin the new
+contract -- receiving a badge item NEVER sends a LocationCheck -- while the
+badge bitfield push is undisturbed.  The shop-state mask logic itself lives
+in test_context_badge_shop.py.
+
+Same Archipelago-availability guard pattern as the other test_context_*
+files.
 """
 
 from __future__ import annotations
@@ -31,17 +36,16 @@ _ARCHIPELAGO_AVAILABLE = _try_import_archipelago()
 @unittest.skipUnless(
     _ARCHIPELAGO_AVAILABLE,
     "Archipelago not importable (run `git submodule update --init` and "
-    "ensure conftest.py is loaded); skipping badge-autoemit tests.")
-class TestContextBadgeAutoEmit(unittest.IsolatedAsyncioTestCase):
+    "ensure conftest.py is loaded); skipping badge-receipt tests.")
+class TestContextBadgeReceipt(unittest.IsolatedAsyncioTestCase):
 
     # Spring Feet Badge: internal_id 4.  A *course* badge -- granted by
-    # AP but NOT an AP check, so it has no "<Badge> Obtained" location
-    # and its auto-emit is dropped before any LocationCheck goes out.
+    # AP but NOT an AP check.
     SPRING_FEET_ITEM_ID = 100
-    SPRING_FEET_LOC_ID = 500
     SPRING_FEET_BIT = 4
 
-    # Coin Reward Badge: internal_id 9, location "Coin Reward Badge Obtained"
+    # Coin Reward Badge: internal_id 9, shop badge with location
+    # "Coin Reward Badge Obtained".
     COIN_REWARD_ITEM_ID = 101
     COIN_REWARD_LOC_ID = 501
     COIN_REWARD_BIT = 9
@@ -78,7 +82,6 @@ class TestContextBadgeAutoEmit(unittest.IsolatedAsyncioTestCase):
         }.get(i, f"?{i}")
 
         self.ctx._location_name_to_id = {
-            "Spring Feet Badge Obtained": self.SPRING_FEET_LOC_ID,
             "Coin Reward Badge Obtained": self.COIN_REWARD_LOC_ID,
         }
 
@@ -88,88 +91,44 @@ class TestContextBadgeAutoEmit(unittest.IsolatedAsyncioTestCase):
         except Exception:
             pass
 
-    # ---- Core auto-emit behavior --------------------------------------
+    def _location_checks(self) -> list[int]:
+        loc_ids: list[int] = []
+        for c in self.ctx.send_msgs.await_args_list:
+            for m in c.args[0]:
+                if m.get("cmd") == "LocationChecks":
+                    loc_ids.extend(m["locations"])
+        return loc_ids
 
-    async def test_badge_receipt_sends_location_check(self):
+    async def test_shop_badge_receipt_does_not_send_location_check(self):
+        # Receiving the shop badge from AP must NOT auto-complete its
+        # "Obtained" location -- the player buys it in-game instead.
         await self.ctx._handle_received_items(
             {"items": [{"item": self.COIN_REWARD_ITEM_ID}]})
-        # SetBadgesAbsolute still flows -- the bitfield push wasn't disturbed.
+        self.assertNotIn(self.COIN_REWARD_LOC_ID, self._location_checks())
+
+    async def test_badge_receipt_still_pushes_bitfield(self):
+        # The owned bitfield push is undisturbed (Mario can still equip the
+        # AP-granted badge).
+        await self.ctx._handle_received_items(
+            {"items": [{"item": self.COIN_REWARD_ITEM_ID}]})
         self.ctx.lan_server.send_set_badges_absolute.assert_called_once()
-        # And a LocationChecks message for "Coin Reward Badge Obtained" fires.
-        sent = [c.args[0] for c in self.ctx.send_msgs.await_args_list]
-        loc_checks = [
-            msg[0] for msg in sent
-            if msg and msg[0].get("cmd") == "LocationChecks"
-        ]
-        self.assertTrue(
-            any(self.COIN_REWARD_LOC_ID in m["locations"] for m in loc_checks),
-            f"expected LocationChecks containing {self.COIN_REWARD_LOC_ID}, "
-            f"got {sent!r}")
 
-    async def test_badge_receipt_records_in_bridge_state(self):
+    async def test_badge_receipt_emits_no_badge_check_state(self):
         from ..protocol import CheckKind
-        await self.ctx._handle_received_items(
-            {"items": [{"item": self.SPRING_FEET_ITEM_ID}]})
-        self.assertTrue(self.state.has_emitted(
-            CheckKind.BADGE_ACQUIRED, self.SPRING_FEET_BIT))
-
-    async def test_badge_receipt_dedups_across_replays(self):
-        # Two ReceivedItems batches with the same badge -- the second
-        # must NOT trigger a second LocationCheck or a second state record.
-        await self.ctx._handle_received_items(
-            {"items": [{"item": self.COIN_REWARD_ITEM_ID}]})
-        first_send_count = self.ctx.send_msgs.await_count
-        await self.ctx._handle_received_items(
-            {"items": [{"item": self.COIN_REWARD_ITEM_ID}]})
-        self.assertEqual(self.ctx.send_msgs.await_count, first_send_count,
-                         "second receipt of the same badge re-sent")
-
-    async def test_mixed_batch_sends_shop_badge_drops_course_badge(self):
-        # Coin Reward is a shop badge (-> AP check); Spring Feet is a
-        # course badge (granted but not checked).  Only the shop badge's
-        # LocationCheck should go out.
         await self.ctx._handle_received_items({"items": [
             {"item": self.SPRING_FEET_ITEM_ID},
             {"item": self.COIN_REWARD_ITEM_ID},
         ]})
-        sent = [c.args[0] for c in self.ctx.send_msgs.await_args_list]
-        loc_ids: set[int] = set()
-        for msg in sent:
-            for m in msg:
-                if m.get("cmd") == "LocationChecks":
-                    loc_ids.update(m["locations"])
-        self.assertEqual(loc_ids, {self.COIN_REWARD_LOC_ID})
-        self.assertNotIn(self.SPRING_FEET_LOC_ID, loc_ids)
+        self.assertEqual(
+            self.state.count_emitted(CheckKind.BADGE_ACQUIRED), 0)
+        self.assertEqual(self._location_checks(), [])
 
-    # ---- Negative paths -----------------------------------------------
-
-    async def test_non_badge_item_does_not_emit_badge_check(self):
-        # "10 Coin" takes the increment path; badge auto-emit must not fire.
+    async def test_non_badge_item_unaffected(self):
         from ..protocol import CheckKind
         await self.ctx._handle_received_items(
             {"items": [{"item": self.TEN_COIN_ITEM_ID}]})
         self.assertEqual(
             self.state.count_emitted(CheckKind.BADGE_ACQUIRED), 0)
-
-    async def test_probe_active_suppresses_location_check(self):
-        """While a probe is running, the BADGE_ACQUIRED auto-emit still
-        runs but ``handle_check_emitted``'s probe guard drops the
-        outbound LocationCheck.  The dev workflow stays clean -- AP
-        locations don't get spuriously ticked off mid-probe."""
-        self.ctx.set_badge_probe_mask(1 << 7)
-        self.ctx.send_msgs.reset_mock()  # ignore the probe-induced sync call
-
-        await self.ctx._handle_received_items(
-            {"items": [{"item": self.COIN_REWARD_ITEM_ID}]})
-
-        # No LocationCheck message went out.
-        sent_msgs = [
-            m for c in self.ctx.send_msgs.await_args_list
-            for m in c.args[0]
-        ]
-        self.assertFalse(
-            any(m.get("cmd") == "LocationChecks" for m in sent_msgs),
-            f"expected no LocationChecks during probe, got {sent_msgs!r}")
 
 
 if __name__ == "__main__":

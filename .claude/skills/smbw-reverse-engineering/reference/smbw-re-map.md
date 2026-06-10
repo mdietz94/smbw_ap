@@ -156,6 +156,8 @@ All declared as file-scope `HkTrampoline` and installed in `hkMain()`
 | `PlayerTickLatch` | `+0x273868` | trampoline on `FUN_7100273868`; walks `p1→+0x10→+0x208→(+0 or +0x118)→HP` to latch `live_base` | per-tick (latches once) | CONFIRMED |
 | PlayReport `SetEventId` | sym `_ZN2nn5prepo10PlayReport10SetEventIdEPKc` | `installAtSym` | captures room/event id | CONFIRMED |
 | `ItemGetMaskBuild` (power-up negation) | `+0x3c4050` | direct trampoline; post-orig AND-clears AP-denied bits from the can-get mask at `component+0xB0` (see §14) | every ItemGet can-mask rebuild (per-frame player tick `+0x275400` + setting changes) | HIGH-CONF (static; built, not yet live-validated) |
+| `BadgeShopComputeStates` (AP shop ownership) | `+0x1c3f6a4` | direct trampoline; post-orig overrides AP-managed badge rows' display state (see §15) | every Poplin badge-shop state recompute | HIGH-CONF (static; built, not yet live-validated) |
+| `BadgeShopPurchaseCommit` (shop check) | `+0x1c4072c` | direct trampoline; edge-detects a confirmed badge buy (kind@`+0x6a8`==0, done byte@`+0x6f8` 0→1) → `enqueueBadgeAcquired(id@+0x6ac)` (see §15) | confirmed badge purchase | HIGH-CONF (static; built, not yet live-validated) |
 | PlayReport IPC `SaveReport{,WithUser}` | sym `CmifProxyImpl<IPrepoService>::_nn_sf_sync_SaveReport*` | `installAtSym` | captures serialized payload | CONFIRMED |
 
 **`NerveActivateOnce` vtable filter** (the `vt_off` values it acts on):
@@ -565,6 +567,55 @@ single atomic store); client debug command `/deny_powerups`.
   → availability bytes `+0x80..+0x85` (PlayerModeType order).  The engine has
   native per-change veto conditions here if finer-grained suppression is ever
   needed (RomFS: `pack_PlayerBase/AI/PlayerPowerUp.module.ainb`).
+
+## 15. Poplin badge-shop & AP-authoritative shop ownership (2026-06-10 static session)
+
+How the Poplin BADGE shop builds its per-row "owned / sold-out / buyable"
+display and where the AP shop hooks (§6) attach.  All offsets HIGH-CONF static
+(decompile + disassemble over the uncompressed NSO), built but not yet
+live-validated.
+
+**The coupling AP breaks:** the shop computes each row's state from the badge
+**owned** (`0x105df820`) / **ever-purchased** (`0xe48a1168`) BoolArray bits —
+both saved BoolArray[100], bit == badge internal_id (same index as §8).  So an
+AP-granted badge (owned bit set so Mario can equip it) showed SOLD OUT and an
+AP-checked badge whose bit the game never set still showed buyable.  Readers:
+`isBadgeOwned` `+0x1b5b870` (reads `0x105df820`), `isBadgePurchased` `+0x1b5b810`
+(reads `0xe48a1168`), combined `IsBadgeOwnedOrPurchased` `+0x689b20`(arg2=1) and
+`+0x6b0140` (direct bucket walk).  AI EventQuery `IsGetBadge` evaluator
+`+0x179e984` (out +0x28 owned||purchased, +0x30 purchased, +0x38 owned);
+`CheckEnableBuy` evaluator `+0x1638324`.
+
+**Class:** `UIBadgeShopScreen` (factory `+0x6b62e4` allocs 0x978, vtable
+`+0x34cfc08`; getName `+0x1c3ddcc`).  The shop lineup is **per world-map NPC**
+(`+0x5233c0(0x6c259974)`); built by `+0x1c3f494` → `+0x1b71400` walking the NPC's
+gparam `game__stage__ShopItemInfo` list, appending badge rows via `+0x1b71760`
+(challenge badges hidden unless BoolArray `0x9c3b0d85`[id]).
+
+| field | offset | role |
+|---|---|---|
+| item count | `screen+0x7d0` | u32 |
+| item array | `screen+0x7d8` | ptr → array of item* (stride 8) |
+| coins held | `screen+0x6e0` | u32 (the currency this shop charges; badges = flower coins) |
+| item type | `item+0x00` | u32: 0 badge / 1 WonderSeed / 2 1-Up / 3 Kakashi |
+| item badge id | `item+0x04` | s32 internal_id (== owned-bit index) |
+| item price | `item+0x18` | s32 |
+| item **state** | `item+0x20` | u32 display state — **0 buyable / 1 unaffordable / 2 sold-out / 3 maxed** (written LAST per item) |
+
+| NSO offset | Role | Status |
+|---|---|---|
+| `+0x1c3f6a4` | **`computeItemStates(screen)`** — sets each `item+0x20`; badge sold-out test = `+0x689b20`(id,1). **Hooked** (`BadgeShopComputeStates`): post-orig, for AP-managed badge rows overwrite state — SOLD OUT (2) if checked, else affordability (0/1) ignoring the owned/purchased bits.  Prologue sub/stp×5 SAFE | CONFIRMED static |
+| `+0x1c4072c` | **`purchaseCommit(screen)`** — UIBadgeShopScreen `cPurchaseConfirmation` state execute.  `switch(screen+0x6a8)` kind (0=badge); case 0 grants once via `+0x1b5ade0`, sets write-once done byte `screen+0x6f8`=1, deducts coins `+0x6e0`, sets state=2.  Buy badge id = `screen+0x6ac` (live after grant).  **Hooked** (`BadgeShopPurchaseCommit`): edge kind==0 ∧ done 0→1 across orig → `enqueueBadgeAcquired(*(int*)(screen+0x6ac))`.  Prologue stp-pre/str/stp×3 SAFE | CONFIRMED static |
+| `+0x1b5ade0` | `GrantBadgeWorldMapDemoFlags(&id)` — the actual badge grant; 3 callers (shop commit, AI gift, medley dispatch) so NOT shop-specific — hook the commit fn, not this | CONFIRMED static |
+| `+0x1c3e560` | `resolvePaneContent` — selects each row's **msbt label** (badge name = BadgeInfo gparam member `+0x40`, desc `+0x48`; prefixes "GameMsg/Name_Badge" / "GameMsg/BadgeInfo").  Hook point for the deferred "shop text reflects the AP check" bonus; substituting custom UTF-16 needs the downstream eui `Message::getText` (resolver ~`+0x4eb000`, not yet a clean function) — left for a follow-up session | CONFIRMED static |
+
+There is **no code writer** for `0x105df820`/`0xe48a1168` — the bits are set
+data-driven through the GameData trigger system (`+0x55534e0` → `+0x3877c4`
+ring at gmd+0x278), so the owned/purchased bits can't be hooked per-hash; that
+is why purchase detection hooks the commit fn instead.  Switch impl:
+`probe/BadgeShop.{hpp,cpp}` + the two trampolines in `main.cpp`; bridge message
+`set_badge_shop_state` (`WireSetBadgeShopState{managed,sold}`, applied on the
+network thread); client `SMBWContext._recompute_badge_shop_state`.
 
 ---
 

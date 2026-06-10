@@ -44,6 +44,7 @@ namespace nn::os {
 #include "ApFrameBridge.hpp"
 #include "ApProtocol.hpp"
 #include "ApState.hpp"
+#include "probe/BadgeShop.hpp"
 #include "probe/ItemGetGate.hpp"
 #include "ui/ApDebugConsole.hpp"
 #include "util/Json.hpp"
@@ -750,6 +751,20 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 "[itemgate] received SetItemGetDenyMask(mask=0x%08x)",
                 msg.set_itemget_deny_mask.mask);
             probe::setDeniedItemGetMask(msg.set_itemget_deny_mask.mask);
+            return;
+        case InboundKind::SetBadgeShopState:
+            // AP-authoritative Poplin badge-shop ownership (2026-06-10).
+            // Applied directly on the network thread -- setBadgeShopState is
+            // two atomic stores consumed by the computeItemStates trampoline
+            // on the game thread, so no ring trip is needed (same
+            // direct-apply pattern as SetItemGetDenyMask).
+            SMBWAP_LOG_INFO(
+                "[badgeshop] received SetBadgeShopState(managed=0x%016llx "
+                "sold=0x%016llx)",
+                static_cast<unsigned long long>(msg.set_badge_shop_state.managed),
+                static_cast<unsigned long long>(msg.set_badge_shop_state.sold));
+            probe::setBadgeShopState(msg.set_badge_shop_state.managed,
+                                     msg.set_badge_shop_state.sold);
             return;
         case InboundKind::Err:
             SMBWAP_LOG_WARN("[conn] bridge reports err: %s", msg.err.reason);

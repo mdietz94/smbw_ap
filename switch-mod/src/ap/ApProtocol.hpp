@@ -331,6 +331,20 @@ struct WireSetItemGetDenyMask {
     std::uint32_t mask = 0;
 };
 
+// Bridge -> Switch.  AP-authoritative Poplin badge-shop ownership
+// (2026-06-10).  Both masks are bit-indexed by badge internal_id (== the
+// owned-bitfield index).  `managed` = badges whose shop display state AP
+// owns; `sold` = of those, the ones already obtained (show SOLD OUT).  A
+// managed badge not in `sold` shows purchasable regardless of the in-game
+// owned/purchased bits.  Applied directly on the rx thread via
+// probe::setBadgeShopState (atomic stores, consumed by the
+// computeItemStates trampoline on the game thread).  managed == 0 restores
+// vanilla shop behavior.  See probe/BadgeShop.hpp.
+struct WireSetBadgeShopState {
+    std::uint64_t managed = 0;
+    std::uint64_t sold = 0;
+};
+
 // M3.8 -- DeathLink inbound apply.  Sent when AP bounces a DeathLink for
 // our slot.  `source` is the originating AP slot name; `cause` is the
 // free-form reason (typically "mario_died").  Sizes MUST match KillMsg
@@ -418,6 +432,7 @@ enum class InboundKind : std::uint8_t {
     SetRoutableWorldsAbsolute = 15,
     ApplyWorldUnlock = 16,
     SetItemGetDenyMask = 17,
+    SetBadgeShopState = 18,
 };
 
 struct InboundMsg {
@@ -440,6 +455,7 @@ struct InboundMsg {
         WireSetRoutableWorldsAbsolute set_routable_worlds_absolute;
         WireApplyWorldUnlock apply_world_unlock;
         WireSetItemGetDenyMask set_itemget_deny_mask;
+        WireSetBadgeShopState set_badge_shop_state;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };
