@@ -83,9 +83,11 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
 
     async def test_connected_pushes_routable_worlds(self):
         await self._connect({"open_world_active": [1, 3, 5], "palaces_required": 2})
-        # Walk-in model: only Petal Isles (bit 6 == 0x40) is routable; worlds
-        # are reached on foot from PI, so no world bits.  No Castle bit yet.
-        self.ctx.lan_server.send_set_routable_worlds.assert_called_once_with(0x40)
+        # Walk-in model: Petal Isles (bit 6 == 0x40) is routable; W2..W6 are
+        # reached on foot from PI, so no bits for them.  W1 IS active here and
+        # is NOT walk-connected to PI, so it gets its fast-travel bit 0 (0x01).
+        # No Castle bit yet.  Expect 0x40 | 0x01 == 0x41.
+        self.ctx.lan_server.send_set_routable_worlds.assert_called_once_with(0x41)
 
     async def test_connected_without_open_world_is_inactive(self):
         await self._connect({})
@@ -108,8 +110,10 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
         # Royal Seeds are NEVER pushed to the Switch (vanilla-owned; the AP
         # count gates the final level only via the death-gate).
         self.ctx.lan_server.send_set_royal_seeds_absolute.assert_not_called()
-        # Routable mask now includes the Castle bit (PI 0x40 | Castle 0x100).
-        self.ctx.lan_server.send_set_routable_worlds.assert_called_with(0x140)
+        # Routable mask now includes the Castle bit.  W1 is active in this
+        # seed, so its fast-travel bit 0 is also set:
+        # PI 0x40 | W1 0x01 | Castle 0x100 == 0x141.
+        self.ctx.lan_server.send_set_routable_worlds.assert_called_with(0x141)
 
         # A third seed must NOT re-fire the unlock.
         self.ctx.lan_server.reset_mock()
@@ -130,11 +134,30 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
 
     async def test_routable_mask_provider(self):
         await self._connect({"open_world_active": [2, 4], "palaces_required": 0})
-        # Walk-in model: only Petal Isles (bit 6 == 0x40) is routable,
-        # regardless of which worlds are active (reached on foot from PI).
+        # Walk-in model: only Petal Isles (bit 6 == 0x40) is routable for
+        # W2..W6 (reached on foot from PI).  W1 is NOT active here, so its
+        # fast-travel bit 0 must stay clear.
         self.assertEqual(self.ctx._recompute_routable_worlds_mask(), 0x40)
         self.ctx._bowser_opened = True
         self.assertEqual(self.ctx._recompute_routable_worlds_mask(), 0x40 | 0x100)
+
+    async def test_routable_mask_w1_active_sets_fasttravel_bit(self):
+        # W1 is not walk-connected to Petal Isles, so when it is active it
+        # must be made fast-travelable via its routable bit 0 (0x01); the
+        # Switch first-course fill + travel hooks then land the player on 1-1.
+        await self._connect({"open_world_active": [1, 4], "palaces_required": 0})
+        self.assertEqual(self.ctx._recompute_routable_worlds_mask(), 0x40 | 0x01)
+        self.ctx._bowser_opened = True
+        self.assertEqual(
+            self.ctx._recompute_routable_worlds_mask(), 0x40 | 0x01 | 0x100)
+
+    async def test_routable_mask_w1_inactive_no_fasttravel_bit(self):
+        # W1 absent from the active set -> bit 0 must NOT be set (W1 is never
+        # travelable when it is not an active world).
+        await self._connect({"open_world_active": [3, 5, 6], "palaces_required": 0})
+        mask = self.ctx._recompute_routable_worlds_mask()
+        self.assertEqual(mask & 0x01, 0)
+        self.assertEqual(mask, 0x40)
 
     async def test_routable_mask_provider_inactive_returns_zero(self):
         await self._connect({})
