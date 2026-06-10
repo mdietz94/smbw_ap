@@ -17,6 +17,8 @@ The live-grant path is the **GameDataMgr** runtime API — the *only* mechanism
 that changes actual gameplay state. To find/RE these functions, see the
 **smbw-reverse-engineering** skill. The full decompile journal is at
 [`../smbw-reverse-engineering/reference/static-analysis-findings.md`](../smbw-reverse-engineering/reference/static-analysis-findings.md).
+To resolve a flag's hash + **category** (which decides the writer — see the footgun
+below) offline from the RomFS, see **smbw-romfs-datamining**.
 
 > 📋 **For the consolidated current-state tables** (hash keys, container API
 > offsets, struct layout, save offsets, badge map — all present-tense with status
@@ -57,6 +59,28 @@ Grant primitives live in `switch-mod/src/probe/*.cpp`; hooks that drive them are
 installed in `switch-mod/src/main.cpp`. (CLAUDE.md's old `src/program/main.cpp`
 paths are the retired exlaunch tree.)
 
+## ⚠️ Bool-vs-Int writer footgun — match the writer to the flag's category
+
+**The writer you pick must match the flag's GameDataList category, or the grant
+silently fails or crashes:**
+
+| Flag category | Correct writer | Wrong writer → |
+|---|---|---|
+| **Bool** | `grantContainerBBool(hash, 1)` | `grantContainerACounter` → **silent no-op** (write goes nowhere) |
+| **Int / counter** | `grantContainerACounter(hash, n)` | `grantContainerBBool` → **null-deref crash** |
+
+This sank an entire 86-hash world-unlock table: it was dispatched single-list
+through `grantContainerACounter`, but **84 of the 86 hashes are Bool-category**, so
+the channel never landed except for the 2 Int entries. (The historical "the Bool
+writer crashed the drain worker on first boot" note was the *inverse* — the 1–2
+Int-category hashes null-derefing the Bool setter, not a timing bug.) Fix: split the
+table by category and route each side to its writer.
+
+**How to know a flag's category without guessing:** read it from the RomFS
+`GameDataList.Product.100` schema — the **smbw-romfs-datamining** skill resolves any
+flag name → hash → **category** → `SaveFileIndex` offline (`scripts/romfs/hash_lookup.py`).
+Always check the category before wiring a new hash to a writer.
+
 ## Verified hash keys
 
 | Hash | Field | Container | Width |
@@ -78,6 +102,13 @@ paths are the retired exlaunch tree.)
 The bridge maps AP item names → hashes in
 `apworld/smbw_archipelago/client/{royal_seed_table,badge_table,wonder_seed_table,coin_table}.py`.
 Cross-verified against MemetendoYT's save editor + the HamletDuFromage cheat DB.
+
+**World-map / open-world Bowser-approach hashes** (all **Bool** → `grantContainerBBool`):
+six cloud-piranha `WorldMapCloudPackunVanishInfo.IsVanish*`
+(`0xc687fb5f 0xcff5f3d2 0x048bc39c 0x1677f038 0x95539ec5 0x7f6e8a47`) + castle fly-in
+`WorldMapKoopaCastleEntranceDemoInfo.IsAppear` `0xc06bd61e`; plus the container-C
+reveal node/road bits. Full table + derivation in the RE map §11 and the
+**smbw-romfs-datamining** schema reference.
 
 ## Badges (Container C)
 

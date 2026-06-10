@@ -107,9 +107,12 @@ absolute-overwrite; Royal Seeds re-emit per seed). For instant in-game UI refres
 
 ## 5. Hash keys
 
-All grant-relevant field hashes. The field-name hash *function* is still unknown
-(Murmur3 of the obvious English names doesn't reproduce these; likely internal /
-Japanese / precomputed) — but the values below are verified, so it isn't blocking.
+All grant-relevant field hashes. **The field-name hash is now SOLVED** (§10): it's
+murmur3-32 seed 0 over the flag's name — for a Struct member, the **dotted full name**
+`StructName.MemberName`. So any hash below can be re-derived from its name, and any
+new flag resolved offline from the `GameDataList.Product.100` RomFS schema (name →
+hash → **category** → SaveFileIndex) via the **smbw-romfs-datamining** skill. The
+world-map / Bowser-approach hashes live in §11.
 
 | Hash | Field | Container | Width | Status |
 |---|---|---|---|---|
@@ -307,14 +310,22 @@ sourced (HamletDuFromage) except the DeathLink HP write, which is CONFIRMED live
 
 ## 10. Hash function
 
-`FUN_71003D4110` is **Murmur3-32, seed 0**, over 81 hardcoded course-name strings
-— identified by the constant signature `0xcc9e2d51 / 0x1b873593 / 0xe6546b64 /
-0x85ebca6b / 0xc2b2ae35`. The **field-name** hash (flower_coin etc.) is a
-different, still-unknown function.
+`FUN_71003D4110` is **Murmur3-32, seed 0**, over the name as UTF-8 bytes (strlen
+length — NUL not hashed); constant signature `0xcc9e2d51 / 0x1b873593 / 0xe6546b64 /
+0x85ebca6b / 0xc2b2ae35`.
+
+**The field/flag-name hash is the SAME function — CONFIRMED 2026-06-09** (supersedes
+the old "field-name hash unknown"). A GameData flag hashes as `murmur3(name)`, and a
+Struct **member** as the **dotted full name** `murmur3("StructName.MemberName")`.
+Validated: `murmur3("IsChangeEnvEnterKoopaCastle") == 0xe02a5e43` (independently from
+a save diff) + every `WorldMapCloudPackunVanishInfo` member reproduces. ⟹ any flag's
+hash is now computable offline from its name. The `GameDataList.Product.100` RomFS
+schema maps every flag's name → hash → category → `SaveFileIndex`; resolve flags with
+the **smbw-romfs-datamining** skill + `scripts/romfs/hash_lookup.py` (no Ghidra).
 
 **ARM64 gotcha:** 32-bit hash constants are materialized via `mov`/`movk` pairs,
 not stored as literals — byte-searching for a hash returns near-zero hits. Walk
-the `mov`/`movk` pair to reconstruct the immediate.
+the `mov`/`movk` pair to reconstruct the immediate (or just murmur3 the name).
 
 ---
 
@@ -381,6 +392,47 @@ actor. Completion flag `EndFirstVisitWorldDemo` (gmd; hash not pinned —
 runtime-hashed). **Fast-travel straight into a world skips it (obstacle stays);
 walking in from PI plays it.** HIGH-CONF.
 
+**World-reveal demos + the Bowser approach (open-world)** — CONFIRMED 2026-06-09,
+mostly via the **smbw-romfs-datamining** offline path. Open-world walks in from Petal
+Isles and never plays the position-triggered reveal cutscenes, so the roads to other
+worlds and the Bowser path stay drawn-but-blocked. `ProcessWorldMapRouteGate`
+(`+0x377280`) re-derives every route from gmd state on each map load, so **setting the
+persistent bits draws the roads without the cutscene** (live-confirmed by save-diff +
+inverse-revert test). Three layers:
+
+1. **Reveal node + roads** (container-C bitfields). Node `0x35bf61af` bit =
+   `GrandPropellerFlowerDemoType` (1=W2 … 5=W6, 6=ToCastle). Road bits per world:
+   W2 `0xbcc1ef0e`:2/8 + `0x09bfe967`:1; W3 `0xbcc1ef0e`:9 + `0x57df969b`:1 +
+   `0x2309a645`:12; W4 `0x9d25ce3b`:1; W5 `0x40c00dd7`:2 + `0xf5411212`:3; W6
+   `0x52781dfd`:1. `0xbcc1ef0e` is a **shared accumulating** graph bitfield — OR
+   individual bits, never overwrite. Set via `setContainerCBit` in
+   `applyOpenWorldEntry`.
+2. **Cloud-piranha barrier** around Bowser's Kingdom = six per-world actors
+   `WObjCommonPackunCloud<World>`, each gated on a **saved Bool**
+   `WorldMapCloudPackunVanishInfo.IsVanish<World>` (RomFS AI-graph ground truth):
+
+   | flag | hash | cat |
+   |---|---|---|
+   | IsVanishSavanna | `0xc687fb5f` | Bool[234] |
+   | IsVanishYama | `0xcff5f3d2` | Bool[236] |
+   | IsVanishWa | `0x048bc39c` | Bool[235] |
+   | IsVanishSabaku | `0x1677f038` | Bool[233] |
+   | IsVanishKin | `0x95539ec5` | Bool[231] |
+   | IsVanishNettai | `0x7f6e8a47` | Bool[232] |
+
+3. **Castle fly-in node** = `WObjCommonMiniKoopaTeleportFlowerA` (World002/Petal Isles,
+   WorldMapId 12→World008), Create-linked from `WorldMapObjKoopaCastleEntranceGround`,
+   which reads saved Bool `WorldMapKoopaCastleEntranceDemoInfo.IsAppear` =
+   **`0xc06bd61e`** (Bool[245]).
+
+⚠️ **All seven layer-2/3 bools are Bool-category** → grant via `grantContainerBBool`,
+NOT `grantContainerACounter` (the Int writer **silently no-ops** on Bool hashes — see
+§13 and the smbw-save-data Bool-vs-Int footgun). They were all already in the client's
+`WORLD_UNLOCK_HASHES` but dead because the table was dispatched single-list through the
+Int writer; the fix split it by GameDataList category. Full case study:
+[`../../smbw-romfs-datamining/reference/gamedatalist-schema.md`](../../smbw-romfs-datamining/reference/gamedatalist-schema.md);
+session journal: `docs/grand-propeller-flower-reveal-re-2026-06-08.md`.
+
 **Current-world index:** container-A hash **`0x9f5ead3c`** = in-game world index
 (`1=W1, 2=Petal, 3=W2, 4=W3, 5=W4, 6=W5, 7=W6, 8=Castle, 9=Special`). CONFIRMED.
 
@@ -415,7 +467,10 @@ walking in from PI plays it.** HIGH-CONF.
 | `FUN_71003D3FB0` writes the course-clear field | It's a stage-info → course-index **translator**, not a writer |
 | `FUN_71003838AC` is a unified bool get/set | It's a **reader** only |
 | `FUN_710049F648` signature is `(this, hash, value)` | Actual: `(this, value, hash)` — **value first** |
-| SMBW's hash function is none of CRC32/FNV/DJB2/SDBM/Murmur3 | Murmur3-32 **is** used (for course names); field-name hash still unknown |
+| SMBW's hash function is none of CRC32/FNV/DJB2/SDBM/Murmur3 | Murmur3-32 **is** used — for course names AND field/flag names (the latter over the **dotted** `Struct.Member` name); the "field-name hash unknown" claim is **resolved** (§10) |
+| The Bowser's-Kingdom cloud piranhas are gated on Royal Seeds | **No** (live-tested). They're six `WorldMapCloudPackunVanishInfo.IsVanish*` saved Bools (§11) — RomFS AI-graph ground truth |
+| The cloud piranhas clear when `EndFirstVisitWorldDemo` is set | **No** — that's the world's *opening*-cutscene flag, not the post-castle barrier. The hook that forced its reader (`FUN_7101b5c600`) was reverted |
+| The `WORLD_UNLOCK_HASHES` table lands through `grantContainerACounter` | **No for 84/86 of them** — they're Bool-category and the Int writer **silently no-ops**; must route Bool hashes through `grantContainerBBool`. (`grantContainerBBool` conversely null-derefs on the ~2 Int hashes — the real cause of the old "bool writer crashed the drain" note.) |
 | `0x8c20ccb7` is the lifetime Wonder-Seed counter | It's one of 5 **per-current-world** mirrors (resets per world) |
 | `0x17f0bb21` is `play_time_sec` | It's `regular_coin_count` |
 | The save-OUT staging buffer (UUID `savedata_id` scan) is a grant target | It is **not** live — repopulated from live state every save |

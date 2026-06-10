@@ -36,7 +36,8 @@ Odyssey) project at `C:\Users\maxwe\Documents\smo_archipelago\` — mirror its
 | **smbw-build-deploy** | Compile `subsdk9`, deploy to Ryujinx, run the client, tail the `[smbwap]` log, first-time `/setup`, end-to-end smoke tests (Win + Linux). |
 | **smbw-logic** | Edit/reason about the apworld **logic** — `data/{items,locations,regions}.json`, `Rules.py`/`Regions.py`/`Options.py`/`DataValidation.py`. The seed-toll region model, the **badge progression-wall softlock rule**, adding region/location gates, generation + beatability testing. Bundles the logic-reconciliation record. |
 | **smbw-reverse-engineering** | Find/install a hook (Ghidra), identify Nerves & game functions, the two hook patterns, NSO address space, the crash gotchas, Ghidra scripts. Bundles the **current-state RE map** (`reference/smbw-re-map.md` — the canonical offset/hash/struct/hook ledger; read it first) + the master RE decompile journal. |
-| **smbw-save-data** | Grant AP items via the GameDataMgr API, pick the right `probe::` primitive, hash keys, container A/B/C/D layout, save-file format, save-survival/replay. |
+| **smbw-romfs-datamining** | Resolve any named GameData flag → hash + container **category** **offline** from the RomFS (`GameDataList.Product.100`), no Ghidra. The murmur3 name-hash rule, BYML/SARC parsing, tracing world-map actors (cloud piranhas, castle fly-in) to their saved bool. Tooling at `scripts/romfs/`. |
+| **smbw-save-data** | Grant AP items via the GameDataMgr API, pick the right `probe::` primitive, hash keys, container A/B/C/D layout, save-file format, save-survival/replay, the **Bool-vs-Int writer footgun**. |
 | **smbw-release** | Tag a version, build the `smbwonder.apworld` bundle, the pre-push release-gate audit, manual `gh release` fallback. |
 
 Skills are surfaced automatically — prefer invoking the relevant one over
@@ -62,7 +63,7 @@ smbw_ap/                              ← this git repo
 │       ├── processor.py · play_report.py · state.py · protocol.py · wire.py
 │       ├── badge_table.py · royal_seed_table.py · wonder_seed_table.py · coin_table.py
 │       └── tests/                     pytest: client + wire + PlayReport decode
-├── scripts/                           savediff.py, install_apworld.py, ghidra/ (RE scripts)
+├── scripts/                           savediff.py, install_apworld.py, ghidra/ (NSO RE scripts), romfs/ (offline GameData datamining)
 ├── vendor/Archipelago/               git submodule (pinned)
 └── switch-mod/                        subsdk source (tracked inline in this repo)
     ├── CMakeLists.txt                 hakkun-driven; sets its own toolchain before project()
