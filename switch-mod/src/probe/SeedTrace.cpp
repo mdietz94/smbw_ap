@@ -480,7 +480,15 @@ void applyOpenWorldEntry(void* gmd_v) {
             const std::uint32_t cnt = *reinterpret_cast<std::uint32_t*>(obj + 0x20);
             auto* data = *reinterpret_cast<std::uint32_t**>(obj + 0x28);
             if (data == nullptr || cnt == 0) continue;
-            if (data[0] != 0) continue;  // progressed world -> preserve
+            // First-course worlds: preserve a progressed save (d0!=0) so the
+            // game's own per-course unlock state isn't clobbered.  PETAL ISLES
+            // (fill_all): the save drops most of our fill (keeps only the ~3
+            // genuinely-visited course slots), so d0!=0 after reload while the
+            // rest of the array is gone -- we MUST re-apply the full fill every
+            // drain or only those few nodes resurface (the "only 3 PI courses"
+            // bug, 2026-06-10).  PI courses are not AP checks, so re-writing the
+            // whole array each drain is safe.
+            if (data[0] != 0 && !fill_all) continue;
             std::uint32_t n = fill_all ? cnt : (cnt < 4 ? cnt : 4);
             if (n > 4096) n = 4096;  // sanity bound
             for (std::uint32_t k = 0; k < n; ++k) data[k] = kBlk[f][k & 3];
@@ -494,6 +502,69 @@ void applyOpenWorldEntry(void* gmd_v) {
         if (dobj != nullptr) {
             auto* by = reinterpret_cast<std::uint8_t*>(dobj + 0x16);
             if (*by == 0) *by = 1u;
+        }
+
+        // Petal Isles shop nodes: surface the badge house (descriptor +0x48)
+        // and Master Poplin's house (+0x6c) as fast-travel destinations.  Same
+        // gmd+0x20 byte mechanism as the discovered byte above; only meaningful
+        // with the gmd+0x80 fill present, which PI has (fill_all).  Re-applied
+        // every in-course drain, so they survive save/reload like the course
+        // nodes.  (Supersedes the old "first-course-only, no houses" design for
+        // PI per maintainer request 2026-06-10.)  PI only -- bit 6 == Petal.
+        if (bit == 6) {
+            static const std::uint32_t kShopOff[2] = {0x48u, 0x6cu};
+            for (std::uint32_t so : kShopOff) {
+                const std::uint32_t shash =
+                    *reinterpret_cast<std::uint32_t*>(rec + so);
+                auto* sobj = const_cast<unsigned char*>(
+                    gmdContainerObj(gmd, 0x20, 0x2c, 0x10, 0x18, 0x18, shash));
+                if (sobj != nullptr) {
+                    auto* sby = reinterpret_cast<std::uint8_t*>(sobj + 0x16);
+                    if (*sby == 0) *sby = 1u;
+                }
+            }
+        }
+
+        // Mark all Petal Isles courses cleared so the intra-PI roads gated on a
+        // course-clear (e.g. Course5 <- PI/"Naka" course 2) load already
+        // satisfied -- the route then draws on map load with NO per-visit
+        // reveal-animation throttle (which is why the #131 force-open only
+        // dribbled one road out per visit).  PI courses are NOT AP checks in
+        // open-world, so marking them cleared has no check side effect.
+        //   Course-clear is the per-world container-C bitfield whose hash is at
+        //   descriptor rec+0x1c -- the exact field the route predicate's
+        //   PerCourseBitReader reads (confirmed via the FUN_7100584eb0 / leaf
+        //   decompile 2026-06-10).  Bit index = course index; the count comes
+        //   from the gmd+0x80 first-course node array (rec+0x04).
+        //   W3-dependent roads (Course12 <- "Wa" course 61) are intentionally
+        //   NOT covered: W3 courses ARE AP checks, so we must never pre-clear
+        //   them.  Latched (idempotent set; persists in the save, re-marks on
+        //   next boot once the descriptor hash is populated).
+        if (bit == 6) {
+            static std::atomic<bool> s_pi_clear_done{false};
+            if (!s_pi_clear_done.load(std::memory_order_relaxed)) {
+                const std::uint32_t cchash =
+                    *reinterpret_cast<std::uint32_t*>(rec + 0x1cu);
+                const std::uint32_t nhash =
+                    *reinterpret_cast<std::uint32_t*>(rec + 0x04u);
+                auto* nobj = const_cast<unsigned char*>(
+                    gmdContainerObj(gmd, 0x80, 0x8c, 0x70, 0x78, 0x40, nhash));
+                std::uint32_t ccount =
+                    nobj ? *reinterpret_cast<std::uint32_t*>(nobj + 0x20) : 0u;
+                if (cchash != 0u && ccount > 0u) {
+                    if (ccount > 128u) ccount = 128u;  // setContainerCBit cap
+                    bool any = false;
+                    for (std::uint32_t ci = 0; ci < ccount; ++ci)
+                        any = setContainerCBit(cchash, ci, true) || any;
+                    if (any) {
+                        s_pi_clear_done.store(true, std::memory_order_relaxed);
+                        SMBWAP_LOG_INFO(
+                            "[open-world] marked %u PI courses cleared "
+                            "(hash=0x%08x) so intra-PI level-clear roads draw",
+                            ccount, cchash);
+                    }
+                }
+            }
         }
 
         if (log_count.fetch_add(1, std::memory_order_relaxed) < 24) {
