@@ -139,13 +139,19 @@ def after_set_rules(world: World, multiworld: MultiWorld, player: int):
     # lives on the entrance because exit rules use the SOURCE region.
     if getattr(world, "open_world", False):
         from ..Regions import regionMap, getConnectionName
-        from ..open_world import make_bowser_gate, BOWSER_REGION
+        from ..open_world import (
+            make_bowser_gate,
+            register_bowser_indirect_conditions,
+            BOWSER_REGION,
+        )
 
         for name, original in getattr(world, _OW_REGION_BACKUP_ATTR, {}).items():
             regionMap[name] = original
 
         bowser = multiworld.get_entrance(getConnectionName("Manual", BOWSER_REGION), player)
-        bowser.access_rule = make_bowser_gate(world.active_worlds, world.palaces_required, player)
+        bowser.access_rule = make_bowser_gate(player, world.active_worlds, world.palaces_required)
+        register_bowser_indirect_conditions(
+            multiworld, player, world.active_worlds, bowser)
 
     # Use this hook to modify the access rules for a given location
 

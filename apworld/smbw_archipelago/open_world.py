@@ -7,7 +7,11 @@ per-world Wonder-Seed counts and the previous world's Royal Seed (see
 Wonder-Seed progression but detaches the worlds from each other: a random
 set of N worlds (``open_world_count``) all hang directly off the ``Manual``
 menu region and are reachable from the start, and Bowser is reached
-directly off ``Manual`` once enough palaces (Royal Seeds) are cleared.
+directly off ``Manual`` once all six AP Royal Seeds are held AND at least
+``palaces_required`` of the active palaces are reachable (the client's
+runtime death-gate enforces the matching "actually cleared
+``palaces_required`` palaces in your own game" condition on every Bowser's
+Castle course).
 
 The restructuring is done by mutating this player's in-memory region graph
 (``Regions.create_regions`` has already built the full vanilla graph by the
@@ -62,14 +66,6 @@ def is_hub_region(name: str) -> bool:
     open-world mode.  ``World Bowser`` is *not* a hub region (it holds the
     goal and is kept)."""
     return name.startswith("PI ") or name in _EXTRA_HUB_REGIONS
-
-
-def _world_of_seed_item(name: str):
-    """World number for a ``"W<n> Royal Seed"`` / ``"W<n> Wonder Seed"``
-    item, else None."""
-    if name.endswith(" Royal Seed") or name.endswith(" Wonder Seed"):
-        return world_of_region(name)
-    return None
 
 
 def royal_seed_item(n: int) -> str:
@@ -201,21 +197,26 @@ def restructure_regions(world: World, multiworld: MultiWorld, player: int, activ
 
 def strip_inactive_locations(world: World, multiworld: MultiWorld, player: int, active_worlds) -> None:
     """Remove every location AP fill must not place into: those in inactive
-    worlds, hub regions, and the **non-goal** locations of ``World Bowser``.
+    worlds, hub regions, and the **non-course** locations of ``World Bowser``.
 
-    ``World Bowser`` is kept as a region (it holds the forced goal), but it
-    also bundles the Petal-Isles / Special-World ("Wonder's World") post-game
-    courses (Missile Meg Mayhem, High-Voltage Gauntlet, ...) and the four
-    "All <X> Power Badge Obtained" meta-locations.  None of those are reachable
-    in open-world -- the player only plays the selected worlds -- so leaving
-    them in logic lets AP place progression items the player can never reach
-    (observed: a required badge landing on BC: High-Voltage Gauntlet).  Strip
-    everything in ``World Bowser`` except the goal location itself."""
+    Bowser's Castle is ALWAYS part of open-world: every ``BC:``-prefixed
+    course location (the gauntlet courses + the final Bowser's Rage Stage
+    goal) is kept as a live AP location, gated -- like the goal -- on the
+    ``Manual -> World Bowser`` entrance (all six AP Royal Seeds).  The client
+    death-gate additionally enforces the in-game palace-clear requirement on
+    every castle course.
+
+    ``World Bowser`` also bundles four non-course meta-locations -- the
+    "All <X> Power Badge Obtained" achievements -- which require collecting a
+    full badge family that open-world's reduced world set may never grant, so
+    leaving them in logic lets AP place progression items the player can never
+    reach.  Strip those (everything in ``World Bowser`` that isn't a ``BC:``
+    course)."""
     active = set(active_worlds)
     for region in _player_regions(multiworld, player):
         if region.name == BOWSER_REGION:
             for location in list(region.locations):
-                if location.name != BOWSER_VICTORY_LOCATION:
+                if not location.name.startswith("BC:"):
                     region.locations.remove(location)
             continue
         w = world_of_region(region.name)
@@ -227,28 +228,85 @@ def strip_inactive_locations(world: World, multiworld: MultiWorld, player: int, 
 
 
 def inactive_item_pool(item_pool: list, active_worlds) -> list:
-    """Return ``item_pool`` minus the seed items for inactive worlds and
-    minus all Petal Isles / Special World seeds (their locations are
-    removed)."""
+    """Return ``item_pool`` minus the inactive worlds' **Wonder** Seeds and
+    all Petal Isles / Special World Wonder Seeds (their locations are
+    removed; the inactive ones are precollected instead).
+
+    **Royal** Seeds are KEPT for every world regardless of the active set:
+    facing Bowser requires holding all six AP Royal Seeds (see
+    ``make_bowser_gate``), so fill must be free to place every one in the
+    active content."""
     active = set(active_worlds)
 
     def keep(item) -> bool:
         if item.name in _ALWAYS_REMOVE_ITEMS:
             return False
-        w = _world_of_seed_item(item.name)
-        if w is not None and w not in active:
-            return False
+        if item.name.endswith(" Wonder Seed"):
+            w = world_of_region(item.name)
+            if w is not None and w not in active:
+                return False
         return True
 
     return [item for item in item_pool if keep(item)]
 
 
-def make_bowser_gate(active_worlds, palaces_required: int, player: int):
-    """Access rule for the ``Manual -> World Bowser`` edge: held distinct
-    active-world Royal Seeds must reach ``palaces_required``."""
-    seeds = [royal_seed_item(n) for n in active_worlds]
+# Per-world palace-clear AP location (the "Royal Seed" location earned by
+# beating that world's palace).  Used to encode the open-world final-Bowser
+# "clear palaces_required palaces" requirement into AP logic.
+PALACE_LOCATION = {
+    1: "W1: Pipe-Rock Plateau Palace - Royal Seed",
+    2: "W2: Fluff-Puff Peaks Palace - Royal Seed",
+    3: "W3: Royal Seed Mansion - Royal Seed",
+    4: "W4: Sunbaked Desert Palace - Royal Seed",
+    5: "W5: Operation Poplin Rescue - Royal Seed",
+    6: "W6: Deep Magma Bog Palace - Royal Seed",
+}
+
+
+def make_bowser_gate(player: int, active_worlds, palaces_required: int):
+    """Access rule for the ``Manual -> World Bowser`` edge (and thus every
+    Bowser's Castle course location): the player must hold **all six** AP
+    Royal Seeds AND be able to clear at least ``palaces_required`` of the
+    active worlds' palaces.
+
+    Why the palace half is modelled in logic (it mirrors the client's runtime
+    death-gate, which bounces the player out of any castle course unless they
+    hold all six AP Royal Seeds and have cleared ``palaces_required`` palaces
+    in their own game): the Castle's course locations are in the pool, so
+    without it fill could place a progression item the player needs to *reach*
+    a required palace behind the all-six-seed Castle gate -- a deadlock (you
+    can't enter the Castle to grab the item without first clearing the palace
+    that item gates).  Gating the Castle on the active palaces being
+    *reachable* (= clearable) forces fill to keep every palace prerequisite
+    outside the Castle.
+
+    All six Royal Seeds are kept in the pool regardless of the active-world
+    set (see ``inactive_item_pool``).  ``can_reach_location`` is an indirect
+    condition, so ``after_set_rules`` must register each active palace region
+    against this entrance (see ``register_bowser_indirect_conditions``)."""
+    seeds = [royal_seed_item(n) for n in WORLD_NUMBERS]
+    palace_locs = [PALACE_LOCATION[n] for n in active_worlds if n in PALACE_LOCATION]
 
     def rule(state) -> bool:
-        return sum(1 for s in seeds if state.has(s, player)) >= palaces_required
+        if not all(state.has(s, player) for s in seeds):
+            return False
+        reachable = sum(
+            1 for loc in palace_locs if state.can_reach_location(loc, player))
+        return reachable >= palaces_required
 
     return rule
+
+
+def register_bowser_indirect_conditions(multiworld, player, active_worlds, bowser_entrance) -> None:
+    """Register each active palace location's region as an indirect condition
+    for the Bowser entrance, so AP re-evaluates ``make_bowser_gate`` when a
+    palace becomes reachable (the gate calls ``can_reach_location`` on them).
+    Required because the world uses explicit indirect conditions -- without it
+    the entrance would be evaluated once, before the palaces are reachable,
+    and never retried."""
+    for n in active_worlds:
+        loc_name = PALACE_LOCATION.get(n)
+        if loc_name is None:
+            continue
+        region = multiworld.get_location(loc_name, player).parent_region
+        multiworld.register_indirect_condition(region, bowser_entrance)

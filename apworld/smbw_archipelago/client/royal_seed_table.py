@@ -109,6 +109,12 @@ ALL_MASK: Final[int] = (1 << WORLD_COUNT) - 1
 # contract.  Length == WORLD_COUNT.
 ROYAL_SEED_HASHES: Final[tuple[int, ...]] = tuple(h for _, h, _, _ in _ROYAL_SEEDS)
 
+# Palace stage_keys in mask-bit order (W1..W6) -- the six numbered-world
+# palace clears (NOT the final Bowser stage).  The open-world final-Bowser
+# death-gate uses these to count how many palaces the player has actually
+# beaten in-game (a checked PALACE_CLEAR location per stage_key).
+PALACE_STAGE_KEYS: Final[tuple[int, ...]] = tuple(sk for _, _, sk, _ in _ROYAL_SEEDS)
+
 
 _NAME_TO_BIT: Final[dict[str, int]] = {
     name: bit for bit, (name, _, _, _) in enumerate(_ROYAL_SEEDS)

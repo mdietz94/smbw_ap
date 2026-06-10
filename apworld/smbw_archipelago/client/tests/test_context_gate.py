@@ -75,6 +75,10 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         # tested in isolation from the item-table lookup plumbing.
         self.ctx._recompute_badge_mask = MagicMock(return_value=0)
         self.ctx._recompute_royal_seed_mask = MagicMock(return_value=0)
+        # In-game palace-clear count (the open-world anti-cheese half of the
+        # final-Bowser gate); stubbed so gate tests don't need the location
+        # reverse map.  Default 0 = no palaces cleared in-game.
+        self.ctx._palaces_cleared_in_game = MagicMock(return_value=0)
 
         self.ctx.lan_server = MagicMock()
 
@@ -319,10 +323,14 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
 
     async def test_open_world_bowser_gate_unaffected_by_world_filter(self):
         # Even with a tiny active-world set, the Bowser gate still fires
-        # when the player lacks the Royal Seeds.
+        # when the player lacks the Royal Seeds.  Open-world demands all six
+        # AP Royal Seeds (plus palaces_required palaces cleared in-game);
+        # here the player holds none, so the world-filter never applies and
+        # the gate arms.
         self.ctx.open_world = True
         self.ctx.open_world_active = [1]
-        self.ctx._recompute_royal_seed_mask.return_value = 0b011111  # only 5
+        self.ctx.palaces_required = 1
+        self.ctx._recompute_royal_seed_mask.return_value = 0  # holds none
         self._enter(self.BOWSER_STAGE)
         with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
             await self.ctx.handle_gate_entered(self._bowser_gate())
@@ -343,6 +351,62 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         self.ctx.entry_gating_enabled = False
         await self.ctx._handle_ap_package("Connected", {"slot_data": {}})
         self.assertTrue(self.ctx.entry_gating_enabled)
+
+    # ---- Badge-specific gate sub-toggle -----------------------------
+
+    async def test_badge_gating_disabled_does_not_arm(self):
+        # Master gating ON, but the badge sub-toggle OFF -> a badge gate
+        # never arms a kill even when the badge is missing.
+        self.assertTrue(self.ctx.entry_gating_enabled)
+        self.ctx.badge_entry_gating_enabled = False
+        self._enter(self.BADGE_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._badge_gate())
+            self.assertIsNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.ctx.lan_server.send_kill.assert_not_called()
+
+    async def test_badge_gating_disabled_bowser_still_gates(self):
+        # Disabling badge gates must NOT disable the Royal-Seed/Bowser gate.
+        self.ctx.badge_entry_gating_enabled = False
+        self.ctx._recompute_royal_seed_mask.return_value = 0b011111  # only 5
+        self._enter(self.BOWSER_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._bowser_gate())
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(
+                self.ctx.lan_server.send_kill.call_count, 1)
+            self.state.mark_course_exited()
+
+    async def test_badge_gating_disable_stops_inflight_badge_kill(self):
+        # An in-flight badge kill self-stops within one countdown tick once
+        # the sub-toggle flips off (via _gate_check_stop).
+        self._enter(self.BADGE_STAGE)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._badge_gate())
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(
+                self.ctx.lan_server.send_kill.call_count, 1)
+            self.ctx.badge_entry_gating_enabled = False
+            await asyncio.sleep(0.05)
+            settled = self.ctx.lan_server.send_kill.call_count
+            await asyncio.sleep(0.05)
+            self.assertEqual(
+                self.ctx.lan_server.send_kill.call_count, settled)
+            self.state.mark_course_exited()
+
+    async def test_connected_slot_data_disables_badge_gating_only(self):
+        self.assertTrue(self.ctx.badge_entry_gating_enabled)
+        await self.ctx._handle_ap_package(
+            "Connected", {"slot_data": {"badge_level_entry_gating": False}})
+        self.assertFalse(self.ctx.badge_entry_gating_enabled)
+        # Master gating untouched (still defaults ON).
+        self.assertTrue(self.ctx.entry_gating_enabled)
+
+    async def test_connected_badge_gating_defaults_on(self):
+        self.ctx.badge_entry_gating_enabled = False
+        await self.ctx._handle_ap_package("Connected", {"slot_data": {}})
+        self.assertTrue(self.ctx.badge_entry_gating_enabled)
 
 
 if __name__ == "__main__":

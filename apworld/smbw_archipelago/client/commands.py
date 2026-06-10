@@ -133,6 +133,31 @@ class SMBWCommandProcessor(ClientCommandProcessor):
         self.output(f"-> set_badges_absolute bits=0x{mask:x}")
         return True
 
+    def _cmd_badge_gate_kills(self, mode: str = "") -> bool:
+        """Toggle the BADGE entry gate-kill -- the bounce that kills you for
+        entering a badge-gated course without the required badge.  The
+        final-Bowser Royal-Seed gate is NOT affected.  Turning it off also
+        self-cancels any kill already counting down (within ~1 s).  Usage:
+        ``/badge_gate_kills [on|off]`` (no arg shows the current state)."""
+        ctx = self.ctx
+        m = mode.strip().lower()
+        if m in ("", "status", "show"):
+            state = "ON" if getattr(ctx, "badge_entry_gating_enabled", True) else "OFF"
+            self.output(f"badge gate-kills: {state}")
+            return True
+        if m in ("on", "enable", "enabled", "true", "1"):
+            ctx.badge_entry_gating_enabled = True
+        elif m in ("off", "disable", "disabled", "false", "0"):
+            ctx.badge_entry_gating_enabled = False
+        else:
+            self.output("usage: /badge_gate_kills [on|off]")
+            return True
+        # An in-flight BADGE kill self-stops on its next countdown tick via
+        # _gate_check_stop; nothing else to do here.
+        state = "ON" if ctx.badge_entry_gating_enabled else "OFF"
+        self.output(f"badge gate-kills: {state}")
+        return True
+
     # ---- M2.3 badge probe-and-discover commands ----------------------
 
     def _cmd_badge_probe(self, bit: str = "") -> bool:
