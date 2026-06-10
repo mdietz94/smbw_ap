@@ -208,8 +208,10 @@ class SMBWContext(CommonContext):
         # slot_data; ``open_world_active`` holds the active world numbers
         # (1-6) and ``palaces_required`` the Royal-Seed threshold that
         # unlocks Bowser.  ``_bowser_opened`` latches once the threshold
-        # is met so we force all Royal Seeds + the Castle route exactly
-        # once (then keep re-asserting on reconnect via the providers).
+        # is met so we flag the Castle route routable exactly once (then
+        # keep re-asserting on reconnect via the providers).  It only
+        # opens the route + satisfies the death-gate; the win condition is
+        # actually beating Bowser, same as vanilla.
         self.open_world: bool = False
         self.open_world_active: list[int] = []
         self.palaces_required: int = 0
@@ -583,31 +585,31 @@ class SMBWContext(CommonContext):
             self.lan_server.send_set_wonder_seeds_absolute(
                 new_ws_bits_lo, new_ws_bits_hi)
             # Open-world: once the player holds enough AP Royal Seeds, flag the
-            # Castle route routable so the final fight is reachable.  Royal
+            # Castle route routable so the player can travel to Bowser.  Royal
             # Seeds are NOT pushed to the Switch -- the in-game seed state is
-            # left vanilla; the AP count gates the final level via the
-            # death-gate only.  One-shot; the routable provider re-asserts on
-            # reconnect.
+            # left vanilla.  One-shot; the routable provider re-asserts on
+            # reconnect.  This only opens the *route* (early access is fine --
+            # they just get bounced at the door if unqualified); it does NOT
+            # win the seed or satisfy the death-gate.
+            #
+            # The GOAL is NOT signalled here.  Open-world now mirrors vanilla:
+            # the win condition is actually DEFEATING Bowser (the
+            # GameGoalReached Nerve -> handle_goal_completed path, or the
+            # goal-location check), not merely holding the seeds.  And the
+            # final-level death-gate (see _gate_requirement_met) independently
+            # requires ALL SIX AP Royal Seeds plus palaces_required palaces
+            # cleared in-game before it lets the player face Bowser.
             if self.open_world and not self._bowser_opened:
                 owned = bin(new_royal_seed_mask).count("1")
                 if owned >= self.palaces_required:
                     self._bowser_opened = True
                     log.info(
                         "open-world: %d/%d AP Royal Seeds held -> Castle "
-                        "routable + GOAL (seeds NOT pushed; vanilla-owned, "
-                        "death-gate enforces final-level access)",
-                        owned, self.palaces_required)
+                        "routable (seeds NOT pushed; vanilla-owned; beat "
+                        "Bowser to win, gated on all 6 seeds + %d palaces)",
+                        owned, self.palaces_required, self.palaces_required)
                     self.lan_server.send_set_routable_worlds(
                         self._recompute_routable_worlds_mask())
-                    # Open-world goal: holding palaces_required Royal Seeds IS
-                    # the win condition -- the Bowser fight is NOT required
-                    # (entering Bowser's stage isn't fully solved yet).  Signal
-                    # CLIENT_GOAL now; _send_client_goal dedups, so the vanilla
-                    # Bowser-clear paths (GameGoalReached Nerve / goal-location
-                    # check) remain harmless no-ops if they later fire.
-                    await self._send_client_goal(
-                        reason=f"open-world palace-count goal "
-                        f"({owned}/{self.palaces_required} Royal Seeds held)")
         else:
             log.debug(
                 "no lan_server bound; not forwarding badge mask 0x%x / "
@@ -809,29 +811,72 @@ class SMBWContext(CommonContext):
         ap_world = pr_world_no_to_ap_world(ev.world_no)
         return ap_world is not None and ap_world in self.open_world_active
 
+    def _palace_location_ids(self) -> set[int]:
+        """AP location IDs for the six numbered-world palace clears (W1..W6;
+        NOT the final Bowser stage).  Derived from the Royal-Seed table's
+        palace stage_keys via the location table, resolved to server IDs
+        through the reverse map built on Connected/DataPackage.  Empty until
+        that map exists."""
+        ids: set[int] = set()
+        for sk in royal_seed_table.PALACE_STAGE_KEYS:
+            name = lookup_name(
+                CheckEmitted(kind=CheckKind.PALACE_CLEAR, stage_key=sk))
+            if name is None:
+                continue
+            loc_id = self._location_name_to_id.get(name)
+            if loc_id is not None:
+                ids.add(loc_id)
+        return ids
+
+    def _palaces_cleared_in_game(self) -> int:
+        """How many of the six numbered-world palaces the player has actually
+        cleared in their own game.
+
+        Measured by counting palace-clear AP locations present in
+        :attr:`checked_locations` -- the server persists that set, so it
+        survives reconnects (unlike a session-local counter) and, crucially,
+        reflects *genuine in-game palace clears*: receiving a Royal Seed
+        *item* from AP does NOT auto-check the palace location (see the Royal
+        Seed branch of ``_handle_received_items``), so the only way a palace
+        location lands here is the player physically clearing it."""
+        return len(self._palace_location_ids() & set(self.checked_locations))
+
     def _gate_requirement_met(self, ev: GateEntered) -> bool:
-        """True iff the player satisfies the gate's AP-item requirement.
+        """True iff the player satisfies the gate's requirement.
 
         BADGE: own the AP badge whose container-C internal_id is
-        ``ev.requirement``.  ROYAL_SEEDS: hold at least ``ev.requirement``
-        AP Royal Seeds.  An unknown gate kind fails *open* (treated as
-        satisfied) so a future gate kind never kills players on an older
-        client."""
+        ``ev.requirement``.  ROYAL_SEEDS (final Bowser): hold all
+        ``ev.requirement`` AP Royal Seeds AND -- in open-world -- have
+        actually cleared ``palaces_required`` palaces in your own game.
+        (Open-world force-opens the Castle route and AP can route Royal Seed
+        items to you without you ever playing a palace, so the in-game
+        palace clears are an anti-cheese second condition; standard mode
+        leaves palace-clearing to the vanilla castle gate.)  An unknown gate
+        kind fails *open* (treated as satisfied) so a future gate kind never
+        kills players on an older client."""
         if ev.gate_kind == GateKind.BADGE:
             return bool((self._recompute_badge_mask() >> ev.requirement) & 1)
         if ev.gate_kind == GateKind.ROYAL_SEEDS:
             owned = bin(self._recompute_royal_seed_mask()).count("1")
-            return owned >= ev.requirement
+            if owned < ev.requirement:
+                return False
+            if (self.open_world
+                    and self._palaces_cleared_in_game() < self.palaces_required):
+                return False
+            return True
         log.warning(
             "unknown gate kind %r for stage_key=0x%08x; treating as satisfied",
             ev.gate_kind, ev.stage_key & 0xFFFFFFFF)
         return True
 
-    @staticmethod
-    def _gate_kill_cause(ev: GateEntered) -> str:
+    def _gate_kill_cause(self, ev: GateEntered) -> str:
         """Human-readable ``cause`` string for the KillMsg (the Switch
         logs it; truncated to the wire cap downstream)."""
         if ev.gate_kind == GateKind.ROYAL_SEEDS:
+            if self.open_world:
+                return (
+                    f"Locked: need all {ev.requirement} AP Royal Seeds and "
+                    f"{self.palaces_required} palaces cleared to face Bowser")
             return f"Locked: need {ev.requirement} Royal Seeds to face Bowser"
         # BADGE gate: ev.requirement is the container-C internal_id, which
         # is exactly the key badge_table maps to the AP item name.  Name
@@ -861,15 +906,14 @@ class SMBWContext(CommonContext):
             return "no Switch bound"
         return None
 
-    @staticmethod
-    def _gate_overlay_text(ev: GateEntered, seconds_left: int) -> str:
+    def _gate_overlay_text(self, ev: GateEntered, seconds_left: int) -> str:
         """The on-Switch overlay banner for a pending gate kill: a fixed
         "Level not in logic" headline, the live countdown, and the same
         human-readable detail the KillMsg carries."""
         return (
             "Level not in logic\n"
             f"Bouncing you out in {seconds_left}s\n"
-            f"{SMBWContext._gate_kill_cause(ev)}"
+            f"{self._gate_kill_cause(ev)}"
         )
 
     def _push_gate_overlay(self, ev: GateEntered, seconds_left: int) -> None:

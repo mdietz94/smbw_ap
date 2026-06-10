@@ -13,6 +13,7 @@ from __future__ import annotations
 import unittest
 
 from ..processor import (
+    _BOWSER_CASTLE_STAGE_KEYS,
     _BREAK_TIME_STAGE_KEYS,
     _FAKE_EXIT_STAGE_KEYS,
     _FINAL_BOWSER_STAGE_KEY,
@@ -1368,6 +1369,20 @@ class TestLevelEntryGate(unittest.TestCase):
         self.assertEqual(gate.gate_kind, GateKind.ROYAL_SEEDS)
         self.assertEqual(gate.requirement, 6)
         self.assertEqual(gate.stage_key, _FINAL_BOWSER_STAGE_KEY)
+
+    def test_every_bowser_castle_course_emits_royal_seed_gate(self):
+        """EVERY Bowser's Castle course -- not just the final Rage Stage --
+        gates on the all-six-Royal-Seed requirement."""
+        self.assertIn(_FINAL_BOWSER_STAGE_KEY, _BOWSER_CASTLE_STAGE_KEYS)
+        self.assertEqual(len(_BOWSER_CASTLE_STAGE_KEYS), 5)
+        for sk in _BOWSER_CASTLE_STAGE_KEYS:
+            state = BridgeState()
+            emitted = _handle_course_in(
+                state, self._course_in_fields(sk, world_no=8, course_no=1))
+            self.assertEqual(len(emitted), 1, f"stage 0x{sk:08x}")
+            self.assertEqual(emitted[0].gate_kind, GateKind.ROYAL_SEEDS)
+            self.assertEqual(emitted[0].requirement, 6)
+            self.assertEqual(emitted[0].stage_key, sk)
 
 
 # ---------------------------------------------------------------------------

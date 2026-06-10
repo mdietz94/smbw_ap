@@ -270,11 +270,24 @@ _FAKE_EXIT_STAGE_KEYS: frozenset[int] = frozenset({
 # gated).  Entry requires owning the AP badge whose container-C
 # internal_id that course awards.
 #
-# Final-Bowser gate: Bowser's Rage Stage requires the player hold all
-# six AP Royal Seeds, mirroring the vanilla final-castle gate.
+# Bowser's Castle gate: EVERY course in Bowser's Castle -- not just the
+# final Bowser's Rage Stage -- gates on the same final-level requirement
+# (the player holds all six AP Royal Seeds; the open-world client adds the
+# in-game palace-clear check).  The whole castle is one gated wing, so
+# entering any of its courses without qualifying bounces the player out.
 
 _FINAL_BOWSER_STAGE_KEY: int = 0x6895BF00  # BC: Bowser's Rage Stage
 _FINAL_BOWSER_REQUIRED_ROYAL_SEEDS: int = 6
+
+# All Bowser's Castle course stage_keys (the gauntlet courses + the final
+# Rage Stage).  Any entry here triggers the ROYAL_SEEDS gate.
+_BOWSER_CASTLE_STAGE_KEYS: frozenset[int] = frozenset({
+    0x4866EB2F,  # BC: Missile Meg Mayhem
+    0x6C3B527E,  # BC: High-Voltage Gauntlet
+    0x7A214398,  # BC: Evade the Seeker Bullet Bills!
+    0x33A5034F,  # BC: KnuckleFest Bowser's Blazing Beats
+    _FINAL_BOWSER_STAGE_KEY,  # BC: Bowser's Rage Stage (final boss)
+})
 
 
 # ---------------------------------------------------------------------------
@@ -472,12 +485,12 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[Proces
              world_no, course_no, sk, sk & 0xFFFFFFFF)
 
     # Level-entry gate: emit a GateEntered the context evaluates against
-    # AP state.  Bowser takes precedence (it isn't in the badge table,
-    # so the order is informational, not a real overlap).  stage_key is
-    # compared unmasked, matching _emit_course_clear_badge /
+    # AP state.  Bowser's Castle takes precedence (its courses aren't in
+    # the badge table, so the order is informational, not a real overlap).
+    # stage_key is compared unmasked, matching _emit_course_clear_badge /
     # _handle_course_result (the PlayReport decoder yields the unsigned
     # 32-bit key these tables are keyed by).
-    if sk == _FINAL_BOWSER_STAGE_KEY:
+    if sk in _BOWSER_CASTLE_STAGE_KEYS:
         return [GateEntered(
             stage_key=sk,
             gate_kind=GateKind.ROYAL_SEEDS,
