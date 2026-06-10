@@ -93,17 +93,20 @@ ROUTABLE_PETAL_BIT = 6
 # Level-entry gate (kill the player if they sequence-broke into a course
 # AP logic gates).  The Switch can't physically block course entry, so
 # the bridge waits ``GATE_KILL_DELAY_S`` after entry -- enough grace for
-# the player to pause and walk back out -- then drives the DeathLink
-# ``synthKill`` route, re-firing every ``GATE_KILL_DELAY_S`` while the
-# player is still inside the gated course without the required item.
-GATE_KILL_DELAY_S = 10.0
+# the player to sit through any unskippable entry dialogue, then pause
+# and walk back out -- then drives the DeathLink ``synthKill`` route,
+# re-firing every ``GATE_KILL_DELAY_S`` while the player is still inside
+# the gated course without the required item.  (10s proved too short:
+# some courses open with dialogue the player can't leave from, so the
+# kill landed before they ever had control.)
+GATE_KILL_DELAY_S = 30.0
 
 # Safety cap on consecutive gate kills for a single course entry.  The
 # loop normally stops the moment the player leaves (in_course clears) or
 # acquires the item; this cap only matters if some exit path failed to
 # fire a course_result -- it bounds a runaway to ~10 minutes rather than
 # forever.  Re-entering the course re-arms a fresh loop.
-GATE_MAX_CONSECUTIVE_KILLS = 60
+GATE_MAX_CONSECUTIVE_KILLS = 20
 
 # TTL (ms) of each on-Switch overlay countdown notice.  The countdown
 # re-sends one notice per second; the TTL is set comfortably longer than
