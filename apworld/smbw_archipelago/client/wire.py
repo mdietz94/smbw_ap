@@ -900,18 +900,20 @@ class LogMsg:
 class ApplyWorldUnlockMsg:
     """Bridge -> Switch.  Open-world world/course unlock batch (2026-06).
 
-    Sends a list of container-B bool hashes (all written with value=1)
-    that unlocks world-discovered and course-exists state on a fresh save.
-    Derived from a fresh→100%-save diff; full table in
-    ``world_unlock_table.WORLD_UNLOCK_HASHES`` (85 hashes as of 2026-06-03).
+    Sends the world-discovered / course-exists unlock hashes (all written
+    with value=1) split by GameDataList category, because the two switch
+    writers are not interchangeable (see world_unlock_table docstring):
 
-    The Switch applies via ``probe::grantContainerBBool(hash, 1)`` for each
-    hash when ``g_routable_world_mask != 0`` (open-world active).  Per-course
+      - ``hashes``       Int-category  -> ``probe::grantContainerACounter``
+      - ``bool_hashes``  Bool-category -> ``probe::grantContainerBBool``
+
+    Derived from a fresh→100%-save diff; full table in
+    ``world_unlock_table`` (2 Int + 84 Bool as of 2026-06-09).  Per-course
     CLEAR flags are NOT included, so PlayReport checks still fire on first
     real course clear.
 
     Sent at connect (Connected handler) and on every HelloMsg replay
-    (reconnect).  NOT on the periodic 2 s tick -- these bools are set once
+    (reconnect).  NOT on the periodic 2 s tick -- these flags are set once
     and are not reverted by in-game actions (unlike badges/seeds).
     """
 
@@ -920,29 +922,47 @@ class ApplyWorldUnlockMsg:
     MAX_HASHES: ClassVar[int] = 96
 
     hashes: tuple[int, ...]
+    bool_hashes: tuple[int, ...] = ()
 
     def to_wire(self) -> dict[str, Any]:
-        return {"t": self.T, "hashes": list(self.hashes)}
+        return {
+            "t": self.T,
+            "hashes": list(self.hashes),
+            "bool_hashes": list(self.bool_hashes),
+        }
 
     @classmethod
-    def from_wire(cls, d: dict[str, Any]) -> ApplyWorldUnlockMsg:
-        raw = d.get("hashes")
+    def _check_hash_list(cls, d: dict[str, Any], field: str,
+                         required: bool) -> tuple[int, ...]:
+        raw = d.get(field)
+        if raw is None and not required:
+            return ()
         if not isinstance(raw, list):
             raise ProtocolError(
-                f"apply_world_unlock.hashes must be list, got {raw!r}")
+                f"apply_world_unlock.{field} must be list, got {raw!r}")
         if len(raw) > cls.MAX_HASHES:
             raise ProtocolError(
-                f"apply_world_unlock.hashes too long: {len(raw)} > {cls.MAX_HASHES}")
+                f"apply_world_unlock.{field} too long: "
+                f"{len(raw)} > {cls.MAX_HASHES}")
         hashes: list[int] = []
         for i, h in enumerate(raw):
             if not isinstance(h, int) or isinstance(h, bool):
                 raise ProtocolError(
-                    f"apply_world_unlock.hashes[{i}] must be int, got {h!r}")
+                    f"apply_world_unlock.{field}[{i}] must be int, got {h!r}")
             if not (0 <= h < (1 << 32)):
                 raise ProtocolError(
-                    f"apply_world_unlock.hashes[{i}] out of range [0, 2**32): {h}")
+                    f"apply_world_unlock.{field}[{i}] out of range "
+                    f"[0, 2**32): {h}")
             hashes.append(h)
-        return cls(hashes=tuple(hashes))
+        return tuple(hashes)
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> ApplyWorldUnlockMsg:
+        # "bool_hashes" is optional on decode (pre-split senders omit it).
+        return cls(
+            hashes=cls._check_hash_list(d, "hashes", required=True),
+            bool_hashes=cls._check_hash_list(d, "bool_hashes", required=False),
+        )
 
 
 # Union of all message types -- handy for type hints on decoder return.

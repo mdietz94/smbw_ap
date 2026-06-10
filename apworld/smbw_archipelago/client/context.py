@@ -309,7 +309,7 @@ class SMBWContext(CommonContext):
                     self.lan_server.send_set_routable_worlds(
                         self._recompute_routable_worlds_mask())
                     self.lan_server.send_apply_world_unlock(
-                        self._world_unlock_hashes())
+                        *self._world_unlock_hashes())
 
             # Tell the AP server the player is in-game so item routing
             # starts flowing.  ClientStatus.CLIENT_PLAYING.
@@ -533,18 +533,21 @@ class SMBWContext(CommonContext):
         so the LanServer wiring stays unchanged."""
         return None
 
-    def _world_unlock_hashes(self) -> tuple[int, ...]:
-        """Open-world: return the world/course unlock hash table to send to
-        the Switch.  Returns an empty tuple when open-world is inactive so
-        the LAN server skips the send.  Wired as the LanServer
+    def _world_unlock_hashes(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """Open-world: return the (int_hashes, bool_hashes) world/course
+        unlock pair to send to the Switch, split by GameDataList category
+        (Int -> grantContainerACounter, Bool -> grantContainerBBool).
+        Returns empty tuples when open-world is inactive so the LAN server
+        skips the send.  Wired as the LanServer
         ``world_unlock_hashes_provider`` so the unlock replays on HelloMsg.
         The table is static (derived from a fresh→100%-save diff 2026-06-03)
         and independent of which worlds are active -- we unlock all worlds'
         course state and rely on the death-gate + AP logic to enforce which
         courses the player may actually complete."""
         if not self.open_world:
-            return ()
-        return world_unlock_table.WORLD_UNLOCK_HASHES
+            return ((), ())
+        return (world_unlock_table.WORLD_UNLOCK_INT_HASHES,
+                world_unlock_table.WORLD_UNLOCK_BOOL_HASHES)
 
     async def _handle_received_items(self, args: dict) -> None:
         items = args.get("items", []) or []

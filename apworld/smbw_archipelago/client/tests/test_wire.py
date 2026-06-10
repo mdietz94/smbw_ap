@@ -14,6 +14,7 @@ from ..protocol import BadgeAcquiredMsg, NerveFireMsg, NerveKind, PlayReportMsg
 from ..wire import (
     MAX_LINE_BYTES,
     WIRE_VERSION,
+    ApplyWorldUnlockMsg,
     BadgeAcquiredWireMsg,
     ErrMsg,
     GrantHashKeyedMsg,
@@ -87,6 +88,32 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_play_report_empty(self):
         self._round_trip(PlayReportWireMsg(room="ping", payload_hex=""))
+
+    def test_apply_world_unlock(self):
+        # Int-category hashes go in "hashes", Bool-category in
+        # "bool_hashes" -- the Switch routes them to different writers
+        # (grantContainerACounter vs grantContainerBBool).
+        self._round_trip(ApplyWorldUnlockMsg(
+            hashes=(0x5AC1E406, 0x20FCED8B),
+            bool_hashes=(0x3DA75AC4, 0x66500164, 0xBF40AF4F)))
+
+    def test_apply_world_unlock_empty_bool(self):
+        self._round_trip(ApplyWorldUnlockMsg(hashes=(0x5AC1E406,)))
+
+    def test_apply_world_unlock_decode_without_bool_hashes(self):
+        # Pre-split senders omit "bool_hashes"; decode must default to ().
+        line = json.dumps(
+            {"t": "apply_world_unlock", "hashes": [1, 2, 3]}).encode() + b"\n"
+        decoded = decode(line)
+        self.assertEqual(
+            decoded, ApplyWorldUnlockMsg(hashes=(1, 2, 3), bool_hashes=()))
+
+    def test_apply_world_unlock_bad_bool_hashes_rejected(self):
+        line = json.dumps(
+            {"t": "apply_world_unlock", "hashes": [],
+             "bool_hashes": [1, "nope"]}).encode() + b"\n"
+        with self.assertRaises(ProtocolError):
+            decode(line)
 
     def test_set_badges_absolute_single_bit(self):
         self._round_trip(SetBadgesAbsoluteMsg(bits=1 << 4))  # Spring Feet

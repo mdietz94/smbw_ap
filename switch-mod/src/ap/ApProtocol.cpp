@@ -444,24 +444,36 @@ bool parseSetRoyalSeedsAbsolute(util::json::Reader& r,
 }
 
 bool parseApplyWorldUnlock(util::json::Reader& r, WireApplyWorldUnlock& out) {
-    // "hashes" is a JSON array of u32 integers, at most kWorldUnlockHashCap.
-    // All will be applied with value=1 on the Switch side.
+    // "hashes" (Int-category -> grantContainerACounter) and "bool_hashes"
+    // (Bool-category -> grantContainerBBool) are JSON arrays of u32
+    // integers, each at most kWorldUnlockHashCap.  All applied with
+    // value=1 on the Switch side.  "bool_hashes" is optional (pre-split
+    // senders omit it).
+    const auto parse_hash_array = [&r](std::uint32_t* dst,
+                                       std::uint8_t& count) -> bool {
+        if (!r.enterArray()) return false;
+        std::size_t i = 0;
+        while (r.hasMoreInArray()) {
+            if (i >= kWorldUnlockHashCap) return false;
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0 || v > 0xFFFFFFFFLL) return false;
+            dst[i++] = static_cast<std::uint32_t>(v);
+        }
+        if (!r.exitArray()) return false;
+        count = static_cast<std::uint8_t>(i <= 255u ? i : 255u);
+        return true;
+    };
+
     std::string_view key;
     bool saw_hashes = false;
     while (r.nextField(key)) {
         if (sv_eq(key, "hashes")) {
-            if (!r.enterArray()) return false;
-            std::size_t i = 0;
-            while (r.hasMoreInArray()) {
-                if (i >= kWorldUnlockHashCap) return false;
-                std::int64_t v = 0;
-                if (!r.nextInt(v)) return false;
-                if (v < 0 || v > 0xFFFFFFFFLL) return false;
-                out.hashes[i++] = static_cast<std::uint32_t>(v);
-            }
-            if (!r.exitArray()) return false;
-            out.count = static_cast<std::uint8_t>(i <= 255u ? i : 255u);
+            if (!parse_hash_array(out.hashes, out.count)) return false;
             saw_hashes = true;
+        } else if (sv_eq(key, "bool_hashes")) {
+            if (!parse_hash_array(out.bool_hashes, out.bool_count))
+                return false;
         } else {
             std::string_view dummy;
             std::int64_t iv = 0;

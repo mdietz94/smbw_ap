@@ -722,16 +722,21 @@ void ApClient::handleLine(char* line, std::size_t len) {
         }
         case InboundKind::ApplyWorldUnlock:
             // Open-world world/course unlock batch (2026-06).  drainInbound
-            // applies via probe::grantContainerACounter(hash, 1) for each
-            // of the wu.count hashes. Not deduplicated: sent once at connect
-            // + HelloMsg replay, not on the 2s tick.
+            // routes by GameDataList category: count Int hashes via
+            // probe::grantContainerACounter(hash, 1) and bool_count Bool
+            // hashes via probe::grantContainerBBool(hash, 1).  Not
+            // deduplicated: sent once at connect + HelloMsg replay, not on
+            // the 2s tick.
             SMBWAP_LOG_INFO(
-                "[unlock] received ApplyWorldUnlock(count=%u), enqueued",
-                static_cast<unsigned>(msg.apply_world_unlock.count));
+                "[unlock] received ApplyWorldUnlock(int=%u bool=%u), enqueued",
+                static_cast<unsigned>(msg.apply_world_unlock.count),
+                static_cast<unsigned>(msg.apply_world_unlock.bool_count));
             if (!tryPushInbound(msg) && shouldLogDrop()) {
                 SMBWAP_LOG_WARN(
-                    "[unlock] inbound full; dropping ApplyWorldUnlock(count=%u)",
-                    static_cast<unsigned>(msg.apply_world_unlock.count));
+                    "[unlock] inbound full; dropping ApplyWorldUnlock"
+                    "(int=%u bool=%u)",
+                    static_cast<unsigned>(msg.apply_world_unlock.count),
+                    static_cast<unsigned>(msg.apply_world_unlock.bool_count));
             }
             return;
         case InboundKind::Err:

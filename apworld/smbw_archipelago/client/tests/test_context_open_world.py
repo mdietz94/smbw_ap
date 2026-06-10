@@ -155,6 +155,25 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
         self.ctx._bowser_opened = True  # shouldn't happen, but be defensive
         self.assertIsNone(self.ctx._open_world_royal_seed_mask())
 
+    # ---- World-unlock hash split (Int vs Bool writers) -----------------
+
+    async def test_connected_pushes_world_unlock_split(self):
+        from .. import world_unlock_table as wut
+        await self._connect({"open_world_active": [1, 3, 5], "palaces_required": 2})
+        self.ctx.lan_server.send_apply_world_unlock.assert_called_once_with(
+            wut.WORLD_UNLOCK_INT_HASHES, wut.WORLD_UNLOCK_BOOL_HASHES)
+
+    async def test_world_unlock_provider_returns_split_pair(self):
+        from .. import world_unlock_table as wut
+        await self._connect({"open_world_active": [1], "palaces_required": 0})
+        self.assertEqual(
+            self.ctx._world_unlock_hashes(),
+            (wut.WORLD_UNLOCK_INT_HASHES, wut.WORLD_UNLOCK_BOOL_HASHES))
+
+    async def test_world_unlock_provider_empty_outside_open_world(self):
+        await self._connect({})
+        self.assertEqual(self.ctx._world_unlock_hashes(), ((), ()))
+
 
 if __name__ == "__main__":
     unittest.main()
