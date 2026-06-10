@@ -458,6 +458,71 @@ class SMBWCommandProcessor(ClientCommandProcessor):
             f"({bin(mask).count('1')} seed(s))")
         return True
 
+    def _cmd_deny_powerups(self, spec: str = "") -> bool:
+        """Debug: override the power-up pickup deny mask on the Switch.
+
+        Normally the mask is AP-authoritative: every gated power-up whose
+        AP item hasn't been received is denied (the item stays in the
+        level when touched, exactly like items during a drill-dig).  This
+        command sets a manual OVERRIDE that wins over the AP-derived mask
+        until cleared (mirror of `/badge_probe`); the 2 s tick keeps
+        re-asserting whichever is active.
+
+        Usage:
+          ``/deny_powerups``           -> deny all 4 (fire/elephant/drill/bubble)
+          ``/deny_powerups 0``         -> override: nothing denied
+          ``/deny_powerups fire,drill``-> deny a named subset
+          ``/deny_powerups 0x40024``   -> raw mask (bit table in wire.py)
+          ``/deny_powerups ap``        -> clear the override (AP-authoritative)
+        """
+        from . import wire as _wire
+        names = {
+            "mushroom": _wire.SetItemGetDenyMaskMsg.BIT_KINOKO,
+            "fire": _wire.SetItemGetDenyMaskMsg.BIT_FIRE_FLOWER,
+            "star": _wire.SetItemGetDenyMaskMsg.BIT_STAR,
+            "1up": _wire.SetItemGetDenyMaskMsg.BIT_ONE_UP_KINOKO,
+            "elephant": _wire.SetItemGetDenyMaskMsg.BIT_ELEPHANT_SUIT,
+            "key": _wire.SetItemGetDenyMaskMsg.BIT_KEY,
+            "drill": _wire.SetItemGetDenyMaskMsg.BIT_DRILL_SUIT,
+            "bubble": _wire.SetItemGetDenyMaskMsg.BIT_AWA_FLOWER,
+        }
+        lan = getattr(self.ctx, "lan_server", None)
+        if lan is None:
+            self.output("ERROR: lan_server not wired")
+            return True
+        if spec.strip().lower() in ("ap", "auto", "clear"):
+            self.ctx.set_itemget_deny_override(None)
+            self.output(
+                "-> deny override cleared (AP-authoritative mask "
+                f"0x{self.ctx._recompute_itemget_deny_mask():x})")
+            return True
+        if not spec:
+            mask = _wire.SetItemGetDenyMaskMsg.AP_POWER_UPS_MASK
+        else:
+            try:
+                mask = int(spec, 0)
+            except ValueError:
+                mask = 0
+                for part in spec.split(","):
+                    part = part.strip().lower()
+                    if part not in names:
+                        self.output(
+                            f"ERROR: unknown item {part!r} "
+                            f"(known: {', '.join(sorted(names))} -- or 'ap' "
+                            f"to clear the override)")
+                        return True
+                    mask |= 1 << names[part]
+            if not (0 <= mask < (1 << 32)):
+                self.output(f"ERROR: mask 0x{mask:x} out of range [0, 2**32)")
+                return True
+        self.ctx.set_itemget_deny_override(mask)
+        denied = [n for n, b in sorted(names.items()) if mask >> b & 1]
+        self.output(
+            f"-> set_itemget_deny override mask=0x{mask:x}"
+            f" ({'nothing denied' if mask == 0 else 'denied: ' + ', '.join(denied)})"
+            f" -- /deny_powerups ap to restore AP-authoritative")
+        return True
+
     def _cmd_grant_hash(self, hash_spec: str = "", value_spec: str = "") -> bool:
         """Send one ``GrantHashKeyedMsg(hash, value)`` to the Switch.  The
         Switch dispatcher routes via ``isBoolHash`` -- counters

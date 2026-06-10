@@ -40,6 +40,7 @@ from NetUtils import ClientStatus  # type: ignore
 
 from . import badge_table
 from . import coin_table
+from . import powerup_table
 from . import royal_seed_table
 from . import wonder_seed_table
 from . import world_unlock_table
@@ -186,6 +187,18 @@ class SMBWContext(CommonContext):
         # stays visible in-game until the override is cleared.
         self._badge_probe_mask: int | None = None
 
+        # Power-up pickup gating (2026-06-10).  ``powerup_gating`` is set
+        # from slot_data on Connected -- True for seeds where the Power-Up
+        # items are real pool items (no longer precollected).  When True,
+        # ``_recompute_itemget_deny_mask`` denies every gated power-up
+        # pickup whose AP item hasn't been received yet (receiving the
+        # item unlocks the ability to collect that power-up in-level).
+        # ``_itemget_deny_override`` is the `/deny_powerups` debug
+        # override -- when not None it wins over the AP-derived mask
+        # (mirror of ``_badge_probe_mask``).
+        self.powerup_gating: bool = False
+        self._itemget_deny_override: int | None = None
+
         # Level-entry gate.  ``entry_gating_enabled`` defaults ON (the
         # feature is the request); an apworld can ship a
         # ``level_entry_gating`` slot_data key to turn it off per-seed.
@@ -293,6 +306,21 @@ class SMBWContext(CommonContext):
                     "ENABLED" if eg else "disabled")
             self.entry_gating_enabled = eg
 
+            # Power-up pickup gating.  Default OFF when the key is
+            # missing (seed generated before the Power-Up items entered
+            # the pool) -- those seeds precollect the power-ups and must
+            # keep vanilla pickups.  Push immediately so the gate engages
+            # even if the connect-time ReceivedItems batch is empty.
+            pg = bool(slot_data.get("powerup_gating"))
+            if pg != self.powerup_gating:
+                log.info(
+                    "powerup_gating: %s (from slot_data)",
+                    "ENABLED" if pg else "disabled")
+            self.powerup_gating = pg
+            if self.lan_server is not None:
+                self.lan_server.send_set_itemget_deny(
+                    self._recompute_itemget_deny_mask())
+
             # Open-world mode.  The apworld injects ``open_world_active``
             # (the random active world set) and ``palaces_required`` into
             # slot_data; a non-empty list turns the mode on.  Reset the
@@ -356,6 +384,50 @@ class SMBWContext(CommonContext):
             len(self._item_name_to_id),
             self.game,
         )
+
+    def _recompute_itemget_deny_mask(self) -> int:
+        """Compute the Switch ItemGet deny mask: every gated power-up bit
+        whose AP item has NOT been received.  0 == vanilla pickups.
+
+        Returns 0 unless this seed shuffles power-ups
+        (``powerup_gating`` from slot_data), so old seeds and the
+        pre-Connected window stay vanilla.  Precollected power-ups
+        (old seeds) also arrive in the connect-time ReceivedItems batch,
+        so they clear their bits naturally even if the marker were set.
+
+        `/deny_powerups` override: if ``_itemget_deny_override`` is not
+        None, return it instead (mirror of the badge probe override).
+        """
+        if self._itemget_deny_override is not None:
+            return self._itemget_deny_override
+        if not self.powerup_gating:
+            return 0
+        mask = powerup_table.GATED_MASK
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                item_name = self.item_names.lookup_in_game(int(item_id))
+            except Exception:
+                continue
+            bit = powerup_table.deny_bit_for_item(item_name)
+            if bit is None:
+                continue
+            mask &= ~(1 << bit)
+        return mask
+
+    def set_itemget_deny_override(self, mask: int | None) -> None:
+        """`/deny_powerups` entry point.  Set or clear the deny-mask
+        override and immediately push it to the Switch.  Passing ``None``
+        restores AP-authoritative mode (the mask recomputes from
+        items_received + slot_data)."""
+        self._itemget_deny_override = mask
+        lan = self.lan_server
+        if lan is not None:
+            lan.send_set_itemget_deny(self._recompute_itemget_deny_mask())
 
     def _recompute_badge_mask(self) -> int:
         """Walk :attr:`items_received` and compute the absolute owned-badge
@@ -584,6 +656,12 @@ class SMBWContext(CommonContext):
             # bits to match.
             self.lan_server.send_set_wonder_seeds_absolute(
                 new_ws_bits_lo, new_ws_bits_hi)
+            # Power-up pickup gating: re-derive the deny mask -- a newly
+            # received Power-Up item clears its bit, unlocking that
+            # pickup type in-level within a frame of the Switch applying
+            # it.  No-ops to 0 when this seed doesn't gate power-ups.
+            self.lan_server.send_set_itemget_deny(
+                self._recompute_itemget_deny_mask())
             # Open-world: once the player holds enough AP Royal Seeds, flag the
             # Castle route routable so the player can travel to Bowser.  Royal
             # Seeds are NOT pushed to the Switch -- the in-game seed state is

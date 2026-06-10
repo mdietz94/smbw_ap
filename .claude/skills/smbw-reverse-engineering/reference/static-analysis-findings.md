@@ -5299,3 +5299,66 @@ retired (in the same PR or a follow-up):
 
 The `GmdContainerAWriter` trampoline at NSO `+0x49F648` MUST stay —
 that's the writer our override uses + the save-loaded gate signal.
+
+## 2026-06-10 — power-up negation: the ItemGet can-get mask (M3.1/M5 spike, SOLVED static)
+
+Goal: a runtime-patchable way to negate power-up pickups (despawn /
+no-spawn / neutralize / forced damage were all on the table).  Found a
+**native** mechanism instead — current-truth summary lives in
+**smbw-re-map.md §14**; this entry records the method + dead ends.
+
+### Method (no Ghidra — capstone over the decompressed NSO)
+
+`C:\Users\maxwe\Documents\smbw_re_tmp\main_dec.bin` is the v1.0.0 NSO with
+uncompressed segments (magic NSO0, flags 0x38).  New tooling at
+`C:\Users\maxwe\Documents\smbw_re_tmp\retool.py`: NSO segment parser +
+**MOD0→.dynamic→RELA relocation applier** (365,511 R_AARCH64_RELATIVE
+entries — vtables read as zeros without it), capstone disasm, BL/B caller
+scans by encoding, adrp+add string-xref scans, vtable dumps.  RomFS actor
+packs (sarc_extract.py + byml_parse.py) supplied ground truth the binary
+alone couldn't: `pack_PlayerBase/ItemGetParam/Player...bgyml` (the named
+get-item profiles incl. `DrillDig`/`OnlyCoin`/`DisableItemGet`) and
+`pack_PlayerBase/AI/PlayerPowerUp.module.ainb` (the metamorphosis AI
+strings).
+
+Chain walked: `ItemGetSetting` field strings → gparam class visitor
+(+0x17d7100, object size 0x50, field offsets from per-field accessor
+helpers) → **builder +0x3c4050** (clusters of ldrb +0x30..0x3f feeding ORs
+into component+0xB0) → **reader +0x182c8bc** (`mask >> type & 1`) →
+bit/enum cross-check via the ItemGetActorType parser (+0x93a204, string
+table at data +0x3497831) and the 0x2840 seed-group constant.
+
+### Corrections to older notes
+
+- The 2026-05-24 cheat-DB table's **"Pattern" column is unreliable** (e.g.
+  "+0x198B50 `STR W9`" — the real insn is `ldr w9, [x8]`; "+0x45AA34
+  `STR W7,[X22,#0x60]`" — real insn `stp wzr, w8, [x19, #0x1c]`).  Treat
+  only the offsets as anchors, not the recorded instructions.
+- The "Mario form swap" cheat decoded properly: it writes `b +0x20128e8`
+  over the load at +0x198b50 plus the form constant at +0x20128f4 (code
+  cave in the text/rodata gap).  So +0x198B50 is a form *reader* the cheat
+  hijacks, not a writer — the authoritative live form field is **player
+  struct +0xB8**, mirrored into the property-dispatcher array
+  `*(mgr+0xB0)[player]` at +0x274830 each tick.
+
+### Dead ends (don't re-walk)
+
+- `+0x86b` pending-request byte: set by the `PlayerRequestItemGet` AI
+  request execute (+0x1529fd8), but its bit domain is small (fits u8) and
+  the consumer logic in the giant tick fn is tangled — the can-get mask is
+  a far cleaner gate.
+- 16-offset ldrb clusters as "the evaluator": most are murmur/crypto false
+  positives (e.g. +0xc6ed9c).  The real builder was found via the
+  *same-base* +0x30..0x3f cluster WITH a `component+0x68` setting load.
+- murmur3/CRC32 of the request/property names match nothing — the AI
+  request registry uses type-IDs (e.g. 0x3edc2bd2), not name hashes.
+
+### Shipped (this session)
+
+`probe/ItemGetGate.{hpp,cpp}` + `itemGetMaskBuildHook` (main.cpp, NSO
++0x3c4050) + wire `set_itemget_deny` (Switch: direct atomic apply on the
+network thread; PC: `SetItemGetDenyMaskMsg`, `send_set_itemget_deny`,
+HelloMsg replay) + `/deny_powerups` client command.  Default deny mask 0 =
+byte-identical vanilla behavior.  Builds clean; **live validation pending**
+(grab each power-up with `/deny_powerups` active; expect untouchable items
++ `[itemgate]` log lines).

@@ -199,17 +199,25 @@ so no Switch-side grant primitive is needed for MVP.  M3.5 (Wonder
 Flower suppression) and M3.6 (button suppression) are deferred until
 the MVP set ships.  M3.7 (goal hook) shipped 2026-05-25.
 
-### M3.1 — power-up grant (4 items: Elephant, Fire, Bubble, Drill) — DEFERRED TO M7
+### M3.1 — power-up shuffling (4 items: Elephant, Fire, Bubble, Drill) — ✅ SHIPPED 2026-06-10 (negation model)
 
-**Status (2026-05-25)** — deferred indefinitely.  The AP server now
-precollects all 4 Power-Up items via `starting_items` in
-[apworld/smbw_archipelago/data/game.json](../apworld/smbw_archipelago/data/game.json),
-so the player begins every seed already owning Elephant / Fire / Bubble
-/ Drill.  Rules that reference these items as required are satisfied
-trivially from the precollect set, and no AP item ever needs to be
-applied at runtime.  Revisit under **M7 (UX polish)** if/when we want
-true AP-driven power-up shuffling — the RE notes below remain valid
-when that work resumes.
+**Status (2026-06-10)** — shipped via the *negation* model instead of a
+grant primitive: the 4 Power-Up items are real pool items again
+(`starting_items` no longer precollects the Power-Up category), and
+receiving the AP item **unlocks the ability to collect that power-up
+in-level** — the Switch denies the pickup for any power-up whose item
+hasn't been received (ItemGet deny mask, see the update note below).
+No in-game grant write is needed at all; the existing location/region
+`requires` that reference these items now engage for real (validated:
+20/20 standard seeds + open-world gen suite fill+beat).  Regular Super
+Mushrooms stay vanilla pickups by design (a `Super Mushroom` gate item
+was tried and removed same day — the deny bit (Kinoko, bit 1) remains
+available to the `/deny_powerups` override).  Seeds generated with an
+older apworld precollect the power-ups and the client leaves their
+pickups vanilla (slot_data `powerup_gating` marker).
+
+The historical RE notes below remain valid for a future *direct-grant*
+variant (instantly become Fire Mario on receipt) if ever wanted.
 
 The HamletDuFromage cheat DB gave us:
 
@@ -220,6 +228,18 @@ The HamletDuFromage cheat DB gave us:
 **Approach (when revisited)**: rather than poke memory raw, find the *apply-powerup* function the engine calls when the player picks one up. Hook it once for read (confirm signature, find arg ordering), then call it from our code with the AP-granted type. This ensures animations, sound effects, and any side-effects (e.g., size box change) run correctly.
 
 The event Nerve `vt_off=0x33fd870` fires on damage *and* power-up pickup (we observed this in M1 testing). Worth peeking that Nerve's vtable to see if it's a `RequestEventApplyPowerUp` family member.
+
+**Update (2026-06-10) — power-up NEGATION shipped (static, pending live
+validation).**  The other half of true power-up shuffling — stopping the
+player from using in-level power-ups they don't own yet — is solved via the
+engine's own per-item-type pickup-permission mask (the `DrillDig` mechanism):
+the `ItemGetMaskBuild` trampoline at NSO `+0x3c4050` strips AP-denied bits
+from the player's can-get bitmask, making those items untouchable (item
+stays in the level; no pickup, no transform, no damage).  See the
+**smbw-reverse-engineering** map §14, `switch-mod/src/probe/ItemGetGate.hpp`,
+wire msg `set_itemget_deny`, and the `/deny_powerups` client debug command.
+When M3.1 resumes, the *grant* side can pair this with the form-apply chain
+notes in map §14 (live form field = player struct `+0xB8`).
 
 ### M3.2 — badge unlock (24 items, inverse of M2.3) — DEFERRED (separate path from M3.3 hash table)
 

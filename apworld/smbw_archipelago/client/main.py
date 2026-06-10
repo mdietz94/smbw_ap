@@ -89,6 +89,7 @@ async def _main(args: argparse.Namespace) -> int:
         routable_worlds_provider=ctx._recompute_routable_worlds_mask,
         open_world_royal_seed_provider=ctx._open_world_royal_seed_mask,
         world_unlock_hashes_provider=ctx._world_unlock_hashes,
+        itemget_deny_provider=ctx._recompute_itemget_deny_mask,
     )
     ctx.lan_server = lan
 

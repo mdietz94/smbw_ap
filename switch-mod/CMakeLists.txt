@@ -38,6 +38,7 @@ set(SOURCES_CXX
     ${PROJECT_SOURCE_DIR}/src/probe/DeathLink.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/Diagnostics.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/Gates.cpp
+    ${PROJECT_SOURCE_DIR}/src/probe/ItemGetGate.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/PerCourse.cpp
     ${PROJECT_SOURCE_DIR}/src/probe/SeedTrace.cpp
 )

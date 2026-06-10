@@ -196,6 +196,7 @@ GrantMsg = (
     wire.SetBadgesAbsoluteMsg
     | wire.SetRoyalSeedsAbsoluteMsg
     | wire.SetRoutableWorldsAbsoluteMsg
+    | wire.SetItemGetDenyMaskMsg
     | wire.GrantHashKeyedMsg
     | wire.IncrementHashKeyedMsg
     | wire.SetWonderSeedCountsMsg
@@ -205,6 +206,12 @@ GrantMsg = (
     | _DrainIncrementsSentinel
 )
 
+
+# Power-up pickup gating (2026-06-10): returns the ItemGet deny mask to
+# assert on the Switch (0 = vanilla pickups).  AP-authoritative analog of
+# :data:`BadgeMaskProvider` -- replayed on HelloMsg and the periodic tick,
+# and pushed by SMBWContext on Connected + every ReceivedItems.
+ItemGetDenyProvider = Callable[[], int]
 
 # Open-world mode (2026-06) providers, analogs of :data:`BadgeMaskProvider`.
 # ``RoutableWorldsProvider`` returns the AP-authoritative routable-world
@@ -252,6 +259,7 @@ class LanServer:
         routable_worlds_provider: RoutableWorldsProvider | None = None,
         open_world_royal_seed_provider: OpenWorldRoyalSeedProvider | None = None,
         world_unlock_hashes_provider: WorldUnlockHashesProvider | None = None,
+        itemget_deny_provider: ItemGetDenyProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
@@ -264,6 +272,7 @@ class LanServer:
         self._routable_worlds_provider = routable_worlds_provider
         self._open_world_royal_seed_provider = open_world_royal_seed_provider
         self._world_unlock_hashes_provider = world_unlock_hashes_provider
+        self._itemget_deny_provider = itemget_deny_provider
 
         self._server: asyncio.base_events.Server | None = None
 
@@ -276,6 +285,11 @@ class LanServer:
         self._writer_task: asyncio.Task[None] | None = None
         self._badge_sync_task: asyncio.Task[None] | None = None
         self._client_lock = asyncio.Lock()
+
+        # Last power-up pickup deny mask pushed via
+        # :meth:`send_set_itemget_deny` (0 = vanilla pickups).  Kept so a
+        # HelloMsg (Switch reboot / reconnect) replays the gate.
+        self._itemget_deny_mask: int = 0
 
         # Per-hash coalesce buffer for ``send_increment_hash_keyed``;
         # see :class:`_DrainIncrementsSentinel` for the why.  Lives on
@@ -421,6 +435,32 @@ class LanServer:
         except asyncio.QueueFull:
             log.error(
                 "send_set_routable_worlds(mask=0x%x): outbound queue full; "
+                "dropping", mask)
+
+    def send_set_itemget_deny(self, mask: int) -> None:
+        """Enqueue a SetItemGetDenyMask (power-up pickup negation) to the
+        active Switch client.  ``mask`` bits = runtime item-get types the
+        player must NOT be able to pick up (bit table on
+        :class:`wire.SetItemGetDenyMaskMsg`; the 4 AP Power-Ups are
+        ``wire.SetItemGetDenyMaskMsg.AP_POWER_UPS_MASK``).  0 restores
+        vanilla pickups.
+
+        Idempotent absolute-overwrite; replayed on HelloMsg via
+        :meth:`_push_itemget_deny_now` so a Switch reboot mid-session
+        re-applies the gate."""
+        msg = wire.SetItemGetDenyMaskMsg(mask=mask)
+        self._itemget_deny_mask = mask
+        if self._send_queue is None:
+            log.warning(
+                "send_set_itemget_deny(mask=0x%x): no Switch client "
+                "connected; dropping (will replay on HelloMsg)", mask)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug("send_set_itemget_deny: enqueued mask=0x%x", mask)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_itemget_deny(mask=0x%x): outbound queue full; "
                 "dropping", mask)
 
     def send_apply_world_unlock(
@@ -783,6 +823,10 @@ class LanServer:
             self._push_routable_worlds_now()
             self._push_open_world_royal_seeds_now()
             self._push_world_unlock_now()
+            # Power-up pickup negation (2026-06-10): re-assert the deny
+            # mask so a Switch reboot mid-session keeps ungranted
+            # power-ups untouchable.  No-op while the mask is 0.
+            self._push_itemget_deny_now()
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -1075,6 +1119,25 @@ class LanServer:
             return
         self.send_set_royal_seeds_absolute(int(mask))
 
+    def _push_itemget_deny_now(self) -> None:
+        """Push the AP-authoritative power-up deny mask (HelloMsg replay +
+        periodic tick).  Pulls from the provider when wired (the
+        SMBWContext recompute, which folds in the `/deny_powerups`
+        override); otherwise replays the last explicitly sent mask.
+        No-op while the mask is 0 AND nothing non-zero was ever sent --
+        a fresh Switch boot already starts with an all-zero deny mask."""
+        if self._itemget_deny_provider is not None:
+            try:
+                mask = int(self._itemget_deny_provider())
+            except Exception:
+                log.exception("itemget_deny_provider raised; skipping sync")
+                return
+        else:
+            mask = self._itemget_deny_mask
+        if mask == 0 and self._itemget_deny_mask == 0:
+            return
+        self.send_set_itemget_deny(mask)
+
     async def _idempotent_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
         current AP-known badge mask, Royal Seed mask, AND per-world
@@ -1098,6 +1161,7 @@ class LanServer:
                 self._push_wonder_seed_bits_now()
                 self._push_routable_worlds_now()
                 self._push_open_world_royal_seeds_now()
+                self._push_itemget_deny_now()
         except asyncio.CancelledError:
             raise
         except Exception:
@@ -1200,6 +1264,8 @@ class LanServer:
                             log.info(
                                 "-> set_routable_worlds mask=0x%x", msg.mask)
                             last_routable_worlds_mask = msg.mask
+                    elif isinstance(msg, wire.SetItemGetDenyMaskMsg):
+                        log.info("-> set_itemget_deny mask=0x%x", msg.mask)
                     elif isinstance(msg, wire.SetWonderSeedsAbsoluteMsg):
                         tup = (msg.bits_lo, msg.bits_hi)
                         if tup != last_wonder_seed_bits:

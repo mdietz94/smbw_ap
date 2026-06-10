@@ -517,6 +517,33 @@ bool parseSetRoutableWorldsAbsolute(util::json::Reader& r,
     return saw_mask;
 }
 
+bool parseSetItemGetDenyMask(util::json::Reader& r,
+                             WireSetItemGetDenyMask& out) {
+    // Cursor positioned just after "t":"set_itemget_deny".  One required
+    // field: "mask" -> u32 (bit table in probe/ItemGetGate.hpp).
+    std::string_view key;
+    bool saw_mask = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "mask")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0 || v > 0xFFFFFFFFLL) return false;
+            out.mask = static_cast<std::uint32_t>(v);
+            saw_mask = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_mask;
+}
+
 bool parseSetWonderSeedCounts(util::json::Reader& r,
                               WireSetWonderSeedCounts& out) {
     // Cursor positioned just after "t":"set_wonder_seed_counts".  One
@@ -741,6 +768,10 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::ApplyWorldUnlock;
         out.apply_world_unlock = WireApplyWorldUnlock{};
         if (!parseApplyWorldUnlock(r, out.apply_world_unlock)) return false;
+    } else if (std::strcmp(t_val, "set_itemget_deny") == 0) {
+        out.kind = InboundKind::SetItemGetDenyMask;
+        out.set_itemget_deny_mask = WireSetItemGetDenyMask{};
+        if (!parseSetItemGetDenyMask(r, out.set_itemget_deny_mask)) return false;
     } else if (std::strcmp(t_val, "kill") == 0) {
         out.kind = InboundKind::Kill;
         out.kill = WireKill{};
