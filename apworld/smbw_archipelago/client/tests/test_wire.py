@@ -28,6 +28,7 @@ from ..wire import (
     PongMsg,
     ProtocolError,
     SetBadgesAbsoluteMsg,
+    SetItemGetDenyMaskMsg,
     SetRoutableWorldsAbsoluteMsg,
     SetRoyalSeedsAbsoluteMsg,
     decode,
@@ -161,6 +162,24 @@ class TestRoundTrip(unittest.TestCase):
         # Active worlds + Castle/Bowser unlocked.
         self._round_trip(SetRoutableWorldsAbsoluteMsg(
             mask=0x15 | (1 << SetRoutableWorldsAbsoluteMsg.CASTLE_BIT)))
+
+    def test_set_itemget_deny_zero(self):
+        # 0 == vanilla pickups (Switch hook no-ops).
+        self._round_trip(SetItemGetDenyMaskMsg(mask=0))
+
+    def test_set_itemget_deny_ap_powerups(self):
+        # The 4 AP Power-Ups: fire + elephant + drill + bubble.
+        msg = SetItemGetDenyMaskMsg(
+            mask=SetItemGetDenyMaskMsg.AP_POWER_UPS_MASK)
+        self.assertEqual(msg.mask, 0x41024)
+        self._round_trip(msg)
+
+    def test_set_itemget_deny_single_bit(self):
+        self._round_trip(SetItemGetDenyMaskMsg(
+            mask=1 << SetItemGetDenyMaskMsg.BIT_FIRE_FLOWER))
+
+    def test_set_itemget_deny_full_u32(self):
+        self._round_trip(SetItemGetDenyMaskMsg(mask=0xFFFFFFFF))
 
     def test_grant_hash_keyed_royal_seed_w1(self):
         self._round_trip(GrantHashKeyedMsg(hash=0x55815859, value=1))

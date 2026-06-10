@@ -221,6 +221,18 @@ The HamletDuFromage cheat DB gave us:
 
 The event Nerve `vt_off=0x33fd870` fires on damage *and* power-up pickup (we observed this in M1 testing). Worth peeking that Nerve's vtable to see if it's a `RequestEventApplyPowerUp` family member.
 
+**Update (2026-06-10) — power-up NEGATION shipped (static, pending live
+validation).**  The other half of true power-up shuffling — stopping the
+player from using in-level power-ups they don't own yet — is solved via the
+engine's own per-item-type pickup-permission mask (the `DrillDig` mechanism):
+the `ItemGetMaskBuild` trampoline at NSO `+0x3c4050` strips AP-denied bits
+from the player's can-get bitmask, making those items untouchable (item
+stays in the level; no pickup, no transform, no damage).  See the
+**smbw-reverse-engineering** map §14, `switch-mod/src/probe/ItemGetGate.hpp`,
+wire msg `set_itemget_deny`, and the `/deny_powerups` client debug command.
+When M3.1 resumes, the *grant* side can pair this with the form-apply chain
+notes in map §14 (live form field = player struct `+0xB8`).
+
 ### M3.2 — badge unlock (24 items, inverse of M2.3) — DEFERRED (separate path from M3.3 hash table)
 
 **Status (2026-05-21)** — first attempt: 7 Ghidra scripts ([scripts/ghidra/find_badge_*.py](../scripts/ghidra/) and [scripts/ghidra/inspect_badge_*.py](../scripts/ghidra/)) failed to surface a usable grant function via string-based RE. Findings:

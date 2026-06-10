@@ -320,6 +320,17 @@ struct WireSetRoutableWorldsAbsolute {
     std::uint16_t mask = 0;
 };
 
+// Bridge -> Switch.  Power-up pickup negation (M3.1 / M5 groundwork).
+// `mask` bits name runtime item-get types the player must NOT be able to
+// pick up (bit table in probe/ItemGetGate.hpp: FireFlower bit 2,
+// ElephantSuit bit 5, DrillSuit bit 12, AwaFlower bit 18).  Applied
+// directly on the network thread via probe::setDeniedItemGetMask (atomic
+// store; the ItemGetMaskBuild trampoline consumes it on the game thread).
+// mask == 0 restores vanilla pickups.
+struct WireSetItemGetDenyMask {
+    std::uint32_t mask = 0;
+};
+
 // M3.8 -- DeathLink inbound apply.  Sent when AP bounces a DeathLink for
 // our slot.  `source` is the originating AP slot name; `cause` is the
 // free-form reason (typically "mario_died").  Sizes MUST match KillMsg
@@ -406,6 +417,7 @@ enum class InboundKind : std::uint8_t {
     OverlayNotice = 14,
     SetRoutableWorldsAbsolute = 15,
     ApplyWorldUnlock = 16,
+    SetItemGetDenyMask = 17,
 };
 
 struct InboundMsg {
@@ -427,6 +439,7 @@ struct InboundMsg {
         WireOverlayNotice overlay_notice;
         WireSetRoutableWorldsAbsolute set_routable_worlds_absolute;
         WireApplyWorldUnlock apply_world_unlock;
+        WireSetItemGetDenyMask set_itemget_deny_mask;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

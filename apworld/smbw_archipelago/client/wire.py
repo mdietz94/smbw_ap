@@ -490,6 +490,72 @@ class SetRoutableWorldsAbsoluteMsg:
 
 
 @dataclass(frozen=True)
+class SetItemGetDenyMaskMsg:
+    """Bridge -> Switch.  Power-up pickup negation (M3.1 / M5 groundwork,
+    2026-06-10).
+
+    ``mask`` bits name *runtime item-get types* the player must NOT be able
+    to pick up.  Switch-side the ``ItemGetMaskBuild`` trampoline (NSO
+    +0x3c4050) strips these bits from the player ItemGet component's
+    freshly rebuilt "can pick up" bitmask (u32 at component+0xB0), so the
+    pickup sensor refuses the touch exactly like the vanilla DrillDig
+    setting does: the item stays in the level, no pickup animation, no
+    transform, no damage.  Applied directly on the Switch network thread
+    (single atomic store); a mask of 0 restores vanilla pickups.
+
+    Bit table (= RomFS ``ItemGetActorType`` enum + 1; mirrors
+    ``probe/ItemGetGate.hpp``):
+
+    ========  ===========================
+    bit       item
+    ========  ===========================
+    1         Kinoko (Super Mushroom)
+    2         FireFlower
+    3         Star
+    4         OneUpKinoko
+    5         ElephantSuit
+    10        Key
+    12        DrillSuit
+    18        AwaFlower (Bubble Flower)
+    ========  ===========================
+
+    Idempotent absolute-overwrite; safe to replay on HelloMsg / tick.
+    """
+
+    T = "set_itemget_deny"
+
+    BIT_KINOKO: int = 1
+    BIT_FIRE_FLOWER: int = 2
+    BIT_STAR: int = 3
+    BIT_ONE_UP_KINOKO: int = 4
+    BIT_ELEPHANT_SUIT: int = 5
+    BIT_KEY: int = 10
+    BIT_DRILL_SUIT: int = 12
+    BIT_AWA_FLOWER: int = 18
+
+    #: The 4 AP Power-Up items (Fire / Elephant / Drill / Bubble).
+    AP_POWER_UPS_MASK: int = (
+        (1 << BIT_FIRE_FLOWER) | (1 << BIT_ELEPHANT_SUIT)
+        | (1 << BIT_DRILL_SUIT) | (1 << BIT_AWA_FLOWER))
+
+    mask: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "mask": self.mask}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetItemGetDenyMaskMsg:
+        raw = d.get("mask")
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            raise ProtocolError(
+                f"set_itemget_deny.mask must be int, got {raw!r}")
+        if not (0 <= raw < (1 << 32)):
+            raise ProtocolError(
+                f"set_itemget_deny.mask out of range [0, 2**32): {raw}")
+        return cls(mask=raw)
+
+
+@dataclass(frozen=True)
 class SetWonderSeedCountsMsg:
     """Bridge -> Switch.  AP-authoritative Wonder Seed gate override.
 
@@ -976,6 +1042,7 @@ WireMsg = (
     | SetRoyalSeedsAbsoluteMsg
     | SetRoutableWorldsAbsoluteMsg
     | ApplyWorldUnlockMsg
+    | SetItemGetDenyMaskMsg
     | GrantHashKeyedMsg
     | IncrementHashKeyedMsg
     | SetWonderSeedCountsMsg
@@ -1002,6 +1069,7 @@ _FROM_WIRE: dict[str, Any] = {
     SetRoyalSeedsAbsoluteMsg.T: SetRoyalSeedsAbsoluteMsg.from_wire,
     SetRoutableWorldsAbsoluteMsg.T: SetRoutableWorldsAbsoluteMsg.from_wire,
     ApplyWorldUnlockMsg.T: ApplyWorldUnlockMsg.from_wire,
+    SetItemGetDenyMaskMsg.T: SetItemGetDenyMaskMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,
     SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,

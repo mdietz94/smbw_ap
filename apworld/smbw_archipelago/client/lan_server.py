@@ -196,6 +196,7 @@ GrantMsg = (
     wire.SetBadgesAbsoluteMsg
     | wire.SetRoyalSeedsAbsoluteMsg
     | wire.SetRoutableWorldsAbsoluteMsg
+    | wire.SetItemGetDenyMaskMsg
     | wire.GrantHashKeyedMsg
     | wire.IncrementHashKeyedMsg
     | wire.SetWonderSeedCountsMsg
@@ -276,6 +277,11 @@ class LanServer:
         self._writer_task: asyncio.Task[None] | None = None
         self._badge_sync_task: asyncio.Task[None] | None = None
         self._client_lock = asyncio.Lock()
+
+        # Last power-up pickup deny mask pushed via
+        # :meth:`send_set_itemget_deny` (0 = vanilla pickups).  Kept so a
+        # HelloMsg (Switch reboot / reconnect) replays the gate.
+        self._itemget_deny_mask: int = 0
 
         # Per-hash coalesce buffer for ``send_increment_hash_keyed``;
         # see :class:`_DrainIncrementsSentinel` for the why.  Lives on
@@ -421,6 +427,32 @@ class LanServer:
         except asyncio.QueueFull:
             log.error(
                 "send_set_routable_worlds(mask=0x%x): outbound queue full; "
+                "dropping", mask)
+
+    def send_set_itemget_deny(self, mask: int) -> None:
+        """Enqueue a SetItemGetDenyMask (power-up pickup negation) to the
+        active Switch client.  ``mask`` bits = runtime item-get types the
+        player must NOT be able to pick up (bit table on
+        :class:`wire.SetItemGetDenyMaskMsg`; the 4 AP Power-Ups are
+        ``wire.SetItemGetDenyMaskMsg.AP_POWER_UPS_MASK``).  0 restores
+        vanilla pickups.
+
+        Idempotent absolute-overwrite; replayed on HelloMsg via
+        :meth:`_push_itemget_deny_now` so a Switch reboot mid-session
+        re-applies the gate."""
+        msg = wire.SetItemGetDenyMaskMsg(mask=mask)
+        self._itemget_deny_mask = mask
+        if self._send_queue is None:
+            log.warning(
+                "send_set_itemget_deny(mask=0x%x): no Switch client "
+                "connected; dropping (will replay on HelloMsg)", mask)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug("send_set_itemget_deny: enqueued mask=0x%x", mask)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_itemget_deny(mask=0x%x): outbound queue full; "
                 "dropping", mask)
 
     def send_apply_world_unlock(
@@ -783,6 +815,10 @@ class LanServer:
             self._push_routable_worlds_now()
             self._push_open_world_royal_seeds_now()
             self._push_world_unlock_now()
+            # Power-up pickup negation (2026-06-10): re-assert the deny
+            # mask so a Switch reboot mid-session keeps ungranted
+            # power-ups untouchable.  No-op while the mask is 0.
+            self._push_itemget_deny_now()
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -1075,6 +1111,14 @@ class LanServer:
             return
         self.send_set_royal_seeds_absolute(int(mask))
 
+    def _push_itemget_deny_now(self) -> None:
+        """Replay the last power-up pickup deny mask (HelloMsg handshake).
+        No-op while the mask is 0 -- vanilla pickups need no message
+        because a fresh Switch boot starts with an all-zero deny mask."""
+        if self._itemget_deny_mask == 0:
+            return
+        self.send_set_itemget_deny(self._itemget_deny_mask)
+
     async def _idempotent_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
         current AP-known badge mask, Royal Seed mask, AND per-world
@@ -1200,6 +1244,8 @@ class LanServer:
                             log.info(
                                 "-> set_routable_worlds mask=0x%x", msg.mask)
                             last_routable_worlds_mask = msg.mask
+                    elif isinstance(msg, wire.SetItemGetDenyMaskMsg):
+                        log.info("-> set_itemget_deny mask=0x%x", msg.mask)
                     elif isinstance(msg, wire.SetWonderSeedsAbsoluteMsg):
                         tup = (msg.bits_lo, msg.bits_hi)
                         if tup != last_wonder_seed_bits:

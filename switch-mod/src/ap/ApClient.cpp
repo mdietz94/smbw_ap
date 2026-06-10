@@ -44,6 +44,7 @@ namespace nn::os {
 #include "ApFrameBridge.hpp"
 #include "ApProtocol.hpp"
 #include "ApState.hpp"
+#include "probe/ItemGetGate.hpp"
 #include "ui/ApDebugConsole.hpp"
 #include "util/Json.hpp"
 #include "util/Log.hpp"
@@ -738,6 +739,17 @@ void ApClient::handleLine(char* line, std::size_t len) {
                     static_cast<unsigned>(msg.apply_world_unlock.count),
                     static_cast<unsigned>(msg.apply_world_unlock.bool_count));
             }
+            return;
+        case InboundKind::SetItemGetDenyMask:
+            // Power-up pickup negation (M3.1 / M5 groundwork).  Applied
+            // directly on the network thread -- setDeniedItemGetMask is a
+            // single atomic store consumed by the ItemGetMaskBuild
+            // trampoline on the game thread, so no ring trip is needed
+            // (same direct-apply pattern as OverlayNotice).
+            SMBWAP_LOG_INFO(
+                "[itemgate] received SetItemGetDenyMask(mask=0x%08x)",
+                msg.set_itemget_deny_mask.mask);
+            probe::setDeniedItemGetMask(msg.set_itemget_deny_mask.mask);
             return;
         case InboundKind::Err:
             SMBWAP_LOG_WARN("[conn] bridge reports err: %s", msg.err.reason);

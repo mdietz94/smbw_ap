@@ -155,6 +155,7 @@ All declared as file-scope `HkTrampoline` and installed in `hkMain()`
 | Game-completion goal | `+0x15b77a8` | one-shot Nerve `SetFlagEndDispMsgFirstVisitedWorldAfterClearedLastBoss` (vtable `+0x3363330`, slot 8) | final Bowser cleared → `GoalCompleted` | CONFIRMED |
 | `PlayerTickLatch` | `+0x273868` | trampoline on `FUN_7100273868`; walks `p1→+0x10→+0x208→(+0 or +0x118)→HP` to latch `live_base` | per-tick (latches once) | CONFIRMED |
 | PlayReport `SetEventId` | sym `_ZN2nn5prepo10PlayReport10SetEventIdEPKc` | `installAtSym` | captures room/event id | CONFIRMED |
+| `ItemGetMaskBuild` (power-up negation) | `+0x3c4050` | direct trampoline; post-orig AND-clears AP-denied bits from the can-get mask at `component+0xB0` (see §14) | every ItemGet can-mask rebuild (per-frame player tick `+0x275400` + setting changes) | HIGH-CONF (static; built, not yet live-validated) |
 | PlayReport IPC `SaveReport{,WithUser}` | sym `CmifProxyImpl<IPrepoService>::_nn_sf_sync_SaveReport*` | `installAtSym` | captures serialized payload | CONFIRMED |
 
 **`NerveActivateOnce` vtable filter** (the `vt_off` values it acts on):
@@ -480,6 +481,90 @@ session journal: `docs/grand-propeller-flower-reveal-re-2026-06-08.md`.
 | The 85 container-A `world_unlock_table` bools open world routes | No — they write a different offset than the travel code reads (`byte@+0x16` stays 0) |
 | A `gmd+0x20` "discovered" byte alone surfaces a course node | No — the `gmd+0x80` first-course fill is required; the byte alone (or a shop byte alone) does nothing |
 | Forcing the route-gate lock byte (`FUN_7100383418`) open clears the path | Only the gate *state* — the `FirstVisitDemo` obstacle actor (BYML) still physically blocks; only the demo (normal on-foot entry) removes it |
+
+---
+
+## 14. ItemGet pipeline & power-up negation (2026-06-10 static session)
+
+How an in-level item pickup is permitted, and the choke point the
+`ItemGetMaskBuild` hook (§6) uses to negate power-ups.  Derivation:
+static-analysis-findings.md "2026-06-10 — power-up negation" + the RomFS
+`pack_PlayerBase` extraction.  All offsets HIGH-CONF static (capstone over the
+uncompressed NSO with relocations applied) unless noted.
+
+**The mechanism is the engine's own per-item-type permission system** — the
+same one that makes power-ups untouchable while drill-digging.  The player's
+`game::actor::component::ItemGetParam` (RomFS
+`pack_PlayerBase/ItemGetParam/Player...bgyml`) declares named
+`ItemGetSetting` profiles: `DefaultGetItemSetting` (everything true),
+`DrillDig` (coins + PlusWatch only), `OnlyCoin`, `DisableItemGet` (empty =
+nothing).  The active profile is converted to a **per-player can-get bitmask**
+and the pickup sensor refuses any touch whose type bit is clear: item stays in
+the level, no pickup animation, no transform, no damage.
+
+| NSO offset | Role | Status |
+|---|---|---|
+| `+0x3c4050` | **can-get mask BUILDER**: `(component, x1)` → clears `component+0xB0` (u32) + `+0xB4` (u16 coin mask), reads active `ItemGetSetting*` from `component+0x68`, ORs one bit-group per true field.  Single ret, no return value.  Clean prologue (sub/stp/stp/stp/add).  Callers: `+0x275400` (per-frame player tick), `+0x3c3e94`, `+0x447894`, tail `+0x8c27bc` | CONFIRMED static |
+| `+0x182c8bc` | **canGetItemType reader**: `mask >> runtime_type & 1` (type ptr via `+0x182ca58`); inlined copies at `+0x2d6324`, `+0x70a528`, `+0x182d1ec` | CONFIRMED static |
+| `+0x93a204` | ItemGetActorType **string→enum parser** (table at data `+0x3497831`, double-NUL-separated) | CONFIRMED static |
+| `+0x17d7100` | `ItemGetSetting` gparam class visitor (class hash `0xa0d58fa9`, object size `0x50`); per-field accessor helpers `+0x17d7540..+0x17d7c14` | CONFIRMED static |
+| `+0x7890fc` | second field visitor (alphabetical field index 0..15) | CONFIRMED static |
+
+**`ItemGetSetting` object layout** — bool values at `+0x30..+0x3F`
+(alphabetical), per-field presence flags at `+0x40..+0x4F`, parent-fallback
+chain at `+0x10`/`+0x18` (gyml inheritance):
+`+0x30` AwaFlower · `+0x31` CoinDefault · `+0x32` DrillSuit · `+0x33`
+ElephantSuit · `+0x34` FireFlower · `+0x35` ItemBalloon · `+0x36` ItemBubble ·
+`+0x37` ItemKey · `+0x38` Kinoko · `+0x39` Kinoko1Up · `+0x3a` PlusWatch ·
+`+0x3b` Star · `+0x3c` WonderChip · `+0x3d` WonderHole · `+0x3e` WonderSeed ·
+`+0x3f` WonderStar.
+
+**Runtime item-type bit positions in the `component+0xB0` mask**
+(= RomFS ItemGetActorType enum + 1; cross-checked: the WonderSeed field ORs
+`0x2840` = bits 6/11/13 = Offering/WonderFlower/GroundSead, and the
+`+0x182c8f0` seed-special-case tests exactly `0x2840`):
+
+| bit | item | | bit | item |
+|---|---|---|---|---|
+| 1 | Kinoko | | 10 | Key |
+| 2 | **FireFlower** | | 11 | WonderFlower |
+| 3 | Star | | 12 | **DrillSuit** |
+| 4 | OneUpKinoko | | 13 | GroundSead |
+| 5 | **ElephantSuit** | | 14 | ItemBalloon |
+| 6 | Offering | | 15 | WonderChip |
+| 7 | ItemType00 | | 16 | ItemBubble |
+| 8 | ItemType01 | | 17 | PlusWatch |
+| 9 | WonderKinoko | | 18 | **AwaFlower** |
+| | | | 19 | WonderStar |
+
+CoinDefault drives the separate u16 coin-category mask at `+0xB4`
+(bits `0x67`).  Switch impl: `probe/ItemGetGate.{hpp,cpp}` + the
+`itemGetMaskBuildHook` trampoline in `main.cpp`; bridge message
+`set_itemget_deny` (`WireSetItemGetDenyMask`, applied on the network thread —
+single atomic store); client debug command `/deny_powerups`.
+
+**Related anchors mapped en route** (for future power-up work):
+
+- The HamletDuFromage "Mario form swap" cheat decodes as: patch the `ldr w9,
+  [x8]` at `+0x198b50` into `b +0x20128e8` (a code cave returning the constant
+  at `+0x20128f4`).  The site is a **per-player current-form getter block**
+  inside a big hash-keyed property dispatcher (block loads
+  `*(mgr+0xB0 array)[player]`); form values 2=Fire 3=Elephant 5=Small 6=Drill
+  8=Tall 9=Bubble.  The form mirror array is WRITTEN at `+0x274830` (inside
+  the per-frame tick fn starting `+0x274244`) from **live player struct
+  `+0xB8`** — the live current-form field.
+- `PlayerRequestItemGet` AI request: vtable at data `+0x33388e8` (slot0 name
+  getter `+0x1529fc0`, slot8 execute `+0x1529fd8` — ORs `1 << *(req+0x20)`
+  into a pending byte at `player+0x86b`; param slot bound by name
+  `"RequestItemGetType"` via slot7 `+0x7daf84`).  Fallback hook candidate if
+  the mask approach ever needs replacing.
+- Metamorphosis AS selector object (vtable `+0x33f2870`, ctor `+0x87c2f4`
+  area): binds conditions `IsNoChangeGetItem` (slot `+0x68`!),
+  `IsForceItemGet` (`+0x70`), `IsAutoSuperKinoko` (`+0x78`) and queries AS
+  events `None/ChangeSuper/ChangeFire/ChangeElephant/ChangeDrill/ChangeBubble`
+  → availability bytes `+0x80..+0x85` (PlayerModeType order).  The engine has
+  native per-change veto conditions here if finer-grained suppression is ever
+  needed (RomFS: `pack_PlayerBase/AI/PlayerPowerUp.module.ainb`).
 
 ---
 

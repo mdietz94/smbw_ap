@@ -458,6 +458,60 @@ class SMBWCommandProcessor(ClientCommandProcessor):
             f"({bin(mask).count('1')} seed(s))")
         return True
 
+    def _cmd_deny_powerups(self, spec: str = "") -> bool:
+        """Debug: negate power-up pickups on the Switch (M3.1/M5 spike).
+
+        Sends a ``SetItemGetDenyMaskMsg`` -- the Switch strips the named
+        item types from the player's "can pick up" bitmask, so touching a
+        denied power-up does nothing (the item stays, exactly like items
+        during a drill-dig).  Idempotent; replayed on HelloMsg.
+
+        Usage:
+          ``/deny_powerups``           -> deny all 4 (fire/elephant/drill/bubble)
+          ``/deny_powerups 0``         -> restore vanilla pickups
+          ``/deny_powerups fire,drill``-> deny a named subset
+          ``/deny_powerups 0x40024``   -> raw mask (bit table in wire.py)
+        """
+        from . import wire as _wire
+        names = {
+            "mushroom": _wire.SetItemGetDenyMaskMsg.BIT_KINOKO,
+            "fire": _wire.SetItemGetDenyMaskMsg.BIT_FIRE_FLOWER,
+            "star": _wire.SetItemGetDenyMaskMsg.BIT_STAR,
+            "1up": _wire.SetItemGetDenyMaskMsg.BIT_ONE_UP_KINOKO,
+            "elephant": _wire.SetItemGetDenyMaskMsg.BIT_ELEPHANT_SUIT,
+            "key": _wire.SetItemGetDenyMaskMsg.BIT_KEY,
+            "drill": _wire.SetItemGetDenyMaskMsg.BIT_DRILL_SUIT,
+            "bubble": _wire.SetItemGetDenyMaskMsg.BIT_AWA_FLOWER,
+        }
+        lan = getattr(self.ctx, "lan_server", None)
+        if lan is None:
+            self.output("ERROR: lan_server not wired")
+            return True
+        if not spec:
+            mask = _wire.SetItemGetDenyMaskMsg.AP_POWER_UPS_MASK
+        else:
+            try:
+                mask = int(spec, 0)
+            except ValueError:
+                mask = 0
+                for part in spec.split(","):
+                    part = part.strip().lower()
+                    if part not in names:
+                        self.output(
+                            f"ERROR: unknown item {part!r} "
+                            f"(known: {', '.join(sorted(names))})")
+                        return True
+                    mask |= 1 << names[part]
+            if not (0 <= mask < (1 << 32)):
+                self.output(f"ERROR: mask 0x{mask:x} out of range [0, 2**32)")
+                return True
+        lan.send_set_itemget_deny(mask)
+        denied = [n for n, b in sorted(names.items()) if mask >> b & 1]
+        self.output(
+            f"-> set_itemget_deny mask=0x{mask:x}"
+            f" ({'vanilla pickups' if mask == 0 else 'denied: ' + ', '.join(denied)})")
+        return True
+
     def _cmd_grant_hash(self, hash_spec: str = "", value_spec: str = "") -> bool:
         """Send one ``GrantHashKeyedMsg(hash, value)`` to the Switch.  The
         Switch dispatcher routes via ``isBoolHash`` -- counters

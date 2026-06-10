@@ -38,6 +38,7 @@
 #include "probe/DeathLink.hpp"
 #include "probe/Gates.hpp"
 #include "probe/Gmd.hpp"
+#include "probe/ItemGetGate.hpp"
 #include "ui/ApDebugConsole.hpp"
 #include "ui/ImGuiNvnBootstrap.hpp"
 #include "util/Log.hpp"
@@ -1058,6 +1059,24 @@ HkTrampoline<std::uint64_t, long, long, long, long> courseEnterNameHook =
         return r;
     });
 
+// ItemGetMaskBuild @ NSO +0x3c4050.
+//
+// Rebuilds the player ItemGet component's per-item-type "can pick up"
+// bitmask (u32 at component+0xB0, bit = runtime item type) from the active
+// game::actor::component::ItemGetSetting.  Called from the per-frame player
+// tick (FUN_7100274244 -> +0x275400) plus setting-change paths, so a deny-
+// mask change lands within a frame.  After orig() we strip the AP-denied
+// bits; the pickup sensor check (`mask >> type & 1`, canonical reader NSO
+// +0x182c8bc) then refuses the touch exactly like the vanilla DrillDig
+// setting does -- item stays in the level, no pickup, no transform.
+// PROLOGUE SAFETY: first 5 instrs sub sp / stp x29,x30 / stp x22,x21 /
+// stp x20,x19 / add x29 -- no PC-relative.
+HkTrampoline<void, void*, void*> itemGetMaskBuildHook = hk::hook::trampoline(
+    [](void* component, void* a2) -> void {
+        itemGetMaskBuildHook.orig(component, a2);
+        probe::applyItemGetDenyMask(component);
+    });
+
 void installHook(const char* name, ::ptr offset, hk::Result rc) {
     if (rc.failed()) {
         SMBWAP_LOG_ERROR("install %s @ +0x%lx FAILED rc=0x%x",
@@ -1150,6 +1169,11 @@ extern "C" void hkMain() {
     //   a level/course from the world map (the final-castle enter path).
     installHook("CourseEnterName",     0x0055ee48,
                 courseEnterNameHook.installAtMainOffset(0x0055ee48));
+    // ItemGetMaskBuild: FUN_71003c4050 -- power-up pickup negation choke
+    //   point.  Inert while probe::deniedItemGetMask() == 0; see
+    //   probe/ItemGetGate.hpp for the RE notes + per-item bit table.
+    installHook("ItemGetMaskBuild",    0x003c4050,
+                itemGetMaskBuildHook.installAtMainOffset(0x003c4050));
     // DEBUG OVERLAY: NVN present-hook chain that drives the ImGui overlay.
     // No-op unless built with SMBWAP_HAS_DEBUG_RENDERER (see CMakeLists.txt
     // + docs/handoff-imgui-overlay.md).
