@@ -525,44 +525,49 @@ void applyOpenWorldEntry(void* gmd_v) {
             }
         }
 
-        // Mark all Petal Isles courses cleared so the intra-PI roads gated on a
-        // course-clear (e.g. Course5 <- PI/"Naka" course 2) load already
-        // satisfied -- the route then draws on map load with NO per-visit
-        // reveal-animation throttle (which is why the #131 force-open only
-        // dribbled one road out per visit).  PI courses are NOT AP checks in
-        // open-world, so marking them cleared has no check side effect.
-        //   Course-clear is the per-world container-C bitfield whose hash is at
-        //   descriptor rec+0x1c -- the exact field the route predicate's
-        //   PerCourseBitReader reads (confirmed via the FUN_7100584eb0 / leaf
-        //   decompile 2026-06-10).  Bit index = course index; the count comes
-        //   from the gmd+0x80 first-course node array (rec+0x04).
-        //   W3-dependent roads (Course12 <- "Wa" course 61) are intentionally
-        //   NOT covered: W3 courses ARE AP checks, so we must never pre-clear
-        //   them.  Latched (idempotent set; persists in the save, re-marks on
-        //   next boot once the descriptor hash is populated).
+        // Mark all Petal Isles courses cleared in CONTAINER-D to SUPPRESS the
+        // open-course "fly" demo that otherwise replays on every PI entry.
+        //   Root cause (live-confirmed 2026-06-11): the gmd+0x80 node-fill above
+        //   re-opens all ~81 PI nodes "fresh" each entry (the save drops the
+        //   fill), so the world-map demo system stocks one open-course camera
+        //   demo per node -> a multi-second "sign storm" / camera freeze,
+        //   especially on store entry/exit.  Marking the courses cleared makes
+        //   the demo-stock treat them as already-done, so nothing is reserved.
+        //   The per-course-clear bits live in container-D (gmd+0x80), the SAME
+        //   family PerCourseBitReader reads (FUN_7100584eb0 leaf decompile):
+        //   obj = gmdContainerObj(gmd, 0x80,..) for the descriptor's rec+0x1c
+        //   hash (0x7b90402e for PI); the bitfield is a PACKED bit-per-course
+        //   array at *(obj+0x28) (word c>>5, bit c&0x1f), length *(obj+0x20)==20.
+        //   #139's bug: it wrote via setContainerCBit (container-C -- a DIFFERENT
+        //   gmd offset, never read here) using the 81-entry NODE count,
+        //   overflowing the real Bool[20] field -> the demo never got suppressed.
+        //   Re-applied EVERY drain (no latch): the save drops this live cache
+        //   like the node-fill, so a one-shot latch would let the demo re-fire on
+        //   the next map load.  PI courses are not AP checks -> no check effect.
+        //   NOTE: this does NOT replace the route force-open hooks in main.cpp --
+        //   the route-gate predicates resolve a different descriptor table and
+        //   still draw the intra-PI roads themselves; this write is demo-only.
+        //   W3-dependent nodes (Course12 <- "Wa" course 61) live under a
+        //   different descriptor record and are untouched (those ARE AP checks).
         if (bit == 6) {
-            static std::atomic<bool> s_pi_clear_done{false};
-            if (!s_pi_clear_done.load(std::memory_order_relaxed)) {
-                const std::uint32_t cchash =
-                    *reinterpret_cast<std::uint32_t*>(rec + 0x1cu);
-                const std::uint32_t nhash =
-                    *reinterpret_cast<std::uint32_t*>(rec + 0x04u);
-                auto* nobj = const_cast<unsigned char*>(
-                    gmdContainerObj(gmd, 0x80, 0x8c, 0x70, 0x78, 0x40, nhash));
-                std::uint32_t ccount =
-                    nobj ? *reinterpret_cast<std::uint32_t*>(nobj + 0x20) : 0u;
-                if (cchash != 0u && ccount > 0u) {
-                    if (ccount > 128u) ccount = 128u;  // setContainerCBit cap
-                    bool any = false;
-                    for (std::uint32_t ci = 0; ci < ccount; ++ci)
-                        any = setContainerCBit(cchash, ci, true) || any;
-                    if (any) {
-                        s_pi_clear_done.store(true, std::memory_order_relaxed);
+            const std::uint32_t cchash =
+                *reinterpret_cast<std::uint32_t*>(rec + 0x1cu);
+            auto* ccobj = const_cast<unsigned char*>(
+                gmdContainerObj(gmd, 0x80, 0x8c, 0x70, 0x78, 0x40, cchash));
+            if (cchash != 0u && ccobj != nullptr) {
+                std::uint32_t ncourse =
+                    *reinterpret_cast<std::uint32_t*>(ccobj + 0x20);
+                auto* bits = *reinterpret_cast<std::uint32_t**>(ccobj + 0x28);
+                if (bits != nullptr && ncourse > 0u) {
+                    if (ncourse > 1024u) ncourse = 1024u;  // sanity bound
+                    for (std::uint32_t c = 0; c < ncourse; ++c)
+                        bits[c >> 5] |= (1u << (c & 0x1f));
+                    static std::atomic<bool> s_logged{false};
+                    if (!s_logged.exchange(true))
                         SMBWAP_LOG_INFO(
-                            "[open-world] marked %u PI courses cleared "
-                            "(hash=0x%08x) so intra-PI level-clear roads draw",
-                            ccount, cchash);
-                    }
+                            "[open-world] PI course-clear -> container-D "
+                            "hash=0x%08x ncourse=%u (open-course demo suppress)",
+                            cchash, ncourse);
                 }
             }
         }
