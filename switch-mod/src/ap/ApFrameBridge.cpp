@@ -454,6 +454,7 @@ void drainInbound() {
             case InboundKind::OverlayNotice:
             case InboundKind::SetItemGetDenyMask:
             case InboundKind::SetBadgeShopState:
+            case InboundKind::SetBadgeShopText:
             case InboundKind::None:
                 // Worker should have consumed these before they reach the
                 // game-thread inbound ring -- ApClient routes them

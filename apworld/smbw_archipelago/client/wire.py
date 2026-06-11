@@ -600,6 +600,49 @@ class SetBadgeShopStateMsg:
 
 
 @dataclass(frozen=True)
+class SetBadgeShopTextMsg:
+    """Bridge -> Switch.  AP shop-text: custom description for one shop badge
+    (by internal_id), shown in the badge-shop detail panel to reflect the AP
+    check the purchase would send (e.g. the scouted "<player>: <item>").
+
+    One badge per message; empty ``text`` clears the override.  ``text`` is
+    UTF-8 and capped at :data:`TEXT_CAP` bytes to match the Switch's
+    ``WireSetBadgeShopText`` buffer.  Idempotent; replayed on HelloMsg.
+    """
+
+    T = "set_badge_shop_text"
+
+    #: Must match kBadgeShopTextCap in switch-mod ApProtocol.hpp.
+    TEXT_CAP: int = 160
+
+    id: int = 0
+    text: str = ""
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "id": self.id, "text": self.text}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetBadgeShopTextMsg:
+        raw_id = d.get("id")
+        if not isinstance(raw_id, int) or isinstance(raw_id, bool):
+            raise ProtocolError(
+                f"set_badge_shop_text.id must be int, got {raw_id!r}")
+        if not (0 <= raw_id < (1 << 32)):
+            raise ProtocolError(
+                f"set_badge_shop_text.id out of range [0, 2**32): {raw_id}")
+        text = d.get("text")
+        if not isinstance(text, str):
+            raise ProtocolError(
+                f"set_badge_shop_text.text must be str, got {text!r}")
+        # The encoder truncates on send; reject only if a peer sends an
+        # over-long payload (defensive -- the Switch buffer is fixed).
+        if len(text.encode("utf-8")) >= cls.TEXT_CAP:
+            raise ProtocolError(
+                f"set_badge_shop_text.text exceeds {cls.TEXT_CAP} UTF-8 bytes")
+        return cls(id=raw_id, text=text)
+
+
+@dataclass(frozen=True)
 class SetWonderSeedCountsMsg:
     """Bridge -> Switch.  AP-authoritative Wonder Seed gate override.
 
@@ -1088,6 +1131,7 @@ WireMsg = (
     | ApplyWorldUnlockMsg
     | SetItemGetDenyMaskMsg
     | SetBadgeShopStateMsg
+    | SetBadgeShopTextMsg
     | GrantHashKeyedMsg
     | IncrementHashKeyedMsg
     | SetWonderSeedCountsMsg
@@ -1116,6 +1160,7 @@ _FROM_WIRE: dict[str, Any] = {
     ApplyWorldUnlockMsg.T: ApplyWorldUnlockMsg.from_wire,
     SetItemGetDenyMaskMsg.T: SetItemGetDenyMaskMsg.from_wire,
     SetBadgeShopStateMsg.T: SetBadgeShopStateMsg.from_wire,
+    SetBadgeShopTextMsg.T: SetBadgeShopTextMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,
     SetWonderSeedCountsMsg.T: SetWonderSeedCountsMsg.from_wire,

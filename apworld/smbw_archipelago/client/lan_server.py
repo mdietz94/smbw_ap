@@ -222,6 +222,13 @@ ItemGetDenyProvider = Callable[[], int]
 # newly-checked shop locations.
 BadgeShopStateProvider = Callable[[], "tuple[int, int]"]
 
+# AP shop-text (2026-06): returns ``{badge_internal_id: utf8_text}`` for the
+# shop badges whose AP check has been scouted, shown in the badge-shop detail
+# panel (see :class:`wire.SetBadgeShopTextMsg`).  Empty dict = nothing to show.
+# Diffed against the last-sent table on each push so only changed entries go
+# out; force-resent on HelloMsg so a Switch reboot re-applies.
+BadgeShopTextProvider = Callable[[], "dict[int, str]"]
+
 # Open-world mode (2026-06) providers, analogs of :data:`BadgeMaskProvider`.
 # ``RoutableWorldsProvider`` returns the AP-authoritative routable-world
 # mask (see :class:`wire.SetRoutableWorldsAbsoluteMsg`); 0 means open-world
@@ -270,6 +277,7 @@ class LanServer:
         world_unlock_hashes_provider: WorldUnlockHashesProvider | None = None,
         itemget_deny_provider: ItemGetDenyProvider | None = None,
         badge_shop_state_provider: BadgeShopStateProvider | None = None,
+        badge_shop_text_provider: BadgeShopTextProvider | None = None,
     ) -> None:
         self._state = state
         self._on_check_emitted = on_check_emitted
@@ -284,6 +292,7 @@ class LanServer:
         self._world_unlock_hashes_provider = world_unlock_hashes_provider
         self._itemget_deny_provider = itemget_deny_provider
         self._badge_shop_state_provider = badge_shop_state_provider
+        self._badge_shop_text_provider = badge_shop_text_provider
 
         self._server: asyncio.base_events.Server | None = None
 
@@ -306,6 +315,11 @@ class LanServer:
         # :meth:`send_set_badge_shop_state` ((0, 0) = vanilla shop).  Kept
         # so a HelloMsg replays the shop state on Switch reboot / reconnect.
         self._badge_shop_state: tuple[int, int] = (0, 0)
+
+        # Last badge-shop text table pushed (badge_internal_id -> utf8).
+        # Diffed in :meth:`_push_badge_shop_text_now` so only changed
+        # entries go out; cleared on HelloMsg to force a full resend.
+        self._badge_shop_text: dict[int, str] = {}
 
         # Per-hash coalesce buffer for ``send_increment_hash_keyed``;
         # see :class:`_DrainIncrementsSentinel` for the why.  Lives on
@@ -506,6 +520,32 @@ class LanServer:
             log.error(
                 "send_set_badge_shop_state(managed=0x%x sold=0x%x): outbound "
                 "queue full; dropping", managed, sold)
+
+    def send_set_badge_shop_text(self, badge_id: int, text: str) -> None:
+        """Enqueue a SetBadgeShopText (AP shop-text for one badge) to the
+        active Switch client.  ``text`` is UTF-8, truncated to fit the
+        Switch's fixed buffer (:data:`wire.SetBadgeShopTextMsg.TEXT_CAP`).
+        Empty ``text`` clears the override for that badge.  Idempotent;
+        replayed on HelloMsg via :meth:`_push_badge_shop_text_now`."""
+        cap = wire.SetBadgeShopTextMsg.TEXT_CAP
+        encoded = text.encode("utf-8")
+        if len(encoded) >= cap:
+            # Truncate on a UTF-8 boundary to stay under the cap.
+            text = encoded[: cap - 1].decode("utf-8", "ignore")
+        msg = wire.SetBadgeShopTextMsg(id=badge_id, text=text)
+        if self._send_queue is None:
+            log.debug(
+                "send_set_badge_shop_text(id=%d): no Switch client; "
+                "dropping (will replay on HelloMsg)", badge_id)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug("send_set_badge_shop_text: enqueued id=%d %r",
+                      badge_id, text)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_badge_shop_text(id=%d): outbound queue full; "
+                "dropping", badge_id)
 
     def send_apply_world_unlock(
         self,
@@ -876,6 +916,9 @@ class LanServer:
             # view after a Switch reboot / save reload.  No-op while no
             # shop badge is managed.
             self._push_badge_shop_state_now()
+            # AP shop-text (2026-06-10): force-resend the per-badge
+            # description table so a Switch reboot re-applies it.
+            self._push_badge_shop_text_now(force=True)
             return
 
         if isinstance(msg, wire.NerveFireWireMsg):
@@ -1208,6 +1251,30 @@ class LanServer:
             return
         self.send_set_badge_shop_state(managed, sold)
 
+    def _push_badge_shop_text_now(self, *, force: bool = False) -> None:
+        """Push the AP shop-text table (HelloMsg replay + periodic tick).
+        Sends only entries that changed since the last push (or all when
+        ``force``); clears the cache + resends on HelloMsg so a Switch
+        reboot re-applies.  No-op when no provider is wired."""
+        if self._badge_shop_text_provider is None:
+            return
+        try:
+            cur = dict(self._badge_shop_text_provider())
+        except Exception:
+            log.exception("badge_shop_text_provider raised; skipping sync")
+            return
+        if force:
+            self._badge_shop_text = {}
+        # Changed / new entries.
+        for badge_id, text in cur.items():
+            if force or self._badge_shop_text.get(badge_id) != text:
+                self.send_set_badge_shop_text(badge_id, text)
+        # Entries that disappeared -> clear them on the Switch.
+        for badge_id in self._badge_shop_text:
+            if badge_id not in cur:
+                self.send_set_badge_shop_text(badge_id, "")
+        self._badge_shop_text = cur
+
     async def _idempotent_sync_loop(self) -> None:
         """Periodic tick: every ``BADGE_SYNC_INTERVAL_SEC``, push the
         current AP-known badge mask, Royal Seed mask, AND per-world
@@ -1233,6 +1300,7 @@ class LanServer:
                 self._push_open_world_royal_seeds_now()
                 self._push_itemget_deny_now()
                 self._push_badge_shop_state_now()
+                self._push_badge_shop_text_now()
         except asyncio.CancelledError:
             raise
         except Exception:

@@ -345,6 +345,18 @@ struct WireSetBadgeShopState {
     std::uint64_t sold = 0;
 };
 
+// Bridge -> Switch.  AP shop-text (2026-06-10).  Custom description text for
+// one shop badge (by internal_id), shown in the badge-shop detail panel to
+// reflect the AP check the purchase would send (e.g. the scouted
+// "<player>: <item>").  One badge per message; empty `text` clears the
+// override.  Applied on the rx thread via probe::setBadgeShopText.  `text`
+// cap MUST match SetBadgeShopTextMsg.TEXT_CAP in the client's wire.py.
+inline constexpr std::size_t kBadgeShopTextCap = 160;
+struct WireSetBadgeShopText {
+    std::uint32_t id = 0;
+    char text[kBadgeShopTextCap] = {};
+};
+
 // M3.8 -- DeathLink inbound apply.  Sent when AP bounces a DeathLink for
 // our slot.  `source` is the originating AP slot name; `cause` is the
 // free-form reason (typically "mario_died").  Sizes MUST match KillMsg
@@ -433,6 +445,7 @@ enum class InboundKind : std::uint8_t {
     ApplyWorldUnlock = 16,
     SetItemGetDenyMask = 17,
     SetBadgeShopState = 18,
+    SetBadgeShopText = 19,
 };
 
 struct InboundMsg {
@@ -456,6 +469,7 @@ struct InboundMsg {
         WireApplyWorldUnlock apply_world_unlock;
         WireSetItemGetDenyMask set_itemget_deny_mask;
         WireSetBadgeShopState set_badge_shop_state;
+        WireSetBadgeShopText set_badge_shop_text;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

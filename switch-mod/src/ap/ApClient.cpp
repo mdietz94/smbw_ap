@@ -766,6 +766,17 @@ void ApClient::handleLine(char* line, std::size_t len) {
             probe::setBadgeShopState(msg.set_badge_shop_state.managed,
                                      msg.set_badge_shop_state.sold);
             return;
+        case InboundKind::SetBadgeShopText:
+            // AP shop-text: custom per-badge description shown in the shop
+            // detail panel.  Applied straight on the rx thread (atomic
+            // store of the converted UTF-16 buffer), consumed by the
+            // msbt-resolver trampoline on the game thread.
+            SMBWAP_LOG_DEBUG(
+                "[badgeshop] received SetBadgeShopText(id=%u): %.48s",
+                msg.set_badge_shop_text.id, msg.set_badge_shop_text.text);
+            probe::setBadgeShopText(msg.set_badge_shop_text.id,
+                                    msg.set_badge_shop_text.text);
+            return;
         case InboundKind::Err:
             SMBWAP_LOG_WARN("[conn] bridge reports err: %s", msg.err.reason);
             return;

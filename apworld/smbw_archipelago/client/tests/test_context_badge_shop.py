@@ -12,6 +12,7 @@ Same Archipelago-availability guard as the other test_context_* files.
 
 from __future__ import annotations
 
+import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -59,11 +60,13 @@ class TestContextBadgeShop(unittest.IsolatedAsyncioTestCase):
         self.ctx.send_msgs = AsyncMock()
         self.ctx.lan_server = MagicMock()
 
-        # Map every shop-badge location to a synthetic AP id.
+        # Map every shop-badge location to a synthetic AP id, and mark them
+        # all present in this slot (the server's location set).
         self.ctx._location_name_to_id = {
             name: 1000 + bit
             for bit, name in self._shop_locations.items()
         }
+        self.ctx.server_locations = set(self.ctx._location_name_to_id.values())
 
     async def asyncTearDown(self) -> None:  # type: ignore[override]
         try:
@@ -119,6 +122,86 @@ class TestContextBadgeShop(unittest.IsolatedAsyncioTestCase):
         self.ctx.lan_server = None
         # Must not raise when no Switch client is bound.
         self.ctx._push_badge_shop_state()
+
+    # ---- AP shop-text (scouted check) ---------------------------------
+
+    def _scout(self, loc_name: str, item_id: int, player: int) -> None:
+        """Inject a scouted NetworkItem into locations_info for a shop
+        badge location (mimics the LocationScouts reply)."""
+        from NetUtils import NetworkItem
+        loc_id = self.ctx._location_name_to_id[loc_name]
+        self.ctx.locations_info[loc_id] = NetworkItem(
+            item_id, loc_id, player, 0)
+
+    async def test_shop_text_empty_before_scout(self):
+        self.assertEqual(self.ctx._recompute_badge_shop_text(), {})
+
+    async def test_shop_text_from_scouted_item(self):
+        self.ctx.player_names = {1: "MarioSlot", 2: "Zelda"}
+        self.ctx.slot = 1
+        # Resolve any item id to a fixed name regardless of slot.
+        self.ctx.item_names = MagicMock()
+        self.ctx.item_names.lookup_in_slot = lambda code, slot: "Master Sword"
+        self._scout(self.COIN_REWARD_LOC_NAME, item_id=555, player=2)
+
+        text = self.ctx._recompute_badge_shop_text()
+        self.assertIn(self.COIN_REWARD_BIT, text)
+        self.assertEqual(text[self.COIN_REWARD_BIT], "Zelda's Master Sword")
+
+    async def test_shop_text_own_item_phrasing(self):
+        self.ctx.player_names = {1: "MarioSlot"}
+        self.ctx.slot = 1
+        self.ctx.item_names = MagicMock()
+        self.ctx.item_names.lookup_in_slot = lambda code, slot: "Spring Feet Badge"
+        self._scout(self.COIN_REWARD_LOC_NAME, item_id=100, player=1)
+
+        text = self.ctx._recompute_badge_shop_text()
+        self.assertEqual(text[self.COIN_REWARD_BIT], "Your Spring Feet Badge")
+
+    async def test_shop_text_item_name_fallback(self):
+        # When the item name can't be resolved, fall back to "item <id>".
+        self.ctx.player_names = {2: "Zelda"}
+        self.ctx.item_names = MagicMock()
+        self.ctx.item_names.lookup_in_slot = MagicMock(side_effect=KeyError)
+        self.ctx.item_names.lookup_in_game = MagicMock(side_effect=KeyError)
+        self._scout(self.COIN_REWARD_LOC_NAME, item_id=777, player=2)
+
+        text = self.ctx._recompute_badge_shop_text()
+        self.assertEqual(text[self.COIN_REWARD_BIT], "Zelda's item 777")
+
+    async def test_scout_sends_location_scouts(self):
+        self.ctx.send_msgs.reset_mock()
+        await self.ctx._scout_shop_badge_locations()
+        scouted = [
+            m for c in self.ctx.send_msgs.await_args_list for m in c.args[0]
+            if m.get("cmd") == "LocationScouts"
+        ]
+        self.assertTrue(scouted, "expected a LocationScouts message")
+        # All shop-badge loc ids requested.
+        wanted = set(self.ctx._shop_badge_location_ids())
+        got = set(scouted[0]["locations"])
+        self.assertEqual(got, wanted)
+
+    async def test_scout_excludes_locations_not_in_slot(self):
+        # A shop-badge location absent from this seed (not in
+        # server_locations) must NOT be scouted -- scouting an unknown id
+        # drops the server connection.
+        all_ids = set(self.ctx._location_name_to_id.values())
+        missing = self.ctx._location_name_to_id[self.COIN_REWARD_LOC_NAME]
+        self.ctx.server_locations = all_ids - {missing}
+        ids = self.ctx._shop_badge_location_ids()
+        self.assertNotIn(missing, ids)
+        self.assertTrue(set(ids).issubset(self.ctx.server_locations))
+
+    async def test_scout_noop_when_no_known_locations(self):
+        self.ctx.server_locations = set()
+        self.ctx.send_msgs.reset_mock()
+        await self.ctx._scout_shop_badge_locations()
+        scouted = [
+            m for c in self.ctx.send_msgs.await_args_list for m in c.args[0]
+            if m.get("cmd") == "LocationScouts"
+        ]
+        self.assertEqual(scouted, [])
 
     async def test_check_emitted_pushes_sold_state(self):
         from ..protocol import CheckEmitted, CheckKind

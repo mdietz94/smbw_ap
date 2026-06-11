@@ -61,4 +61,42 @@ void applyBadgeShopItemStates(void* screen);
 // shop-check, independent of whether the owned bit was already set.
 void onBadgeShopPurchase(int badge_internal_id);
 
+// ---------------------------------------------------------------------------
+// AP shop-text (2026-06-10): show, in the badge-shop detail panel, custom
+// text reflecting the AP check a badge purchase would send (e.g. the
+// scouted "<player>: <item>").  We substitute the badge DESCRIPTION (msbt
+// file "GameMsg/BadgeInfo", label "BadgeId%02d") in the global msbt
+// resolver FUN_7100250dec, but scope it to the shop by arming a one-shot
+// from UIBadgeShopScreen_resolvePaneContent (the only caller that resolves
+// badge panes) so the badge equip menu's descriptions stay vanilla.
+
+// Set/replace the per-badge AP description text (UTF-8 in; converted to
+// UTF-16LE for the renderer).  Empty/null text clears the override for
+// that id.  Thread-safe (called on the LAN rx thread).
+void setBadgeShopText(std::uint32_t badge_internal_id, const char* utf8_text);
+
+// Called once per game frame (from the player-tick hook) to advance the
+// shop-text arm's freshness clock.  The arm (set by resolvePaneContent) is
+// honored only for a few frames so it can't bleed into the badge equip menu
+// after the shop closes -- see tryServeBadgeShopText.
+void badgeShopTextTick();
+
+// Called on entry to the resolvePaneContent trampoline: arm the shop-text
+// context for the currently-selected badge (id from screen+0x6ac), or pass
+// -1 to disarm (non-badge selection).  Consumed by the next badge name/desc
+// msbt lookup -- this is what scopes the global resolver override to the
+// shop.
+void armBadgeShopText(int badge_internal_id);
+
+// Called by the msbt-resolver trampoline with the lookup's file string
+// (x2) and the resolved label string (*(char**)x3).  If the shop is armed
+// and this is the selected badge's DESCRIPTION lookup and we have AP text
+// for it, fills the OUT handle {char16_t* text; u32 len; u64 id} at
+// `out_handle` and returns true (the trampoline then returns 0 without
+// calling the original).  Consumes the arm on any badge name/desc lookup.
+// Returns false (run vanilla) for everything else -- the common path for
+// all non-shop text in the game.
+bool tryServeBadgeShopText(const char* file, const char* label,
+                           void* out_handle);
+
 }  // namespace probe

@@ -358,6 +358,9 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
         // inside the tick this same frame).  Same game thread as the Nerve
         // drain sites, so the SPSC ring keeps a single consumer.
         smbwap::ap::drainInbound();
+        // Advance the badge-shop-text arm's freshness clock (cheap atomic
+        // increment) so a stale shop arm expires within a few frames.
+        probe::badgeShopTextTick();
         playerTickLatchHook.orig(param_1, param_2);
         // NOTE(imgui-overlay): the overlay's per-frame draw is intentionally
         // NOT driven from here — PlayerTickLatch is a logic tick. It's driven
@@ -1242,6 +1245,54 @@ HkTrampoline<void, void*> badgeShopPurchaseCommitHook = hk::hook::trampoline(
         }
     });
 
+// BadgeShopPaneResolve @ NSO +0x1c3e560 (UIBadgeShopScreen_resolvePaneContent).
+// Builds the msbt label for a shop detail pane; the only caller that resolves
+// BADGE name/desc panes.  We arm the AP shop-text context here (selected badge
+// id @ screen+0x6ac when the selected type @ +0x6a8 is a badge) so the global
+// msbt-resolver override below fires ONLY for the shop -- the badge equip menu
+// (a different screen) never calls this, so its descriptions stay vanilla.
+// PROLOGUE SAFETY: stp x29,x30 / str x21 / stp x20,x19 / mov x29 / ldr w8 --
+// no PC-relative in the first 5 (cbz is 6th).
+HkTrampoline<void, void*, int*, void*, void*, void*> badgeShopPaneResolveHook =
+    hk::hook::trampoline(
+        [](void* screen, int* paneId, void* a2, void* a3, void* msgLabelObj)
+            -> void {
+            if (screen != nullptr) {
+                auto* base = reinterpret_cast<unsigned char*>(screen);
+                const std::int32_t type =
+                    *reinterpret_cast<std::int32_t*>(base + 0x6a8);
+                const std::int32_t id =
+                    *reinterpret_cast<std::int32_t*>(base + 0x6ac);
+                probe::armBadgeShopText(type == 0 ? id : -1);
+            }
+            badgeShopPaneResolveHook.orig(screen, paneId, a2, a3, msgLabelObj);
+        });
+
+// MsbtLabelResolve @ NSO +0x250dec (FUN_7100250dec): the game-wide msbt
+// label->text resolver.  ABI: (x0 store, x1 OUT handle {char16_t*;u32 len;u64
+// id}, x2 file C-string, x3 -> label-builder whose *(char**) is the label).
+// Tightly gated by probe::tryServeBadgeShopText (armed-shop + badge file +
+// "BadgeId%02d" label) so it overrides ONLY the selected shop badge's
+// description; everything else runs vanilla.  On a hit we fill the OUT handle
+// and return 0 (success) without orig.  PROLOGUE SAFETY: sub sp / stp x29,x30 /
+// str x28 / stp x24,x23 / stp x22,x21 -- no PC-relative in the first 5.
+HkTrampoline<std::uint64_t, void*, void*, void*, void*> msbtLabelResolveHook =
+    hk::hook::trampoline(
+        [](void* store, void* out_handle, void* file, void* label_holder)
+            -> std::uint64_t {
+            if (out_handle != nullptr && file != nullptr
+                && label_holder != nullptr) {
+                const char* f = reinterpret_cast<const char*>(file);
+                const char* label =
+                    *reinterpret_cast<const char* const*>(label_holder);
+                if (probe::tryServeBadgeShopText(f, label, out_handle)) {
+                    return 0;  // success -- caller renders our UTF-16 text
+                }
+            }
+            return msbtLabelResolveHook.orig(store, out_handle, file,
+                                             label_holder);
+        });
+
 void installHook(const char* name, ::ptr offset, hk::Result rc) {
     if (rc.failed()) {
         SMBWAP_LOG_ERROR("install %s @ +0x%lx FAILED rc=0x%x",
@@ -1360,6 +1411,14 @@ extern "C" void hkMain() {
                 badgeShopComputeStatesHook.installAtMainOffset(0x01c3f6a4));
     installHook("BadgeShopPurchaseCommit", 0x01c4072c,
                 badgeShopPurchaseCommitHook.installAtMainOffset(0x01c4072c));
+    // BADGE SHOP AP TEXT (2026-06-10): show the AP check a badge purchase
+    // would send in the shop detail panel.  Pane-resolve arms the shop
+    // context; the global msbt resolver serves our text only while armed.
+    // Both inert until the bridge pushes set_badge_shop_text.
+    installHook("BadgeShopPaneResolve", 0x01c3e560,
+                badgeShopPaneResolveHook.installAtMainOffset(0x01c3e560));
+    installHook("MsbtLabelResolve",     0x00250dec,
+                msbtLabelResolveHook.installAtMainOffset(0x00250dec));
     // DEBUG OVERLAY: NVN present-hook chain that drives the ImGui overlay.
     // No-op unless built with SMBWAP_HAS_DEBUG_RENDERER (see CMakeLists.txt
     // + docs/handoff-imgui-overlay.md).
