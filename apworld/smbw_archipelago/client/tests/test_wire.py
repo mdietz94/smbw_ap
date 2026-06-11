@@ -27,6 +27,8 @@ from ..wire import (
     PlayReportWireMsg,
     PongMsg,
     ProtocolError,
+    SetBadgeShopStateMsg,
+    SetBadgeShopTextMsg,
     SetBadgesAbsoluteMsg,
     SetItemGetDenyMaskMsg,
     SetRoutableWorldsAbsoluteMsg,
@@ -180,6 +182,28 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_set_itemget_deny_full_u32(self):
         self._round_trip(SetItemGetDenyMaskMsg(mask=0xFFFFFFFF))
+
+    def test_set_badge_shop_state(self):
+        self._round_trip(SetBadgeShopStateMsg(
+            managed=(1 << 9) | (1 << 58), sold=(1 << 9)))
+
+    def test_set_badge_shop_state_empty(self):
+        self._round_trip(SetBadgeShopStateMsg(managed=0, sold=0))
+
+    def test_set_badge_shop_text(self):
+        self._round_trip(SetBadgeShopTextMsg(id=9, text="PlayerB: Sword"))
+
+    def test_set_badge_shop_text_empty_clears(self):
+        self._round_trip(SetBadgeShopTextMsg(id=42, text=""))
+
+    def test_set_badge_shop_text_unicode(self):
+        self._round_trip(SetBadgeShopTextMsg(id=3, text="Zoë: Café★"))
+
+    def test_set_badge_shop_text_overlong_rejected(self):
+        long = "x" * SetBadgeShopTextMsg.TEXT_CAP
+        line = encode(SetBadgeShopTextMsg(id=1, text=long))
+        with self.assertRaises(ProtocolError):
+            decode(line)
 
     def test_grant_hash_keyed_royal_seed_w1(self):
         self._round_trip(GrantHashKeyedMsg(hash=0x55815859, value=1))

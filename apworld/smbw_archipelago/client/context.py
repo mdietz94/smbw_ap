@@ -387,6 +387,11 @@ class SMBWContext(CommonContext):
             # before they walk into a shop.
             self._push_badge_shop_state()
 
+            # AP shop-text: scout the shop-badge checks so the shop detail
+            # panel can show what each purchase would send.  The LocationInfo
+            # reply is handled below and pushes the per-badge text.
+            await self._scout_shop_badge_locations()
+
             # Tell the AP server the player is in-game so item routing
             # starts flowing.  ClientStatus.CLIENT_PLAYING.
             try:
@@ -413,6 +418,17 @@ class SMBWContext(CommonContext):
             # already merged the update into self.checked_locations.
             if "checked_locations" in args:
                 self._push_badge_shop_state()
+            return
+
+        if cmd == "LocationInfo":
+            # Reply to our shop-badge LocationScouts (super() already merged
+            # the scouted items into self.locations_info).  Push the per-badge
+            # AP-check text so the shop detail panel reflects what each
+            # purchase would send.
+            text = self._recompute_badge_shop_text()
+            log.info("shop-text: LocationInfo -> %d badge texts: %s",
+                     len(text), text)
+            self._push_badge_shop_text(force=True)
             return
 
     def _rebuild_reverse_maps_from_context(self) -> None:
@@ -521,6 +537,97 @@ class SMBWContext(CommonContext):
             return
         managed, sold = self._recompute_badge_shop_state()
         lan.send_set_badge_shop_state(managed, sold)
+
+    # ---- AP shop-text (scouted-check display) -------------------------
+
+    def _shop_badge_location_ids(self) -> list[int]:
+        """AP location ids of the shop-badge checks present in THIS slot, for
+        scouting.  Filtered to :attr:`server_locations` (the locations the
+        server actually has for us) -- the DataPackage name->id table carries
+        every location the apworld can define, but a given seed may omit some
+        (badges not shuffled, category excluded, ...).  Scouting an id the
+        server doesn't have raises a fatal ``KeyError`` server-side and drops
+        the connection, so we must only request real ones.  Empty until the
+        Connected packet populates ``server_locations``."""
+        known = self.server_locations
+        ids: list[int] = []
+        for loc_name in shop_badge_location_names().values():
+            loc_id = self._location_name_to_id.get(loc_name)
+            if loc_id is not None and loc_id in known:
+                ids.append(loc_id)
+        return ids
+
+    def _format_shop_check_text(self, net_item: Any) -> str:
+        """Build the per-badge detail text from a scouted location's item:
+        ``"<player>: <item>"`` (the item the purchase would send, and to
+        whom).  Resolves the item name in its owning slot's game and the
+        receiving player's name, with robust fallbacks."""
+        player = int(getattr(net_item, "player", 0) or 0)
+        item_id = int(getattr(net_item, "item", 0) or 0)
+        player_name = self.player_names.get(player, f"Player {player}")
+        item_name: str | None = None
+        try:
+            item_name = self.item_names.lookup_in_slot(item_id, player)
+        except Exception:
+            try:
+                item_name = self.item_names.lookup_in_game(item_id)
+            except Exception:
+                item_name = None
+        if not item_name:
+            item_name = f"item {item_id}"
+        if player == self.slot:
+            return f"Your {item_name}"
+        return f"{player_name}'s {item_name}"
+
+    def _recompute_badge_shop_text(self) -> dict[int, str]:
+        """``{badge_internal_id: text}`` for every shop badge whose AP check
+        has been scouted (present in :attr:`locations_info`).  The Switch
+        shows this in the badge-shop detail panel.  Empty until the connect-
+        time LocationScouts response arrives; the ``badge_shop_text_provider``
+        the LAN server replays on HelloMsg + the 2 s tick."""
+        out: dict[int, str] = {}
+        for internal_id, loc_name in shop_badge_location_names().items():
+            loc_id = self._location_name_to_id.get(loc_name)
+            if loc_id is None:
+                continue
+            net_item = self.locations_info.get(loc_id)
+            if net_item is None:
+                continue
+            try:
+                out[internal_id] = self._format_shop_check_text(net_item)
+            except Exception:
+                log.exception(
+                    "failed to format shop-check text for badge %d (loc %d)",
+                    internal_id, loc_id)
+        return out
+
+    def _push_badge_shop_text(self, *, force: bool = False) -> None:
+        """Push the AP shop-text table to the Switch now.  No-op without a
+        bound Switch client (the LAN server replays on HelloMsg / tick)."""
+        lan = self.lan_server
+        if lan is not None:
+            lan._push_badge_shop_text_now(force=force)
+
+    async def _scout_shop_badge_locations(self) -> None:
+        """LocationScouts the shop-badge checks (no hint) so we can show what
+        each purchase would send.  Awaited from the Connected handler; the
+        LocationInfo reply is handled in :meth:`_handle_ap_package`."""
+        loc_ids = self._shop_badge_location_ids()
+        if not loc_ids:
+            log.warning(
+                "shop-text: no shop-badge location ids resolved yet; "
+                "skipping LocationScouts")
+            return
+        try:
+            await self.send_msgs([{
+                "cmd": "LocationScouts",
+                "locations": loc_ids,
+                "create_as_hint": 0,
+            }])
+            log.info("shop-text: scouting %d shop-badge locations: %s",
+                     len(loc_ids), loc_ids)
+        except Exception:
+            log.exception("LocationScouts(shop badges) send failed")
 
     def _recompute_badge_mask(self) -> int:
         """Walk :attr:`items_received` and compute the absolute owned-badge

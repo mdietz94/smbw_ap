@@ -580,6 +580,38 @@ bool parseSetBadgeShopState(util::json::Reader& r,
     return saw_managed && saw_sold;
 }
 
+bool parseSetBadgeShopText(util::json::Reader& r, WireSetBadgeShopText& out) {
+    // Cursor positioned just after "t":"set_badge_shop_text".  Fields:
+    // "id" -> u32 badge internal_id (< 64); "text" -> UTF-8 string (capped).
+    std::string_view key;
+    bool saw_id = false;
+    bool saw_text = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "id")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0 || v > 0xFFFFFFFFLL) return false;
+            out.id = static_cast<std::uint32_t>(v);
+            saw_id = true;
+        } else if (sv_eq(key, "text")) {
+            std::string_view sv;
+            if (!r.nextString(sv)) return false;
+            copyFixedN(out.text, sv.data(), sv.size());
+            saw_text = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_id && saw_text;
+}
+
 bool parseSetWonderSeedCounts(util::json::Reader& r,
                               WireSetWonderSeedCounts& out) {
     // Cursor positioned just after "t":"set_wonder_seed_counts".  One
@@ -812,6 +844,10 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::SetBadgeShopState;
         out.set_badge_shop_state = WireSetBadgeShopState{};
         if (!parseSetBadgeShopState(r, out.set_badge_shop_state)) return false;
+    } else if (std::strcmp(t_val, "set_badge_shop_text") == 0) {
+        out.kind = InboundKind::SetBadgeShopText;
+        out.set_badge_shop_text = WireSetBadgeShopText{};
+        if (!parseSetBadgeShopText(r, out.set_badge_shop_text)) return false;
     } else if (std::strcmp(t_val, "kill") == 0) {
         out.kind = InboundKind::Kill;
         out.kill = WireKill{};
