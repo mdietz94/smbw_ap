@@ -26,6 +26,18 @@ class OpenWorldCount(Range):
     default = 6
 
 
+class CharacterBlockSanity(Toggle):
+    """Character-block sanity (default OFF).  Adds ~154 AP checks, one per
+    (course, character) hidden ``ObjectBlockClarityCharacter`` block -- the
+    player-specific blocks that only the matching character can materialize
+    and bump (e.g. the Search-Party blocks).  Each block is its own check;
+    no character items are added to the pool (all 12 characters are
+    vanilla-available), so this adds locations without new logic gates.
+    Requires the Switch mod's GetDamageReactionPlayerNo hook + a client that
+    understands the ``char_block_hit`` wire event."""
+    display_name = "Character Block Sanity"
+
+
 class PalacesRequired(Range):
     """How many Royal Seeds (palaces) must be cleared to unlock Bowser in
     open-world mode.  ``0`` means "all active worlds" (i.e. equal to
@@ -41,6 +53,12 @@ def before_options_defined(options: dict) -> dict:
     options["open_world"] = OpenWorld
     options["open_world_count"] = OpenWorldCount
     options["palaces_required"] = PalacesRequired
+    # Default-OFF Toggle; pre-seeding here means the category-driven loop in
+    # Options.py (which would otherwise auto-create a DefaultOnToggle for any
+    # category yaml_option) leaves it alone -- it only fills options NOT
+    # already present.  So "Character Block" locations stay disabled unless
+    # the player opts in.
+    options["character_block_sanity"] = CharacterBlockSanity
     return options
 
 

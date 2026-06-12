@@ -21,6 +21,7 @@ from typing import Any
 from . import play_report
 from .protocol import (
     BadgeAcquiredMsg,
+    CharBlockHitMsg,
     CheckEmitted,
     CheckKind,
     DeathReported,
@@ -31,6 +32,7 @@ from .protocol import (
     NerveKind,
     PlayReportMsg,
 )
+from . import char_block_table
 from .state import BridgeState, CurrentCourse
 
 
@@ -302,6 +304,8 @@ def process_event(state: BridgeState, event: Any) -> list[ProcessorEmit]:
         return _handle_nerve_fire(state, event)
     if isinstance(event, BadgeAcquiredMsg):
         return _handle_badge_acquired(state, event)
+    if isinstance(event, CharBlockHitMsg):
+        return _handle_char_block_hit(state, event)
     if isinstance(event, PlayReportMsg):
         return _handle_play_report(state, event)
     log.warning("process_event: unknown event type %r", type(event).__name__)
@@ -418,6 +422,91 @@ def _handle_badge_acquired(
 
 
 # ---------------------------------------------------------------------------
+# Character-block sanity.
+
+def _handle_char_block_hit(
+    state: BridgeState, event: CharBlockHitMsg,
+) -> list[ProcessorEmit]:
+    """A player-specific ObjectBlockClarityCharacter block was bumped.
+
+    The GetDamageReactionPlayerNo hook over-fires (it's a shared AI node);
+    the filtering happens HERE by intersecting (current course, hitting
+    character) against the offline char-block table.  Only a (course,
+    charaType) pair that actually has a placed character block resolves to
+    a CheckEmitted; everything else (regular ? blocks, courses with no
+    character block for this character) is dropped silently.
+
+    Character resolution, in order:
+      1. The event's ``chara`` (0-11) if the Switch resolved it.
+      2. Else the current course's ``chara`` captured from the course_in
+         ``chara_type_array`` PlayReport field.
+      3. Else, if the current course has EXACTLY ONE character block, that
+         block's single chara is unambiguous (covers the single-player
+         common case even when neither 1 nor 2 is available).
+
+    The CheckEmitted carries ``metadata["chara"]`` which BridgeState uses
+    as the per-course dedup sub_key, and which ``location_table.lookup_name``
+    + ``char_block_table`` use to resolve the AP location name.  The
+    character_block_sanity slot_data gate is applied downstream in the
+    context (parallel to ten_coin_sanity) so old seeds ignore these.
+    """
+    course = state.current_course
+    if course is None:
+        log.info(
+            "char_block_hit slot=%d seq=%d with no current_course; dropping",
+            event.player_slot, event.seq)
+        return []
+
+    sk = course.stage_key
+
+    # Resolve the hitting character.
+    chara = event.chara
+    if chara is None or chara < 0:
+        chara = getattr(course, "chara", -1)
+    if chara < 0:
+        # Last resort: a course with a single character block disambiguates
+        # itself.
+        candidates = char_block_table.charas_for_stage(sk)
+        if len(candidates) == 1:
+            chara = next(iter(candidates))
+
+    if chara < 0:
+        log.info(
+            "char_block_hit at stage_key=0x%08x: couldn't resolve hitting "
+            "character (event chara=%d, course chara=%d); dropping",
+            sk & 0xFFFFFFFF, event.chara, getattr(course, "chara", -1))
+        return []
+
+    # Table filter: only emit if THIS (course, chara) actually has a block.
+    if char_block_table.lookup(sk, chara) is None:
+        log.debug(
+            "char_block_hit at stage_key=0x%08x chara=%d: no character block "
+            "for this pair (regular block or non-charblock course); dropping",
+            sk & 0xFFFFFFFF, chara)
+        return []
+
+    check = CheckEmitted(
+        kind=CheckKind.CHARACTER_BLOCK,
+        stage_key=sk,
+        metadata={
+            "chara": chara,
+            "world_no": course.world_no,
+            "course_no": course.course_no,
+            "seq": event.seq,
+        },
+    )
+    if state.emit_check(check):
+        log.info(
+            "char_block_hit -> character_block at stage_key=0x%08x chara=%d "
+            "(seq=%d)", sk & 0xFFFFFFFF, chara, event.seq)
+        return [check]
+    log.debug(
+        "char_block_hit at stage_key=0x%08x chara=%d (dup; dropped)",
+        sk & 0xFFFFFFFF, chara)
+    return []
+
+
+# ---------------------------------------------------------------------------
 # PlayReport handlers — one per room name we care about.
 
 def _handle_play_report(state: BridgeState, event: PlayReportMsg) -> list[ProcessorEmit]:
@@ -468,11 +557,24 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[Proces
         return []
     world_no = stage_info.get("world_no", 0)
     course_no = stage_info.get("course_no", 0)
+    # Capture the local player's character (PlayerCharaType 0-11) from the
+    # course_in chara_type_array so a subsequent CHAR_BLOCK_HIT can attribute
+    # to the right (course, character) block.  Single-player puts the human
+    # at index 0; in co-op the field carries one entry per local player but
+    # v1 character-block sanity uses index 0 (the host).  -1 when absent.
+    chara = -1
+    chara_arr = fields.get("chara_type_array")
+    if isinstance(chara_arr, list) and chara_arr:
+        try:
+            chara = int(chara_arr[0])
+        except (TypeError, ValueError):
+            chara = -1
     state.mark_course_entered(CurrentCourse(
         stage_key=stage_info["stage_key"],
         world_no=world_no,
         course_no=course_no,
         world_kind=stage_info.get("world_kind", 0),
+        chara=chara,
     ))
     # M4 location_table playtest-sweep helper: tag the line with
     # "STAGEKEY" so the operator can `Select-String STAGEKEY` against

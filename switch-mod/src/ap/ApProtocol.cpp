@@ -70,6 +70,27 @@ void encodeBadgeAcquired(util::json::LineBuffer& out, const WireBadgeAcquired& m
     out.append('\n');
 }
 
+void encodeCharBlockHit(util::json::LineBuffer& out, const WireCharBlockHit& msg) {
+    util::json::Encoder e(out);
+    e.beginObject();
+        e.key("t").value("char_block_hit");
+        e.key("player_slot").value(static_cast<int>(msg.player_slot));
+        e.key("chara").value(static_cast<int>(msg.chara));
+        // pos as a 3-element array.  v1 ships zeros (the shared AI-node body
+        // doesn't expose the owning actor transform), so integer encoding is
+        // exact; the bridge decoder accepts int-or-float.  Truncate toward
+        // zero if a future revision ever sends a non-integer coordinate.
+        e.key("pos");
+        e.beginArray();
+            e.value(static_cast<int>(msg.pos[0]));
+            e.value(static_cast<int>(msg.pos[1]));
+            e.value(static_cast<int>(msg.pos[2]));
+        e.endArray();
+        e.key("seq").value(static_cast<int>(msg.seq));
+    e.endObject();
+    out.append('\n');
+}
+
 void encodePlayReport(util::json::LineBuffer& out, const WirePlayReport& msg) {
     util::json::Encoder e(out);
     e.beginObject();
@@ -116,6 +137,7 @@ bool encodeOutbound(util::json::LineBuffer& out, const OutboundEvent& ev) {
         case OutboundKind::PlayReport:    encodePlayReport(out, ev.play_report); return true;
         case OutboundKind::Ping:          encodePing(out, ev.ping); return true;
         case OutboundKind::BadgeAcquired: encodeBadgeAcquired(out, ev.badge_acquired); return true;
+        case OutboundKind::CharBlockHit:  encodeCharBlockHit(out, ev.char_block_hit); return true;
         case OutboundKind::Log:           encodeLog(out, ev.log); return true;
         case OutboundKind::None:
         default:

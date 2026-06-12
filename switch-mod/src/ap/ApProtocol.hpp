@@ -78,6 +78,24 @@ struct WireBadgeAcquired {
     std::uint32_t seq = 0;
 };
 
+// Character-block sanity -- a player-specific ObjectBlockClarityCharacter
+// block was bumped.  Emitted by the GetDamageReactionPlayerNo hook
+// (NSO +0x168d428) every time that shared AI-node body resolves the
+// damage invoker to a local player slot 0-3.  The node is shared by many
+// block AIs, so this over-fires; the bridge filters by intersecting
+// (current course, hitting character) against the offline char-block
+// table.  `player_slot` is 0-3; `chara` is the hitting PlayerCharaType
+// (0-11) when the Switch resolved it, else a sentinel (we ship -1 as
+// 0xFFFFFFFF and the bridge re-reads it as signed); `pos` is the block
+// world position (zeros in v1 -- the shared body doesn't expose the
+// owning actor transform cleanly).
+struct WireCharBlockHit {
+    std::uint32_t player_slot = 0;
+    std::int32_t  chara = -1;
+    float pos[3] = {0.0f, 0.0f, 0.0f};
+    std::uint32_t seq = 0;
+};
+
 struct WirePlayReport {
     char room[kRoomCap] = {};
     std::uint16_t payload_len = 0;
@@ -108,6 +126,7 @@ enum class OutboundKind : std::uint8_t {
     Ping = 4,
     BadgeAcquired = 5,
     Log = 6,
+    CharBlockHit = 7,
 };
 
 struct OutboundEvent {
@@ -119,6 +138,7 @@ struct OutboundEvent {
         WirePing ping;
         WireBadgeAcquired badge_acquired;
         WireLog log;
+        WireCharBlockHit char_block_hit;
     };
     // Default-construct the inactive members; the consumer reads via `kind`.
     OutboundEvent() : kind(OutboundKind::None), hello{} {}
@@ -127,6 +147,7 @@ struct OutboundEvent {
 void encodeHello(util::json::LineBuffer& out, const WireHello& msg);
 void encodeNerveFire(util::json::LineBuffer& out, const WireNerveFire& msg);
 void encodeBadgeAcquired(util::json::LineBuffer& out, const WireBadgeAcquired& msg);
+void encodeCharBlockHit(util::json::LineBuffer& out, const WireCharBlockHit& msg);
 void encodePlayReport(util::json::LineBuffer& out, const WirePlayReport& msg);
 void encodePing(util::json::LineBuffer& out, const WirePing& msg);
 void encodeLog(util::json::LineBuffer& out, const WireLog& msg);

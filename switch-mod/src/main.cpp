@@ -388,6 +388,87 @@ HkTrampoline<void, void*> gameGoalReachedExecuteHook = hk::hook::trampoline(
         gameGoalReachedExecuteHook.orig(nerve);
     });
 
+// GetDamageReactionPlayerNo body @ NSO +0x0168d428.
+//
+// Character-block sanity.  This is the execute body of the AINB AI-node
+// that runs when a block-type actor processes a damage reaction; it maps
+// the damage invoker to a local player slot 0-3.  It is a SHARED node
+// (regular ? blocks, etc. route through it too) -- the actor filter to
+// ObjectBlockClarityCharacter can't be read cleanly from this body, so we
+// over-fire CHAR_BLOCK_HIT and let the PC bridge filter by the offline
+// (course, charaType) char-block table (only real character-block pairs
+// resolve to an AP location; everything else is dropped).
+//
+// HOOK SAFETY: the body's prologue is clean (sub sp / stp / str / stp /
+// add -- verified at +0x168d428).  Do NOT hook the wrapper at +0x168d3c0:
+// it has a `bl #0x168d428` at wrapper+0x10, inside the 20-byte patch
+// window (trampoline-corruption gotcha).
+//
+// SLOT READBACK: the body computes the resolved slot (0=P1..3=P4, -1=none)
+// into w1 and stores it via FUN_7100594ae0(node_ctx+0x30, slot), which
+// writes `slot` to `(*(uintptr*)(node_ctx+0x30) & ~3)`.  So AFTER orig we
+// read it back:  slot = *(int32*)((*(uintptr*)(node_ctx+0x30)) & ~3).
+// We emit only when slot is a valid local-player index (0..3); -1 (no
+// local-player invoker) is dropped, which keeps the ring quiet on
+// environmental / enemy damage.  chara is shipped as -1 (the bridge
+// resolves the hitting character from the course's chara_type_array);
+// position is zeros in v1 (the body doesn't expose the owning actor
+// transform).
+//
+// The body return type is opaque (it forwards FUN_7100594ae0's return,
+// a node value), so we declare the trampoline returning void* and ignore
+// the value.
+HkTrampoline<void*, void*> getDamageReactionPlayerNoHook =
+    hk::hook::trampoline(
+    [](void* node_ctx) -> void* {
+        void* ret = getDamageReactionPlayerNoHook.orig(node_ctx);
+
+        // Read back the slot the body just stored (see SLOT READBACK).
+        // Guard every dereference: a malformed node ctx must never crash.
+        std::int32_t slot = -1;
+        if (node_ctx) {
+            const auto raw = *reinterpret_cast<std::uintptr_t*>(
+                reinterpret_cast<std::uint8_t*>(node_ctx) + 0x30);
+            const auto store = raw & ~static_cast<std::uintptr_t>(3);
+            if (store) {
+                slot = *reinterpret_cast<std::int32_t*>(store);
+            }
+        }
+
+        // Diagnostic survey: log the first N fires with the node-ctx
+        // fields the RE notes flagged as interesting, so one in-game
+        // session yields the data to tighten the actor filter later.
+        // Monotonic count.fetch_add(...) < N idiom (the fetch_sub(...) > 0
+        // throttle underflows -- known footgun).
+        static std::atomic<unsigned> s_diag{0};
+        const unsigned d = s_diag.fetch_add(1, std::memory_order_relaxed);
+        if (d < 40) {
+            std::uint64_t f18 = 0, f20 = 0;
+            if (node_ctx) {
+                f18 = *reinterpret_cast<std::uint32_t*>(
+                    reinterpret_cast<std::uint8_t*>(node_ctx) + 0x18);
+                f20 = *reinterpret_cast<std::uint64_t*>(
+                    reinterpret_cast<std::uint8_t*>(node_ctx) + 0x20);
+            }
+            SMBWAP_LOG_INFO(
+                "CHAR_BLOCK_HIT diag #%u: node=%p slot=%d "
+                "[ctx+0x18]=0x%llx [ctx+0x20]=0x%llx",
+                d, node_ctx, slot,
+                static_cast<unsigned long long>(f18),
+                static_cast<unsigned long long>(f20));
+        }
+
+        // Emit only for a real local-player slot (0..3).  The bridge
+        // filters to ObjectBlockClarityCharacter by table; chara=-1 means
+        // "resolve from the course's chara_type_array".  pos zeros in v1.
+        if (slot >= 0 && slot <= 3) {
+            smbwap::ap::enqueueCharBlockHit(
+                static_cast<std::uint32_t>(slot), /*chara=*/-1,
+                0.0f, 0.0f, 0.0f);
+        }
+        return ret;
+    });
+
 // =========================================================================
 // PLAYREPORT (Phase 2c)
 // =========================================================================
@@ -1334,6 +1415,13 @@ extern "C" void hkMain() {
                 gameGoalReachedExecuteHook.installAtMainOffset(0x015b77a8));
     installHook("PlayerTickLatch",           0x00273868,
                 playerTickLatchHook.installAtMainOffset(0x00273868));
+
+    // CHARACTER-BLOCK SANITY: GetDamageReactionPlayerNo body @ +0x168d428.
+    // Fires CHAR_BLOCK_HIT on every resolve to a local player slot; the PC
+    // bridge filters to ObjectBlockClarityCharacter by the (course, chara)
+    // table.  Shared-node over-fire is intentional (see hook comment).
+    installHook("GetDamageReactionPlayerNo", 0x0168d428,
+                getDamageReactionPlayerNoHook.installAtMainOffset(0x0168d428));
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",

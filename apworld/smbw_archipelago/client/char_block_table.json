@@ -1,0 +1,772 @@
+[
+ {
+  "stage_key": 79634639,
+  "chara": 2,
+  "name": "W3: The Sugarstar Trial - Peach Block"
+ },
+ {
+  "stage_key": 79634639,
+  "chara": 7,
+  "name": "W3: The Sugarstar Trial - Yoshi Block"
+ },
+ {
+  "stage_key": 222099741,
+  "chara": 3,
+  "name": "W2: Cruising with Linking Lifts - Daisy Block"
+ },
+ {
+  "stage_key": 222099741,
+  "chara": 8,
+  "name": "W2: Cruising with Linking Lifts - Red Yoshi Block"
+ },
+ {
+  "stage_key": 232160011,
+  "chara": 1,
+  "name": "W1: Piranha Plants on Parade - Luigi Block"
+ },
+ {
+  "stage_key": 232160011,
+  "chara": 9,
+  "name": "W1: Piranha Plants on Parade - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 274035071,
+  "chara": 1,
+  "name": "PI: Blewbird Roost - Luigi Block"
+ },
+ {
+  "stage_key": 274035071,
+  "chara": 8,
+  "name": "PI: Blewbird Roost - Red Yoshi Block"
+ },
+ {
+  "stage_key": 426349598,
+  "chara": 7,
+  "name": "W4: Sunbaked Desert Palace - Yoshi Block"
+ },
+ {
+  "stage_key": 426349598,
+  "chara": 11,
+  "name": "W4: Sunbaked Desert Palace - Nabbit Block"
+ },
+ {
+  "stage_key": 431101596,
+  "chara": 4,
+  "name": "PI: Muncher Fields - Yellow Toad Block"
+ },
+ {
+  "stage_key": 431101596,
+  "chara": 11,
+  "name": "PI: Muncher Fields - Nabbit Block"
+ },
+ {
+  "stage_key": 565420398,
+  "chara": 2,
+  "name": "W5: Wubba Ruins - Peach Block"
+ },
+ {
+  "stage_key": 565420398,
+  "chara": 4,
+  "name": "W5: Wubba Ruins - Yellow Toad Block"
+ },
+ {
+  "stage_key": 634214862,
+  "chara": 1,
+  "name": "W2: Puzzling Park - Luigi Block"
+ },
+ {
+  "stage_key": 634214862,
+  "chara": 2,
+  "name": "W2: Puzzling Park - Peach Block"
+ },
+ {
+  "stage_key": 634214862,
+  "chara": 4,
+  "name": "W2: Puzzling Park - Yellow Toad Block"
+ },
+ {
+  "stage_key": 634214862,
+  "chara": 7,
+  "name": "W2: Puzzling Park - Yoshi Block"
+ },
+ {
+  "stage_key": 634214862,
+  "chara": 10,
+  "name": "W2: Puzzling Park - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 650191271,
+  "chara": 2,
+  "name": "Special: Triple Threat Deluge - Peach Block"
+ },
+ {
+  "stage_key": 650191271,
+  "chara": 10,
+  "name": "Special: Triple Threat Deluge - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 740284458,
+  "chara": 3,
+  "name": "W4: Rolling-Ball Hall - Daisy Block"
+ },
+ {
+  "stage_key": 740284458,
+  "chara": 6,
+  "name": "W4: Rolling-Ball Hall - Toadette Block"
+ },
+ {
+  "stage_key": 795315661,
+  "chara": 6,
+  "name": "PI: Petal Isles Flying Battleship - Toadette Block"
+ },
+ {
+  "stage_key": 795315661,
+  "chara": 8,
+  "name": "PI: Petal Isles Flying Battleship - Red Yoshi Block"
+ },
+ {
+  "stage_key": 859486196,
+  "chara": 3,
+  "name": "W6: Item Park - Daisy Block"
+ },
+ {
+  "stage_key": 859486196,
+  "chara": 6,
+  "name": "W6: Item Park - Toadette Block"
+ },
+ {
+  "stage_key": 866452303,
+  "chara": 4,
+  "name": "BC: KnuckleFest Bowser's Blazing Beats - Yellow Toad Block"
+ },
+ {
+  "stage_key": 866452303,
+  "chara": 5,
+  "name": "BC: KnuckleFest Bowser's Blazing Beats - Blue Toad Block"
+ },
+ {
+  "stage_key": 896005440,
+  "chara": 6,
+  "name": "W4: Secrets of Shova Mansion - Toadette Block"
+ },
+ {
+  "stage_key": 896005440,
+  "chara": 10,
+  "name": "W4: Secrets of Shova Mansion - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 908858034,
+  "chara": 0,
+  "name": "W6: Wavy Ride through the Magma Tube - Mario Block"
+ },
+ {
+  "stage_key": 908858034,
+  "chara": 1,
+  "name": "W6: Wavy Ride through the Magma Tube - Luigi Block"
+ },
+ {
+  "stage_key": 921133890,
+  "chara": 4,
+  "name": "W1: Cosmic Hoppos - Yellow Toad Block"
+ },
+ {
+  "stage_key": 921133890,
+  "chara": 11,
+  "name": "W1: Cosmic Hoppos - Nabbit Block"
+ },
+ {
+  "stage_key": 979253884,
+  "chara": 5,
+  "name": "PI: Robbird Cove - Blue Toad Block"
+ },
+ {
+  "stage_key": 979253884,
+  "chara": 7,
+  "name": "PI: Robbird Cove - Yoshi Block"
+ },
+ {
+  "stage_key": 1016401398,
+  "chara": 3,
+  "name": "W2: Outmaway Valley - Daisy Block"
+ },
+ {
+  "stage_key": 1016401398,
+  "chara": 7,
+  "name": "W2: Outmaway Valley - Yoshi Block"
+ },
+ {
+  "stage_key": 1068648332,
+  "chara": 0,
+  "name": "W5: Beware of the Rifts - Mario Block"
+ },
+ {
+  "stage_key": 1068648332,
+  "chara": 2,
+  "name": "W5: Beware of the Rifts - Peach Block"
+ },
+ {
+  "stage_key": 1087277962,
+  "chara": 1,
+  "name": "W5: Taily's Toxic Pond - Luigi Block"
+ },
+ {
+  "stage_key": 1087277962,
+  "chara": 7,
+  "name": "W5: Taily's Toxic Pond - Yoshi Block"
+ },
+ {
+  "stage_key": 1214704431,
+  "chara": 2,
+  "name": "BC: Missile Meg Mayhem - Peach Block"
+ },
+ {
+  "stage_key": 1214704431,
+  "chara": 3,
+  "name": "BC: Missile Meg Mayhem - Daisy Block"
+ },
+ {
+  "stage_key": 1215425413,
+  "chara": 3,
+  "name": "Special: Wonder Gauntlet - Daisy Block"
+ },
+ {
+  "stage_key": 1215425413,
+  "chara": 10,
+  "name": "Special: Wonder Gauntlet - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 1254298559,
+  "chara": 5,
+  "name": "PI: Maw-Maw Mouthful - Blue Toad Block"
+ },
+ {
+  "stage_key": 1254298559,
+  "chara": 7,
+  "name": "PI: Maw-Maw Mouthful - Yoshi Block"
+ },
+ {
+  "stage_key": 1313600916,
+  "chara": 5,
+  "name": "W6: Dragon Boneyard - Blue Toad Block"
+ },
+ {
+  "stage_key": 1313600916,
+  "chara": 8,
+  "name": "W6: Dragon Boneyard - Red Yoshi Block"
+ },
+ {
+  "stage_key": 1316304144,
+  "chara": 2,
+  "name": "PI: Leaping Smackerel - Peach Block"
+ },
+ {
+  "stage_key": 1316304144,
+  "chara": 9,
+  "name": "PI: Leaping Smackerel - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 1386224389,
+  "chara": 1,
+  "name": "W5: Light-Switch Mansion - Luigi Block"
+ },
+ {
+  "stage_key": 1386224389,
+  "chara": 3,
+  "name": "W5: Light-Switch Mansion - Daisy Block"
+ },
+ {
+  "stage_key": 1420167552,
+  "chara": 0,
+  "name": "W5: Upshroom Downshroom - Mario Block"
+ },
+ {
+  "stage_key": 1420167552,
+  "chara": 6,
+  "name": "W5: Upshroom Downshroom - Toadette Block"
+ },
+ {
+  "stage_key": 1428484156,
+  "chara": 8,
+  "name": "W4: Ninji Jump Party - Red Yoshi Block"
+ },
+ {
+  "stage_key": 1428484156,
+  "chara": 11,
+  "name": "W4: Ninji Jump Party - Nabbit Block"
+ },
+ {
+  "stage_key": 1578265110,
+  "chara": 0,
+  "name": "PI: Gnawsher Lair - Mario Block"
+ },
+ {
+  "stage_key": 1578265110,
+  "chara": 9,
+  "name": "PI: Gnawsher Lair - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 1815827070,
+  "chara": 3,
+  "name": "BC: High-Voltage Gauntlet - Daisy Block"
+ },
+ {
+  "stage_key": 1815827070,
+  "chara": 4,
+  "name": "BC: High-Voltage Gauntlet - Yellow Toad Block"
+ },
+ {
+  "stage_key": 1860654305,
+  "chara": 3,
+  "name": "W1: Bulrush Express - Daisy Block"
+ },
+ {
+  "stage_key": 1860654305,
+  "chara": 10,
+  "name": "W1: Bulrush Express - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 1990952673,
+  "chara": 5,
+  "name": "W4: Bloomps of the Desert Skies - Blue Toad Block"
+ },
+ {
+  "stage_key": 1990952673,
+  "chara": 9,
+  "name": "W4: Bloomps of the Desert Skies - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2049000344,
+  "chara": 1,
+  "name": "BC: Evade the Seeker Bullet Bills! - Luigi Block"
+ },
+ {
+  "stage_key": 2049000344,
+  "chara": 2,
+  "name": "BC: Evade the Seeker Bullet Bills! - Peach Block"
+ },
+ {
+  "stage_key": 2085191700,
+  "chara": 6,
+  "name": "W6: Pull, Turn, Burn - Toadette Block"
+ },
+ {
+  "stage_key": 2085191700,
+  "chara": 9,
+  "name": "W6: Pull, Turn, Burn - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2119317526,
+  "chara": 0,
+  "name": "W6: Deep Magma Bog Palace - Mario Block"
+ },
+ {
+  "stage_key": 2119317526,
+  "chara": 8,
+  "name": "W6: Deep Magma Bog Palace - Red Yoshi Block"
+ },
+ {
+  "stage_key": 2225295089,
+  "chara": 1,
+  "name": "Special: Bounce, Bounce, Bounce - Luigi Block"
+ },
+ {
+  "stage_key": 2225295089,
+  "chara": 9,
+  "name": "Special: Bounce, Bounce, Bounce - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2276949139,
+  "chara": 2,
+  "name": "W1: Angry Spikes and Sinkin' Pipes - Peach Block"
+ },
+ {
+  "stage_key": 2276949139,
+  "chara": 9,
+  "name": "W1: Angry Spikes and Sinkin' Pipes - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2289431732,
+  "chara": 0,
+  "name": "W1: Rolla Koopa Derby - Mario Block"
+ },
+ {
+  "stage_key": 2289431732,
+  "chara": 6,
+  "name": "W1: Rolla Koopa Derby - Toadette Block"
+ },
+ {
+  "stage_key": 2290251583,
+  "chara": 4,
+  "name": "W5: Swaying Ruins - Yellow Toad Block"
+ },
+ {
+  "stage_key": 2290251583,
+  "chara": 6,
+  "name": "W5: Swaying Ruins - Toadette Block"
+ },
+ {
+  "stage_key": 2308078743,
+  "chara": 9,
+  "name": "W1: Pipe-Rock Plateau Palace - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2308078743,
+  "chara": 10,
+  "name": "W1: Pipe-Rock Plateau Palace - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 2365886520,
+  "chara": 0,
+  "name": "Special: Solar Roller - Mario Block"
+ },
+ {
+  "stage_key": 2365886520,
+  "chara": 6,
+  "name": "Special: Solar Roller - Toadette Block"
+ },
+ {
+  "stage_key": 2595532421,
+  "chara": 2,
+  "name": "W2: Up 'n' Down with Puffy Lifts - Peach Block"
+ },
+ {
+  "stage_key": 2595532421,
+  "chara": 11,
+  "name": "W2: Up 'n' Down with Puffy Lifts - Nabbit Block"
+ },
+ {
+  "stage_key": 2616818859,
+  "chara": 9,
+  "name": "PI: Jewel-Block Cave - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2616818859,
+  "chara": 11,
+  "name": "PI: Jewel-Block Cave - Nabbit Block"
+ },
+ {
+  "stage_key": 2634500029,
+  "chara": 8,
+  "name": "W6: Deep Magma Bog Flying Battleship - Red Yoshi Block"
+ },
+ {
+  "stage_key": 2634500029,
+  "chara": 9,
+  "name": "W6: Deep Magma Bog Flying Battleship - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2759521707,
+  "chara": 2,
+  "name": "Special: Piranha Plant Reprise - Peach Block"
+ },
+ {
+  "stage_key": 2759521707,
+  "chara": 9,
+  "name": "Special: Piranha Plant Reprise - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2764564935,
+  "chara": 7,
+  "name": "W3: The Hoppycat Trial - Yoshi Block"
+ },
+ {
+  "stage_key": 2764564935,
+  "chara": 8,
+  "name": "W3: The Hoppycat Trial - Red Yoshi Block"
+ },
+ {
+  "stage_key": 2801748829,
+  "chara": 2,
+  "name": "W2: Condarts Away! - Peach Block"
+ },
+ {
+  "stage_key": 2801748829,
+  "chara": 6,
+  "name": "W2: Condarts Away! - Toadette Block"
+ },
+ {
+  "stage_key": 2827295165,
+  "chara": 1,
+  "name": "W1: Swamp Pipe Crawl - Luigi Block"
+ },
+ {
+  "stage_key": 2827295165,
+  "chara": 8,
+  "name": "W1: Swamp Pipe Crawl - Red Yoshi Block"
+ },
+ {
+  "stage_key": 2913185086,
+  "chara": 0,
+  "name": "W4: Valley Fulla Snootles - Mario Block"
+ },
+ {
+  "stage_key": 2913185086,
+  "chara": 3,
+  "name": "W4: Valley Fulla Snootles - Daisy Block"
+ },
+ {
+  "stage_key": 2937190396,
+  "chara": 0,
+  "name": "W1: Welcome to the Flower Kingdom! - Mario Block"
+ },
+ {
+  "stage_key": 2937190396,
+  "chara": 8,
+  "name": "W1: Welcome to the Flower Kingdom! - Red Yoshi Block"
+ },
+ {
+  "stage_key": 2980087809,
+  "chara": 7,
+  "name": "W4: Flight of the Bloomps - Yoshi Block"
+ },
+ {
+  "stage_key": 2980087809,
+  "chara": 9,
+  "name": "W4: Flight of the Bloomps - Yellow Yoshi Block"
+ },
+ {
+  "stage_key": 2997908564,
+  "chara": 10,
+  "name": "W2: Fluff-Puff Peaks Palace - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 2997908564,
+  "chara": 11,
+  "name": "W2: Fluff-Puff Peaks Palace - Nabbit Block"
+ },
+ {
+  "stage_key": 3125427066,
+  "chara": 6,
+  "name": "W3: The Midway Trial - Toadette Block"
+ },
+ {
+  "stage_key": 3125427066,
+  "chara": 11,
+  "name": "W3: The Midway Trial - Nabbit Block"
+ },
+ {
+  "stage_key": 3215985754,
+  "chara": 4,
+  "name": "W4: Color-Switch Dungeon - Yellow Toad Block"
+ },
+ {
+  "stage_key": 3215985754,
+  "chara": 8,
+  "name": "W4: Color-Switch Dungeon - Red Yoshi Block"
+ },
+ {
+  "stage_key": 3307563614,
+  "chara": 1,
+  "name": "W2: Pole Block Passage - Luigi Block"
+ },
+ {
+  "stage_key": 3307563614,
+  "chara": 5,
+  "name": "W2: Pole Block Passage - Blue Toad Block"
+ },
+ {
+  "stage_key": 3335469394,
+  "chara": 0,
+  "name": "W6: Raarghs in the Ruins - Mario Block"
+ },
+ {
+  "stage_key": 3335469394,
+  "chara": 7,
+  "name": "W6: Raarghs in the Ruins - Yoshi Block"
+ },
+ {
+  "stage_key": 3376496226,
+  "chara": 0,
+  "name": "W3: The Sharp Trial - Mario Block"
+ },
+ {
+  "stage_key": 3376496226,
+  "chara": 10,
+  "name": "W3: The Sharp Trial - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 3400217657,
+  "chara": 3,
+  "name": "W5: Poison Ruins - Daisy Block"
+ },
+ {
+  "stage_key": 3400217657,
+  "chara": 5,
+  "name": "W5: Poison Ruins - Blue Toad Block"
+ },
+ {
+  "stage_key": 3403179923,
+  "chara": 5,
+  "name": "W2: Fluff-Puff Peaks Flying Battleship - Blue Toad Block"
+ },
+ {
+  "stage_key": 3403179923,
+  "chara": 6,
+  "name": "W2: Fluff-Puff Peaks Flying Battleship - Toadette Block"
+ },
+ {
+  "stage_key": 3425876239,
+  "chara": 3,
+  "name": "PI: Downpour Uproar - Daisy Block"
+ },
+ {
+  "stage_key": 3425876239,
+  "chara": 10,
+  "name": "PI: Downpour Uproar - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 3589705147,
+  "chara": 2,
+  "name": "W4: The Desert Mystery - Peach Block"
+ },
+ {
+  "stage_key": 3589705147,
+  "chara": 5,
+  "name": "W4: The Desert Mystery - Blue Toad Block"
+ },
+ {
+  "stage_key": 3610287650,
+  "chara": 1,
+  "name": "W4: Armads on the Roll - Luigi Block"
+ },
+ {
+  "stage_key": 3610287650,
+  "chara": 4,
+  "name": "W4: Armads on the Roll - Yellow Toad Block"
+ },
+ {
+  "stage_key": 3712423404,
+  "chara": 0,
+  "name": "W2: Countdown to Drop Down - Mario Block"
+ },
+ {
+  "stage_key": 3712423404,
+  "chara": 4,
+  "name": "W2: Countdown to Drop Down - Yellow Toad Block"
+ },
+ {
+  "stage_key": 3734960019,
+  "chara": 1,
+  "name": "W3: The Anglefish Trial - Luigi Block"
+ },
+ {
+  "stage_key": 3734960019,
+  "chara": 11,
+  "name": "W3: The Anglefish Trial - Nabbit Block"
+ },
+ {
+  "stage_key": 3756278297,
+  "chara": 1,
+  "name": "Special: Way of the Goomba - Luigi Block"
+ },
+ {
+  "stage_key": 3756278297,
+  "chara": 8,
+  "name": "Special: Way of the Goomba - Red Yoshi Block"
+ },
+ {
+  "stage_key": 3785990522,
+  "chara": 3,
+  "name": "Special: Pole Block Allure - Daisy Block"
+ },
+ {
+  "stage_key": 3785990522,
+  "chara": 11,
+  "name": "Special: Pole Block Allure - Nabbit Block"
+ },
+ {
+  "stage_key": 3824014817,
+  "chara": 0,
+  "name": "W1: Sproings in the Twilight Forest - Mario Block"
+ },
+ {
+  "stage_key": 3824014817,
+  "chara": 6,
+  "name": "W1: Sproings in the Twilight Forest - Toadette Block"
+ },
+ {
+  "stage_key": 3875699630,
+  "chara": 5,
+  "name": "W3: The Final Trial - Blue Toad Block"
+ },
+ {
+  "stage_key": 3875699630,
+  "chara": 10,
+  "name": "W3: The Final Trial - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 3978592604,
+  "chara": 1,
+  "name": "W2: Pokipede Pass - Luigi Block"
+ },
+ {
+  "stage_key": 3978592604,
+  "chara": 10,
+  "name": "W2: Pokipede Pass - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 4005216533,
+  "chara": 8,
+  "name": "W6: Hot-Hot Hot! - Red Yoshi Block"
+ },
+ {
+  "stage_key": 4005216533,
+  "chara": 10,
+  "name": "W6: Hot-Hot Hot! - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 4024079209,
+  "chara": 5,
+  "name": "W4: Pipe Park - Blue Toad Block"
+ },
+ {
+  "stage_key": 4032045072,
+  "chara": 4,
+  "name": "Special: Dangerous Donut Ride - Yellow Toad Block"
+ },
+ {
+  "stage_key": 4032045072,
+  "chara": 7,
+  "name": "Special: Dangerous Donut Ride - Yoshi Block"
+ },
+ {
+  "stage_key": 4035018554,
+  "chara": 7,
+  "name": "W6: Where the Rrrumbas Rule - Yoshi Block"
+ },
+ {
+  "stage_key": 4035018554,
+  "chara": 11,
+  "name": "W6: Where the Rrrumbas Rule - Nabbit Block"
+ },
+ {
+  "stage_key": 4224756375,
+  "chara": 3,
+  "name": "W1: Scram, Skedaddlers! - Daisy Block"
+ },
+ {
+  "stage_key": 4224756375,
+  "chara": 11,
+  "name": "W1: Scram, Skedaddlers! - Nabbit Block"
+ },
+ {
+  "stage_key": 4225195192,
+  "chara": 2,
+  "name": "W1: Here Come the Hoppos - Peach Block"
+ },
+ {
+  "stage_key": 4225195192,
+  "chara": 10,
+  "name": "W1: Here Come the Hoppos - Light-Blue Yoshi Block"
+ },
+ {
+  "stage_key": 4268769213,
+  "chara": 4,
+  "name": "W1: Bulrush Coming Through! - Yellow Toad Block"
+ },
+ {
+  "stage_key": 4268769213,
+  "chara": 7,
+  "name": "W1: Bulrush Coming Through! - Yoshi Block"
+ }
+]

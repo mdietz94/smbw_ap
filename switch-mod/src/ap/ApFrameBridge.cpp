@@ -77,6 +77,29 @@ bool enqueueBadgeAcquired(std::uint32_t internal_id) {
     return ok;
 }
 
+bool enqueueCharBlockHit(std::uint32_t player_slot, std::int32_t chara,
+                         float x, float y, float z) {
+    static std::atomic<std::uint32_t> s_cb_seq{0};
+    const std::uint32_t seq = s_cb_seq.fetch_add(1, std::memory_order_relaxed);
+    OutboundEvent ev;
+    ev.kind = OutboundKind::CharBlockHit;
+    WireCharBlockHit cb;
+    cb.player_slot = player_slot;
+    cb.chara = chara;
+    cb.pos[0] = x;
+    cb.pos[1] = y;
+    cb.pos[2] = z;
+    cb.seq = seq;
+    ev.char_block_hit = cb;
+    bool ok = outboundRing().push(ev);
+    if (!ok) {
+        SMBWAP_LOG_WARN(
+            "[ring] outbound dropped (full): char_block_hit slot=%u chara=%d seq=%u",
+            player_slot, chara, seq);
+    }
+    return ok;
+}
+
 bool enqueuePlayReport(const char* room,
                        const void* payload, std::size_t payload_len) {
     OutboundEvent ev;

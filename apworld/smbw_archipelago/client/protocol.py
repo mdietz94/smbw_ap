@@ -69,6 +69,35 @@ class BadgeAcquiredMsg:
 
 
 @dataclass(frozen=True)
+class CharBlockHitMsg:
+    """A player-specific ``ObjectBlockClarityCharacter`` block was bumped
+    on the Switch (character-block sanity).
+
+    Emitted by the GetDamageReactionPlayerNo hook (NSO +0x168d428) every
+    time that AI-node body resolves the damage invoker to a local player
+    slot 0-3.  The node is SHARED by many block AIs (regular ? blocks
+    etc.), so this event over-fires: the bridge filters it down to a real
+    AP check by intersecting ``(current course, hitting character)``
+    against the offline char-block table -- only (course, charaType) pairs
+    that actually have a placed character block resolve to a location.
+
+    ``player_slot`` is the local-player index (0-3) the node body returned;
+    ``pos`` is the block world position when the Switch could read it
+    (``[0,0,0]`` in v1 -- the shared node body doesn't expose the owning
+    actor's transform cleanly, so position is reserved for the future
+    multi-block-per-course disambiguation pass).  ``chara`` is the hitting
+    player's PlayerCharaType (0-11) if the Switch resolved it, else -1 (the
+    bridge then falls back to the current course's character from the
+    ``chara_type_array`` PlayReport field).
+    """
+
+    player_slot: int
+    chara: int = -1
+    pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    seq: int = 0
+
+
+@dataclass(frozen=True)
 class PlayReportMsg:
     """A PlayReport was committed to the prepo IPC layer on the Switch.
 
@@ -113,6 +142,17 @@ class CheckKind(str, Enum):
                                          # but not checks) — stage_key holds
                                          # the badge bit position
                                          # (== SMBW internal_id).
+    CHARACTER_BLOCK = "character_block"  # ~154 AP checks (one per
+                                         # (course, charaType) hidden
+                                         # ObjectBlockClarityCharacter
+                                         # block).  stage_key holds the
+                                         # course stage_key; the character
+                                         # discriminator lives in
+                                         # CheckEmitted.metadata["chara"]
+                                         # (0-11) and is the per-course
+                                         # dedup sub_key.  Gated on the
+                                         # character_block_sanity slot_data
+                                         # toggle.
     SHOP_SEED = "shop_seed"              # ≤18 AP checks (Poplin Shops +
                                          # Poplin Houses).  stage_key encodes
                                          # the shop identity as
