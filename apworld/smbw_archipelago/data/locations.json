@@ -31,7 +31,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "({OptOne(|Y Button|)} AND |Elephant Fruit|) OR {OptOne(|ZL Button/Down|)}"
+    "requires": "|Elephant Fruit|"
   },
   {
     "name": "W1: Welcome to the Flower Kingdom! - 10 Coin #2",
@@ -694,7 +694,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": "|Elephant Fruit|"
   },
   {
     "name": "W1: Sproings in the Twilight Forest - 10 Coin #2",
@@ -1820,7 +1820,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "(|Elephant Fruit| OR |Bubble Flower|) AND {OptOne(|Y Button|)}"
+    "requires": []
   },
   {
     "name": "W2: Cruising with Linking Lifts - 10 Coin #2",
@@ -1829,7 +1829,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": []
+    "requires": "(|Elephant Fruit| OR |Bubble Flower|) AND {OptOne(|Y Button|)}"
   },
   {
     "name": "W2: Cruising with Linking Lifts - 10 Coin #3",
@@ -2136,7 +2136,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": []
+    "requires": "|Elephant Fruit|"
   },
   {
     "name": "W3: The Anglefish Trial - 10 Coin #2",
@@ -2746,7 +2746,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Y Button|)} OR |Drill Mushroom|"
+    "requires": "|Drill Mushroom|"
   },
   {
     "name": "W4: Rolling-Ball Hall - 10 Coin #3",
