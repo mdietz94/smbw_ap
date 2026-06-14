@@ -31,7 +31,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Elephant Fruit|"
+    "requires": []
   },
   {
     "name": "W1: Welcome to the Flower Kingdom! - 10 Coin #2",
@@ -2154,7 +2154,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Y Button|)} AND |Elephant Fruit|"
+    "requires": "{OptOne(|Y Button|)}"
   },
   {
     "name": "W3: An Empty Park? - Wonder Seed",
@@ -2746,7 +2746,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Drill Mushroom|"
+    "requires": "|Elephant Fruit|"
   },
   {
     "name": "W4: Rolling-Ball Hall - 10 Coin #3",
