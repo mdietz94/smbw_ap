@@ -94,6 +94,53 @@ class SMBWCommandProcessor(ClientCommandProcessor):
             self.output(f"ERROR: could not launch setup wizard: {type(e).__name__}: {e}")
         return True
 
+    def _cmd_setup_ip(self, addr: str = "") -> bool:
+        """Launch the setup wizard pre-seeded with a bridge IP.
+
+        Same wizard as ``/setup``, but seeds the Switch bridge-discovery
+        ``/24`` sweep with ``<addr>`` (any address on your play network's
+        subnet) so the mod can find this PC when you're playing on a
+        network other than ``192.168.1.x``. The address only needs to be
+        SOME IP on the target ``/24`` — it is a sweep seed, not a
+        connection target. The wizard's "Bridge IP" field is prefilled
+        with it; just click Run.
+
+        Usage: ``/setup_ip 10.0.0.5``  (omit the arg to clear it back to
+        the compiled-in default).
+        """
+        addr = (addr or "").strip()
+        if addr:
+            try:
+                from .net_util import is_plausible_ipv4
+            except ImportError:
+                from smbw_archipelago.client.net_util import is_plausible_ipv4  # type: ignore
+            if not is_plausible_ipv4(addr):
+                self.output(
+                    f"ERROR: {addr!r} is not a valid IPv4 address "
+                    f"(e.g. /setup_ip 10.0.0.5)")
+                return True
+        try:
+            from worlds.LauncherComponents import launch_subprocess
+            try:
+                from .. import _run_setup_wizard  # type: ignore[attr-defined]
+            except ImportError:
+                from smbw_archipelago import _run_setup_wizard  # type: ignore
+            # The wizard reads this env var to prefill its Bridge IP field.
+            # The spawned subprocess inherits our environment. Empty string
+            # clears any prior seed.
+            os.environ["SMBW_SETUP_BRIDGE_HOST"] = addr
+            launch_subprocess(_run_setup_wizard, name="SMBW Setup Wizard")
+            if addr:
+                self.output(
+                    f"-> launching setup wizard with bridge IP {addr} "
+                    f"(seeds the {addr.rsplit('.', 1)[0]}.0/24 sweep)")
+            else:
+                self.output(
+                    "-> launching setup wizard (bridge IP cleared to default)")
+        except Exception as e:
+            self.output(f"ERROR: could not launch setup wizard: {type(e).__name__}: {e}")
+        return True
+
     def _cmd_smbw_status(self) -> bool:
         """Print bridge + Switch + AP connection summary."""
         ctx = self.ctx
