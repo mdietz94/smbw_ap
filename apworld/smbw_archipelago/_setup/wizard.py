@@ -44,7 +44,7 @@ from .deploy import (
 from .wizard_cli import (
     ALL_PHASES, PipelineOptions, run_pipeline,
 )
-from ..client.net_util import is_plausible_ipv4
+from ..client.net_util import is_plausible_ipv4, lan_subnet_seed
 
 log = logging.getLogger(__name__)
 
@@ -215,13 +215,18 @@ def run_setup_wizard() -> bool:
             return str(sds[0]) if sds else ""
         return saved_state.get("deploy_path", "") if target == "custom" else ""
 
-    # Initial bridge-discovery sweep seed. Priority: the env var the
-    # `/setup_ip <addr>` client command exports (so that path prefills the
-    # field), then setup_state.json from a prior run, else blank (= use the
-    # compiled-in 192.168.1.x default). Blank is the common case for
-    # Ryujinx-on-same-host, which resolves via loopback regardless.
+    # Initial bridge-discovery sweep seed. Priority:
+    #   1. the env var `/setup_ip <addr>` exports (explicit override),
+    #   2. this machine's own LAN IP — the smart default: the Switch then
+    #      sweeps the same /24 the PC client lives on, so a player on any
+    #      subnet is found with no typing,
+    #   3. setup_state.json from a prior run (covers the case where LAN
+    #      detection yields only loopback),
+    #   4. blank (= the compiled-in 192.168.1.x default).
+    # Ryujinx-on-same-host still resolves via loopback regardless of this.
     initial_bridge_host = (
         os.environ.get("SMBW_SETUP_BRIDGE_HOST", "").strip()
+        or lan_subnet_seed()
         or saved_state.get("bridge_host", "")
     )
 
@@ -367,20 +372,18 @@ def run_setup_wizard() -> bool:
                 halign="left", valign="top", font_size="11sp",
             ))
 
-            # Bridge IP (subnet seed). Optional: blank means the build uses
-            # the compiled-in 192.168.1.x default, which is correct for
-            # Ryujinx-on-same-host (loopback) and any 192.168.1.0/24 LAN.
-            # Fill it with ANY address on your play network's /24 when that
-            # network is on a different subnet (e.g. 10.0.0.x) so the
-            # Switch sweeps the right /24 to find this PC.
+            # Bridge IP (subnet seed). Auto-filled with this PC's LAN IP so
+            # the Switch sweeps the same /24 the client lives on. Edit it if
+            # you'll play on a different network than the one you're setting
+            # up from; clear it to fall back to the compiled-in default.
             bridge_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=36, spacing=8)
             bridge_row.add_widget(Label(
-                text="Bridge IP (opt):", halign="left", valign="middle",
+                text="Bridge IP:", halign="left", valign="middle",
                 size_hint_x=None, width=130,
             ))
             self.bridge_host_input = TextInput(
                 text=state["bridge_host"],
-                hint_text="blank = 192.168.1.x default; else any IP on your play /24",
+                hint_text="auto-detected from this PC's LAN IP; any IP on your play /24",
                 multiline=False,
                 size_hint_x=1,
             )

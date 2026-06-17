@@ -229,6 +229,18 @@ def test_cli_main_rejects_bad_bridge_host() -> None:
     assert rc == 2
 
 
+def test_cli_main_bridge_host_auto_resolves_lan_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--bridge-host auto` resolves to this machine's LAN IP."""
+    from ...client import net_util
+    monkeypatch.setattr(net_util, "detect_lan_ip", lambda: "192.168.5.9")
+    seen: list[W.PipelineOptions] = []
+    monkeypatch.setattr(W, "run_pipeline", lambda opts, callback=None: (
+        seen.append(opts) or W.PipelineOutcome(ok=True, phases_run=list(opts.phases))))
+    rc = W.main(["--phases", "build", "--bridge-host", "auto"])
+    assert rc == 0
+    assert seen[0].bridge_host == "192.168.5.9"
+
+
 def test_run_pipeline_threads_bridge_host_into_build(monkeypatch: pytest.MonkeyPatch) -> None:
     """PipelineOptions.bridge_host must reach run_build()."""
     monkeypatch.setattr(W, "run_probe", lambda **_kw: W.ProbeOutcome(

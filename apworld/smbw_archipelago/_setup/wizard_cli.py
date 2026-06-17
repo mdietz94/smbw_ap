@@ -628,8 +628,9 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Seed the Switch bridge-discovery /24 sweep with this "
                         "address (forwarded as -DBRIDGE_HOST_STRING). Use when "
                         "playing on a subnet other than 192.168.1.x; the value "
-                        "only needs to be SOME address on the target /24. "
-                        "Forces a reconfigure.")
+                        "only needs to be SOME address on the target /24. Pass "
+                        "'auto' to use this machine's own LAN IP. Reconfigures "
+                        "when the seed differs from the cached one.")
     return p
 
 
@@ -648,13 +649,22 @@ def main(argv: list[str] | None = None) -> int:
     bridge_host = args.bridge_host.strip() if args.bridge_host else None
     if bridge_host:
         try:
-            from ..client.net_util import is_plausible_ipv4
+            from ..client.net_util import is_plausible_ipv4, lan_subnet_seed
         except ImportError:  # apworld loaded as a top-level package
-            from smbw_archipelago.client.net_util import is_plausible_ipv4
-        if not is_plausible_ipv4(bridge_host):
+            from smbw_archipelago.client.net_util import (  # type: ignore
+                is_plausible_ipv4, lan_subnet_seed,
+            )
+        if bridge_host.lower() == "auto":
+            bridge_host = lan_subnet_seed() or None
+            if bridge_host is None:
+                sys.stderr.write(
+                    "--bridge-host auto: no routable LAN IP detected "
+                    "(only loopback); falling back to the compiled-in default\n"
+                )
+        elif not is_plausible_ipv4(bridge_host):
             sys.stderr.write(
                 f"--bridge-host {bridge_host!r} is not a valid dotted-quad "
-                f"IPv4 address (e.g. 10.0.0.5)\n"
+                f"IPv4 address (e.g. 10.0.0.5) or 'auto'\n"
             )
             return 2
 

@@ -731,6 +731,28 @@ def cmake_build(
     )
 
 
+def cached_bridge_host(repo: Path | None = None) -> str | None:
+    """Read the ``BRIDGE_HOST_STRING`` value already baked into
+    ``build/CMakeCache.txt``, or None if absent/unreadable.
+
+    Lets :func:`run_build_phase` tell "the seed changed, reconfigure" from
+    "same seed, keep the fast rebuild path" — so a normal `/setup` that
+    always carries the auto-detected LAN seed doesn't force a redundant
+    reconfigure every run.
+    """
+    cache = build_dir(repo) / "CMakeCache.txt"
+    try:
+        text = cache.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        # CMakeCache.txt format: `BRIDGE_HOST_STRING:STRING=<value>`.
+        if line.startswith("BRIDGE_HOST_STRING:"):
+            _, _, val = line.partition("=")
+            return val.strip()
+    return None
+
+
 def run_build_phase(
     *,
     repo: Path | None = None,
@@ -744,10 +766,12 @@ def run_build_phase(
     `skip_configure_if_ready=True` (the dev re-build case). Always runs
     cmake_build.
 
-    When `bridge_host` is set the configure step is NEVER skipped — the
-    `-DBRIDGE_HOST_STRING` override has to reach cmake to land in the
-    cache (and re-trigger compilation of the discovery TU), so an
-    existing CMakeCache.txt must not short-circuit it.
+    When `bridge_host` is set the configure step still runs unless the
+    cache already carries that exact seed — the `-DBRIDGE_HOST_STRING`
+    override has to reach cmake to land in the cache (and re-trigger
+    compilation of the discovery TU). Matching the cached value lets a
+    normal `/setup` (which now always passes the auto-detected LAN seed)
+    keep the fast rebuild path when the seed hasn't changed.
 
     Verifies both artifacts exist + are non-empty after build; treats a
     successful build with missing artifacts as a failure so the wizard
@@ -758,8 +782,15 @@ def run_build_phase(
     step_results: dict[str, BuildResult] = {}
 
     cache = bd / "CMakeCache.txt"
-    skip_configure = skip_configure_if_ready and cache.is_file() and not bridge_host
-    if not skip_configure:
+    if bridge_host:
+        # Reconfigure unless the cache already holds this exact seed.
+        need_configure = (
+            not skip_configure_if_ready
+            or cached_bridge_host(repo) != bridge_host
+        )
+    else:
+        need_configure = not (skip_configure_if_ready and cache.is_file())
+    if need_configure:
         cfg = cmake_configure(repo=repo, on_line=on_line, bridge_host=bridge_host)
         step_results["configure"] = cfg
         if not cfg.ok:

@@ -173,6 +173,72 @@ def test_run_build_phase_forces_configure_when_bridge_host_set(
     assert configure_calls[0].get("bridge_host") == "10.0.0.5"
 
 
+def test_run_build_phase_skips_configure_when_cached_seed_matches(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A normal /setup always passes a seed; when the cache already holds
+    that exact seed, configure should still be skipped (fast rebuild)."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    (bd / "CMakeCache.txt").write_text(
+        "BRIDGE_HOST_STRING:STRING=192.168.7.42\n", encoding="utf-8")
+
+    configure_calls: list[Any] = []
+    monkeypatch.setattr(B, "cmake_configure",
+                        lambda **kw: configure_calls.append(kw) or B.BuildResult(True, 0, ""))
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    outcome = B.run_build_phase(skip_configure_if_ready=True, bridge_host="192.168.7.42")
+    assert outcome.ok is True
+    assert configure_calls == []   # same seed → no reconfigure
+
+
+def test_run_build_phase_reconfigures_when_cached_seed_differs(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """When the requested seed differs from the cached one, configure
+    must run so the new -DBRIDGE_HOST_STRING lands."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    (bd / "CMakeCache.txt").write_text(
+        "BRIDGE_HOST_STRING:STRING=192.168.1.1\n", encoding="utf-8")
+
+    configure_calls: list[Any] = []
+    monkeypatch.setattr(B, "cmake_configure",
+                        lambda **kw: configure_calls.append(kw) or B.BuildResult(True, 0, ""))
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    outcome = B.run_build_phase(skip_configure_if_ready=True, bridge_host="10.0.0.5")
+    assert outcome.ok is True
+    assert len(configure_calls) == 1
+    assert configure_calls[0].get("bridge_host") == "10.0.0.5"
+
+
+def test_cached_bridge_host_reads_cmakecache(tmp_path: Path,
+                                             monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    assert B.cached_bridge_host() is None   # no cache yet
+    (bd / "CMakeCache.txt").write_text(
+        "SOME_OTHER:STRING=x\nBRIDGE_HOST_STRING:STRING=10.1.2.3\n", encoding="utf-8")
+    assert B.cached_bridge_host() == "10.1.2.3"
+
+
 def test_cmake_configure_forwards_bridge_host_define(
         monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """cmake_configure must add -DBRIDGE_HOST_STRING=<addr> to the cmake
