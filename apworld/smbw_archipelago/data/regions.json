@@ -23,7 +23,7 @@
     "connects_to": [
       "W1 Post-Jet Run"
     ],
-    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND (|Elephant Fruit| OR |Drill Mushroom|) AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   "W1 Post-Jet Run": {
     "connects_to": [],
