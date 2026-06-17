@@ -637,11 +637,20 @@ def cmake_configure(
     *,
     repo: Path | None = None,
     on_line: ProgressFn | None = None,
+    bridge_host: str | None = None,
 ) -> BuildResult:
     """`cmake -S switch-mod -B switch-mod/build -G Ninja`
 
     Resolved cmake binary comes from prereqs (rejects msys2's cmake).
     Build dir is created if missing.
+
+    `bridge_host`, when given, is forwarded as
+    `-DBRIDGE_HOST_STRING="<addr>"`. That seeds the Switch's
+    bridge-discovery /24 sweep (src/ap/ApDiscovery.cpp) so a player on a
+    subnet other than 192.168.1.0/24 can still be found. The value only
+    needs to be SOME address on the target /24. CMake caches the define,
+    so a later configure without `bridge_host` keeps the last value;
+    callers that want a guaranteed-fresh value force a reconfigure.
 
     Note: no `-DCMAKE_TOOLCHAIN_FILE` arg. [switch-mod/CMakeLists.txt]
     sets the toolchain itself via early
@@ -679,6 +688,8 @@ def cmake_configure(
         "-B", str(bd),
         "-G", "Ninja",
     ]
+    if bridge_host:
+        cmd.append(f"-DBRIDGE_HOST_STRING={bridge_host}")
     env = _compose_build_env()
     return _stream_subprocess(
         cmd,
@@ -725,12 +736,18 @@ def run_build_phase(
     repo: Path | None = None,
     on_line: ProgressFn | None = None,
     skip_configure_if_ready: bool = True,
+    bridge_host: str | None = None,
 ) -> CMakeOutcome:
     """End-to-end build orchestrator.
 
     Skips cmake_configure if `build/CMakeCache.txt` already exists and
     `skip_configure_if_ready=True` (the dev re-build case). Always runs
     cmake_build.
+
+    When `bridge_host` is set the configure step is NEVER skipped — the
+    `-DBRIDGE_HOST_STRING` override has to reach cmake to land in the
+    cache (and re-trigger compilation of the discovery TU), so an
+    existing CMakeCache.txt must not short-circuit it.
 
     Verifies both artifacts exist + are non-empty after build; treats a
     successful build with missing artifacts as a failure so the wizard
@@ -741,8 +758,9 @@ def run_build_phase(
     step_results: dict[str, BuildResult] = {}
 
     cache = bd / "CMakeCache.txt"
-    if not (skip_configure_if_ready and cache.is_file()):
-        cfg = cmake_configure(repo=repo, on_line=on_line)
+    skip_configure = skip_configure_if_ready and cache.is_file() and not bridge_host
+    if not skip_configure:
+        cfg = cmake_configure(repo=repo, on_line=on_line, bridge_host=bridge_host)
         step_results["configure"] = cfg
         if not cfg.ok:
             return CMakeOutcome(ok=False, step_results=step_results)

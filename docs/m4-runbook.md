@@ -49,16 +49,23 @@ Copy-Item "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build\subsdk
 ```
 
 If discovery doesn't find the bridge automatically (Switch on a different
-subnet than `192.168.1.0/24`), reconfigure with an explicit seed:
+subnet than `192.168.1.0/24`), rebuild with an explicit seed. The seed only
+needs to be *some* address on the right /24. Easiest paths:
+
+- **In SMBW Client:** `/setup_ip 192.168.7.42` — opens the setup wizard with
+  the "Bridge IP" field prefilled; click Run. (Plain `/setup` exposes the same
+  field, blank by default.)
+- **Headless:** `python -m apworld.smbw_archipelago._setup.wizard_cli \
+  --phases build,deploy --deploy-target ryujinx --bridge-host 192.168.7.42`
+
+Both forward `-DBRIDGE_HOST_STRING` to cmake and force a reconfigure. The raw
+cmake form still works too:
 
 ```pwsh
 & "C:\Program Files\CMake\bin\cmake.exe" `
     -S ... -B ... -G Ninja `
-    -DCMAKE_TOOLCHAIN_FILE=... `
     -DBRIDGE_HOST_STRING="192.168.7.42"
 ```
-
-The seed only needs to be *some* address on the right /24.
 
 ## Start the AP server
 

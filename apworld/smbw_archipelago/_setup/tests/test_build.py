@@ -141,6 +141,67 @@ def test_run_build_phase_runs_configure_when_cache_missing(monkeypatch: pytest.M
     assert saw_configure == [True]
 
 
+def test_run_build_phase_forces_configure_when_bridge_host_set(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A bridge_host override must reach cmake even when CMakeCache.txt
+    exists — otherwise the -DBRIDGE_HOST_STRING never lands. So configure
+    is forced, and bridge_host is threaded into it."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    (bd / "CMakeCache.txt").write_text("", encoding="utf-8")  # cache present
+
+    configure_calls: list[Any] = []
+
+    def fake_configure(**kw: Any) -> B.BuildResult:
+        configure_calls.append(kw)
+        return B.BuildResult(True, 0, "")
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "cmake_configure", fake_configure)
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    outcome = B.run_build_phase(skip_configure_if_ready=True, bridge_host="10.0.0.5")
+    assert outcome.ok is True
+    # Configure ran despite the cache, and carried the override.
+    assert len(configure_calls) == 1
+    assert configure_calls[0].get("bridge_host") == "10.0.0.5"
+
+
+def test_cmake_configure_forwards_bridge_host_define(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """cmake_configure must add -DBRIDGE_HOST_STRING=<addr> to the cmake
+    command line when bridge_host is given (and omit it otherwise)."""
+    src = tmp_path / "switch-mod"
+    (src / "sys" / "cmake").mkdir(parents=True)
+    (src / "sys" / "cmake" / "module.cmake").write_text("", encoding="utf-8")
+    monkeypatch.setattr(B, "is_dev_clone", lambda: True)
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(B, "resolved_cmake", lambda: "cmake")
+    monkeypatch.setattr(B, "_apply_hakkun_patches", lambda *a, **k: None)
+    monkeypatch.setattr(B, "_compose_build_env", lambda: {})
+
+    captured: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_kw: Any) -> B.BuildResult:
+        captured.append(cmd)
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "_stream_subprocess", fake_stream)
+
+    B.cmake_configure(bridge_host="192.168.7.42")
+    assert any(a == "-DBRIDGE_HOST_STRING=192.168.7.42" for a in captured[0])
+
+    captured.clear()
+    B.cmake_configure()  # no override
+    assert not any(a.startswith("-DBRIDGE_HOST_STRING") for a in captured[0])
+
+
 def test_run_build_phase_fails_on_missing_artifacts(monkeypatch: pytest.MonkeyPatch,
                                                      tmp_path: Path) -> None:
     """Build subprocess exiting 0 but no artifacts on disk should be

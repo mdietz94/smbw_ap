@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 import threading
 from pathlib import Path
@@ -43,6 +44,7 @@ from .deploy import (
 from .wizard_cli import (
     ALL_PHASES, PipelineOptions, run_pipeline,
 )
+from ..client.net_util import is_plausible_ipv4
 
 log = logging.getLogger(__name__)
 
@@ -213,6 +215,16 @@ def run_setup_wizard() -> bool:
             return str(sds[0]) if sds else ""
         return saved_state.get("deploy_path", "") if target == "custom" else ""
 
+    # Initial bridge-discovery sweep seed. Priority: the env var the
+    # `/setup_ip <addr>` client command exports (so that path prefills the
+    # field), then setup_state.json from a prior run, else blank (= use the
+    # compiled-in 192.168.1.x default). Blank is the common case for
+    # Ryujinx-on-same-host, which resolves via loopback regardless.
+    initial_bridge_host = (
+        os.environ.get("SMBW_SETUP_BRIDGE_HOST", "").strip()
+        or saved_state.get("bridge_host", "")
+    )
+
     # Shared state between the UI and the worker thread.
     state: dict[str, Any] = {
         "running": False,
@@ -220,6 +232,7 @@ def run_setup_wizard() -> bool:
         "auto_install": True,
         "deploy_target": initial_target,
         "deploy_path": _default_deploy_path(initial_target),
+        "bridge_host": initial_bridge_host,
     }
 
     class WizardApp(App):
@@ -243,7 +256,7 @@ def run_setup_wizard() -> bool:
 
             # --- Options
             opts = BoxLayout(
-                orientation="vertical", size_hint_y=None, height=140, spacing=4,
+                orientation="vertical", size_hint_y=None, height=180, spacing=4,
             )
 
             ai_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=36)
@@ -354,6 +367,28 @@ def run_setup_wizard() -> bool:
                 halign="left", valign="top", font_size="11sp",
             ))
 
+            # Bridge IP (subnet seed). Optional: blank means the build uses
+            # the compiled-in 192.168.1.x default, which is correct for
+            # Ryujinx-on-same-host (loopback) and any 192.168.1.0/24 LAN.
+            # Fill it with ANY address on your play network's /24 when that
+            # network is on a different subnet (e.g. 10.0.0.x) so the
+            # Switch sweeps the right /24 to find this PC.
+            bridge_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=36, spacing=8)
+            bridge_row.add_widget(Label(
+                text="Bridge IP (opt):", halign="left", valign="middle",
+                size_hint_x=None, width=130,
+            ))
+            self.bridge_host_input = TextInput(
+                text=state["bridge_host"],
+                hint_text="blank = 192.168.1.x default; else any IP on your play /24",
+                multiline=False,
+                size_hint_x=1,
+            )
+            self.bridge_host_input.bind(
+                text=lambda _i, v: state.update(bridge_host=v))
+            bridge_row.add_widget(self.bridge_host_input)
+            opts.add_widget(bridge_row)
+
             root.add_widget(opts)
 
             # --- Log pane
@@ -421,11 +456,25 @@ def run_setup_wizard() -> bool:
                     auto = detect_ryujinx_path()
                     if auto is not None and Path(str(auto)) == deploy_path:
                         deploy_path = None
+
+                # Bridge IP is optional. Blank → leave the compiled-in
+                # default. A non-blank value is validated here so a typo
+                # surfaces in the log rather than silently producing a
+                # build that sweeps the wrong /24.
+                bridge_host = (state.get("bridge_host") or "").strip()
+                if bridge_host and not is_plausible_ipv4(bridge_host):
+                    self._log(
+                        f"[wizard] Bridge IP {bridge_host!r} is not a valid "
+                        f"IPv4 address (e.g. 10.0.0.5); ignoring it and using "
+                        f"the compiled-in default")
+                    bridge_host = ""
+
                 opts = PipelineOptions(
                     phases=ALL_PHASES,
                     install_missing=state["auto_install"],
                     deploy_target=target,
                     deploy_path=deploy_path,
+                    bridge_host=bridge_host or None,
                 )
 
                 def cb(payload: dict[str, Any]) -> None:
@@ -444,6 +493,7 @@ def run_setup_wizard() -> bool:
                     **saved_state,
                     "deploy_target": opts.deploy_target,
                     "deploy_path": path_str,
+                    "bridge_host": bridge_host,
                     "last_ok": outcome.ok,
                 })
             except Exception as e:  # pragma: no cover — defensive

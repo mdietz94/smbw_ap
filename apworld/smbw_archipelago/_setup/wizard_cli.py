@@ -294,6 +294,7 @@ def run_junction(
 def run_build(
     *,
     skip_configure_if_ready: bool = True,
+    bridge_host: str | None = None,
     callback: EventCallback | None = None,
     t0: float | None = None,
 ) -> BuildOutcomeWrapper:
@@ -304,6 +305,10 @@ def run_build(
     run earlier in the same pipeline the caches are already populated
     and the warm is a fast no-op; when `--phases build` is run alone
     the warm makes sure the build env is properly composed.
+
+    `bridge_host`, when set, forwards `-DBRIDGE_HOST_STRING=<addr>` to
+    cmake (and forces a reconfigure) so the Switch bridge-discovery sweep
+    seeds the right /24 for play on a non-192.168.1.x network.
     """
     from .build import run_build_phase
     from .prereqs import (
@@ -324,10 +329,16 @@ def run_build(
                    "subprocess gets the wizard-verified toolchain pinned")
         check_all()
 
+    if bridge_host:
+        _emit(callback, "log", phase=PHASE_BUILD, t0=anchor,
+              line=f"[wizard_cli] bridge-discovery sweep seed set to "
+                   f"{bridge_host} (forcing reconfigure)")
+
     outcome = run_build_phase(
         on_line=lambda line: _emit(callback, "log",
                                    phase=PHASE_BUILD, t0=anchor, line=line),
         skip_configure_if_ready=skip_configure_if_ready,
+        bridge_host=bridge_host,
     )
     for step_name, step_result in outcome.step_results.items():
         _emit(callback, "build_step", t0=anchor, step=step_name,
@@ -434,6 +445,10 @@ class PipelineOptions:
     install_missing: bool = False
     install_preflight: bool = True
     skip_configure_if_ready: bool = True
+    # Optional bridge-discovery sweep seed. When set, the build phase
+    # forwards `-DBRIDGE_HOST_STRING=<addr>` so the Switch sweeps the
+    # right /24 on a non-192.168.1.x play network.
+    bridge_host: str | None = None
 
 
 def run_pipeline(
@@ -498,6 +513,7 @@ def run_pipeline(
     if PHASE_BUILD in opts.phases:
         bd = run_build(
             skip_configure_if_ready=opts.skip_configure_if_ready,
+            bridge_host=opts.bridge_host,
             callback=callback, t0=t0,
         )
         outcome.build = bd
@@ -608,6 +624,12 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Skip the internet + winget preflight (testing only).")
     p.add_argument("--force-configure", action="store_true",
                    help="Re-run cmake configure even if the build dir is ready.")
+    p.add_argument("--bridge-host", default=None, metavar="IPV4",
+                   help="Seed the Switch bridge-discovery /24 sweep with this "
+                        "address (forwarded as -DBRIDGE_HOST_STRING). Use when "
+                        "playing on a subnet other than 192.168.1.x; the value "
+                        "only needs to be SOME address on the target /24. "
+                        "Forces a reconfigure.")
     return p
 
 
@@ -623,6 +645,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
+    bridge_host = args.bridge_host.strip() if args.bridge_host else None
+    if bridge_host:
+        try:
+            from ..client.net_util import is_plausible_ipv4
+        except ImportError:  # apworld loaded as a top-level package
+            from smbw_archipelago.client.net_util import is_plausible_ipv4
+        if not is_plausible_ipv4(bridge_host):
+            sys.stderr.write(
+                f"--bridge-host {bridge_host!r} is not a valid dotted-quad "
+                f"IPv4 address (e.g. 10.0.0.5)\n"
+            )
+            return 2
+
     opts = PipelineOptions(
         phases=requested,
         deploy_target=args.deploy_target,
@@ -630,6 +665,7 @@ def main(argv: list[str] | None = None) -> int:
         install_missing=args.auto_install,
         install_preflight=not args.no_install_preflight,
         skip_configure_if_ready=not args.force_configure,
+        bridge_host=bridge_host,
     )
     callback = (
         make_json_events_callback() if args.json_events
