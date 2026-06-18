@@ -157,37 +157,55 @@ def test_progression_wall_badges_gate_regions():
 
 
 def test_petal_isles_depth_requires_world_completion():
-    """Pin the world-completion gates on the deeper Petal Isles regions.
+    """Pin the world-progress gates on the deeper Petal Isles regions.
 
     Petal Isles is the hub; unlike a numbered world it does NOT open by
-    collecting its own Wonder Seeds -- its islands unlock as you clear world
-    palaces (Royal Seeds).  Without these gates the whole PI-seed-gated spur
+    collecting its own Wonder Seeds -- its islands unlock as you clear the prior
+    world's final palace level.  Without these gates the whole PI-seed-gated spur
     (PI 5 Seeds + PI 8 Seeds, ~58 checks) is reachable with zero World 2
     progress, because the spur branches off the pre-W2 hub node and was gated
     only on |Petal Isles Wonder Seed:N|.
 
+    The gate is the *condition to play that world's final level*, NOT the world's
+    Royal Seed: Royal Seeds are AP pool items placed anywhere, so |W2 Royal Seed|
+    only means "AP granted it", not "you cleared World 2".  In the seed-toll model
+    the condition to reach a world's palace region is its full Wonder-Seed count
+    (plus any wall on the way there).
+
     Real-game anchors (Super Mario Wiki):
       * Wiggler Race Swimming! (PI 5 Seeds) unlocks after clearing Fluff-Puff
-        Peaks Palace  -> requires World 2 complete (|W2 Royal Seed|).
-      * Jewel-Block Cave (PI 8 Seeds) unlocks after visiting the Shining Falls
-        Royal Seed Mansion -> requires World 3 complete (|W3 Royal Seed|).
+        Peaks Palace -- the W2 palace lives in `W2 14 Seeds` (|W2 Wonder Seed:14|).
+      * Jewel-Block Cave (PI 8 Seeds) unlocks after the Shining Falls Royal Seed
+        Mansion -- the W3 palace lives in `W3 10 Seeds` (|W3 Wonder Seed:10|), and
+        reaching it must clear the W3 wall POOF! Crouching High Jump I
+        (|Crouching High Jump Badge|).
 
     A region's ``requires`` gates the checks INSIDE it (each location's rule is
-    its own region's requires), so putting the Royal-Seed token here keeps every
-    PI-depth check out of logic until the gating world is done.
+    its own region's requires), so these tokens keep every PI-depth check out of
+    logic until you could actually play the gating world's finale.
     """
     regions = _load_json("regions.json")
+    # region -> tokens that must all appear in its requires
     gates = {
-        "PI 5 Seeds": "W2 Royal Seed",
-        "PI 8 Seeds": "W3 Royal Seed",
+        "PI 5 Seeds": ["W2 Wonder Seed:14"],
+        "PI 8 Seeds": ["W3 Wonder Seed:10", "Crouching High Jump Badge"],
     }
-    for region, seed in gates.items():
+    for region, tokens in gates.items():
         assert region in regions, f"missing region {region!r}"
         requires = regions[region].get("requires", "")
-        assert f"|{seed}|" in requires, (
-            f"region {region!r} must gate on |{seed}| (Petal Isles opens by world "
-            f"completion, not by PI Wonder Seeds) but requires == {requires!r} -- "
-            f"removing this puts all of Petal Isles in logic before that world is done"
+        for token in tokens:
+            assert f"|{token}|" in requires, (
+                f"region {region!r} must gate on |{token}| (Petal Isles opens by "
+                f"clearing the prior world's final level, not by AP Royal Seeds) "
+                f"but requires == {requires!r} -- removing this puts Petal Isles in "
+                f"logic before that world's finale is playable"
+            )
+    # The Royal Seed pool item must NOT be the gate (it can be placed anywhere).
+    for region in gates:
+        requires = regions[region].get("requires", "")
+        assert "Royal Seed" not in requires, (
+            f"{region} must NOT gate on a Royal Seed -- it is an AP pool item, not "
+            f"proof the world was cleared. requires == {requires!r}"
         )
 
 
