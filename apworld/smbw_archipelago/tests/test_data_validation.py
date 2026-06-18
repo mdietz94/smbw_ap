@@ -156,6 +156,41 @@ def test_progression_wall_badges_gate_regions():
         )
 
 
+def test_petal_isles_depth_requires_world_completion():
+    """Pin the world-completion gates on the deeper Petal Isles regions.
+
+    Petal Isles is the hub; unlike a numbered world it does NOT open by
+    collecting its own Wonder Seeds -- its islands unlock as you clear world
+    palaces (Royal Seeds).  Without these gates the whole PI-seed-gated spur
+    (PI 5 Seeds + PI 8 Seeds, ~58 checks) is reachable with zero World 2
+    progress, because the spur branches off the pre-W2 hub node and was gated
+    only on |Petal Isles Wonder Seed:N|.
+
+    Real-game anchors (Super Mario Wiki):
+      * Wiggler Race Swimming! (PI 5 Seeds) unlocks after clearing Fluff-Puff
+        Peaks Palace  -> requires World 2 complete (|W2 Royal Seed|).
+      * Jewel-Block Cave (PI 8 Seeds) unlocks after visiting the Shining Falls
+        Royal Seed Mansion -> requires World 3 complete (|W3 Royal Seed|).
+
+    A region's ``requires`` gates the checks INSIDE it (each location's rule is
+    its own region's requires), so putting the Royal-Seed token here keeps every
+    PI-depth check out of logic until the gating world is done.
+    """
+    regions = _load_json("regions.json")
+    gates = {
+        "PI 5 Seeds": "W2 Royal Seed",
+        "PI 8 Seeds": "W3 Royal Seed",
+    }
+    for region, seed in gates.items():
+        assert region in regions, f"missing region {region!r}"
+        requires = regions[region].get("requires", "")
+        assert f"|{seed}|" in requires, (
+            f"region {region!r} must gate on |{seed}| (Petal Isles opens by world "
+            f"completion, not by PI Wonder Seeds) but requires == {requires!r} -- "
+            f"removing this puts all of Petal Isles in logic before that world is done"
+        )
+
+
 # The 20 badge-challenge "I/II" courses and the badge each one requires.
 #
 # The badge is NOT auto-available inside the course in the AP mod (AP is the
