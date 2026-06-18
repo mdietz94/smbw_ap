@@ -136,13 +136,17 @@ _TOKEN = re.compile(
 
 class Compiler:
     def __init__(self, name2code: dict[str, str], name2count: dict[str, int],
-                 always_available: set[str] | None = None):
+                 always_available: set[str] | None = None,
+                 cat2names: dict[str, list[str]] | None = None):
         self.name2code = name2code
         self.name2count = name2count
         # Item names the player always has (buttons, Wonder Effects, Wonder
         # Flower) -- granted at start in our game, so the tracker never gates on
         # them.  Any reference to one compiles to `true` and drops out.
         self.always_available = always_available or set()
+        # category name -> item names in it (from items.json), so a `|@Cat:n|`
+        # gate can sum the collected counts of that category's items.
+        self.cat2names = cat2names or {}
         self.used_codes: set[str] = set()
 
     # -- atom helpers ------------------------------------------------------- #
@@ -159,11 +163,29 @@ class Compiler:
             iname, cnt = inner.strip(), "1"
 
         if is_cat:
-            if iname != "Royal Seed":
+            # Royal Seeds map to dedicated tracker codes (w<n>royalseed), not the
+            # generic item-mapping codes, so they keep their own sum helper.
+            if iname == "Royal Seed":
+                for c in ROYAL_CODES:
+                    self.used_codes.add(c)
+                return f"smbw_royal({int(cnt)})"
+            # Any other category (e.g. Power-Up): gate on the summed collected
+            # count of the category's items, mirroring Rules.py's `@Cat:n`.
+            names = self.cat2names.get(iname)
+            if not names:
                 raise ValueError(f"Unsupported category in requires: {iname!r}")
-            for c in ROYAL_CODES:
+            n = int(cnt)
+            # An always-available member of the category satisfies one toward n.
+            aa = sum(1 for nm in names if nm in self.always_available)
+            if aa >= n:
+                return "true"
+            n -= aa
+            codes = [self.name2code[nm] for nm in names
+                     if nm not in self.always_available and nm in self.name2code]
+            for c in codes:
                 self.used_codes.add(c)
-            return f"smbw_royal({int(cnt)})"
+            args = ", ".join('"%s"' % c for c in codes)
+            return f"smbw_cat({n}, {args})"
 
         if iname in self.always_available:
             return "true"
@@ -331,10 +353,15 @@ def main():
 
     always_available = {it["name"] for it in items
                         if set(it.get("category", [])) & ALWAYS_AVAILABLE_CATEGORIES}
-    comp = Compiler(name2code, name2count, always_available)
+    cat2names: dict[str, list[str]] = {}
+    for it in items:
+        for cat in it.get("category", []):
+            cat2names.setdefault(cat, []).append(it["name"])
+    comp = Compiler(name2code, name2count, always_available, cat2names)
     # Second compiler for the open-world world-entry rules: PI / Special seeds
     # are precollected/stripped there, so treat them as always-available too.
-    comp_open = Compiler(name2code, name2count, always_available | OPEN_FREE_SEEDS)
+    comp_open = Compiler(name2code, name2count, always_available | OPEN_FREE_SEEDS,
+                         cat2names)
 
     # -- compile region full() expressions -------------------------------- #
     # region_expr[region] = (standard_body, open_world_body_or_None).  A None
@@ -450,6 +477,16 @@ def write_lua(tracker, regions, order, region_expr, loc_rules):
     L.append("-- |@Royal Seed:n| category gate -- sum of the six world Royal Seeds.")
     L.append("function smbw_royal(n)")
     L.append("    local c = " + "\n        + ".join(f'Tracker:ProviderCountForCode("{c}")' for c in ROYAL_CODES))
+    L.append("    if c >= tonumber(n) then return ACCESS_NORMAL end")
+    L.append("    return ACCESS_NONE")
+    L.append("end")
+    L.append("")
+    L.append("-- |@Category:n| gate -- sum of collected counts across the category's items.")
+    L.append("function smbw_cat(n, ...)")
+    L.append("    local c = 0")
+    L.append("    for _, code in ipairs({...}) do")
+    L.append("        c = c + Tracker:ProviderCountForCode(code)")
+    L.append("    end")
     L.append("    if c >= tonumber(n) then return ACCESS_NORMAL end")
     L.append("    return ACCESS_NONE")
     L.append("end")
