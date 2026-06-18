@@ -115,20 +115,30 @@ apworld logic suite green.
   Cave / Gnawsher Lair / Maw-Maw Mouthful / Muncher Fields / Wiggler Race
   Spelunking / Petal Isles Poplin Shop 2 / KO Petal Meddle / Petal Isles Flying
   Battleship / Boosting Spin Jump I / Way of the Goomba → 8).
-  **World-completion gates (added):** Petal Isles is the hub — its islands open
-  by clearing world palaces (Royal Seeds), *not* by collecting PI Wonder Seeds.
-  The PI-depth spur branches off the **pre-W2** hub node, so gating it only on
-  `|Petal Isles Wonder Seed:N|` put all ~58 PI-depth checks in logic with zero
-  World 2 progress (fidelity bug + fill could bury a progression item there).
-  Fixed by adding the real gate to each region's `requires`:
-  - `PI 5 Seeds`: `|W2 Royal Seed| AND |Petal Isles Wonder Seed:5|` — Wiggler
-    Race Swimming! unlocks after clearing **Fluff-Puff Peaks Palace** (W2).
-  - `PI 8 Seeds`: `|W3 Royal Seed| AND |Petal Isles Wonder Seed:8|` — Jewel-Block
-    Cave unlocks after the **Shining Falls Royal Seed Mansion** (W3).
+  **World-progress gates (added):** Petal Isles is the hub — its islands open
+  by clearing the prior world's **final palace level**, *not* by collecting PI
+  Wonder Seeds. The PI-depth spur branches off the **pre-W2** hub node, so gating
+  it only on `|Petal Isles Wonder Seed:N|` put all ~58 PI-depth checks in logic
+  with zero World 2 progress (fidelity bug + fill could bury a progression item
+  there).
+  ⚠️ **Do NOT gate on the world's Royal Seed.** Royal Seeds are AP **pool items**
+  placed anywhere, so `|W2 Royal Seed|` only means "AP granted it", not "you
+  cleared World 2" — it doesn't model the in-game unlock (an earlier pass used
+  the Royal Seed and was wrong). The correct gate is the *condition to play that
+  world's final level*: in the seed-toll model that's the Wonder-Seed count to
+  reach the palace region, plus any wall on the way. Each region's `requires`:
+  - `PI 5 Seeds`: `|W2 Wonder Seed:14| AND |Petal Isles Wonder Seed:5|` — Wiggler
+    Race Swimming! unlocks after clearing **Fluff-Puff Peaks Palace**, which lives
+    in `W2 14 Seeds` (toll `|W2 Wonder Seed:14|`).
+  - `PI 8 Seeds`: `|W3 Wonder Seed:10| AND |Crouching High Jump Badge| AND
+    |Petal Isles Wonder Seed:8|` — Jewel-Block Cave unlocks after the **Shining
+    Falls Royal Seed Mansion**, which lives in `W3 10 Seeds` (toll
+    `|W3 Wonder Seed:10|`); reaching it must clear the W3 wall POOF! Crouching
+    High Jump I, so the badge is part of "can play W3's finale".
   A region's `requires` is the access rule for the **checks inside it** (each
-  location's rule = its own region's requires), so the Royal-Seed token keeps the
-  PI-depth checks out of logic until that world is done even though the regions
-  have no outgoing edges. Pinned by
+  location's rule = its own region's requires), so these tokens keep the PI-depth
+  checks out of logic until you could actually play the gating world's finale,
+  even though the regions have no outgoing edges. Pinned by
   `tests/test_data_validation.py::test_petal_isles_depth_requires_world_completion`.
   Sources: MarioWiki Wiggler Race Swimming!, Jewel-Block Cave, Royal Seed
   Mansion, Petal Isles Flying Battleship pages.

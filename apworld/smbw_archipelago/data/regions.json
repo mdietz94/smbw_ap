@@ -52,11 +52,11 @@
     "connects_to": [
       "PI 8 Seeds"
     ],
-    "requires": "|W2 Royal Seed| AND |Petal Isles Wonder Seed:5|"
+    "requires": "|W2 Wonder Seed:14| AND |Petal Isles Wonder Seed:5|"
   },
   "PI 8 Seeds": {
     "connects_to": [],
-    "requires": "|W3 Royal Seed| AND |Petal Isles Wonder Seed:8|"
+    "requires": "|W3 Wonder Seed:10| AND |Crouching High Jump Badge| AND |Petal Isles Wonder Seed:8|"
   },
   "W2 Start": {
     "connects_to": [
