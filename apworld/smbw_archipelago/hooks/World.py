@@ -120,14 +120,19 @@ def before_set_rules(world: World, multiworld: MultiWorld, player: int):
     if not getattr(world, "open_world", False):
         return
     from ..Regions import regionMap
-    from ..open_world import BOWSER_REGION
+    from ..open_world import BOWSER_REGION, badge_wall_open_world_requires
 
-    names = [f"W{n} Start" for n in world.active_worlds] + [BOWSER_REGION]
+    # Start/Bowser entry gates are dropped entirely; the badge-wall gates keep
+    # their Wonder-Seed toll but drop the (open-world-unenforced) badge half.
+    neutralized = {name: "" for name in
+                   [f"W{n} Start" for n in world.active_worlds] + [BOWSER_REGION]}
+    neutralized.update(badge_wall_open_world_requires())
+
     backup = {}
-    for name in names:
+    for name, requires in neutralized.items():
         if name in regionMap:
             backup[name] = regionMap[name]
-            regionMap[name] = {**regionMap[name], "requires": ""}
+            regionMap[name] = {**regionMap[name], "requires": requires}
     setattr(world, _OW_REGION_BACKUP_ATTR, backup)
 
 # Called after rules for accessing regions and locations are created, in case you want to see or modify that information.

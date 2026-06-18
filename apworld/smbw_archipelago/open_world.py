@@ -27,10 +27,49 @@ so ``region.exits.remove(...)`` / ``region.locations.remove(...)`` keep the
 deleted — harmless, since AP fill only considers locations and reachable
 regions.
 """
+import re
+
 from worlds.AutoWorld import World
 from BaseClasses import MultiWorld
 
 WORLD_NUMBERS = (1, 2, 3, 4, 5, 6)
+
+# Intra-world region gates that, in standard mode, also require a forced badge
+# level (a Badge House / Wiggler Race / POOF! course that must be cleared to
+# physically advance the world -- see the smbw-logic skill's progression-wall
+# rule).  Open-world opens every course node from the start, so these walls are
+# NOT enforced there: the world-map Wonder-Seed bar is the only gate.  Leaving
+# the badge half on keeps the section "out of logic" even with enough Wonder
+# Seeds (player-reported).  In open-world we therefore drop the badge half and
+# keep the Wonder-Seed toll.  The badge stays a meaningful progression item --
+# the challenge level's own checks still require it (location layer).
+_BADGE_WALL_REGIONS = ("W3 4 Seeds",)
+
+_BADGE_TOKEN_RE = re.compile(r"\|[^|]*Badge\|")
+
+
+def strip_badge_requirement(requires: str) -> str:
+    """Return ``requires`` with any ``|<X> Badge|`` token removed, collapsing a
+    leftover ``A AND B`` so the rest (e.g. the Wonder-Seed toll) stays valid."""
+    parts = [p.strip() for p in requires.split(" AND ")]
+    kept = [p for p in parts if not (_BADGE_TOKEN_RE.fullmatch(p))]
+    return " AND ".join(kept)
+
+
+def badge_wall_open_world_requires():
+    """Open-world replacements for the badge-wall region gates: same dict keyed
+    by region name, value = the region's ``requires`` with the badge token
+    stripped.  Consumed by ``hooks.World.before_set_rules`` (swapped into
+    ``regionMap`` before ``set_rules`` captures the rule closures, then
+    restored)."""
+    from .Regions import regionMap
+    out = {}
+    for name in _BADGE_WALL_REGIONS:
+        entry = regionMap.get(name)
+        if entry is None:
+            continue
+        out[name] = strip_badge_requirement(entry.get("requires", ""))
+    return out
 
 # Region holding the (forced) Bowser victory location.
 BOWSER_REGION = "World Bowser"

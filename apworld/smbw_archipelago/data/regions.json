@@ -10,14 +10,14 @@
     "connects_to": [
       "W1 10 Seeds"
     ],
-    "requires": "|W1 Wonder Seed:3| AND |Parachute Cap Badge|"
+    "requires": "|W1 Wonder Seed:3|"
   },
   "W1 10 Seeds": {
     "connects_to": [
       "W1 Post-Bulrush Express",
       "W1 14 Seeds"
     ],
-    "requires": "|W1 Wonder Seed:10| AND |Auto Super Mushroom Badge|"
+    "requires": "|W1 Wonder Seed:10|"
   },
   "W1 Post-Bulrush Express": {
     "connects_to": [
