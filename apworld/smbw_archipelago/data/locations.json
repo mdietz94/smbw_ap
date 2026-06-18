@@ -537,7 +537,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND |Elephant Fruit| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   {
     "name": "W1: Bulrush Express - Wonder Seed",
