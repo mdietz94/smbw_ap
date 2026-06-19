@@ -189,6 +189,30 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
                         "NERVE_NEW_VT: slot=%u vt_off=NSO+0x%llx fire=%d",
                         slot, static_cast<unsigned long long>(vt_off),
                         s_fires);
+                    // [cblk-diag] CANDIDATE #2b (actor-identity survey).
+                    // A character block that is bumped transitions its Nerve
+                    // state (idle -> bumped -> reappear), so the block actor's
+                    // Nerve flows through this shared NerveActivateOnce helper.
+                    // For each NEW distinct nerve vtable we dump a small window
+                    // of the nerve object so the block-bump nerve's owner can
+                    // be correlated offline (its vtable offset is the anchor
+                    // we'd hook next).  Purely additive logging -- no behaviour
+                    // change to the load-bearing drain path.  All reads are
+                    // guarded (nerve != 0 is checked above).
+                    auto* nb = reinterpret_cast<std::uint8_t*>(nerve);
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag] nerveVT vt_off=NSO+0x%llx nerve=%p "
+                        "[+0x08]=0x%llx [+0x10]=0x%llx [+0x18]=0x%llx "
+                        "[+0x20]=0x%llx",
+                        static_cast<unsigned long long>(vt_off), nerve,
+                        static_cast<unsigned long long>(
+                            *reinterpret_cast<std::uint64_t*>(nb + 0x08)),
+                        static_cast<unsigned long long>(
+                            *reinterpret_cast<std::uint64_t*>(nb + 0x10)),
+                        static_cast<unsigned long long>(
+                            *reinterpret_cast<std::uint64_t*>(nb + 0x18)),
+                        static_cast<unsigned long long>(
+                            *reinterpret_cast<std::uint64_t*>(nb + 0x20)));
                 }
             }
         }
@@ -435,27 +459,41 @@ HkTrampoline<void*, void*> getDamageReactionPlayerNoHook =
             }
         }
 
-        // Diagnostic survey: log the first N fires with the node-ctx
-        // fields the RE notes flagged as interesting, so one in-game
-        // session yields the data to tighten the actor filter later.
-        // Monotonic count.fetch_add(...) < N idiom (the fetch_sub(...) > 0
-        // throttle underflows -- known footgun).
+        // [cblk-diag] CANDIDATE #2a (negative-confirm / cheap).
+        // This is the KNOWN-DEAD GetDamageReactionPlayerNo node body (it never
+        // fired in solo across a full level -- see the smbwap-character-block-
+        // sanity memory).  We keep it instrumented so a single play session
+        // re-confirms whether it is *still* dead (zero lines) or whether some
+        // path does reach it after all.  The dump is widened so that IF it
+        // fires we capture the node ctx + its input-source word + the node
+        // vtable, which we can correlate offline.  Monotonic
+        // count.fetch_add(...) < N idiom (the fetch_sub(...) > 0 throttle
+        // underflows -- known footgun).
         static std::atomic<unsigned> s_diag{0};
         const unsigned d = s_diag.fetch_add(1, std::memory_order_relaxed);
         if (d < 40) {
-            std::uint64_t f18 = 0, f20 = 0;
+            std::uint64_t vt = 0, w08 = 0, w18 = 0, w20 = 0, src = 0;
             if (node_ctx) {
-                f18 = *reinterpret_cast<std::uint32_t*>(
-                    reinterpret_cast<std::uint8_t*>(node_ctx) + 0x18);
-                f20 = *reinterpret_cast<std::uint64_t*>(
-                    reinterpret_cast<std::uint8_t*>(node_ctx) + 0x20);
+                auto* b = reinterpret_cast<std::uint8_t*>(node_ctx);
+                vt  = *reinterpret_cast<std::uint64_t*>(b + 0x00);
+                w08 = *reinterpret_cast<std::uint64_t*>(b + 0x08);
+                w18 = *reinterpret_cast<std::uint32_t*>(b + 0x18);
+                w20 = *reinterpret_cast<std::uint64_t*>(b + 0x20);
+                // The body loads node_ctx+0x20, masks &~3, then derefs [ptr]
+                // as the node input source (a key/pointer).  Chase it once,
+                // guarded, so a malformed value can never crash.
+                const auto p = w20 & ~static_cast<std::uintptr_t>(3);
+                if (p) src = *reinterpret_cast<std::uint64_t*>(p);
             }
             SMBWAP_LOG_INFO(
-                "CHAR_BLOCK_HIT diag #%u: node=%p slot=%d "
-                "[ctx+0x18]=0x%llx [ctx+0x20]=0x%llx",
-                d, node_ctx, slot,
-                static_cast<unsigned long long>(f18),
-                static_cast<unsigned long long>(f20));
+                "[cblk-diag] dmgReactNode #%u: node=%p vt=0x%llx slot=%d "
+                "[+0x08]=0x%llx [+0x18]=0x%llx [+0x20]=0x%llx src=0x%llx",
+                d, node_ctx,
+                static_cast<unsigned long long>(vt), slot,
+                static_cast<unsigned long long>(w08),
+                static_cast<unsigned long long>(w18),
+                static_cast<unsigned long long>(w20),
+                static_cast<unsigned long long>(src));
         }
 
         // Emit only for a real local-player slot (0..3).  The bridge
