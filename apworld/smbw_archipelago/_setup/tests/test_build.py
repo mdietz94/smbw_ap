@@ -51,6 +51,40 @@ def test_compose_build_env_prepends_python_dir(monkeypatch: pytest.MonkeyPatch, 
     assert str(py_exe.parent) in env["PATH"].split(os.pathsep)
 
 
+def test_compose_build_env_resolved_python_wins_over_path_python(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Regression: the wizard resolves a specific Python (e.g. 3.12 via
+    `py -3.12`) and installs lz4 / pyelftools into it, but the build's
+    cmake POST_BUILD runs bare `python elf2nso.py` / `deploy.py`. If a
+    DIFFERENT Python (e.g. 3.14) sits first on the inherited PATH and the
+    resolved one is also already on PATH (just later), the old skip-if-
+    present prepend left 3.14 winning — so the build died with
+    `ModuleNotFoundError: No module named 'lz4'` right after linking.
+
+    The resolved Python's dir must be relocated to the FRONT, ahead of
+    the other Python, regardless of whether it was already on PATH."""
+    other_py_dir = tmp_path / "py314"
+    resolved_dir = tmp_path / "py312"
+    other_py_dir.mkdir()
+    resolved_dir.mkdir()
+    py_exe = resolved_dir / "python.exe"
+    py_exe.write_text("", encoding="utf-8")
+    # Inherited PATH: the wrong Python first, the resolved one already
+    # present but later — the exact shape that defeated skip-if-present.
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join([str(other_py_dir), str(resolved_dir)])
+    )
+    monkeypatch.setattr(B, "resolved_llvm_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_ninja_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: str(py_exe))
+    env = B._compose_build_env()
+    parts = env["PATH"].split(os.pathsep)
+    assert parts.index(str(resolved_dir)) < parts.index(str(other_py_dir))
+    # And no duplicate entry left behind by the relocation.
+    assert parts.count(str(resolved_dir)) == 1
+
+
 def test_compose_build_env_prepends_ninja(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     ninja_bin = str(tmp_path / "ninja-dir")
     monkeypatch.setattr(B, "resolved_llvm_bin", lambda: None)
