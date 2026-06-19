@@ -435,10 +435,13 @@ def _ensure_python3_on_path(py_bin: str, env: dict[str, str]) -> None:
             shutil.copy2(py_bin, shim)
         except OSError:
             return  # cmake will surface a clear error about python3
+    # Relocate-to-front (same reasoning as _compose_build_env.prepend):
+    # the shim must shadow any `python3.exe` already on PATH (e.g. a
+    # different Python that happens to ship one), not silently lose to it.
     s = str(shim_dir)
-    path_val = env.get("PATH", "")
-    if s not in path_val.split(os.pathsep):
-        env["PATH"] = s + os.pathsep + path_val
+    parts = [p for p in env.get("PATH", "").split(os.pathsep)
+             if p and p != s]
+    env["PATH"] = os.pathsep.join([s, *parts])
 
 
 def _compose_build_env() -> dict[str, str]:
@@ -464,8 +467,25 @@ def _compose_build_env() -> dict[str, str]:
     env = os.environ.copy()
 
     def prepend(dir_path: str) -> None:
-        if dir_path and dir_path not in env.get("PATH", "").split(os.pathsep):
-            env["PATH"] = dir_path + os.pathsep + env.get("PATH", "")
+        # Relocate-to-front, not skip-if-present. The earlier version
+        # no-op'd when `dir_path` was already anywhere on the inherited
+        # PATH — which silently broke the whole point of resolving a
+        # specific interpreter/toolchain. Concrete failure: a dev box
+        # with Python 3.14 first on PATH and the wizard-resolved 3.12
+        # (via `py -3.12`) later on PATH. The wizard installs lz4 /
+        # pyelftools into the resolved 3.12, but because 3.12's dir was
+        # already on PATH the prepend was skipped, so cmake's POST_BUILD
+        # bare `python elf2nso.py` / `deploy.py` resolved to the 3.14
+        # that's first on PATH — which lacks lz4 — and the build died with
+        # `ModuleNotFoundError: No module named 'lz4'` right after linking.
+        # Removing any existing occurrence and re-prepending makes the
+        # resolved dir authoritatively win, so the Python the build runs
+        # is the same one the wizard installed the deps into.
+        if not dir_path:
+            return
+        parts = [p for p in env.get("PATH", "").split(os.pathsep)
+                 if p and p != dir_path]
+        env["PATH"] = os.pathsep.join([dir_path, *parts])
 
     # Order matters: tail-most prepend wins on PATH lookup. We want LLVM
     # first (its `clang.exe` is what cmake invokes by bare name), then
