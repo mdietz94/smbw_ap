@@ -318,10 +318,12 @@ def test_cmake_configure_forwards_resolved_python(
     monkeypatch.setattr(B, "is_dev_clone", lambda: True)
     monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
     monkeypatch.setattr(B, "resolved_cmake", lambda: "cmake")
-    monkeypatch.setattr(
-        B, "resolved_python_bin",
-        lambda: r"C:\Users\me\AppData\Local\Programs\Python\Python311\python.exe",
-    )
+    # Forward-slash path so the assertion is identical on the Linux CI and a
+    # Windows host (`Path.as_posix()` only rewrites separators it recognizes
+    # as such for the running OS; on Windows a real `C:\...` path is
+    # forward-slashed, which is why build.py uses as_posix()).
+    resolved = "/opt/python311/bin/python"
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: resolved)
     monkeypatch.setattr(B, "_apply_hakkun_patches", lambda *a, **k: None)
     monkeypatch.setattr(B, "_compose_build_env", lambda: {})
 
@@ -332,10 +334,7 @@ def test_cmake_configure_forwards_resolved_python(
     )
 
     B.cmake_configure()
-    assert (
-        "-DSMBWAP_PYTHON=C:/Users/me/AppData/Local/Programs/Python/Python311/python.exe"
-        in captured[0]
-    )
+    assert f"-DSMBWAP_PYTHON={resolved}" in captured[0]
 
 
 def test_run_build_phase_reconfigures_when_cached_python_differs(
@@ -369,16 +368,16 @@ def test_run_build_phase_reconfigures_when_cached_python_differs(
 def test_run_build_phase_skips_configure_when_cached_python_matches(
         monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """When the cached interpreter already matches the resolved one (stored
-    forward-slashed), the fast rebuild path is preserved."""
+    via as_posix()), the fast rebuild path is preserved."""
     monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
-    monkeypatch.setattr(
-        B, "resolved_python_bin",
-        lambda: r"C:\py\python.exe",  # as_posix() -> C:/py/python.exe
-    )
+    # Forward-slash path: as_posix() is a no-op on it on every OS, so the
+    # cached value below matches and no reconfigure is forced.
+    resolved = "/opt/py/python"
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: resolved)
     bd = tmp_path / "switch-mod" / "build"
     bd.mkdir(parents=True)
     (bd / "CMakeCache.txt").write_text(
-        "SMBWAP_PYTHON:STRING=C:/py/python.exe\n", encoding="utf-8")
+        "SMBWAP_PYTHON:STRING=/opt/py/python\n", encoding="utf-8")
 
     configure_calls: list[Any] = []
     monkeypatch.setattr(B, "cmake_configure",
