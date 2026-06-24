@@ -62,6 +62,18 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     BRIDGE_HOST_STRING="${BRIDGE_HOST_STRING}")
 message(STATUS "smbwap: bridge-discovery sweep seed = ${BRIDGE_HOST_STRING}")
 
+# Interpreter for the build-time Python tools (deploy.py -> import lz4.block,
+# elf2nso.py -> import elftools). LibHakkun's deploy.cmake / generate_exefs.cmake
+# call bare `python`; patch_hakkun.py rewrites those to `${SMBWAP_PYTHON}` so the
+# wizard can point them at the exact interpreter it installed lz4/pyelftools into
+# (build.py passes -DSMBWAP_PYTHON=<resolved>). On a box with more than one Python
+# bare `python` can resolve to an interpreter missing those --user deps, and the
+# build dies with ModuleNotFoundError right after linking. Defaults to `python` so
+# a manual cmake build (no -D) keeps the legacy behavior.
+set(SMBWAP_PYTHON "python" CACHE STRING
+    "Python interpreter for build-time tools (deploy.py, elf2nso.py)")
+message(STATUS "smbwap: build-time Python = ${SMBWAP_PYTHON}")
+
 # nn::os / nn::nifm / nn::socket / malloc / free / aligned_alloc are
 # undefined at link time -- they're resolved at module-load via nnrtld
 # walking the AutoLoadList (the .data anchor at `_ZN2nn2ro6detail15g_pAutoLoadListE`

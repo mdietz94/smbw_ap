@@ -710,6 +710,16 @@ def cmake_configure(
     ]
     if bridge_host:
         cmd.append(f"-DBRIDGE_HOST_STRING={bridge_host}")
+    # Pin the build-time Python tools (deploy.py -> lz4, elf2nso.py ->
+    # pyelftools) to the exact interpreter the wizard resolved and
+    # installed those --user deps into. patch_hakkun rewrites the cmake
+    # `COMMAND python` calls to `${SMBWAP_PYTHON}`; without this -D they'd
+    # fall back to bare `python` from PATH, which on a multi-Python box can
+    # resolve to an interpreter missing lz4 and die right after linking.
+    # Forward slashes so the path is clean inside cmake on Windows.
+    py_bin = resolved_python_bin()
+    if py_bin:
+        cmd.append(f"-DSMBWAP_PYTHON={Path(py_bin).as_posix()}")
     env = _compose_build_env()
     return _stream_subprocess(
         cmd,
@@ -751,6 +761,24 @@ def cmake_build(
     )
 
 
+def _cached_cache_value(key: str, repo: Path | None = None) -> str | None:
+    """Read ``<key>`` from ``build/CMakeCache.txt`` (None if absent/unreadable).
+
+    CMakeCache.txt lines look like ``KEY:TYPE=value``; we match on the
+    ``KEY:`` prefix and return the value after the first ``=``.
+    """
+    cache = build_dir(repo) / "CMakeCache.txt"
+    try:
+        text = cache.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        if line.startswith(f"{key}:"):
+            _, _, val = line.partition("=")
+            return val.strip()
+    return None
+
+
 def cached_bridge_host(repo: Path | None = None) -> str | None:
     """Read the ``BRIDGE_HOST_STRING`` value already baked into
     ``build/CMakeCache.txt``, or None if absent/unreadable.
@@ -760,17 +788,20 @@ def cached_bridge_host(repo: Path | None = None) -> str | None:
     always carries the auto-detected LAN seed doesn't force a redundant
     reconfigure every run.
     """
-    cache = build_dir(repo) / "CMakeCache.txt"
-    try:
-        text = cache.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return None
-    for line in text.splitlines():
-        # CMakeCache.txt format: `BRIDGE_HOST_STRING:STRING=<value>`.
-        if line.startswith("BRIDGE_HOST_STRING:"):
-            _, _, val = line.partition("=")
-            return val.strip()
-    return None
+    return _cached_cache_value("BRIDGE_HOST_STRING", repo)
+
+
+def cached_smbwap_python(repo: Path | None = None) -> str | None:
+    """Read the ``SMBWAP_PYTHON`` interpreter baked into ``build/CMakeCache.txt``.
+
+    Lets :func:`run_build_phase` force a reconfigure when the resolved
+    interpreter no longer matches what the cached ninja rules invoke — the
+    exact case behind the ``ModuleNotFoundError: No module named 'lz4'``
+    build failures: an existing build dir whose POST_BUILD rules call a
+    Python that lacks the deps. Without this, ``skip_configure_if_ready``
+    would keep the fast rebuild path and never re-pin the interpreter.
+    """
+    return _cached_cache_value("SMBWAP_PYTHON", repo)
 
 
 def run_build_phase(
@@ -810,6 +841,16 @@ def run_build_phase(
         )
     else:
         need_configure = not (skip_configure_if_ready and cache.is_file())
+    # Also reconfigure when the cached build-time interpreter drifts from the
+    # one we'd pass now. An existing build dir whose POST_BUILD ninja rules
+    # call a stale `python` (or were generated before SMBWAP_PYTHON existed)
+    # is exactly what produced the `ModuleNotFoundError: No module named 'lz4'`
+    # failures; re-pinning regenerates those rules against the resolved Python.
+    if cache.is_file() and not need_configure:
+        py_bin = resolved_python_bin()
+        desired = Path(py_bin).as_posix() if py_bin else None
+        if desired and cached_smbwap_python(repo) != desired:
+            need_configure = True
     if need_configure:
         cfg = cmake_configure(repo=repo, on_line=on_line, bridge_host=bridge_host)
         step_results["configure"] = cfg

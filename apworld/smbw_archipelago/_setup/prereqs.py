@@ -1105,6 +1105,41 @@ def pyelftools_marker_path() -> Path:
     return local_appdata_root() / "pyelftools.ok"
 
 
+def _verify_build_pydep_import(py: str, import_stmt: str, marker: Path) -> bool:
+    """Import-probe a cmake build dep through ``py`` and sync its marker.
+
+    The marker is a *cache*, not a source of truth. Earlier versions
+    treated the marker's mere existence as "installed", which produced a
+    permanent false-green: once a prior run wrote ``lz4.ok``, every later
+    probe reported lz4 satisfied even after the build's interpreter
+    changed (a second Python arrived, user-site got wiped, ``--user``
+    deps landed in a different interpreter's version-specific site). The
+    wizard stayed all-green while the cmake POST_BUILD ``import lz4.block``
+    died with ``ModuleNotFoundError`` right after linking.
+
+    Now the live import through the resolved interpreter is authoritative
+    and the marker is kept honest:
+      - import succeeds → (re)write the marker, return True;
+      - import fails → delete any stale marker so the prereq goes red and
+        auto-install re-runs against the interpreter the build will use.
+
+    With the build tools now invoked through this same resolved
+    interpreter (``-DSMBWAP_PYTHON`` in build.py), this probe verifies the
+    exact thing the build does, so green here means the build can import.
+    """
+    r = _safe_run([py, "-c", import_stmt])
+    ok = r is not None and r[0] == 0
+    try:
+        if ok:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text("ok\n", encoding="utf-8")
+        elif marker.is_file():
+            marker.unlink()
+    except OSError:
+        pass
+    return ok
+
+
 def check_archipelago_deps() -> PrereqResult:
     """Archipelago Python dependencies satisfied.
 
@@ -1191,28 +1226,15 @@ def check_lz4() -> PrereqResult:
     """Verify lz4 is importable from the resolved Python.
 
     LibHakkun's deploy.cmake runs:
-        COMMAND python .../sys/tools/deploy.py ...
-    deploy.py does `import lz4.block` before anything else. The Python
-    that cmake picks up from PATH is the same one `_compose_build_env`
-    prepends via `resolved_python_bin()` — so lz4 must be installed into
-    that interpreter.
+        COMMAND ${SMBWAP_PYTHON} .../sys/tools/deploy.py ...
+    deploy.py does `import lz4.block` before anything else. build.py points
+    `SMBWAP_PYTHON` at `resolved_python_bin()`, so the build imports lz4
+    from the very interpreter this probe tests. The marker is verified, not
+    trusted: a stale marker whose interpreter can no longer import lz4 is
+    discarded so the prereq goes red and auto-install re-runs.
     """
-    marker = lz4_marker_path()
-    if marker.is_file():
-        return PrereqResult(
-            "lz4", "Python lz4 (cmake build dep)", True,
-            f"installed (marker at {marker})",
-            auto_installable=True,
-        )
-
     py = _resolved_python_bin or sys.executable
-    r = _safe_run([py, "-c", "import lz4.block"])
-    if r is not None and r[0] == 0:
-        try:
-            marker.parent.mkdir(parents=True, exist_ok=True)
-            marker.write_text("ok\n", encoding="utf-8")
-        except OSError:
-            pass
+    if _verify_build_pydep_import(py, "import lz4.block", lz4_marker_path()):
         return PrereqResult(
             "lz4", "Python lz4 (cmake build dep)", True,
             f"importable via {Path(py).name}",
@@ -1241,27 +1263,17 @@ def check_lz4() -> PrereqResult:
 def check_pyelftools() -> PrereqResult:
     """Verify pyelftools is importable from the resolved Python.
 
-    LibHakkun's SwitchTools.cmake runs elf2nso.py (Python) which imports
-    elftools. The Python that cmake picks up from PATH is the same one
-    `_compose_build_env` prepends via `resolved_python_bin()` — so
-    pyelftools must be installed into that interpreter.
+    LibHakkun's generate_exefs.cmake runs elf2nso.py (Python) which imports
+    elftools. build.py points `SMBWAP_PYTHON` at `resolved_python_bin()`, so
+    the build imports elftools from the very interpreter this probe tests.
+    The marker is verified, not trusted: a stale marker whose interpreter
+    can no longer import elftools is discarded so the prereq goes red and
+    auto-install re-runs.
     """
-    marker = pyelftools_marker_path()
-    if marker.is_file():
-        return PrereqResult(
-            "pyelftools", "Python pyelftools (cmake build dep)", True,
-            f"installed (marker at {marker})",
-            auto_installable=True,
-        )
-
     py = _resolved_python_bin or sys.executable
-    r = _safe_run([py, "-c", "from elftools.elf.elffile import ELFFile"])
-    if r is not None and r[0] == 0:
-        try:
-            marker.parent.mkdir(parents=True, exist_ok=True)
-            marker.write_text("ok\n", encoding="utf-8")
-        except OSError:
-            pass
+    if _verify_build_pydep_import(
+        py, "from elftools.elf.elffile import ELFFile", pyelftools_marker_path()
+    ):
         return PrereqResult(
             "pyelftools", "Python pyelftools (cmake build dep)", True,
             f"importable via {Path(py).name}",
