@@ -1,7 +1,27 @@
 """Apply local-tree patches to the pinned LibHakkun submodule.
 
-Right now there is exactly one patch: rewrite ``sys/tools/nso.py`` from
-inheritance to composition over ``struct.Struct``. Upstream's
+Two patches are applied:
+
+1. **nso.py composition** (described below): make ``sys/tools/nso.py``
+   safe on Python 3.14's reworked ``struct.Struct``.
+
+2. **cmake build-time interpreter** (``_patch_cmake_python``): rewrite the
+   bare ``COMMAND python`` invocations in ``sys/cmake/deploy.cmake`` and
+   ``sys/cmake/generate_exefs.cmake`` to ``COMMAND ${SMBWAP_PYTHON}``.
+   Those custom commands run ``deploy.py`` (``import lz4.block``) and
+   ``elf2nso.py`` (``import elftools``) at POST_BUILD. Bare ``python`` is
+   resolved from PATH, so on a box with more than one Python it can land
+   on an interpreter that lacks the ``--user``-installed lz4/pyelftools,
+   and the build dies with ``ModuleNotFoundError`` immediately after
+   linking. ``switch-mod/CMakeLists.txt`` defaults ``SMBWAP_PYTHON`` to
+   ``python``; build.py passes ``-DSMBWAP_PYTHON=<resolved interpreter>``
+   so the tools run under the exact Python the wizard installed the deps
+   into. (The configure-time ``python3`` calls in toolchain.cmake are left
+   alone — they only need *a* python3 and are covered by build.py's PATH
+   prepend + python3 shim.)
+
+The nso.py patch: rewrite ``sys/tools/nso.py`` from inheritance to
+composition over ``struct.Struct``. Upstream's
 ``class NsoSegment(struct.Struct)`` / ``class NsoHeader(struct.Struct)``
 relies on ``struct.Struct.__new__`` accepting a no-arg call, with the
 subclass supplying ``format`` from inside ``__init__`` via
@@ -134,6 +154,33 @@ _NSO_NEW = (
 )
 
 
+# --- cmake build-time interpreter patch -------------------------------------
+
+# Sentinel comment dropped at the head of each rewritten cmake file so
+# re-runs short-circuit.
+_CMAKE_PY_SENTINEL = "SMBWAP_HAKKUN_PATCH_PYEXE"
+
+# The cmake files whose POST_BUILD tool calls import lz4 / pyelftools.
+# Both use only `COMMAND python ` (no `python3`), so a single substitution
+# covers every occurrence. Relative to the switch-mod root cmake reads.
+_CMAKE_PY_TARGETS = (
+    Path("sys") / "cmake" / "deploy.cmake",          # deploy.py  -> import lz4.block
+    Path("sys") / "cmake" / "generate_exefs.cmake",  # elf2nso.py -> import elftools
+)
+
+# Token rewritten in each target. The trailing space keeps us from matching
+# a hypothetical `python3` (the char after `python` there is `3`, not space).
+_CMAKE_PY_OLD = "COMMAND python "
+_CMAKE_PY_NEW = "COMMAND ${SMBWAP_PYTHON} "
+
+_CMAKE_PY_HEADER = (
+    f"# {_CMAKE_PY_SENTINEL}: build-time Python tools run through "
+    f"${{SMBWAP_PYTHON}} (set by build.py to the wizard-resolved\n"
+    f"# interpreter) instead of bare `python`, so the --user-installed "
+    f"lz4/pyelftools are always importable. See patch_hakkun.py.\n"
+)
+
+
 PatchStatus = Literal["applied", "already-applied", "missing", "upstream-shifted"]
 
 
@@ -177,6 +224,26 @@ def _patch_file(
     return "applied"
 
 
+def _patch_cmake_python(path: Path) -> PatchStatus:
+    """Rewrite every ``COMMAND python `` in a cmake file to ``${SMBWAP_PYTHON}``.
+
+    Idempotent via :data:`_CMAKE_PY_SENTINEL`. ``upstream-shifted`` (a
+    warning, not an error) means the file no longer contains the bare-
+    ``python`` token — most likely LibHakkun started honoring a Python var
+    itself, in which case this patch is moot.
+    """
+    if not path.exists():
+        return "missing"
+    content = path.read_text(encoding="utf-8")
+    if _CMAKE_PY_SENTINEL in content:
+        return "already-applied"
+    if _CMAKE_PY_OLD not in content:
+        return "upstream-shifted"
+    patched = _CMAKE_PY_HEADER + content.replace(_CMAKE_PY_OLD, _CMAKE_PY_NEW)
+    path.write_text(patched, encoding="utf-8", newline="\n")
+    return "applied"
+
+
 def apply_patches(
     switch_mod_root: Path,
     *,
@@ -214,5 +281,30 @@ def apply_patches(
         if result.detail:
             msg += f"  ({result.detail})"
         on_line(msg)
+
+    # Patch 2: route build-time Python tools through ${SMBWAP_PYTHON}.
+    for rel in _CMAKE_PY_TARGETS:
+        cmake_path = switch_mod_root / rel
+        status = _patch_cmake_python(cmake_path)
+        detail = ""
+        if status == "missing":
+            detail = f"{cmake_path} not found (submodule not initialized?)"
+        elif status == "upstream-shifted":
+            detail = (
+                f"{cmake_path} no longer contains `COMMAND python `; if the "
+                f"build fails with `ModuleNotFoundError: No module named "
+                f"'lz4'`, the patch needs to be refreshed"
+            )
+        result = PatchResult(
+            name=f"cmake interpreter ({rel.name} -> $SMBWAP_PYTHON)",
+            status=status,
+            detail=detail,
+        )
+        results.append(result)
+        if on_line is not None:
+            msg = f"[patch_hakkun] {result.status:>17}  {result.name}"
+            if result.detail:
+                msg += f"  ({result.detail})"
+            on_line(msg)
 
     return results

@@ -538,21 +538,28 @@ def test_check_all_returns_ordered_results() -> None:
 # check_lz4
 # ---------------------------------------------------------------------------
 
-def test_check_lz4_marker_short_circuits(
+def test_check_lz4_marker_is_verified_not_trusted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """If the marker file exists, skip the import probe entirely."""
+    """A marker no longer blind-passes: the import probe still runs, and a
+    stale marker whose interpreter can't import lz4 is removed (red)."""
     marker = tmp_path / "lz4.ok"
     marker.write_text("ok\n", encoding="utf-8")
     monkeypatch.setattr(P, "lz4_marker_path", lambda: marker)
+    monkeypatch.setattr(P, "_resolved_python_bin", "/usr/bin/python3")
 
-    def boom(*_a, **_kw):
-        raise AssertionError("import probe must not run when marker exists")
-    monkeypatch.setattr(P, "_safe_run", boom)
+    calls: list[list[str]] = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        return (1, "", "ModuleNotFoundError: No module named 'lz4'")
+    monkeypatch.setattr(P, "_safe_run", fake_run)
 
     r = P.check_lz4()
-    assert r.ok is True
+    assert calls, "import probe must run even when the marker exists"
+    assert r.ok is False
     assert r.auto_installable is True
+    assert not marker.exists()  # stale marker cleared so auto-install re-runs
 
 
 def test_check_lz4_ok_via_import(
@@ -592,21 +599,28 @@ def test_check_lz4_missing(
 # check_pyelftools
 # ---------------------------------------------------------------------------
 
-def test_check_pyelftools_marker_short_circuits(
+def test_check_pyelftools_marker_is_verified_not_trusted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """If the marker file exists, skip the import probe entirely."""
+    """A marker no longer blind-passes: the import probe still runs, and a
+    stale marker whose interpreter can't import elftools is removed (red)."""
     marker = tmp_path / "pyelftools.ok"
     marker.write_text("ok\n", encoding="utf-8")
     monkeypatch.setattr(P, "pyelftools_marker_path", lambda: marker)
+    monkeypatch.setattr(P, "_resolved_python_bin", "/usr/bin/python3")
 
-    def boom(*_a, **_kw):
-        raise AssertionError("import probe must not run when marker exists")
-    monkeypatch.setattr(P, "_safe_run", boom)
+    calls: list[list[str]] = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        return (1, "", "ModuleNotFoundError: No module named 'elftools'")
+    monkeypatch.setattr(P, "_safe_run", fake_run)
 
     r = P.check_pyelftools()
-    assert r.ok is True
+    assert calls, "import probe must run even when the marker exists"
+    assert r.ok is False
     assert r.auto_installable is True
+    assert not marker.exists()  # stale marker cleared so auto-install re-runs
 
 
 def test_check_pyelftools_ok_via_import(
