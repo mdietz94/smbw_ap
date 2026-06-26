@@ -724,32 +724,73 @@ HkTrampoline<unsigned long, void*, void**, void*, void**, void*>
             }
 
             // Resolve the concrete create fn = actor-manager vt[0x50].
-            void* mgr = nullptr;
+            //
+            // FIX (iter 5): the iter-4 build read `g[6]`/`g[7]` off a pointer
+            // TO the DAT slot -- i.e. memory at (DAT_address + 0x30), never
+            // dereferencing DAT to reach the root object first -- so the
+            // logged createFn was garbage.  The decompile of FUN_71002ceac0
+            // is unambiguous:  root = *(void**)(base + 0x361f8b0);
+            //   mgrA = *(void**)(root + 0x30);  mgrB = *(void**)(root + 0x38);
+            //   createFn = (**(code**)(*mgr + 0x50)).
+            // Path A is taken when (*(byte*)(mgrA+0x849) & 1) and its create
+            // returns &1; otherwise the game falls through to path B.  We
+            // replicate the SAME selection so the logged offset is exactly the
+            // method the engine dispatched to for THIS block.
+            void* root = nullptr;
+            void* mgrA = nullptr;
+            void* mgrB = nullptr;
+            void* mgr = nullptr;           // the path actually selected
+            char  path = '?';
             void* createVt = nullptr;
             ::ptr createOff = 0;
+            std::uint32_t prologue[4] = {0, 0, 0, 0};
             {
-                auto* g = reinterpret_cast<void**>(base + cblk::kDatActorMgr);
-                // Two candidate manager slots (+0x30 primary, +0x38 alt).
-                void* m = g ? g[6] : nullptr;        // +0x30 / 8
-                if (!m && g) m = g[7];               // +0x38 / 8
-                mgr = m;
-                if (m) {
-                    void** vt = *reinterpret_cast<void***>(m);
+                root = *reinterpret_cast<void**>(base + cblk::kDatActorMgr);
+                if (root) {
+                    auto* rb = reinterpret_cast<std::uint8_t*>(root);
+                    mgrA = *reinterpret_cast<void**>(rb + 0x30);
+                    mgrB = *reinterpret_cast<void**>(rb + 0x38);
+                }
+                // Path-A enable gate per the decompile: (*(byte*)(m+0x849)&1).
+                auto enabled = [](void* m) -> bool {
+                    if (!m) return false;
+                    const std::uint8_t f =
+                        *reinterpret_cast<std::uint8_t*>(
+                            reinterpret_cast<std::uint8_t*>(m) + 0x849);
+                    return (f & 1u) != 0u;
+                };
+                if (enabled(mgrA))      { mgr = mgrA; path = 'A'; }
+                else if (enabled(mgrB)) { mgr = mgrB; path = 'B'; }
+                else if (mgrA)          { mgr = mgrA; path = 'a'; }  // fallback
+                else if (mgrB)          { mgr = mgrB; path = 'b'; }
+                if (mgr) {
+                    void** vt = *reinterpret_cast<void***>(mgr);
                     createVt = vt;
                     if (vt) {
                         void* fn = vt[10];           // slot 0x50 / 8
                         const auto fa = reinterpret_cast<::ptr>(fn);
-                        if (fa >= base) createOff = fa - base;
+                        if (fa >= base) {
+                            createOff = fa - base;
+                            // Capture the create method's first 4 instructions
+                            // so the NEXT iteration can confirm a CLEAN prologue
+                            // (no adrp/ldr-literal/b/bl in the patch window)
+                            // before hooking it -- no extra capture round-trip.
+                            auto* ins = reinterpret_cast<std::uint32_t*>(fn);
+                            for (int i = 0; i < 4; ++i) prologue[i] = ins[i];
+                        }
                     }
                 }
             }
 
             SMBWAP_LOG_INFO("[cblk-diag3] create gyaml=\"%s\"", gyaml);
             SMBWAP_LOG_INFO(
-                "[cblk-diag3] BLOCK chara=%d node=%p mgr=%p createVt=%p "
-                "createFn=NSO+0x%llx",
-                chara, node, mgr, createVt,
+                "[cblk-diag3] BLOCK chara=%d node=%p root=%p mgrA=%p mgrB=%p "
+                "path=%c mgr=%p createVt=%p createFn=NSO+0x%llx",
+                chara, node, root, mgrA, mgrB, path, mgr, createVt,
                 static_cast<unsigned long long>(createOff));
+            SMBWAP_LOG_INFO(
+                "[cblk-diag3] createFn prologue: %08x %08x %08x %08x",
+                prologue[0], prologue[1], prologue[2], prologue[3]);
             return ret;
         });
 
@@ -1719,9 +1760,14 @@ extern "C" void hkMain() {
     // actor-create request; filters to "ObjectBlockClarityCharacter" by the
     // gyaml name (*param_4), reads PlayerCharaType from the placement node's
     // Dynamic sub-node, and runtime-resolves the actor-manager create fn
-    // (vt[0x50]) so iteration 5 can hook it for the live `this`+vtable.  Clean
-    // prologue (sub/stp x6).  See the hook comment + the
-    // smbwap-character-block-sanity memory.
+    // (vt[0x50]).  ITER 5: the manager-pointer chase is now CORRECT --
+    // root=*(base+0x361f8b0); mgr=*(root+0x30 path A / +0x38 path B), gated on
+    // (*(byte*)(mgr+0x849)&1) exactly like the decompile; createFn=*(*mgr+0x50);
+    // it also dumps the create method's first 4 instrs so the NEXT iteration
+    // can confirm a clean prologue + hook it for the live actor `this`+vtable.
+    // (Iter-4 logged garbage because it read off a pointer TO the DAT slot
+    // without dereferencing the root first.)  Clean prologue (sub/stp x6).
+    // See the hook comment + the smbwap-character-block-sanity memory.
     installHook("ActorCreateDispatch", 0x002ceac0,
                 actorCreateDispatchHook.installAtMainOffset(0x002ceac0));
 
