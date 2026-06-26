@@ -671,9 +671,36 @@ namespace cblk {
     // BYML getInt(node16, &out, "Key") -> 1 if present & int-typed.
     using GetIntFn = unsigned char (*)(void* /*node16*/, unsigned int* /*out*/,
                                        const char* /*key*/);
+    // BYML getArrayElem(node16, &outU32, idx) -> 1 if present.  Used by the
+    // engine to read Vector3F components (Translate.x/y/z) -- it returns the
+    // raw 32-bit IEEE-754 word, NOT a converted int (FUN_71000585c0 @ +0x585c0,
+    // confirmed from the +0x2ceac0 decompile's "Translate"/"Scale" reads).
+    using GetVecElemFn = unsigned char (*)(void* /*node16*/, unsigned int* /*out*/,
+                                           unsigned int /*idx*/);
     constexpr ::ptr kOffGetSubNode = 0x000583e4;
     constexpr ::ptr kOffGetInt     = 0x0012dd08;
+    constexpr ::ptr kOffGetVecElem = 0x000585c0;
     constexpr ::ptr kDatActorMgr   = 0x00361f8b0;  // DAT_710361f8b0 (.bss)
+
+    // Read a Vector3F "Translate" off a placement/instance node-handle.
+    // Returns true and fills out[3] (x,y,z) iff the key + 3 components parse.
+    // ALL reads guarded by the engine getters' own success flags; behaviour-
+    // neutral.  base = live main-module base.
+    inline bool readTranslate(::ptr base, void* node, float out[3]) {
+        if (!node) return false;
+        auto getSub = reinterpret_cast<GetSubNodeFn>(base + kOffGetSubNode);
+        auto getVec = reinterpret_cast<GetVecElemFn>(base + kOffGetVecElem);
+        std::uint8_t trans[16] = {};
+        if (!getSub(node, trans, "Translate")) return false;
+        for (unsigned i = 0; i < 3; ++i) {
+            unsigned int w = 0;
+            if (!getVec(trans, &w, i)) return false;
+            float f;
+            __builtin_memcpy(&f, &w, sizeof f);
+            out[i] = f;
+        }
+        return true;
+    }
 }
 
 // NOTE: the real function returns a status word in x0 (the caller branches on
@@ -690,6 +717,80 @@ HkTrampoline<unsigned long, void*, void**, void*, void**, void*>
             if (!namePtr) return ret;
             const char* gyaml = reinterpret_cast<const char*>(*namePtr);
             if (!gyaml) return ret;
+
+            // =================================================================
+            // [cblk-diag4] PRIMARY ITER-6 EXPERIMENT -- RUNTIME ITEM-SPAWN PROBE
+            // =================================================================
+            // HYPOTHESIS: when a character block is bumped it spawns its
+            // ChildActorSelectName contents (W1-1 Mario block ->
+            // ItemMushroomOrElephantSuit_All; RedYoshi -> ObjectScatterRandomCoin)
+            // at its OWN position.  IF that runtime spawn flows through this same
+            // create-dispatch (+0x2ceac0), we will see an item gyaml appear MID-
+            // LEVEL (after the load burst) at ~the block's known position -- a
+            // position-correlatable HIT signal (the client knows course + every
+            // block position from charblock_table.json).
+            //
+            // This hook reads *namePtr BEFORE the dispatcher's own internal
+            // category filtering runs, so it observes EVERY actor-create request
+            // routed through +0x2ceac0 regardless of what the function does
+            // internally.  If items DON'T appear here, the capture definitively
+            // rules out this path (=> runtime spawns use a different route ->
+            // iteration 7 instruments that route instead).
+            //
+            // SAFETY / ANTI-FLOOD: a level loads HUNDREDS of actors through this
+            // dispatch, so we (a) filter to item-ish gyaml substrings, (b) cap
+            // total lines hard via a monotonic fetch_add counter (NEVER
+            // fetch_sub>0 -- that underflows and spams forever), (c) read
+            // position via the engine's own guarded BYML getters.  The log's
+            // own timestamps separate the load burst from later bump-time
+            // spawns -- the capturer correlates by time + position.
+            {
+                // Cheap item-ish substring screen (bounded, no <cstring>).
+                // Match any of: Item / Coin / Scatter / Mushroom / Flower /
+                // Elephant / Kinoko (covers the W1-1 block contents + common
+                // block-pop items).  Substring search, max 64 chars.
+                auto contains = [](const char* s, const char* sub) -> bool {
+                    for (unsigned i = 0; i < 64 && s[i]; ++i) {
+                        unsigned j = 0;
+                        for (; sub[j]; ++j) {
+                            if (s[i + j] != sub[j]) break;
+                        }
+                        if (sub[j] == '\0') return true;
+                    }
+                    return false;
+                };
+                const bool itemish =
+                    contains(gyaml, "Item") || contains(gyaml, "Coin") ||
+                    contains(gyaml, "Scatter") || contains(gyaml, "Mushroom") ||
+                    contains(gyaml, "Flower") || contains(gyaml, "Elephant") ||
+                    contains(gyaml, "Kinoko");
+                if (itemish) {
+                    // Hard cap: at most kDiag4Cap item-create lines per boot.
+                    constexpr unsigned kDiag4Cap = 200;
+                    static std::atomic<unsigned> s_d4{0};
+                    const unsigned seq =
+                        s_d4.fetch_add(1, std::memory_order_relaxed);
+                    if (seq < kDiag4Cap) {
+                        const auto* mm = hk::ro::getMainModule();
+                        const ::ptr base =
+                            mm ? mm->range().start() : ::ptr(0);
+                        float pos[3] = {0, 0, 0};
+                        const bool gotPos =
+                            base && cblk::readTranslate(base, node, pos);
+                        if (gotPos) {
+                            SMBWAP_LOG_INFO(
+                                "[cblk-diag4] seq=%u create gyaml=\"%s\" "
+                                "pos=(%f,%f,%f)",
+                                seq, gyaml, pos[0], pos[1], pos[2]);
+                        } else {
+                            SMBWAP_LOG_INFO(
+                                "[cblk-diag4] seq=%u create gyaml=\"%s\" "
+                                "pos=<none> node=%p",
+                                seq, gyaml, node);
+                        }
+                    }
+                }
+            }
 
             // strcmp against the target gyaml, bounded, no <cstring>.
             const char* want = "ObjectBlockClarityCharacter";
@@ -1767,6 +1868,12 @@ extern "C" void hkMain() {
     // can confirm a clean prologue + hook it for the live actor `this`+vtable.
     // (Iter-4 logged garbage because it read off a pointer TO the DAT slot
     // without dereferencing the root first.)  Clean prologue (sub/stp x6).
+    // ITER 6 [cblk-diag4]: this same hook now ALSO logs item-ish actor-creates
+    // (gyaml containing Item/Coin/Scatter/Mushroom/Flower/Elephant/Kinoko) with
+    // position, capped at 200 lines/boot, to test whether a bumped char block's
+    // content spawns through THIS dispatch at its own position (= a position-
+    // correlatable hit signal).  Reads *namePtr before the dispatcher's own
+    // category filter, so it sees every create routed here.
     // See the hook comment + the smbwap-character-block-sanity memory.
     installHook("ActorCreateDispatch", 0x002ceac0,
                 actorCreateDispatchHook.installAtMainOffset(0x002ceac0));
