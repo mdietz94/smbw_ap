@@ -621,6 +621,139 @@ HkTrampoline<void, void*, void*> initActorPlacementInfoHook =
     });
 
 // =========================================================================
+// [cblk-diag3] CANDIDATE #4 -- GENERIC ACTOR-CREATE DISPATCH + VTABLE RESOLVE
+// =========================================================================
+//
+// GOAL (iteration 4 keystone): from the confirmed placement IDENTITY
+// (diag2), capture the CONCRETE per-actor "create" function and the
+// PlayerCharaType for the character block, so iteration 5 can hook the
+// create fn directly (-> live actor `this` + vtable -> block-filtered HIT
+// hook).  The block actor is data/registry-driven: there is NO clean,
+// static, block-specific create/init/hit hook anchorable from the NSO
+// (re-confirmed this round -- every clarity/reaction/block symbol lives in
+// an AINB reflection/registration table with only DATA xrefs, and the banc
+// placement tree never exposes the actor C++ object).  But the GENERIC
+// actor-create DISPATCHER is clean and name-filterable:
+//
+// CHOKE POINT: FUN_71002ceac0 @ NSO +0x2ceac0.  The engine's per-actor
+// create dispatcher.  Ghidra-confirmed:
+//   x0=param_1, x1=param_2 (status out), x2=param_3 (placement BYML node),
+//   x3=param_4 (-> *param_4 = the gyaml CLASS-NAME C-string)  <-- IDENTITY,
+//   x4=param_5.
+// It resolves the "engine__actor__ActorParam" handle for *param_4, checks a
+// category bitfield, then -- on match -- calls the actor-system MANAGER's
+// create method:  plVar8 = *(DAT_710361f8b0+0x30) (fallback +0x38);
+//                 (**(code**)(*plVar8 + 0x50))(plVar8, node, name, &buf, p5);
+// That vt[0x50] call instantiates the block actor.  Its address is a
+// RUNTIME vtable slot, so we resolve it live INSIDE the hook (mgr=*(g+0x30);
+// vt=*mgr; createFn=*(vt+0x50)) and LOG it: createFn is the concrete
+// NSO-relative create fn iteration 5 hooks to grab `*(void**)actor`.
+//
+// PROLOGUE SAFETY (Ghidra disasm of 0x2ceac0):
+//   sub sp,sp,#0x1c0 / stp x29,x30 / stp x28,x27 / stp x26,x25 / ...
+//   -- all stack stores, NO pc-relative insn in the first 20 bytes.  CLEAN.
+//
+// PlayerCharaType: read from the placement node (param_3) via the engine's
+// own BYML getters -- getSubNode(node,&dyn,"Dynamic") @ +0x583e4 then
+// getInt(&dyn,&chara,"PlayerCharaType") @ +0x12dd08.  All guarded.
+//
+// WHAT IT LOGS (grep token: cblk-diag3):
+//   [cblk-diag3] create gyaml="<name>"  (only the block; dedup-by-name)
+//   [cblk-diag3] BLOCK chara=<n> mgr=<p> createVt=<p> createFn=NSO+0x<off>
+// Behaviour-neutral: orig() is always called; all reads null-guarded.
+//
+// NSO-relative game-fn pointers (resolved off the live main-module base):
+namespace cblk {
+    // BYML getSubNode(parentNode, out16, "Key") -> bool, out16 is a
+    // 16-byte node handle (ptr@+0, off@+8, type-tag@+0xc).
+    using GetSubNodeFn = bool (*)(void* /*node*/, void* /*out16*/,
+                                  const char* /*key*/);
+    // BYML getInt(node16, &out, "Key") -> 1 if present & int-typed.
+    using GetIntFn = unsigned char (*)(void* /*node16*/, unsigned int* /*out*/,
+                                       const char* /*key*/);
+    constexpr ::ptr kOffGetSubNode = 0x000583e4;
+    constexpr ::ptr kOffGetInt     = 0x0012dd08;
+    constexpr ::ptr kDatActorMgr   = 0x00361f8b0;  // DAT_710361f8b0 (.bss)
+}
+
+// NOTE: the real function returns a status word in x0 (the caller branches on
+// `result & 1` to decide actor creation); the trampoline MUST declare the same
+// return type and forward orig()'s result, or it would clobber x0 and break
+// actor creation.  Every early-out returns `ret`.
+HkTrampoline<unsigned long, void*, void**, void*, void**, void*>
+    actorCreateDispatchHook = hk::hook::trampoline(
+        [](void* a1, void** a2, void* node, void** namePtr, void* a5)
+            -> unsigned long {
+            const unsigned long ret =
+                actorCreateDispatchHook.orig(a1, a2, node, namePtr, a5);
+
+            if (!namePtr) return ret;
+            const char* gyaml = reinterpret_cast<const char*>(*namePtr);
+            if (!gyaml) return ret;
+
+            // strcmp against the target gyaml, bounded, no <cstring>.
+            const char* want = "ObjectBlockClarityCharacter";
+            for (unsigned i = 0; i < 64; ++i) {
+                if (gyaml[i] != want[i]) return ret;
+                if (want[i] == '\0') break;
+            }
+
+            // Dedup: log at most a few block-create lines per boot.
+            static std::atomic<unsigned> s_n{0};
+            const unsigned n = s_n.fetch_add(1, std::memory_order_relaxed);
+            if (n >= 16) return ret;
+
+            const auto* main_mod = hk::ro::getMainModule();
+            if (!main_mod) return ret;
+            const ::ptr base = main_mod->range().start();
+
+            // PlayerCharaType from the placement node's Dynamic sub-node.
+            int chara = -1;
+            if (node) {
+                auto getSub = reinterpret_cast<cblk::GetSubNodeFn>(
+                    base + cblk::kOffGetSubNode);
+                auto getInt = reinterpret_cast<cblk::GetIntFn>(
+                    base + cblk::kOffGetInt);
+                std::uint8_t dyn[16] = {};
+                if (getSub(node, dyn, "Dynamic")) {
+                    unsigned int v = 0;
+                    if (getInt(dyn, &v, "PlayerCharaType")) {
+                        chara = static_cast<int>(v);
+                    }
+                }
+            }
+
+            // Resolve the concrete create fn = actor-manager vt[0x50].
+            void* mgr = nullptr;
+            void* createVt = nullptr;
+            ::ptr createOff = 0;
+            {
+                auto* g = reinterpret_cast<void**>(base + cblk::kDatActorMgr);
+                // Two candidate manager slots (+0x30 primary, +0x38 alt).
+                void* m = g ? g[6] : nullptr;        // +0x30 / 8
+                if (!m && g) m = g[7];               // +0x38 / 8
+                mgr = m;
+                if (m) {
+                    void** vt = *reinterpret_cast<void***>(m);
+                    createVt = vt;
+                    if (vt) {
+                        void* fn = vt[10];           // slot 0x50 / 8
+                        const auto fa = reinterpret_cast<::ptr>(fn);
+                        if (fa >= base) createOff = fa - base;
+                    }
+                }
+            }
+
+            SMBWAP_LOG_INFO("[cblk-diag3] create gyaml=\"%s\"", gyaml);
+            SMBWAP_LOG_INFO(
+                "[cblk-diag3] BLOCK chara=%d node=%p mgr=%p createVt=%p "
+                "createFn=NSO+0x%llx",
+                chara, node, mgr, createVt,
+                static_cast<unsigned long long>(createOff));
+            return ret;
+        });
+
+// =========================================================================
 // PLAYREPORT (Phase 2c)
 // =========================================================================
 //
@@ -1581,6 +1714,16 @@ extern "C" void hkMain() {
     // comment + the smbwap-character-block-sanity memory.
     installHook("InitActorPlacementInfo", 0x0005815c,
                 initActorPlacementInfoHook.installAtMainOffset(0x0005815c));
+
+    // [cblk-diag3] GENERIC ACTOR-CREATE DISPATCH @ +0x2ceac0.  Fires once per
+    // actor-create request; filters to "ObjectBlockClarityCharacter" by the
+    // gyaml name (*param_4), reads PlayerCharaType from the placement node's
+    // Dynamic sub-node, and runtime-resolves the actor-manager create fn
+    // (vt[0x50]) so iteration 5 can hook it for the live `this`+vtable.  Clean
+    // prologue (sub/stp x6).  See the hook comment + the
+    // smbwap-character-block-sanity memory.
+    installHook("ActorCreateDispatch", 0x002ceac0,
+                actorCreateDispatchHook.installAtMainOffset(0x002ceac0));
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",
