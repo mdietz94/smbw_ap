@@ -508,6 +508,119 @@ HkTrampoline<void*, void*> getDamageReactionPlayerNoHook =
     });
 
 // =========================================================================
+// [cblk-diag2] CANDIDATE #3 -- GENERIC ACTOR-PLACEMENT ENUMERATION
+// =========================================================================
+//
+// GOAL (iteration 3 keystone): positively identify the character block at
+// LEVEL LOAD by its gyaml identity, from a generic, guaranteed-firing,
+// clean-prologue choke point -- without depending on the runtime-built
+// actor registry (no static hash constant exists; see the
+// smbwap-character-block-sanity memory).
+//
+// CHOKE POINT: InitActorPlacementInfo @ NSO +0x5815c.  This is the engine's
+// per-placement BYML parser: for EVERY placed actor in a BancMapUnit it
+// reads the placement node and fills a placement-info struct.  RE'd fields
+// (Ghidra-confirmed from the decompile of +0x5815c):
+//   x0 = param_1 = placement-info struct (caller-owned -- survives orig)
+//   x1 = param_2 = the BYML node for this one placement
+//   struct+0x28  = char* Gyaml  (the actor's gyaml CLASS NAME as a STRING --
+//                  e.g. "ObjectBlockClarityCharacter")  <-- IDENTITY
+//   struct+0x50  = Dynamic params node handle (per-instance params incl.
+//                  PlayerCharaType / ChildActorSelectName)
+//   struct+0x75  = u8 "valid" flag (set to 1 only when parse fully succeeds)
+// It fires once per placed actor during the load burst, so dedup-by-name
+// keeps the ring quiet (a level has a few hundred DISTINCT gyaml classes).
+//
+// WHY THIS IS THE RIGHT GENERIC PATH (validation):
+//   * "Gyaml" string @ 0x7102925483 is xref'd by InitActorPlacementInfo
+//     (named symbol) -- this is the field-key read in the parser.
+//   * Reached via the generic wrapper FUN_71008e9514 (zero-init struct +
+//     InitActorPlacementInfo) whose caller FUN_7101a3dcbc is the per-actor
+//     placement build+create (it then calls the actor finalize FUN_710012c328
+//     / FUN_710022d174).  Blocks are placed actors -> they pass here.
+//   * Because the identity is carried as a STRING, we DON'T need the runtime
+//     gyaml hash 0x66d64769 at all -- we strcmp the name directly.
+//
+// PROLOGUE SAFETY (Ghidra disasm of the TRUE entry 0x5815c):
+//   sub sp / stp x29,x30 / str x21 / stp x20,x19 / add x29  -- all stack
+//   stores, NO pc-relative insn in the first 20 bytes.  CLEAN.
+//   (The Gyaml adrp lives at +0x5817c, well outside the patch window.)
+//
+// WHAT IT LOGS (grep token: cblk-diag2):
+//   [cblk-diag2] actor #<n> gyaml="<name>" plc=<struct> dyn=<dynNode>
+//   For the block specifically (name match) it also dumps a wider window so
+//   iteration 4 can chase from the placement record to the created actor.
+//
+// All reads are guarded; logging is AFTER orig so the struct is populated;
+// dedup-by-name caps the ring.  Behaviour-neutral.
+HkTrampoline<void, void*, void*> initActorPlacementInfoHook =
+    hk::hook::trampoline([](void* plc, void* node) {
+        initActorPlacementInfoHook.orig(plc, node);
+        if (!plc) return;
+        auto* b = reinterpret_cast<std::uint8_t*>(plc);
+        // Only consider fully-parsed placements (valid flag at +0x75).
+        const std::uint8_t valid = b[0x75];
+        if (!valid) return;
+        const char* gyaml =
+            *reinterpret_cast<char* const*>(b + 0x28);
+        if (!gyaml) return;
+        void* dyn = *reinterpret_cast<void**>(b + 0x50);
+
+        // Dedup by gyaml-name pointer.  Placement nodes for the SAME gyaml
+        // class share the interned name pointer (the parser stores the BYML
+        // string-pool pointer), so pointer-identity dedup is sound and cheap
+        // and avoids any per-frame strlen flood.  Fixed 256-slot seen-set;
+        // a level has only a few hundred distinct gyaml classes.
+        constexpr unsigned kSeenSlots = 256;
+        static std::atomic<std::uintptr_t> s_seen[kSeenSlots] = {};
+        static std::atomic<unsigned> s_seen_n{0};
+        const auto key = reinterpret_cast<std::uintptr_t>(gyaml);
+        const unsigned have = s_seen_n.load(std::memory_order_acquire);
+        for (unsigned i = 0; i < have && i < kSeenSlots; ++i) {
+            if (s_seen[i].load(std::memory_order_relaxed) == key) return;
+        }
+        const unsigned slot = s_seen_n.fetch_add(1, std::memory_order_acq_rel);
+        if (slot >= kSeenSlots) return;  // ring full -> stop logging
+        s_seen[slot].store(key, std::memory_order_release);
+
+        // strcmp against the target gyaml without pulling in <cstring>:
+        // compare byte-by-byte, bounded, against the literal.
+        const char* want = "ObjectBlockClarityCharacter";
+        bool isBlock = true;
+        for (unsigned i = 0; i < 64; ++i) {
+            if (gyaml[i] != want[i]) { isBlock = false; break; }
+            if (want[i] == '\0') break;
+        }
+
+        SMBWAP_LOG_INFO(
+            "[cblk-diag2] actor #%u gyaml=\"%s\" plc=%p dyn=%p%s",
+            slot, gyaml, plc, dyn, isBlock ? "  <== BLOCK" : "");
+
+        if (isBlock) {
+            // Wider dump for the block placement record: the engine writes
+            // the per-instance banc Hash and SRTHash into this struct (see
+            // the InitActorPlacementInfo decompile: +0x30 key, +0x40
+            // SRTHash, +0x48 GroupGUID).  These let iteration 4 correlate
+            // the live placement vs charblock_table.json (banc Hash) and
+            // chase to the created actor object / its vtable.
+            SMBWAP_LOG_INFO(
+                "[cblk-diag2] BLOCK plc=%p [+0x30]=0x%llx [+0x40]=0x%llx "
+                "[+0x48]=0x%llx [+0x50dyn]=%p translate=(%f,%f,%f)",
+                plc,
+                static_cast<unsigned long long>(
+                    *reinterpret_cast<std::uint64_t*>(b + 0x30)),
+                static_cast<unsigned long long>(
+                    *reinterpret_cast<std::uint64_t*>(b + 0x40)),
+                static_cast<unsigned long long>(
+                    *reinterpret_cast<std::uint64_t*>(b + 0x48)),
+                dyn,
+                *reinterpret_cast<float*>(b + 0x00),
+                *reinterpret_cast<float*>(b + 0x04),
+                *reinterpret_cast<float*>(b + 0x08));
+        }
+    });
+
+// =========================================================================
 // PLAYREPORT (Phase 2c)
 // =========================================================================
 //
@@ -1460,6 +1573,14 @@ extern "C" void hkMain() {
     // table.  Shared-node over-fire is intentional (see hook comment).
     installHook("GetDamageReactionPlayerNo", 0x0168d428,
                 getDamageReactionPlayerNoHook.installAtMainOffset(0x0168d428));
+
+    // [cblk-diag2] GENERIC ACTOR-PLACEMENT ENUMERATION: InitActorPlacementInfo
+    // @ +0x5815c.  Logs each DISTINCT gyaml class name placed in the level at
+    // load (dedup-by-name), flagging "ObjectBlockClarityCharacter".  Clean
+    // prologue (sub/stp/str/stp/add).  Iteration-3 keystone -- see the hook
+    // comment + the smbwap-character-block-sanity memory.
+    installHook("InitActorPlacementInfo", 0x0005815c,
+                initActorPlacementInfoHook.installAtMainOffset(0x0005815c));
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",
