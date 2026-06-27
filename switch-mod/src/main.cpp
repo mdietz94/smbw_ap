@@ -348,6 +348,16 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
         setCourseClearFlagExecuteHook.orig(nerve);
     });
 
+// [cblk-diag5] file-scope counter shared by the hot AINB-expr-eval hook
+// (clarityExbEvalHook, +0x1e02100) and the per-frame periodic logger inside
+// playerTickLatchHook.  It is incremented (relaxed) ONLY on the rare vtable
+// match to the ObjectBlockClarityCharacter clarity node (vtable NSO offset
+// 0x330c570 == BlockClarityCancelDamageCallBack); the per-second log of its
+// value vs. wall-clock answers "is the clarity node evaluated per-frame, or
+// only when the block is hit?".  File-scope std::atomic (NEVER thread_local --
+// Result 0xCA8 abort).
+std::atomic<std::uint64_t> s_clarityEvalCount{0};
+
 // PlayerTickLatch @ NSO +0x00273868 -- function-entry trampoline on
 // FUN_7100273868(long param_1, long param_2), the per-frame player tick
 // function.  Replaces the abandoned inline hook at +0x2743BC -- the
@@ -385,6 +395,27 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
         // Advance the badge-shop-text arm's freshness clock (cheap atomic
         // increment) so a stale shop arm expires within a few frames.
         probe::badgeShopTextTick();
+
+        // [cblk-diag5] per-second clarity-eval rate log.  This per-frame hook
+        // is the natural low-rate logging site (~60 Hz); the hot AINB-expr-eval
+        // hook (+0x1e02100) only counts -- it must NEVER log (fires millions of
+        // times/frame).  A steadily-climbing counter across the idle ~10 s
+        // window means the clarity node is evaluated EVERY FRAME (not a clean
+        // hit signal); a flat counter that jumps only when the block is bumped
+        // is the hit signal we want.
+        {
+            static std::atomic<std::uint32_t> s_frame{0};
+            const std::uint32_t frame =
+                s_frame.fetch_add(1, std::memory_order_relaxed);
+            if (frame % 60 == 0) {
+                SMBWAP_LOG_INFO(
+                    "[cblk-diag5] frame=%u clarity_exb_evals=%llu",
+                    frame,
+                    static_cast<unsigned long long>(
+                        s_clarityEvalCount.load(std::memory_order_relaxed)));
+            }
+        }
+
         playerTickLatchHook.orig(param_1, param_2);
         // NOTE(imgui-overlay): the overlay's per-frame draw is intentionally
         // NOT driven from here — PlayerTickLatch is a logic tick. It's driven
@@ -505,6 +536,48 @@ HkTrampoline<void*, void*> getDamageReactionPlayerNoHook =
                 0.0f, 0.0f, 0.0f);
         }
         return ret;
+    });
+
+// =========================================================================
+// [cblk-diag5] CANDIDATE #5 -- AINB EXPRESSION-EVALUATOR vtable-FILTER COUNT
+// =========================================================================
+//
+// GOAL: determine whether the ObjectBlockClarityCharacter clarity AINB node
+// (vtable NSO offset 0x330c570 == BlockClarityCancelDamageCallBack) is
+// evaluated EVERY FRAME or ONLY when the block is hit.  We hook the AINB
+// expression evaluator -- a HOT shared function every AINB node passes
+// through -- filter to the clarity node by vtable (the SAME mechanism the
+// NerveActivateOnce hook uses: *(void**)node minus the live main-module
+// base), and count matches.  The per-frame logger in playerTickLatchHook
+// prints the count once/second; the count's rate answers the question.
+//
+// CHOKE POINT: AINB expr evaluator @ NSO +0x1e02100.  Called as
+// f(void* node /*x0*/, void* arg2 /*x1*/) -> void.  Prologue verified CLEAN
+// (stp x29,x30 / stp x20,x19 / mov x29,sp / ldr x8,[x0] / mov x19,x1 -- no
+// pc-relative in the first 20 bytes).
+//
+// SAFETY -- EXTREME HOT PATH: this fires for every AINB expression eval, for
+// every actor, every frame (millions/frame).  The body MUST be minimal:
+// null-check, ONE load (*(void**)node), ONE compare (vt - base == 0x330c570),
+// and the atomic increment ONLY on the rare match.  NO logging here.  Always
+// call .orig().  s_clarityEvalCount is file-scope std::atomic (NEVER
+// thread_local -> Result 0xCA8 abort).
+constexpr ::ptr kVtableOff_ClarityCharacter = 0x330c570;
+
+HkTrampoline<void, void*, void*> clarityExbEvalHook = hk::hook::trampoline(
+    [](void* node, void* arg2) -> void {
+        if (node) {
+            const auto* main_mod = hk::ro::getMainModule();
+            if (main_mod) {
+                const ::ptr base = main_mod->range().start();
+                const ::ptr vt = *reinterpret_cast<::ptr*>(node);
+                if (vt >= base
+                    && (vt - base) == kVtableOff_ClarityCharacter) {
+                    s_clarityEvalCount.fetch_add(1, std::memory_order_relaxed);
+                }
+            }
+        }
+        clarityExbEvalHook.orig(node, arg2);
     });
 
 // =========================================================================
@@ -1877,6 +1950,16 @@ extern "C" void hkMain() {
     // See the hook comment + the smbwap-character-block-sanity memory.
     installHook("ActorCreateDispatch", 0x002ceac0,
                 actorCreateDispatchHook.installAtMainOffset(0x002ceac0));
+
+    // [cblk-diag5] AINB EXPRESSION-EVALUATOR vtable-FILTER COUNT @ +0x1e02100.
+    // Hot shared AINB-expr evaluator; counts (relaxed atomic) ONLY when the
+    // node's vtable == ObjectBlockClarityCharacter clarity node (NSO offset
+    // 0x330c570).  Body is minimal (null-check + 1 load + 1 compare + rare
+    // increment + orig) because this fires millions of times/frame.  The
+    // per-second count log lives in playerTickLatchHook (grep cblk-diag5).
+    // Answers: per-frame eval vs hit-only eval of the clarity node.
+    installHook("ClarityExbEval", 0x1e02100,
+                clarityExbEvalHook.installAtMainOffset(0x1e02100));
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",
