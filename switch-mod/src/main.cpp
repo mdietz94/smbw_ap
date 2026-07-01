@@ -228,6 +228,104 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
         if (vt_off == kVtableOff_SceneTransition) {
             probe::latchSceneTransitionTick(hk::svc::getSystemTick());
 
+            // Open-world secret-exit unlock (2026-06-30).  A few "replay"
+            // courses (Operation Poplin Rescue, Royal Seed Mansion) only
+            // spawn their secret goal + remove the wall blocks once the
+            // transient bool IsInClearedCourse (0xbef2db36) is set -- which
+            // in the vanilla linear flow happens on re-entry of a cleared
+            // course, but never in open-world (that flow is bypassed).  Here,
+            // at scene-load (this SceneTransition fire, BEFORE the level's
+            // BoolGameDataTag latches IsInClearedCourse at actor-init), we
+            // read the current course identity and, if the bridge flagged it
+            // for force-clear, write the flag so the secret path appears.
+            //
+            // Course identity = (in-game world_val 0x9f5ead3c,
+            // CourseInfo.CourseId enum 0xdf82e9ab).  Both read via the pure
+            // container-A reader (no dirty-queue write -> safe here, unlike
+            // the gated container writers).  The write goes to container-B
+            // (save-data, stable across scene transitions), so it does NOT
+            // need the scene-transition-window guard the per-scene writers
+            // use.  Datamined constants -- see the memory
+            // smbwap-secret-exit-isinclearedcourse.
+            //
+            // *** LIVE-TEST NOTES ***  Two things to confirm on first run
+            // (via the scene_course_probe log below): (1) that CourseInfo.
+            // CourseId (0xdf82e9ab, an Enum) actually reads through the
+            // container-A reader and equals the expected value on entry
+            // (0xcd7c09bb for Operation Poplin Rescue); if it reads 0, the
+            // enum lives in a different container and we need its reader.
+            // (2) that this fire precedes the actor latch (secret path
+            // appears).  If not, move the write to a slightly earlier/later
+            // course-load hook.
+            {
+                const unsigned fc_mask =
+                    smbwap::ap::getForceClearedCoursesMask();
+                if (fc_mask != 0 && probe::isSaveLoaded()) {
+                    const unsigned world_val =
+                        probe::readContainerAValue(0x9f5ead3cu);
+                    const unsigned course_id =
+                        probe::readContainerAValue(0xdf82e9abu);
+
+                    // {mask bit, in-game world_val, CourseInfo.CourseId enum}.
+                    // MUST match FORCE_CLEARED_COURSES bit order in
+                    // apworld/.../client/force_cleared_table.py.
+                    struct ForceClearedCourse {
+                        unsigned bit;
+                        unsigned world_val;
+                        unsigned course_id;
+                        const char* name;
+                    };
+                    static constexpr ForceClearedCourse kForceClearedCourses[] = {
+                        // bit 0: Operation Poplin Rescue (W5 Course551 =
+                        // world_val 6, CourseId "Course11" 0xcd7c09bb).
+                        {0u, 6u, 0xcd7c09bbu, "Operation Poplin Rescue"},
+                        // bit 1: Royal Seed Mansion (W3 Course531 =
+                        // world_val 4, CourseId "Course61" 0x37d76dc1).
+                        {1u, 4u, 0x37d76dc1u, "Royal Seed Mansion"},
+                    };
+
+                    for (const auto& c : kForceClearedCourses) {
+                        if (c.world_val != world_val
+                            || c.course_id != course_id) {
+                            continue;
+                        }
+                        static std::atomic<unsigned> s_fc_log{0};
+                        const bool do_log = s_fc_log.fetch_add(1) < 24;
+                        if ((fc_mask & (1u << c.bit)) != 0) {
+                            const bool ok = probe::grantContainerBBool(
+                                0xbef2db36u, 1u);
+                            if (do_log) {
+                                SMBWAP_LOG_INFO(
+                                    "FORCE_CLEARED: %s (world=%u "
+                                    "course=0x%08x) -> IsInClearedCourse=1 "
+                                    "(grant %s)",
+                                    c.name, world_val, course_id,
+                                    ok ? "ok" : "refused");
+                            }
+                        } else if (do_log) {
+                            SMBWAP_LOG_INFO(
+                                "FORCE_CLEARED: %s matched but bit %u clear "
+                                "in mask 0x%04x -> skip",
+                                c.name, c.bit, fc_mask);
+                        }
+                        break;
+                    }
+
+                    // Bring-up observability: log the raw (world, course) a
+                    // bounded number of times so the first live test confirms
+                    // the CourseInfo.CourseId read + the enum values.  Bounded
+                    // monotonic counter (NOT a fetch_sub budget -- that
+                    // underflows and spams, see the log-budget footgun).
+                    static std::atomic<unsigned> s_probe_log{0};
+                    if (s_probe_log.fetch_add(1) < 40) {
+                        SMBWAP_LOG_INFO(
+                            "scene_course_probe: world_val=%u "
+                            "course_id=0x%08x fc_mask=0x%04x",
+                            world_val, course_id, fc_mask);
+                    }
+                }
+            }
+
             constexpr std::ptrdiff_t kDeathDiscriminator_Off = 0x18;
             constexpr std::uint64_t  kDeathDiscriminator_Val = 0x00ff000600000004ull;
             if (nerve) {

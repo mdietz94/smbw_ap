@@ -490,6 +490,52 @@ class SetRoutableWorldsAbsoluteMsg:
 
 
 @dataclass(frozen=True)
+class SetForceClearedCoursesMsg:
+    """Bridge -> Switch.  Open-world: force the transient IsInClearedCourse
+    flag for secret-exit "replay" courses (2026-06-30).
+
+    ``mask`` bit N == the course at index N of
+    ``force_cleared_table.FORCE_CLEARED_COURSES`` should be treated as
+    already-cleared so its secret goal spawns and its wall blocks are
+    removed.  The Switch (``kForceClearedCourses`` in ``main.cpp``) maps each
+    bit to an in-game ``(world_val, CourseInfo.CourseId)`` identity and, at
+    scene-load for a matching course, writes ``IsInClearedCourse``
+    (``0xbef2db36``) via ``probe::grantContainerBBool`` so the secret path
+    appears.  See :mod:`force_cleared_table` and the memory
+    ``smbwap-secret-exit-isinclearedcourse`` for the full mechanism.
+
+    A mask of 0 means "nothing to force" -- the Switch write no-ops and the
+    courses behave vanilla (secret path stays hidden until a genuine replay).
+    Idempotent absolute-overwrite; sent on the same triggers as
+    :class:`SetRoutableWorldsAbsoluteMsg` (every ReceivedItems, every Switch
+    HelloMsg, the periodic ~2 s tick) so it survives save/reload + reboots
+    and tracks a newly-checked NORMAL_EXIT gating a course's inclusion.
+
+    Carried as a u16 for headroom; the bit count matches
+    ``FORCE_CLEARED_COURSES`` (2 today).
+    """
+
+    T = "set_force_cleared_courses"
+
+    mask: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "mask": self.mask}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetForceClearedCoursesMsg:
+        raw = d.get("mask")
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            raise ProtocolError(
+                f"set_force_cleared_courses.mask must be int, got {raw!r}")
+        if not (0 <= raw < (1 << 16)):
+            raise ProtocolError(
+                f"set_force_cleared_courses.mask out of range "
+                f"[0, 2**16): {raw}")
+        return cls(mask=raw)
+
+
+@dataclass(frozen=True)
 class SetItemGetDenyMaskMsg:
     """Bridge -> Switch.  Power-up pickup negation (M3.1 / M5 groundwork,
     2026-06-10).
@@ -1128,6 +1174,7 @@ WireMsg = (
     | SetBadgesAbsoluteMsg
     | SetRoyalSeedsAbsoluteMsg
     | SetRoutableWorldsAbsoluteMsg
+    | SetForceClearedCoursesMsg
     | ApplyWorldUnlockMsg
     | SetItemGetDenyMaskMsg
     | SetBadgeShopStateMsg
@@ -1157,6 +1204,7 @@ _FROM_WIRE: dict[str, Any] = {
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     SetRoyalSeedsAbsoluteMsg.T: SetRoyalSeedsAbsoluteMsg.from_wire,
     SetRoutableWorldsAbsoluteMsg.T: SetRoutableWorldsAbsoluteMsg.from_wire,
+    SetForceClearedCoursesMsg.T: SetForceClearedCoursesMsg.from_wire,
     ApplyWorldUnlockMsg.T: ApplyWorldUnlockMsg.from_wire,
     SetItemGetDenyMaskMsg.T: SetItemGetDenyMaskMsg.from_wire,
     SetBadgeShopStateMsg.T: SetBadgeShopStateMsg.from_wire,

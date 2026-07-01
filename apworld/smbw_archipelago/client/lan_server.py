@@ -196,6 +196,7 @@ GrantMsg = (
     wire.SetBadgesAbsoluteMsg
     | wire.SetRoyalSeedsAbsoluteMsg
     | wire.SetRoutableWorldsAbsoluteMsg
+    | wire.SetForceClearedCoursesMsg
     | wire.SetItemGetDenyMaskMsg
     | wire.GrantHashKeyedMsg
     | wire.IncrementHashKeyedMsg
@@ -239,6 +240,11 @@ BadgeShopTextProvider = Callable[[], "dict[int, str]"]
 # open-world state survives Switch reboots / save reloads.
 RoutableWorldsProvider = Callable[[], int]
 OpenWorldRoyalSeedProvider = Callable[[], "int | None"]
+# Open-world: returns the force-cleared-courses bitmask (see
+# :class:`wire.SetForceClearedCoursesMsg` + :mod:`force_cleared_table`); bit N
+# == the Nth secret-exit "replay" course should have IsInClearedCourse forced.
+# 0 means nothing to force (Switch write no-ops).  Replayed on HelloMsg + tick.
+ForceClearedCoursesProvider = Callable[[], int]
 # Returns the (int_hashes, bool_hashes) world-unlock pair to send on
 # connect/HelloMsg, or two empty tuples when open-world is inactive.
 # Split by GameDataList category: Int -> grantContainerACounter,
@@ -273,6 +279,7 @@ class LanServer:
         wonder_seed_counts_provider: WonderSeedCountsProvider | None = None,
         wonder_seed_bits_provider: WonderSeedBitsProvider | None = None,
         routable_worlds_provider: RoutableWorldsProvider | None = None,
+        force_cleared_courses_provider: ForceClearedCoursesProvider | None = None,
         open_world_royal_seed_provider: OpenWorldRoyalSeedProvider | None = None,
         world_unlock_hashes_provider: WorldUnlockHashesProvider | None = None,
         itemget_deny_provider: ItemGetDenyProvider | None = None,
@@ -288,6 +295,7 @@ class LanServer:
         self._wonder_seed_counts_provider = wonder_seed_counts_provider
         self._wonder_seed_bits_provider = wonder_seed_bits_provider
         self._routable_worlds_provider = routable_worlds_provider
+        self._force_cleared_courses_provider = force_cleared_courses_provider
         self._open_world_royal_seed_provider = open_world_royal_seed_provider
         self._world_unlock_hashes_provider = world_unlock_hashes_provider
         self._itemget_deny_provider = itemget_deny_provider
@@ -466,6 +474,32 @@ class LanServer:
             log.error(
                 "send_set_routable_worlds(mask=0x%x): outbound queue full; "
                 "dropping", mask)
+
+    def send_set_force_cleared_courses(self, mask: int) -> None:
+        """Enqueue a SetForceClearedCourses (open-world secret-exit unlock) to
+        the active Switch client.  ``mask`` bit N = the Nth
+        :data:`force_cleared_table.FORCE_CLEARED_COURSES` course should have
+        IsInClearedCourse forced true at scene-load so its secret path spawns.
+        A mask of 0 means nothing to force (the Switch write no-ops).
+
+        Same drop-on-no-client semantics as
+        :meth:`send_set_badges_absolute`; the next HelloMsg re-pushes via
+        :meth:`_push_force_cleared_courses_now` so a dropped tick is recovered
+        on reconnect."""
+        msg = wire.SetForceClearedCoursesMsg(mask=mask)
+        if self._send_queue is None:
+            log.warning(
+                "send_set_force_cleared_courses(mask=0x%x): no Switch client "
+                "connected; dropping", mask)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug(
+                "send_set_force_cleared_courses: enqueued mask=0x%x", mask)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_force_cleared_courses(mask=0x%x): outbound queue "
+                "full; dropping", mask)
 
     def send_set_itemget_deny(self, mask: int) -> None:
         """Enqueue a SetItemGetDenyMask (power-up pickup negation) to the
@@ -907,6 +941,11 @@ class LanServer:
             self._push_routable_worlds_now()
             self._push_open_world_royal_seeds_now()
             self._push_world_unlock_now()
+            # Open-world (2026-06-30): re-assert the secret-exit "replay"
+            # course unlocks (force IsInClearedCourse) so a save-load / Switch
+            # reboot re-applies the transient flag next time the player enters
+            # Operation Poplin Rescue / Royal Seed Mansion.  No-op otherwise.
+            self._push_force_cleared_courses_now()
             # Power-up pickup negation (2026-06-10): re-assert the deny
             # mask so a Switch reboot mid-session keeps ungranted
             # power-ups untouchable.  No-op while the mask is 0.
@@ -1172,6 +1211,25 @@ class LanServer:
             return
         self.send_set_routable_worlds(mask)
 
+    def _push_force_cleared_courses_now(self) -> None:
+        """Pull the force-cleared-courses bitmask from the provider and
+        enqueue a ``SetForceClearedCoursesMsg``.  No-op if no provider was
+        wired (non-open-world clients) or no client is connected.  Called
+        from HelloMsg dispatch, the per-ReceivedItems push (via
+        :meth:`send_set_force_cleared_courses` directly in
+        ``SMBWContext._handle_received_items``), and the periodic tick, so the
+        secret-exit unlock survives save/reload + Switch reboots and tracks a
+        newly-checked NORMAL_EXIT that gates a course's inclusion."""
+        if self._force_cleared_courses_provider is None:
+            return
+        try:
+            mask = int(self._force_cleared_courses_provider())
+        except Exception:
+            log.exception(
+                "force_cleared_courses_provider raised; skipping sync")
+            return
+        self.send_set_force_cleared_courses(mask)
+
     def _push_world_unlock_now(self) -> None:
         """Send the world-unlock hash table to the Switch (open-world only).
 
@@ -1298,6 +1356,7 @@ class LanServer:
                 self._push_wonder_seed_bits_now()
                 self._push_routable_worlds_now()
                 self._push_open_world_royal_seeds_now()
+                self._push_force_cleared_courses_now()
                 self._push_itemget_deny_now()
                 self._push_badge_shop_state_now()
                 self._push_badge_shop_text_now()
@@ -1338,6 +1397,7 @@ class LanServer:
         last_wonder_seed_counts: tuple[int, ...] | None = None
         last_wonder_seed_bits: tuple[int, int] | None = None
         last_routable_worlds_mask: int | None = None
+        last_force_cleared_mask: int | None = None
         try:
             while True:
                 msg = await queue.get()
@@ -1403,6 +1463,12 @@ class LanServer:
                             log.info(
                                 "-> set_routable_worlds mask=0x%x", msg.mask)
                             last_routable_worlds_mask = msg.mask
+                    elif isinstance(msg, wire.SetForceClearedCoursesMsg):
+                        if msg.mask != last_force_cleared_mask:
+                            log.info(
+                                "-> set_force_cleared_courses mask=0x%x",
+                                msg.mask)
+                            last_force_cleared_mask = msg.mask
                     elif isinstance(msg, wire.SetItemGetDenyMaskMsg):
                         log.info("-> set_itemget_deny mask=0x%x", msg.mask)
                     elif isinstance(msg, wire.SetWonderSeedsAbsoluteMsg):

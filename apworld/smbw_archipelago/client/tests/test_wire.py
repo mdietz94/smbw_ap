@@ -30,6 +30,7 @@ from ..wire import (
     SetBadgeShopStateMsg,
     SetBadgeShopTextMsg,
     SetBadgesAbsoluteMsg,
+    SetForceClearedCoursesMsg,
     SetItemGetDenyMaskMsg,
     SetRoutableWorldsAbsoluteMsg,
     SetRoyalSeedsAbsoluteMsg,
@@ -164,6 +165,14 @@ class TestRoundTrip(unittest.TestCase):
         # Active worlds + Castle/Bowser unlocked.
         self._round_trip(SetRoutableWorldsAbsoluteMsg(
             mask=0x15 | (1 << SetRoutableWorldsAbsoluteMsg.CASTLE_BIT)))
+
+    def test_set_force_cleared_courses_zero(self):
+        # 0 == nothing to force (Switch write no-ops).
+        self._round_trip(SetForceClearedCoursesMsg(mask=0))
+
+    def test_set_force_cleared_courses_both(self):
+        # Both secret-exit replay courses force-cleared.
+        self._round_trip(SetForceClearedCoursesMsg(mask=0b11))
 
     def test_set_itemget_deny_zero(self):
         # 0 == vanilla pickups (Switch hook no-ops).
