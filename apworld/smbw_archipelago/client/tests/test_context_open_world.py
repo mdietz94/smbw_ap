@@ -261,15 +261,21 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
 
     # ---- force-cleared (secret-exit replay) courses ----------------------
 
-    async def test_force_cleared_inactive_returns_zero(self):
-        # Not open-world -> nothing to force (Switch write no-ops).
+    async def test_force_cleared_standard_mode_also_forces(self):
+        # Applies in BOTH modes (2026-07-01): a non-open-world seed still
+        # forces the no-NORMAL_EXIT courses (safe-if-unnecessary; guards
+        # against AP-authoritative overwrites clobbering the native flag).
+        from ..force_cleared_table import FORCE_CLEARED_COURSES
         await self._connect({})
-        self.assertEqual(self.ctx._recompute_force_cleared_mask(), 0)
+        self.assertFalse(self.ctx.open_world)
+        self.ctx.checked_locations = set()
+        expected = (1 << len(FORCE_CLEARED_COURSES)) - 1
+        self.assertEqual(self.ctx._recompute_force_cleared_mask(), expected)
 
     async def test_force_cleared_open_world_no_normal_exit_always_set(self):
         # Both current courses (Operation Poplin Rescue, Royal Seed Mansion)
-        # have no NORMAL_EXIT location, so open-world forces both regardless
-        # of checked_locations.
+        # have no NORMAL_EXIT location, so both are forced regardless of
+        # checked_locations.
         from ..force_cleared_table import FORCE_CLEARED_COURSES
         await self._connect(
             {"open_world_active": [6], "palaces_required": 0})

@@ -20,12 +20,18 @@ normal ``goal_id == 1`` way).
 **Bit order here MUST match ``kForceClearedCourses`` on the Switch side.**
 
 Each entry is ``(secret_exit_location, normal_exit_location | None)``.  The
-gating rule (:meth:`SMBWContext._recompute_force_cleared_mask`): open-world AND
-(the course has **no** ``NORMAL_EXIT`` location -> force-clear always; else
-force-clear only once that ``NORMAL_EXIT`` location has been checked, so the
-player still plays the normal exit first).  Both current courses award a Royal
-Seed on the normal goal (``goal_id 0`` -> ``PALACE_CLEAR``), not a
-``NORMAL_EXIT`` check, so both are ``None`` -> always force-clear in open-world.
+gating rule (:meth:`SMBWContext._recompute_force_cleared_mask`): the course has
+**no** ``NORMAL_EXIT`` location -> force-clear always; else force-clear only
+once that ``NORMAL_EXIT`` location has been checked, so the player still plays
+the normal exit first.  Both current courses award a Royal Seed on the normal
+goal (``goal_id 0`` -> ``PALACE_CLEAR``), not a ``NORMAL_EXIT`` check, so both
+are ``None`` -> always force-clear.
+
+Applies in **both** open-world and standard mode (2026-07-01): necessary in
+open-world (the synthesized access flow never arms the flag), redundant-but-safe
+in standard mode (the game most likely sets it natively on replay, but the exact
+persistent source is un-RE-confirmed, so we force in both rather than risk an
+AP-authoritative overwrite having clobbered it).
 """
 
 from __future__ import annotations
