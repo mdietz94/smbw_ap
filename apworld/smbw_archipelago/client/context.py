@@ -813,19 +813,29 @@ class SMBWContext(CommonContext):
         return mask
 
     def _recompute_force_cleared_mask(self) -> int:
-        """Open-world: bitmask of secret-exit "replay" courses to force-clear.
+        """Bitmask of secret-exit "replay" courses to force-clear.
 
         Bit N (per :data:`force_cleared_table.FORCE_CLEARED_COURSES`) is set
         when that course should have the transient ``IsInClearedCourse`` flag
         forced true on the Switch so its secret goal spawns + wall blocks are
-        removed.  Rule (per user 2026-06-30): open-world AND (the course has
-        **no** ``NORMAL_EXIT`` location -> always; else its ``NORMAL_EXIT``
-        location has been checked, so the player plays the normal exit first).
-        Returns 0 when open-world is inactive (the Switch write no-ops).
+        removed.  Rule: the course has **no** ``NORMAL_EXIT`` location ->
+        always; else its ``NORMAL_EXIT`` location has been checked (so the
+        player plays the normal exit first).
+
+        Applies in **both** open-world and standard mode (2026-07-01).  It is
+        *necessary* in open-world -- the synthesized access flow bypasses the
+        linear world-clear that arms the flag natively.  In standard mode the
+        game most likely sets the flag itself on replay of a cleared course,
+        making this redundant; but we could not RE-confirm which persistent
+        field the game reads to set it (the hash is mov/movk-materialized +
+        data-driven, un-searchable with the current Ghidra bridge), so we
+        cannot rule out that an AP-authoritative overwrite (Wonder Seeds, ...)
+        clobbers that source.  Forcing the flag is a safe no-op if unnecessary
+        (setting true when already true) and a fix if it isn't -- so we force
+        in both per the "safe if unnecessary" call.
+
         Side-effect-free; wired as the LanServer
         ``force_cleared_courses_provider`` so it replays on HelloMsg + tick."""
-        if not self.open_world:
-            return 0
         mask = 0
         for bit, (_secret_loc, normal_loc) in enumerate(
                 force_cleared_table.FORCE_CLEARED_COURSES):

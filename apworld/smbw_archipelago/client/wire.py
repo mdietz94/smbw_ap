@@ -491,8 +491,8 @@ class SetRoutableWorldsAbsoluteMsg:
 
 @dataclass(frozen=True)
 class SetForceClearedCoursesMsg:
-    """Bridge -> Switch.  Open-world: force the transient IsInClearedCourse
-    flag for secret-exit "replay" courses (2026-06-30).
+    """Bridge -> Switch.  Force the transient IsInClearedCourse flag for
+    secret-exit "replay" courses (2026-06-30; both modes 2026-07-01).
 
     ``mask`` bit N == the course at index N of
     ``force_cleared_table.FORCE_CLEARED_COURSES`` should be treated as
