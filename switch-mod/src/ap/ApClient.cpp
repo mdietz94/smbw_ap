@@ -499,6 +499,9 @@ void ApClient::handleLine(char* line, std::size_t len) {
     // 2026-06 -- open-world routable-world mask dedup.
     static bool          s_have_routable = false;
     static std::uint16_t s_last_routable = 0;
+    // 2026-06-30 -- open-world force-cleared-courses mask dedup.
+    static bool          s_have_force_cleared = false;
+    static std::uint16_t s_last_force_cleared = 0;
     switch (msg.kind) {
         case InboundKind::HelloAck:
             SMBWAP_LOG_INFO(
@@ -514,6 +517,7 @@ void ApClient::handleLine(char* line, std::size_t len) {
             s_have_counts = false;
             s_have_ws_bits = false;
             s_have_routable = false;
+            s_have_force_cleared = false;
             return;
         case InboundKind::SetBadgesAbsolute: {
             const std::uint64_t bits = msg.set_badges_absolute.bits;
@@ -719,6 +723,25 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 SMBWAP_LOG_WARN(
                     "[ring] inbound full; dropping SetRoutableWorldsAbsolute"
                     "(mask=0x%03x)", static_cast<unsigned>(mask));
+            }
+            return;
+        }
+        case InboundKind::SetForceClearedCourses: {
+            // 2026-06-30 -- open-world secret-exit unlock.  drainInbound
+            // caches into g_force_cleared_courses_mask; the SceneTransition
+            // hook writes IsInClearedCourse for a matching course.
+            const std::uint16_t mask = msg.set_force_cleared_courses.mask;
+            if (!s_have_force_cleared || mask != s_last_force_cleared) {
+                SMBWAP_LOG_INFO(
+                    "[grant] received SetForceClearedCourses(mask=0x%04x), "
+                    "enqueued", static_cast<unsigned>(mask));
+                s_last_force_cleared = mask;
+                s_have_force_cleared = true;
+            }
+            if (!tryPushInbound(msg) && shouldLogDrop()) {
+                SMBWAP_LOG_WARN(
+                    "[ring] inbound full; dropping SetForceClearedCourses"
+                    "(mask=0x%04x)", static_cast<unsigned>(mask));
             }
             return;
         }

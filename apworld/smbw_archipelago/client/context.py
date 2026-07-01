@@ -40,6 +40,7 @@ from NetUtils import ClientStatus  # type: ignore
 
 from . import badge_table
 from . import coin_table
+from . import force_cleared_table
 from . import powerup_table
 from . import royal_seed_table
 from . import wonder_seed_table
@@ -379,6 +380,10 @@ class SMBWContext(CommonContext):
                         self._recompute_routable_worlds_mask())
                     self.lan_server.send_apply_world_unlock(
                         *self._world_unlock_hashes())
+                    # Secret-exit "replay" course unlock (force
+                    # IsInClearedCourse); idempotent, replays on HelloMsg.
+                    self.lan_server.send_set_force_cleared_courses(
+                        self._recompute_force_cleared_mask())
 
             # Badge-shop AP ownership: push the shop masks now that the
             # reverse maps + checked_locations (carried by Connected) are
@@ -807,6 +812,32 @@ class SMBWContext(CommonContext):
             mask |= (1 << ROUTABLE_CASTLE_BIT)
         return mask
 
+    def _recompute_force_cleared_mask(self) -> int:
+        """Open-world: bitmask of secret-exit "replay" courses to force-clear.
+
+        Bit N (per :data:`force_cleared_table.FORCE_CLEARED_COURSES`) is set
+        when that course should have the transient ``IsInClearedCourse`` flag
+        forced true on the Switch so its secret goal spawns + wall blocks are
+        removed.  Rule (per user 2026-06-30): open-world AND (the course has
+        **no** ``NORMAL_EXIT`` location -> always; else its ``NORMAL_EXIT``
+        location has been checked, so the player plays the normal exit first).
+        Returns 0 when open-world is inactive (the Switch write no-ops).
+        Side-effect-free; wired as the LanServer
+        ``force_cleared_courses_provider`` so it replays on HelloMsg + tick."""
+        if not self.open_world:
+            return 0
+        mask = 0
+        for bit, (_secret_loc, normal_loc) in enumerate(
+                force_cleared_table.FORCE_CLEARED_COURSES):
+            if normal_loc is None:
+                include = True
+            else:
+                nid = self._location_name_to_id.get(normal_loc)
+                include = nid is not None and nid in self.checked_locations
+            if include:
+                mask |= (1 << bit)
+        return mask
+
     def _open_world_royal_seed_mask(self) -> int | None:
         """Royal Seeds are NEVER pushed to the Switch.  The in-game Royal Seed
         state stays purely vanilla -- the player collects them by clearing
@@ -870,6 +901,13 @@ class SMBWContext(CommonContext):
             # it.  No-ops to 0 when this seed doesn't gate power-ups.
             self.lan_server.send_set_itemget_deny(
                 self._recompute_itemget_deny_mask())
+            # Open-world (2026-06-30): re-assert which secret-exit "replay"
+            # courses to force-clear so their secret path spawns.  Idempotent
+            # absolute-overwrite; tracks a newly-checked NORMAL_EXIT that
+            # gates a course's inclusion.  No-op (mask 0) when open-world is
+            # inactive.
+            self.lan_server.send_set_force_cleared_courses(
+                self._recompute_force_cleared_mask())
             # Open-world: once the player holds enough AP Royal Seeds, flag the
             # Castle route routable so the player can travel to Bowser.  Royal
             # Seeds are NOT pushed to the Switch -- the in-game seed state is

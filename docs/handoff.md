@@ -12,8 +12,13 @@
 >   — **canonical current-state RE ledger** (offsets, hashes, structs, hooks,
 >   save offsets, ruled-out leads). The single source of truth for RE facts; the
 >   spikes below feed into it.
+> - [handoff-2026-07-01-open-world-secret-exit.md](handoff-2026-07-01-open-world-secret-exit.md)
+>   — **SHIPPED** ([#158](https://github.com/mdietz94/smbw_ap/pull/158)):
+>   open-world secret-exit unlock (force `IsInClearedCourse` for Operation
+>   Poplin Rescue / Royal Seed Mansion). Related to but distinct from the
+>   Royal-Seed check-loss spike, which is still open.
 > - [gate-entry-session3-handoff.md](gate-entry-session3-handoff.md) — Royal-Seed
->   gate-entry / check-loss spike (2026-05-31, newest).
+>   gate-entry / check-loss spike (2026-05-31).
 > - [handoff-2026-05-29-ws-persistence.md](handoff-2026-05-29-ws-persistence.md)
 >   — Wonder-Seed per-course Container-D persistence (supersedes the
 >   "gate override only, not per-course storage" caveat below).

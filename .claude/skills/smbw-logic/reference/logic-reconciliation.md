@@ -201,7 +201,14 @@ apworld logic suite green.
   "Spelunking Cleared" item.
 - **Confirmed secret exits**: `W3: Royal Seed Mansion - Secret Exit` and
   `W5: Operation Poplin Rescue - Secret Exit` are real in-game secret exits (each
-  unlocks a Special World level). Correctly modeled — keep.
+  unlocks a Special World level). Correctly modeled — keep. `requires: []` is
+  correct: no *item* gates them (the secret path spawns on replay of a cleared
+  course, gated on the transient `IsInClearedCourse` flag, not on anything the
+  player carries). In **open-world** that flag is never set naturally, so the
+  Switch force-writes it — see
+  [docs/handoff-2026-07-01-open-world-secret-exit.md](../../../../docs/handoff-2026-07-01-open-world-secret-exit.md)
+  (PR #158) and memory `smbwap-secret-exit-isinclearedcourse`. No logic change
+  needed.
 - **FFP Cabin "13+ characters"**: those character blocks (14 total) belong to
   *Search Party - Puzzling Park*, not Fluff-Puff Peaks Cabin. Falls under the
   skipped "Hidden Character Blocks" category.
