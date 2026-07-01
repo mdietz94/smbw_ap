@@ -34,12 +34,29 @@ Mines, WMI004 = W3). See memory `smbwap-secret-exit-isinclearedcourse`.
 ## Fix
 
 **Bridge** (`apworld/smbw_archipelago/client/`): new `SetForceClearedCourses` wire
-message + `force_cleared_table.py`. A course is forced iff **open-world AND** (it
-has no `NORMAL_EXIT` location → always; else its `NORMAL_EXIT` location has been
-checked, so the player plays the normal exit first). Both current courses award a
-Royal Seed on the normal goal, so both resolve to "always" in open-world. Synced on
-Connected / ReceivedItems / HelloMsg / periodic tick, mirroring the routable-worlds
-mask.
+message + `force_cleared_table.py`. A course is forced iff it has no `NORMAL_EXIT`
+location (→ always) else its `NORMAL_EXIT` location has been checked (so the player
+plays the normal exit first). Both current courses award a Royal Seed on the normal
+goal, so both resolve to "always". Synced on Connected / ReceivedItems / HelloMsg /
+periodic tick, mirroring the routable-worlds mask.
+
+**Applies in both open-world AND standard mode (revised 2026-07-01).** Originally
+gated to open-world, then broadened: it's *necessary* in open-world (the synthesized
+access flow never arms the flag), and in standard mode it's redundant-but-safe (the
+game most likely sets `IsInClearedCourse` itself on replay of a cleared course, so
+force-writing true when already true is a no-op). We could **not** RE-confirm which
+persistent field the game reads to set the flag — the hash is mov/movk-materialized
++ data-driven through the GameData manifest, so it's un-searchable with the current
+Ghidra bridge (no constant/byte/instruction search; `decompile`/`search_instructions`
+time out; the flag name is not a string in the NSO). That leaves open the (unlikely
+but unruled-out) possibility that an AP-authoritative overwrite in standard mode
+(Wonder Seed counts / per-course bitfield, which the bridge clobbers every tick)
+clears the flag's source. Since forcing is safe-if-unnecessary and a fix if it
+isn't, we force in both. **Standard-mode caveat:** these two search-party courses
+now show their secret path from *first* entry (blocks removed, secret goal present),
+not only on post-world-clear replay — consistent with the "always secret for
+no-NORMAL_EXIT courses" gating intent, and not a softlock (the normal goal is still
+present for the Royal Seed).
 
 **Switch** (`switch-mod/src/`): at `SceneTransition` (course-load) read
 `(world_val 0x9f5ead3c, CourseInfo.CourseId 0xdf82e9ab)` and, for a matching flagged

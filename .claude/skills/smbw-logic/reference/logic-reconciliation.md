@@ -204,8 +204,9 @@ apworld logic suite green.
   unlocks a Special World level). Correctly modeled — keep. `requires: []` is
   correct: no *item* gates them (the secret path spawns on replay of a cleared
   course, gated on the transient `IsInClearedCourse` flag, not on anything the
-  player carries). In **open-world** that flag is never set naturally, so the
-  Switch force-writes it — see
+  player carries). In open-world that flag is never set naturally; the Switch
+  force-writes it (in **both** modes as of 2026-07-01 — necessary in open-world,
+  safe-if-redundant in standard) — see
   [docs/handoff-2026-07-01-open-world-secret-exit.md](../../../../docs/handoff-2026-07-01-open-world-secret-exit.md)
   (PR #158) and memory `smbwap-secret-exit-isinclearedcourse`. No logic change
   needed.
