@@ -360,6 +360,7 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 // DEFINITION/editor class, no runtime execute).
 std::atomic<std::uint64_t> s_itemCreateCount{0};
 std::atomic<std::uint64_t> s_shapeCastCount{0};
+std::atomic<std::uint64_t> s_blockUpMoveCount{0};
 // Frame counter owned by playerTickLatchHook; the diag7 per-fire logs stamp
 // themselves with it so bump-time fires correlate against the once/second
 // rate lines.
@@ -419,12 +420,15 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                 s_tickFrame.fetch_add(1, std::memory_order_relaxed);
             if (frame % 60 == 0) {
                 SMBWAP_LOG_INFO(
-                    "[cblk-diag7] frame=%u itemCreate=%llu shapeCast=%llu",
+                    "[cblk-diag7] frame=%u itemCreate=%llu shapeCast=%llu "
+                    "blockUpMove=%llu",
                     frame,
                     static_cast<unsigned long long>(
                         s_itemCreateCount.load(std::memory_order_relaxed)),
                     static_cast<unsigned long long>(
-                        s_shapeCastCount.load(std::memory_order_relaxed)));
+                        s_shapeCastCount.load(std::memory_order_relaxed)),
+                    static_cast<unsigned long long>(
+                        s_blockUpMoveCount.load(std::memory_order_relaxed)));
             }
         }
 
@@ -599,10 +603,28 @@ HkTrampoline<std::uint64_t, void*, void*, void*, void*> itemCreateExecHook =
                 itemCreateExecHook.orig(node, a2, a3, a4);
             s_itemCreateCount.fetch_add(1, std::memory_order_relaxed);
 
+            // Log the first 48 fires PLUS any "isolated" fire (>2 s since the
+            // previous one, own cap 16).  The isolated-fire escape hatch
+            // guarantees a bump-time fire still gets a full identity dump even
+            // if a level-load burst exhausted the primary cap -- without it a
+            // chatty load would leave only the bare counter for the one fire
+            // we actually care about.
             static std::atomic<unsigned> s_logged{0};
+            static std::atomic<unsigned> s_edgeLogged{0};
+            static std::atomic<std::uint32_t> s_lastFireFrame{0};
+            const std::uint32_t frame =
+                s_tickFrame.load(std::memory_order_relaxed);
+            const std::uint32_t prev =
+                s_lastFireFrame.exchange(frame, std::memory_order_relaxed);
+            const bool isolated = (frame - prev) > 120u;
             const unsigned seq =
                 s_logged.fetch_add(1, std::memory_order_relaxed);
-            if (seq >= 48) return ret;
+            if (seq >= 48) {
+                if (!isolated) return ret;
+                const unsigned e =
+                    s_edgeLogged.fetch_add(1, std::memory_order_relaxed);
+                if (e >= 16) return ret;
+            }
 
             // Owner walk (guarded hop-by-hop; see IDENTITY WALK above).
             void* owner = nullptr;
@@ -644,9 +666,9 @@ HkTrampoline<std::uint64_t, void*, void*, void*, void*> itemCreateExecHook =
             }
 
             SMBWAP_LOG_INFO(
-                "[cblk-diag7] itemCreate #%u frame=%u node=%p owner=%p "
+                "[cblk-diag7] itemCreate #%u frame=%u iso=%d node=%p owner=%p "
                 "vt=0x%llx (NSO+0x%llx)",
-                seq, s_tickFrame.load(std::memory_order_relaxed), node, owner,
+                seq, frame, isolated ? 1 : 0, node, owner,
                 static_cast<unsigned long long>(vt),
                 static_cast<unsigned long long>(vtOff));
             SMBWAP_LOG_INFO(
@@ -677,6 +699,53 @@ HkTrampoline<std::uint64_t, void*, void*, void*, void*>
         [](void* node, void* a2, void* a3, void* a4) -> std::uint64_t {
             s_shapeCastCount.fetch_add(1, std::memory_order_relaxed);
             return blockClarityShapeCastExecHook.orig(node, a2, a3, a4);
+        });
+
+// [cblk-diag7] CANDIDATE #7b -- `BlockUpMove` node execute @ +0x146397c.
+// The block-bump ANIMATION node (x6 in the block graph).  The RE agent
+// dismissed it as "per-frame", but the global node catalog (romfs
+// AI/NodeDefinition/Node.Product.100.aidefn.byml, parsed 2026-07-03) tags it
+// **["Execute", "_ActorType_Secred"] with input HitMoveDir** -- an Execute
+// (action) node fed by the hit direction, i.e. it plausibly runs ON HIT (or
+// only across the few bump-animation frames = still a clean rising edge),
+// unlike BlockClarityShapeCast which the same catalog tags ["Query", ...]
+// (polled).  It also fires for REGULAR ?-blocks (shared node), so the
+// expected signature of success is: flat while idle, a small burst per bump,
+// for BOTH block kinds -- identity filtering would come later from the owner
+// walk once its layout is RE'd.  Count + isolated-fire edge log only (its
+// node layout is unverified, so no owner walk yet -- the fn's own first loads
+// are node+0x29 / node+0x75 flag bytes, not the +0x1f8 chain).
+// Prologue verified CLEAN offline (nsodis.py 2026-07-03):
+//   stp x29,x30,[sp,#-0x20]! / str x19 / mov x29,sp / ldrb w8,[x0,#0x29] /
+//   mov x19,x0  -- no pc-relative insn in the first 20 bytes.
+HkTrampoline<std::uint64_t, void*, void*, void*, void*> blockUpMoveExecHook =
+    hk::hook::trampoline(
+        [](void* node, void* a2, void* a3, void* a4) -> std::uint64_t {
+            const std::uint64_t ret =
+                blockUpMoveExecHook.orig(node, a2, a3, a4);
+            s_blockUpMoveCount.fetch_add(1, std::memory_order_relaxed);
+            // Isolated-fire edge log (same idiom as itemCreate): a fire >2 s
+            // after the previous one is bump-shaped -- log it (cap 24).
+            static std::atomic<unsigned> s_edgeLogged{0};
+            static std::atomic<std::uint32_t> s_lastFireFrame{0};
+            const std::uint32_t frame =
+                s_tickFrame.load(std::memory_order_relaxed);
+            const std::uint32_t prev =
+                s_lastFireFrame.exchange(frame, std::memory_order_relaxed);
+            if ((frame - prev) > 120u) {
+                const unsigned e =
+                    s_edgeLogged.fetch_add(1, std::memory_order_relaxed);
+                if (e < 24) {
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag7] blockUpMove edge #%u frame=%u node=%p "
+                        "total=%llu",
+                        e, frame, node,
+                        static_cast<unsigned long long>(
+                            s_blockUpMoveCount.load(
+                                std::memory_order_relaxed)));
+                }
+            }
+            return ret;
         });
 
 // =========================================================================
@@ -2064,6 +2133,12 @@ extern "C" void hkMain() {
                 itemCreateExecHook.installAtMainOffset(0x14dd688));
     installHook("BlockClarityShapeCastExec", 0x161c3b4,
                 blockClarityShapeCastExecHook.installAtMainOffset(0x161c3b4));
+    // [cblk-diag7b] BlockUpMove execute @ +0x146397c -- the node catalog tags
+    // it Execute + HitMoveDir input (an on-hit action, NOT the per-frame
+    // query the earlier correlation assumed), so it rides along as a third
+    // candidate: count + isolated-fire edge log.
+    installHook("BlockUpMoveExec", 0x146397c,
+                blockUpMoveExecHook.installAtMainOffset(0x146397c));
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",
