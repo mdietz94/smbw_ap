@@ -348,21 +348,22 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
         setCourseClearFlagExecuteHook.orig(nerve);
     });
 
-// [cblk-diag6] file-scope counter shared by the clarity-node slot-26 method
-// hook (claritySlot26Hook, +0x1462e50) and the per-frame periodic logger
-// inside playerTickLatchHook.  It is incremented (relaxed) on every call to
-// the clarity-specific node method at NSO +0x1462e50 (slot 26 of the block-
-// damage AINB node vtable -- a substantial runtime method that walks the live
-// stage via a +0x1f8/+0x208 pointer chain and sets a 0x80000000 state flag).
-// The per-second log of its value vs. wall-clock answers "is the clarity node
-// method run per-frame, or only when the block is hit?".  File-scope
-// std::atomic (NEVER thread_local -- Result 0xCA8 abort).
+// [cblk-diag7] file-scope counters shared by the AINB node-execute hooks
+// (itemCreateExecHook @ +0x14dd688, blockClarityShapeCastExecHook @
+// +0x161c3b4) and the per-frame periodic logger inside playerTickLatchHook.
+// File-scope std::atomic (NEVER thread_local -- Result 0xCA8 abort).
 //
-// [cblk-diag5] DEAD: the earlier +0x1e02100 AINB-expr-eval vtable-filter hook
-// kept this counter at 0 -- clarity nodes don't pass through that shared
-// evaluator.  That hook + its install line have been removed; this counter is
-// repurposed for the slot-26 method (diag6).
-std::atomic<std::uint64_t> s_slot26Count{0};
+// Retired predecessors (counters removed with them): [cblk-diag5] +0x1e02100
+// exb-evaluator vtable-filter (count stayed 0 -- clarity nodes don't pass
+// through that evaluator) and [cblk-diag6] +0x1462e50 slot-26 method (count
+// stayed 0 through idle + bump -- vtable 0x710330c570 is the node
+// DEFINITION/editor class, no runtime execute).
+std::atomic<std::uint64_t> s_itemCreateCount{0};
+std::atomic<std::uint64_t> s_shapeCastCount{0};
+// Frame counter owned by playerTickLatchHook; the diag7 per-fire logs stamp
+// themselves with it so bump-time fires correlate against the once/second
+// rate lines.
+std::atomic<std::uint32_t> s_tickFrame{0};
 
 // PlayerTickLatch @ NSO +0x00273868 -- function-entry trampoline on
 // FUN_7100273868(long param_1, long param_2), the per-frame player tick
@@ -402,24 +403,28 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
         // increment) so a stale shop arm expires within a few frames.
         probe::badgeShopTextTick();
 
-        // [cblk-diag6] per-second clarity-node slot-26 call-rate log.  This
-        // per-frame hook is the natural low-rate logging site (~60 Hz); the
-        // slot-26 method hook (+0x1462e50) only counts -- it never logs.  A
-        // steadily-climbing counter across the idle ~10 s window means the
-        // clarity node method runs EVERY FRAME (not a clean hit signal); a flat
-        // counter that jumps only when the block is bumped is the hit signal we
-        // want; a counter that stays 0 means +0x1462e50 is not a runtime
-        // method (never reached).
+        // [cblk-diag7] per-second AINB node-execute rate log.  This per-frame
+        // hook is the natural low-rate logging site (~60 Hz); the node hooks
+        // (+0x14dd688 ItemCreate, +0x161c3b4 BlockClarityShapeCast) mostly
+        // just count.  Reading the two counters against the bump timing:
+        //   itemCreate flat while idle, +1 per block bump  -> THE hit signal;
+        //   itemCreate climbing every second while idle    -> per-frame node,
+        //     identity filter needed (check the per-fire owner dumps);
+        //   itemCreate stays 0                             -> wrong entry /
+        //     interpreted dispatch -> fall to AINB graph injection.
+        // shapeCast is the control: expected to climb per-frame while a
+        // clarity block is in range (it is the reveal-overlap query).
         {
-            static std::atomic<std::uint32_t> s_frame{0};
             const std::uint32_t frame =
-                s_frame.fetch_add(1, std::memory_order_relaxed);
+                s_tickFrame.fetch_add(1, std::memory_order_relaxed);
             if (frame % 60 == 0) {
                 SMBWAP_LOG_INFO(
-                    "[cblk-diag6] frame=%u slot26=%llu",
+                    "[cblk-diag7] frame=%u itemCreate=%llu shapeCast=%llu",
                     frame,
                     static_cast<unsigned long long>(
-                        s_slot26Count.load(std::memory_order_relaxed)));
+                        s_itemCreateCount.load(std::memory_order_relaxed)),
+                    static_cast<unsigned long long>(
+                        s_shapeCastCount.load(std::memory_order_relaxed)));
             }
         }
 
@@ -546,37 +551,133 @@ HkTrampoline<void*, void*> getDamageReactionPlayerNoHook =
     });
 
 // =========================================================================
-// [cblk-diag6] CANDIDATE #6 -- CLARITY-SPECIFIC NODE METHOD (slot 26) COUNT
+// [cblk-diag7] CANDIDATE #7 -- AINB `ItemCreate` NODE EXECUTE (on-hit dispense)
 // =========================================================================
 //
-// GOAL: determine whether the ObjectBlockClarityCharacter clarity node method
-// at NSO +0x1462e50 (slot 26 of the block-damage AINB node vtable) runs EVERY
-// FRAME or ONLY when the block is hit.  Unlike the retired [cblk-diag5]
-// approach (which hooked the shared AINB expression evaluator +0x1e02100 and
-// vtable-filtered to the clarity node -- but the counter stayed 0 because
-// clarity nodes don't pass through that evaluator), this hooks the clarity-
-// specific method DIRECTLY, sidestepping vtable-filter ambiguity entirely.
+// GOAL: settle at runtime whether the AINB `ItemCreate` node execute at NSO
+// +0x14dd688 fires ONCE PER BLOCK HIT with a readable owning-actor identity.
+// The node comes from the now-fully-decoded ObjectBlockClarityCharacter root
+// AINB graph (smbw_re_tmp/ainb_json/, 499 nodes): `ItemCreate`x3 sits on the
+// on-hit dispense path (carries PlayerNo + HitMoveDir inputs).  Static
+// analysis CANNOT prove it fires -- the node is dispatched through a .bss
+// interpreter vtable built at runtime -- so this one build+playtest decides
+// between "hook this node" (done, no data edits) and "AINB graph injection"
+// (round-trip-edit the graph with dt-12345/ainb).
 //
-// CHOKE POINT: clarity node method @ NSO +0x1462e50.  Called as
-// f(void* node /*x0*/) -> void.  It is a substantial runtime method: it reads
-// the live stage via a +0x1f8/+0x208 pointer chain off node->[+8]->[+8] and
-// sets a 0x80000000 state flag into node->[+0x18].  Prologue verified CLEAN
-// via Ghidra disasm of 0x7101462e50:
-//   stp x29,x30,[sp,#-0x20]! / str x19,[sp,#0x10] / mov x29,sp /
-//   ldr x8,[x0,#8] / mov x19,x0   -- no pc-relative in the first 20 bytes.
+// CHOKE POINT: +0x14dd688 = the real method behind the thin wrapper at
+// +0x14dd670.  The wrapper is stp / mov / bl <real> / mov w0,#1 / ldp / ret
+// -- its `bl` at +0x8 sits inside the 20-byte patch window, so the wrapper
+// itself is UNHOOKABLE; hooking the real method covers the wrapper path and
+// any direct dispatch.  Prologue of the real method re-verified CLEAN offline
+// (nsodis.py, 2026-07-03):
+//   sub sp,#0x70 / stp x29,x30 / str x23 / stp x22,x21 / stp x20,x19
+//   -- no pc-relative insn in the first 20 bytes.
 //
-// SAFETY: this may be moderately hot (called for several block-damage nodes/
-// actors per frame), but NOT a millions/frame firehose like the retired
-// evaluator hook.  The body is still kept minimal: ONE relaxed atomic
-// increment + orig.  NO logging here.  Always call .orig().  s_slot26Count is
-// file-scope std::atomic (NEVER thread_local -> Result 0xCA8 abort).  The
-// per-frame logger in playerTickLatchHook prints the count once/second; the
-// count's rate answers the question.
-HkTrampoline<void, void*> claritySlot26Hook = hk::hook::trampoline(
-    [](void* node) -> void {
-        s_slot26Count.fetch_add(1, std::memory_order_relaxed);
-        claritySlot26Hook.orig(node);
-    });
+// IDENTITY WALK (the method's own first loads, offline disasm):
+//   ldr x8,[x0,#8] ; ldr x8,[x8,#8] ; ldr x8,[x8,#0x1f8]
+// i.e. owner = [[node+8]+8]+0x1f8 -- the owning block-actor-ish object (the
+// method then reads owner+0x200/+0x208).  We repeat that walk AFTER orig
+// (orig has just dereferenced the same chain unconditionally, so it is
+// readable) and dump: the owner's vtable as an NSO offset (class identity),
+// its first words, and a bounded float scan of the owner for the block's
+// world position.  The W1-1 Mario clarity block sits at (97.0, 13.5); finding
+// those IEEE words (0x42c20000 / 0x41580000) inside the owner BOTH confirms
+// "this fire = that block" AND discovers the actor's position offset for the
+// real hook's clarity filter.  Scan bound 0x240: the method itself reads
+// owner+0x208, so the object is >= 0x210 bytes; 0x240 stays a whisker past
+// known-good, not a page-risking overreach.
+//
+// SAFETY: counter + capped logging (monotonic fetch_add < N -- NEVER
+// fetch_sub > 0, that underflows and spams forever).  Always calls .orig()
+// and forwards x0 (the wrapper discards the real method's return, but other
+// dispatch paths might not).  The exact node-exec signature is unknown, so
+// x1-x3 are declared + forwarded untouched -- behaviour-neutral either way.
+HkTrampoline<std::uint64_t, void*, void*, void*, void*> itemCreateExecHook =
+    hk::hook::trampoline(
+        [](void* node, void* a2, void* a3, void* a4) -> std::uint64_t {
+            const std::uint64_t ret =
+                itemCreateExecHook.orig(node, a2, a3, a4);
+            s_itemCreateCount.fetch_add(1, std::memory_order_relaxed);
+
+            static std::atomic<unsigned> s_logged{0};
+            const unsigned seq =
+                s_logged.fetch_add(1, std::memory_order_relaxed);
+            if (seq >= 48) return ret;
+
+            // Owner walk (guarded hop-by-hop; see IDENTITY WALK above).
+            void* owner = nullptr;
+            if (node) {
+                auto* p1 = *reinterpret_cast<std::uint8_t**>(
+                    reinterpret_cast<std::uint8_t*>(node) + 8);
+                if (p1) {
+                    auto* p2 = *reinterpret_cast<std::uint8_t**>(p1 + 8);
+                    if (p2) {
+                        owner = *reinterpret_cast<void**>(p2 + 0x1f8);
+                    }
+                }
+            }
+
+            const auto* mm = hk::ro::getMainModule();
+            const ::ptr base = mm ? mm->range().start() : ::ptr(0);
+
+            std::uint64_t vt = 0;
+            std::uint64_t vtOff = 0;
+            std::uint64_t w[4] = {0, 0, 0, 0};
+            // Up to 4 offsets inside the owner where a position-word
+            // (97.0f = 0x42c20000 or 13.5f = 0x41580000) sits; -1 = unused.
+            int posHit[4] = {-1, -1, -1, -1};
+            if (owner) {
+                auto* ob = reinterpret_cast<std::uint8_t*>(owner);
+                vt = *reinterpret_cast<std::uint64_t*>(ob);
+                if (base && vt >= base) vtOff = vt - base;
+                for (int i = 0; i < 4; ++i) {
+                    w[i] = *reinterpret_cast<std::uint64_t*>(ob + 8 + 8 * i);
+                }
+                unsigned nHit = 0;
+                for (unsigned off = 0; off < 0x240 && nHit < 4; off += 4) {
+                    const std::uint32_t word =
+                        *reinterpret_cast<std::uint32_t*>(ob + off);
+                    if (word == 0x42c20000u || word == 0x41580000u) {
+                        posHit[nHit++] = static_cast<int>(off);
+                    }
+                }
+            }
+
+            SMBWAP_LOG_INFO(
+                "[cblk-diag7] itemCreate #%u frame=%u node=%p owner=%p "
+                "vt=0x%llx (NSO+0x%llx)",
+                seq, s_tickFrame.load(std::memory_order_relaxed), node, owner,
+                static_cast<unsigned long long>(vt),
+                static_cast<unsigned long long>(vtOff));
+            SMBWAP_LOG_INFO(
+                "[cblk-diag7]   owner[+0x08..0x20]=0x%llx 0x%llx 0x%llx 0x%llx "
+                "posScan=%d,%d,%d,%d",
+                static_cast<unsigned long long>(w[0]),
+                static_cast<unsigned long long>(w[1]),
+                static_cast<unsigned long long>(w[2]),
+                static_cast<unsigned long long>(w[3]),
+                posHit[0], posHit[1], posHit[2], posHit[3]);
+            return ret;
+        });
+
+// [cblk-diag7] CONTROL -- `BlockClarityShapeCast` node execute @ +0x161c3b4.
+// Clarity-SPECIFIC (only the clarity block's graph contains the node) but
+// believed PER-FRAME: it is the reveal-overlap query ("is something inside
+// the clarity volume"), structurally twin to the dead cancel-damage callback,
+// NOT the hit event.  Count-only -- the once/second logger prints the rate.
+// A climbing count doubles as positive proof that these AINB UserDefined
+// node executes ARE dispatched to the statically-correlated impls (i.e. the
+// name-string->impl correlation method is sound); if even this stays 0 while
+// standing next to a clarity block, the correlation is wrong and ItemCreate's
+// silence means nothing.  Prologue re-verified CLEAN offline (nsodis.py):
+//   stp x29,x30 / str x28 / stp x22,x21 / stp x20,x19 / mov x29,sp
+//   -- first bl is at +0x2c, outside the 20-byte patch window.
+HkTrampoline<std::uint64_t, void*, void*, void*, void*>
+    blockClarityShapeCastExecHook = hk::hook::trampoline(
+        [](void* node, void* a2, void* a3, void* a4) -> std::uint64_t {
+            s_shapeCastCount.fetch_add(1, std::memory_order_relaxed);
+            return blockClarityShapeCastExecHook.orig(node, a2, a3, a4);
+        });
 
 // =========================================================================
 // [cblk-diag2] CANDIDATE #3 -- GENERIC ACTOR-PLACEMENT ENUMERATION
@@ -1949,17 +2050,20 @@ extern "C" void hkMain() {
     installHook("ActorCreateDispatch", 0x002ceac0,
                 actorCreateDispatchHook.installAtMainOffset(0x002ceac0));
 
-    // [cblk-diag6] CLARITY-SPECIFIC NODE METHOD (slot 26) @ +0x1462e50.
-    // Hooks the clarity node's own runtime method directly (it walks the live
-    // stage via a +0x1f8/+0x208 chain + sets a 0x80000000 state flag), so
-    // there's no vtable-filter ambiguity.  Body is minimal (one relaxed atomic
-    // increment + orig); it may be moderately hot but is NOT a millions/frame
-    // firehose.  The per-second count log lives in playerTickLatchHook (grep
-    // cblk-diag6).  Answers: per-frame run vs hit-only run of the clarity node.
-    // (Supersedes the retired [cblk-diag5] +0x1e02100 evaluator-vtable-filter
-    // hook, which was dead: clarity nodes don't pass through that evaluator.)
-    installHook("ClaritySlot26", 0x1462e50,
-                claritySlot26Hook.installAtMainOffset(0x1462e50));
+    // [cblk-diag7] AINB `ItemCreate` node execute @ +0x14dd688 (the real
+    // method behind the +0x14dd670 wrapper; the wrapper's bl at +0x8 makes it
+    // unhookable) -- the on-hit dispense path from the decoded block AINB
+    // graph.  Counts every fire + logs the first 48 with the owning-actor
+    // walk [[node+8]+8]+0x1f8 (vtable as NSO offset + position float scan).
+    // Plus the clarity-specific `BlockClarityShapeCast` execute @ +0x161c3b4
+    // as a count-only per-frame control / dispatch-correlation proof.  Rates
+    // print once/second from playerTickLatchHook (grep cblk-diag7).
+    // (Supersedes the retired [cblk-diag6] +0x1462e50 slot-26 hook --
+    // confirmed never called at runtime: definition/editor class.)
+    installHook("ItemCreateExec", 0x14dd688,
+                itemCreateExecHook.installAtMainOffset(0x14dd688));
+    installHook("BlockClarityShapeCastExec", 0x161c3b4,
+                blockClarityShapeCastExecHook.installAtMainOffset(0x161c3b4));
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",
