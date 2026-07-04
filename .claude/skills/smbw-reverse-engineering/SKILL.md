@@ -89,12 +89,30 @@ transparently. The full Nintendo SDK symbol table is in
    before our code runs; `SetMemoryAllocatorForThreadLocal` aborts at module
    load. Signature: Result `0xCA8`, User Break, stack ends at that symbol. Use
    `static std::atomic<…>` + manual TID check.
-2. **Inline hooks patch the first ~5 instructions (20 bytes).** Any PC-relative
-   instruction (adrp, ldr-literal, b/bl) in those bytes corrupts the trampoline,
-   with **delayed** symptoms. Verify the prologue is clean, or hook a shared
-   inner helper and filter by caller identity (this is why we trap
-   `FUN_7100559f7c` not the per-Nerve slot 8). hakkun's relocator is similar
-   machinery — `installAtMainOffset` still wants a clean prologue.
+2. **hakkun's `TrampolineHook` patches exactly ONE instruction** (a single `b`
+   to the handler + a 1-instr relocation backup — see
+   `sys/hakkun/include/hk/hook/Trampoline.h`). Only instruction #1 must be
+   relocatable; nearly every prologue's `stp`/`sub sp` qualifies. The
+   exlaunch-era "first ~5 instructions / 20 bytes" rule is obsolete lore:
+   mid-window branch targets are a non-issue, and wrappers with an early `bl`
+   (e.g. the `+0x14dd670` ItemCreate wrapper) ARE hookable under hakkun.
+   This *widens* the viable-target space vs. older notes.
+2b. **A trampoline handler owns the FULL ABI — a C++ lambda handler on an
+   unknown-signature function can corrupt the game** (learned 2026-07-04:
+   char-block diag7b heap-corruption crash, PC ended up executing float
+   data). hakkun branches straight to your compiled function; there is NO
+   register-preserving shim. Everything caller-saved outside the declared
+   signature — **x8 (the indirect-struct-return pointer!), x9-x17, all NEON
+   v-regs, and any argument regs you didn't declare** — is legal compiler
+   scratch before `orig()` runs. Lambdas are fine for RE-confirmed
+   signatures. For unknown-ABI targets (e.g. AINB node executes dispatched
+   from an unreadable .bss interpreter vtable), use a **register-transparent
+   naked asm probe**: touch only x9-x11/x16-x17 (regs no callee reads as
+   inputs), `ldxr/stxr` for the counter (no LSE on the Switch), stash x0 in
+   a ring, `br` to the orig stub via an `extern "C"` global published right
+   after install; do all logging/derefs in a per-frame drain on the game
+   thread. Worked example: the `cblk*Probe` thunks in
+   `switch-mod/src/main.cpp`.
 3. **Hooking `nn::prepo::PlayReport` beyond ctor + SetEventId crashes the game.**
    Even no-op trampolines on `Save()`/`Add()` trigger a delayed abort 5–6 s later
    on a different SDK validator thread. Drop to the IPC client layer

@@ -348,20 +348,121 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
         setCourseClearFlagExecuteHook.orig(nerve);
     });
 
-// [cblk-diag7] file-scope counters shared by the AINB node-execute hooks
-// (itemCreateExecHook @ +0x14dd688, blockClarityShapeCastExecHook @
-// +0x161c3b4) and the per-frame periodic logger inside playerTickLatchHook.
-// File-scope std::atomic (NEVER thread_local -- Result 0xCA8 abort).
+// =========================================================================
+// [cblk-diag7c] REGISTER-TRANSPARENT AINB NODE-EXECUTE PROBES
+// =========================================================================
 //
-// Retired predecessors (counters removed with them): [cblk-diag5] +0x1e02100
-// exb-evaluator vtable-filter (count stayed 0 -- clarity nodes don't pass
-// through that evaluator) and [cblk-diag6] +0x1462e50 slot-26 method (count
-// stayed 0 through idle + bump -- vtable 0x710330c570 is the node
-// DEFINITION/editor class, no runtime execute).
-std::atomic<std::uint64_t> s_itemCreateCount{0};
-std::atomic<std::uint64_t> s_shapeCastCount{0};
-std::atomic<std::uint64_t> s_blockUpMoveCount{0};
-// Frame counter owned by playerTickLatchHook; the diag7 per-fire logs stamp
+// CRASH POST-MORTEM (2026-07-04, first diag7b playtest): the game corrupted
+// itself ~5 s after the FIRST 11 executions of the BlockClarityShapeCast
+// hook (PC/LR/FP ended up executing raw heap full of packed 1.0f floats --
+// unit-normal-looking data where function pointers lived).  ROOT-CAUSE
+// ANALYSIS: hakkun's TrampolineHook patches a SINGLE branch straight to the
+// compiled C++ lambda -- there is NO register-preserving shim.  The lambda
+// owns the full ABI, so every caller-saved register outside its declared
+// signature -- **x8 (the indirect-struct-return pointer!), x9-x17, and all
+// NEON regs** -- is legal compiler scratch BEFORE orig() runs.  For a
+// function whose true signature is unknown (these node executes are
+// dispatched from a .bss interpreter vtable we cannot read statically), a
+// guessed narrow C++ signature can therefore feed the real body garbage in
+// x8/v0-v7 and make it scribble its result through a junk pointer.  The
+// static wrappers of ShapeCast pass only x0, but the interpreter dispatch
+// path is unobservable -- so the probes must be transparent for ANY ABI.
+//
+// DESIGN: each probe is a NAKED ASM thunk that uses ONLY x9-x11/x16-x17
+// (registers no callee may read as inputs, per AAPCS64), no stack, no
+// flag-setting instructions: it atomically bumps a counter (ldxr/stxr --
+// the Switch's Cortex-A57 has no LSE), stores x0 (the node) into a 16-slot
+// ring, and tail-`br`s to the orig backup stub.  x0-x8, v0-v31, LR, SP all
+// pass through untouched.  ALL logging/dereferencing moved to the game
+// thread: playerTickLatchHook drains the rings once per frame.
+//
+// (Retired predecessors: [cblk-diag5] +0x1e02100 exb-evaluator filter and
+// [cblk-diag6] +0x1462e50 slot-26 method, both confirmed never-called;
+// [cblk-diag7b] C++ lambda handlers, retired by the crash above.)
+//
+// extern "C" so the file-scope asm below can name these symbols unmangled.
+// Plain u64s (accessed via __atomic_* from C++, ldxr/stxr from asm); NEVER
+// thread_local (Result 0xCA8 abort).  Hoisted OUT of the anonymous namespace
+// so the C names are unambiguous for the asm block.
+}  // namespace (temporarily closed for the extern "C" probe symbols)
+extern "C" {
+std::uint64_t g_cblkIcCount = 0;             // ItemCreate  @ +0x14dd688
+std::uint64_t g_cblkIcRing[16] = {};
+void*         g_cblkIcOrig = nullptr;
+std::uint64_t g_cblkScCount = 0;             // ShapeCast   @ +0x161c3b4
+std::uint64_t g_cblkScRing[16] = {};
+void*         g_cblkScOrig = nullptr;
+std::uint64_t g_cblkBumCount = 0;            // BlockUpMove @ +0x146397c
+std::uint64_t g_cblkBumRing[16] = {};
+void*         g_cblkBumOrig = nullptr;
+void cblkIcProbe();
+void cblkScProbe();
+void cblkBumProbe();
+}
+
+// The three probe thunks.  Numeric local labels (1b) bind to the nearest
+// definition, so the pattern repeats safely inside one asm block.
+__asm__(R"(
+    .pushsection .text
+    .balign 4
+
+    .global cblkIcProbe
+    .type   cblkIcProbe, %function
+cblkIcProbe:
+    adrp    x16, g_cblkIcCount
+    add     x16, x16, :lo12:g_cblkIcCount
+1:  ldxr    x9, [x16]
+    add     x10, x9, #1
+    stxr    w11, x10, [x16]
+    cbnz    w11, 1b
+    adrp    x17, g_cblkIcRing
+    add     x17, x17, :lo12:g_cblkIcRing
+    and     x9, x9, #15
+    str     x0, [x17, x9, lsl #3]
+    adrp    x16, g_cblkIcOrig
+    ldr     x16, [x16, :lo12:g_cblkIcOrig]
+    br      x16
+
+    .global cblkScProbe
+    .type   cblkScProbe, %function
+cblkScProbe:
+    adrp    x16, g_cblkScCount
+    add     x16, x16, :lo12:g_cblkScCount
+1:  ldxr    x9, [x16]
+    add     x10, x9, #1
+    stxr    w11, x10, [x16]
+    cbnz    w11, 1b
+    adrp    x17, g_cblkScRing
+    add     x17, x17, :lo12:g_cblkScRing
+    and     x9, x9, #15
+    str     x0, [x17, x9, lsl #3]
+    adrp    x16, g_cblkScOrig
+    ldr     x16, [x16, :lo12:g_cblkScOrig]
+    br      x16
+
+    .global cblkBumProbe
+    .type   cblkBumProbe, %function
+cblkBumProbe:
+    adrp    x16, g_cblkBumCount
+    add     x16, x16, :lo12:g_cblkBumCount
+1:  ldxr    x9, [x16]
+    add     x10, x9, #1
+    stxr    w11, x10, [x16]
+    cbnz    w11, 1b
+    adrp    x17, g_cblkBumRing
+    add     x17, x17, :lo12:g_cblkBumRing
+    and     x9, x9, #15
+    str     x0, [x17, x9, lsl #3]
+    adrp    x16, g_cblkBumOrig
+    ldr     x16, [x16, :lo12:g_cblkBumOrig]
+    br      x16
+
+    .popsection
+)");
+
+namespace {  // reopened after the extern "C" probe symbols
+
+// Frame counter owned by playerTickLatchHook; the diag7 drain logs stamp
 // themselves with it so bump-time fires correlate against the once/second
 // rate lines.
 std::atomic<std::uint32_t> s_tickFrame{0};
@@ -404,31 +505,128 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
         // increment) so a stale shop arm expires within a few frames.
         probe::badgeShopTextTick();
 
-        // [cblk-diag7] per-second AINB node-execute rate log.  This per-frame
-        // hook is the natural low-rate logging site (~60 Hz); the node hooks
-        // (+0x14dd688 ItemCreate, +0x161c3b4 BlockClarityShapeCast) mostly
-        // just count.  Reading the two counters against the bump timing:
-        //   itemCreate flat while idle, +1 per block bump  -> THE hit signal;
-        //   itemCreate climbing every second while idle    -> per-frame node,
-        //     identity filter needed (check the per-fire owner dumps);
-        //   itemCreate stays 0                             -> wrong entry /
-        //     interpreted dispatch -> fall to AINB graph injection.
-        // shapeCast is the control: expected to climb per-frame while a
-        // clarity block is in range (it is the reveal-overlap query).
+        // [cblk-diag7c] per-second AINB node-execute rate log + ring drains.
+        // The probes are register-transparent asm thunks that only count and
+        // stash the node ptr (x0); ALL logging and every game-memory read
+        // happens HERE, on the game thread, once per frame.  Reading the
+        // counters against the bump timing:
+        //   itemCreate flat while idle, +1..3 per block bump -> THE hit
+        //     signal; blockUpMove burst-per-bump (both block kinds) -> also
+        //     a hit signal (shared node, needs identity filter);
+        //   a counter climbing every second while idle -> per-frame node;
+        //   itemCreate/blockUpMove stay 0 through bumps while shapeCast
+        //     bursts on reveal -> per-node hook route dead for actions ->
+        //     AINB graph injection (SetIntToGameData node, poll gmd).
         {
             const std::uint32_t frame =
                 s_tickFrame.fetch_add(1, std::memory_order_relaxed);
+            const std::uint64_t ic =
+                __atomic_load_n(&g_cblkIcCount, __ATOMIC_RELAXED);
+            const std::uint64_t sc =
+                __atomic_load_n(&g_cblkScCount, __ATOMIC_RELAXED);
+            const std::uint64_t bum =
+                __atomic_load_n(&g_cblkBumCount, __ATOMIC_RELAXED);
             if (frame % 60 == 0) {
                 SMBWAP_LOG_INFO(
                     "[cblk-diag7] frame=%u itemCreate=%llu shapeCast=%llu "
                     "blockUpMove=%llu",
                     frame,
-                    static_cast<unsigned long long>(
-                        s_itemCreateCount.load(std::memory_order_relaxed)),
-                    static_cast<unsigned long long>(
-                        s_shapeCastCount.load(std::memory_order_relaxed)),
-                    static_cast<unsigned long long>(
-                        s_blockUpMoveCount.load(std::memory_order_relaxed)));
+                    static_cast<unsigned long long>(ic),
+                    static_cast<unsigned long long>(sc),
+                    static_cast<unsigned long long>(bum));
+            }
+
+            // Drain the ItemCreate ring: full identity dump per fire, cap 48
+            // lines.  Owner walk = [[node+8]+8]+0x1f8 (the method's own first
+            // loads); the object outlives the <=1-frame drain latency (it is
+            // the block actor's AINB instance).  Every deref null-guarded.
+            {
+                static std::uint64_t s_seen = 0;        // game thread only
+                static std::atomic<unsigned> s_lines{0};
+                if (ic - s_seen > 16) s_seen = ic - 16;  // ring overwrote
+                for (; s_seen < ic; ++s_seen) {
+                    void* node = reinterpret_cast<void*>(__atomic_load_n(
+                        &g_cblkIcRing[s_seen & 15], __ATOMIC_RELAXED));
+                    const unsigned line =
+                        s_lines.fetch_add(1, std::memory_order_relaxed);
+                    if (line >= 48) continue;
+
+                    void* owner = nullptr;
+                    if (node) {
+                        auto* p1 = *reinterpret_cast<std::uint8_t**>(
+                            reinterpret_cast<std::uint8_t*>(node) + 8);
+                        if (p1) {
+                            auto* p2 =
+                                *reinterpret_cast<std::uint8_t**>(p1 + 8);
+                            if (p2) {
+                                owner =
+                                    *reinterpret_cast<void**>(p2 + 0x1f8);
+                            }
+                        }
+                    }
+                    const auto* mm = hk::ro::getMainModule();
+                    const ::ptr base = mm ? mm->range().start() : ::ptr(0);
+                    std::uint64_t vt = 0, vtOff = 0;
+                    std::uint64_t w[4] = {0, 0, 0, 0};
+                    // Offsets in the owner holding a position word (97.0f =
+                    // 0x42c20000 / 13.5f = 0x41580000, the W1-1 Mario block);
+                    // finding one confirms identity AND discovers the actor
+                    // position offset.  Bound 0x240: the method itself reads
+                    // owner+0x208, so >=0x210 bytes are known-mapped.
+                    int posHit[4] = {-1, -1, -1, -1};
+                    if (owner) {
+                        auto* ob = reinterpret_cast<std::uint8_t*>(owner);
+                        vt = *reinterpret_cast<std::uint64_t*>(ob);
+                        if (base && vt >= base) vtOff = vt - base;
+                        for (int i = 0; i < 4; ++i) {
+                            w[i] = *reinterpret_cast<std::uint64_t*>(
+                                ob + 8 + 8 * i);
+                        }
+                        unsigned nHit = 0;
+                        for (unsigned off = 0; off < 0x240 && nHit < 4;
+                             off += 4) {
+                            const std::uint32_t word =
+                                *reinterpret_cast<std::uint32_t*>(ob + off);
+                            if (word == 0x42c20000u ||
+                                word == 0x41580000u) {
+                                posHit[nHit++] = static_cast<int>(off);
+                            }
+                        }
+                    }
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag7] itemCreate fire#%llu frame=%u node=%p "
+                        "owner=%p vt=0x%llx (NSO+0x%llx)",
+                        static_cast<unsigned long long>(s_seen), frame, node,
+                        owner, static_cast<unsigned long long>(vt),
+                        static_cast<unsigned long long>(vtOff));
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag7]   owner[+0x08..0x20]=0x%llx 0x%llx "
+                        "0x%llx 0x%llx posScan=%d,%d,%d,%d",
+                        static_cast<unsigned long long>(w[0]),
+                        static_cast<unsigned long long>(w[1]),
+                        static_cast<unsigned long long>(w[2]),
+                        static_cast<unsigned long long>(w[3]),
+                        posHit[0], posHit[1], posHit[2], posHit[3]);
+                }
+            }
+
+            // Drain the BlockUpMove ring: node ptr + frame per fire, cap 24
+            // lines (a bump = a small burst; a per-frame node saturates the
+            // cap immediately, which is itself the answer).
+            {
+                static std::uint64_t s_seen = 0;        // game thread only
+                static std::atomic<unsigned> s_lines{0};
+                if (bum - s_seen > 16) s_seen = bum - 16;
+                for (; s_seen < bum; ++s_seen) {
+                    void* node = reinterpret_cast<void*>(__atomic_load_n(
+                        &g_cblkBumRing[s_seen & 15], __ATOMIC_RELAXED));
+                    const unsigned line =
+                        s_lines.fetch_add(1, std::memory_order_relaxed);
+                    if (line >= 24) continue;
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag7] blockUpMove fire#%llu frame=%u node=%p",
+                        static_cast<unsigned long long>(s_seen), frame, node);
+                }
             }
         }
 
@@ -555,198 +753,35 @@ HkTrampoline<void*, void*> getDamageReactionPlayerNoHook =
     });
 
 // =========================================================================
-// [cblk-diag7] CANDIDATE #7 -- AINB `ItemCreate` NODE EXECUTE (on-hit dispense)
+// [cblk-diag7c] PROBE HOOK OBJECTS -- see the probe design block above.
 // =========================================================================
 //
-// GOAL: settle at runtime whether the AINB `ItemCreate` node execute at NSO
-// +0x14dd688 fires ONCE PER BLOCK HIT with a readable owning-actor identity.
-// The node comes from the now-fully-decoded ObjectBlockClarityCharacter root
-// AINB graph (smbw_re_tmp/ainb_json/, 499 nodes): `ItemCreate`x3 sits on the
-// on-hit dispense path (carries PlayerNo + HitMoveDir inputs).  Static
-// analysis CANNOT prove it fires -- the node is dispatched through a .bss
-// interpreter vtable built at runtime -- so this one build+playtest decides
-// between "hook this node" (done, no data edits) and "AINB graph injection"
-// (round-trip-edit the graph with dt-12345/ainb).
+// TARGETS (all verified true function entries, all first instructions
+// trivially relocatable -- hakkun TrampolineHook patches exactly ONE insn):
 //
-// CHOKE POINT: +0x14dd688 = the real method behind the thin wrapper at
-// +0x14dd670.  The wrapper is stp / mov / bl <real> / mov w0,#1 / ldp / ret
-// -- its `bl` at +0x8 sits inside the 20-byte patch window, so the wrapper
-// itself is UNHOOKABLE; hooking the real method covers the wrapper path and
-// any direct dispatch.  Prologue of the real method re-verified CLEAN offline
-// (nsodis.py, 2026-07-03):
-//   sub sp,#0x70 / stp x29,x30 / str x23 / stp x22,x21 / stp x20,x19
-//   -- no pc-relative insn in the first 20 bytes.
+//   ItemCreate execute @ +0x14dd688 (real method behind the +0x14dd670
+//   wrapper) -- the on-hit dispense action node (`ItemCreate`x3 on the
+//   decoded block graph's hit path, catalog-tagged Execute).  PRIMARY
+//   candidate for the per-hit signal.  Owner walk (from its own first
+//   loads): owner = [[node+8]+8]+0x1f8; done in the tick drain, not here.
 //
-// IDENTITY WALK (the method's own first loads, offline disasm):
-//   ldr x8,[x0,#8] ; ldr x8,[x8,#8] ; ldr x8,[x8,#0x1f8]
-// i.e. owner = [[node+8]+8]+0x1f8 -- the owning block-actor-ish object (the
-// method then reads owner+0x200/+0x208).  We repeat that walk AFTER orig
-// (orig has just dereferenced the same chain unconditionally, so it is
-// readable) and dump: the owner's vtable as an NSO offset (class identity),
-// its first words, and a bounded float scan of the owner for the block's
-// world position.  The W1-1 Mario clarity block sits at (97.0, 13.5); finding
-// those IEEE words (0x42c20000 / 0x41580000) inside the owner BOTH confirms
-// "this fire = that block" AND discovers the actor's position offset for the
-// real hook's clarity filter.  Scan bound 0x240: the method itself reads
-// owner+0x208, so the object is >= 0x210 bytes; 0x240 stays a whisker past
-// known-good, not a page-risking overreach.
+//   BlockClarityShapeCast execute @ +0x161c3b4 -- clarity-specific Query
+//   node (catalog-tagged).  LIVE-CONFIRMED 2026-07-04 to dispatch: fired
+//   11x exactly at the clarity-reveal moment (first-ever positive dispatch
+//   observation; validates the name-string->impl correlation).  Kept as
+//   the burst-on-reveal control.
 //
-// SAFETY: counter + capped logging (monotonic fetch_add < N -- NEVER
-// fetch_sub > 0, that underflows and spams forever).  Always calls .orig()
-// and forwards x0 (the wrapper discards the real method's return, but other
-// dispatch paths might not).  The exact node-exec signature is unknown, so
-// x1-x3 are declared + forwarded untouched -- behaviour-neutral either way.
-HkTrampoline<std::uint64_t, void*, void*, void*, void*> itemCreateExecHook =
-    hk::hook::trampoline(
-        [](void* node, void* a2, void* a3, void* a4) -> std::uint64_t {
-            const std::uint64_t ret =
-                itemCreateExecHook.orig(node, a2, a3, a4);
-            s_itemCreateCount.fetch_add(1, std::memory_order_relaxed);
-
-            // Log the first 48 fires PLUS any "isolated" fire (>2 s since the
-            // previous one, own cap 16).  The isolated-fire escape hatch
-            // guarantees a bump-time fire still gets a full identity dump even
-            // if a level-load burst exhausted the primary cap -- without it a
-            // chatty load would leave only the bare counter for the one fire
-            // we actually care about.
-            static std::atomic<unsigned> s_logged{0};
-            static std::atomic<unsigned> s_edgeLogged{0};
-            static std::atomic<std::uint32_t> s_lastFireFrame{0};
-            const std::uint32_t frame =
-                s_tickFrame.load(std::memory_order_relaxed);
-            const std::uint32_t prev =
-                s_lastFireFrame.exchange(frame, std::memory_order_relaxed);
-            const bool isolated = (frame - prev) > 120u;
-            const unsigned seq =
-                s_logged.fetch_add(1, std::memory_order_relaxed);
-            if (seq >= 48) {
-                if (!isolated) return ret;
-                const unsigned e =
-                    s_edgeLogged.fetch_add(1, std::memory_order_relaxed);
-                if (e >= 16) return ret;
-            }
-
-            // Owner walk (guarded hop-by-hop; see IDENTITY WALK above).
-            void* owner = nullptr;
-            if (node) {
-                auto* p1 = *reinterpret_cast<std::uint8_t**>(
-                    reinterpret_cast<std::uint8_t*>(node) + 8);
-                if (p1) {
-                    auto* p2 = *reinterpret_cast<std::uint8_t**>(p1 + 8);
-                    if (p2) {
-                        owner = *reinterpret_cast<void**>(p2 + 0x1f8);
-                    }
-                }
-            }
-
-            const auto* mm = hk::ro::getMainModule();
-            const ::ptr base = mm ? mm->range().start() : ::ptr(0);
-
-            std::uint64_t vt = 0;
-            std::uint64_t vtOff = 0;
-            std::uint64_t w[4] = {0, 0, 0, 0};
-            // Up to 4 offsets inside the owner where a position-word
-            // (97.0f = 0x42c20000 or 13.5f = 0x41580000) sits; -1 = unused.
-            int posHit[4] = {-1, -1, -1, -1};
-            if (owner) {
-                auto* ob = reinterpret_cast<std::uint8_t*>(owner);
-                vt = *reinterpret_cast<std::uint64_t*>(ob);
-                if (base && vt >= base) vtOff = vt - base;
-                for (int i = 0; i < 4; ++i) {
-                    w[i] = *reinterpret_cast<std::uint64_t*>(ob + 8 + 8 * i);
-                }
-                unsigned nHit = 0;
-                for (unsigned off = 0; off < 0x240 && nHit < 4; off += 4) {
-                    const std::uint32_t word =
-                        *reinterpret_cast<std::uint32_t*>(ob + off);
-                    if (word == 0x42c20000u || word == 0x41580000u) {
-                        posHit[nHit++] = static_cast<int>(off);
-                    }
-                }
-            }
-
-            SMBWAP_LOG_INFO(
-                "[cblk-diag7] itemCreate #%u frame=%u iso=%d node=%p owner=%p "
-                "vt=0x%llx (NSO+0x%llx)",
-                seq, frame, isolated ? 1 : 0, node, owner,
-                static_cast<unsigned long long>(vt),
-                static_cast<unsigned long long>(vtOff));
-            SMBWAP_LOG_INFO(
-                "[cblk-diag7]   owner[+0x08..0x20]=0x%llx 0x%llx 0x%llx 0x%llx "
-                "posScan=%d,%d,%d,%d",
-                static_cast<unsigned long long>(w[0]),
-                static_cast<unsigned long long>(w[1]),
-                static_cast<unsigned long long>(w[2]),
-                static_cast<unsigned long long>(w[3]),
-                posHit[0], posHit[1], posHit[2], posHit[3]);
-            return ret;
-        });
-
-// [cblk-diag7] CONTROL -- `BlockClarityShapeCast` node execute @ +0x161c3b4.
-// Clarity-SPECIFIC (only the clarity block's graph contains the node) but
-// believed PER-FRAME: it is the reveal-overlap query ("is something inside
-// the clarity volume"), structurally twin to the dead cancel-damage callback,
-// NOT the hit event.  Count-only -- the once/second logger prints the rate.
-// A climbing count doubles as positive proof that these AINB UserDefined
-// node executes ARE dispatched to the statically-correlated impls (i.e. the
-// name-string->impl correlation method is sound); if even this stays 0 while
-// standing next to a clarity block, the correlation is wrong and ItemCreate's
-// silence means nothing.  Prologue re-verified CLEAN offline (nsodis.py):
-//   stp x29,x30 / str x28 / stp x22,x21 / stp x20,x19 / mov x29,sp
-//   -- first bl is at +0x2c, outside the 20-byte patch window.
-HkTrampoline<std::uint64_t, void*, void*, void*, void*>
-    blockClarityShapeCastExecHook = hk::hook::trampoline(
-        [](void* node, void* a2, void* a3, void* a4) -> std::uint64_t {
-            s_shapeCastCount.fetch_add(1, std::memory_order_relaxed);
-            return blockClarityShapeCastExecHook.orig(node, a2, a3, a4);
-        });
-
-// [cblk-diag7] CANDIDATE #7b -- `BlockUpMove` node execute @ +0x146397c.
-// The block-bump ANIMATION node (x6 in the block graph).  The RE agent
-// dismissed it as "per-frame", but the global node catalog (romfs
-// AI/NodeDefinition/Node.Product.100.aidefn.byml, parsed 2026-07-03) tags it
-// **["Execute", "_ActorType_Secred"] with input HitMoveDir** -- an Execute
-// (action) node fed by the hit direction, i.e. it plausibly runs ON HIT (or
-// only across the few bump-animation frames = still a clean rising edge),
-// unlike BlockClarityShapeCast which the same catalog tags ["Query", ...]
-// (polled).  It also fires for REGULAR ?-blocks (shared node), so the
-// expected signature of success is: flat while idle, a small burst per bump,
-// for BOTH block kinds -- identity filtering would come later from the owner
-// walk once its layout is RE'd.  Count + isolated-fire edge log only (its
-// node layout is unverified, so no owner walk yet -- the fn's own first loads
-// are node+0x29 / node+0x75 flag bytes, not the +0x1f8 chain).
-// Prologue verified CLEAN offline (nsodis.py 2026-07-03):
-//   stp x29,x30,[sp,#-0x20]! / str x19 / mov x29,sp / ldrb w8,[x0,#0x29] /
-//   mov x19,x0  -- no pc-relative insn in the first 20 bytes.
-HkTrampoline<std::uint64_t, void*, void*, void*, void*> blockUpMoveExecHook =
-    hk::hook::trampoline(
-        [](void* node, void* a2, void* a3, void* a4) -> std::uint64_t {
-            const std::uint64_t ret =
-                blockUpMoveExecHook.orig(node, a2, a3, a4);
-            s_blockUpMoveCount.fetch_add(1, std::memory_order_relaxed);
-            // Isolated-fire edge log (same idiom as itemCreate): a fire >2 s
-            // after the previous one is bump-shaped -- log it (cap 24).
-            static std::atomic<unsigned> s_edgeLogged{0};
-            static std::atomic<std::uint32_t> s_lastFireFrame{0};
-            const std::uint32_t frame =
-                s_tickFrame.load(std::memory_order_relaxed);
-            const std::uint32_t prev =
-                s_lastFireFrame.exchange(frame, std::memory_order_relaxed);
-            if ((frame - prev) > 120u) {
-                const unsigned e =
-                    s_edgeLogged.fetch_add(1, std::memory_order_relaxed);
-                if (e < 24) {
-                    SMBWAP_LOG_INFO(
-                        "[cblk-diag7] blockUpMove edge #%u frame=%u node=%p "
-                        "total=%llu",
-                        e, frame, node,
-                        static_cast<unsigned long long>(
-                            s_blockUpMoveCount.load(
-                                std::memory_order_relaxed)));
-                }
-            }
-            return ret;
-        });
+//   BlockUpMove execute @ +0x146397c -- bump action node, catalog-tagged
+//   Execute with input HitMoveDir (the earlier "per-frame" dismissal was a
+//   misread; the catalog says on-hit).  Shared with regular ?-blocks:
+//   expected flat-idle / burst-per-bump for both block kinds.
+//
+// The probes are the naked asm thunks defined above; these objects only own
+// the install + the orig backup stub.  The void(*)() signature is a
+// placeholder -- the thunks never touch the real (unknown) ABI.
+hk::hook::TrampolineHook<void (*)()> itemCreateProbeHook{&cblkIcProbe};
+hk::hook::TrampolineHook<void (*)()> shapeCastProbeHook{&cblkScProbe};
+hk::hook::TrampolineHook<void (*)()> blockUpMoveProbeHook{&cblkBumProbe};
 
 // =========================================================================
 // [cblk-diag2] CANDIDATE #3 -- GENERIC ACTOR-PLACEMENT ENUMERATION
@@ -2119,26 +2154,28 @@ extern "C" void hkMain() {
     installHook("ActorCreateDispatch", 0x002ceac0,
                 actorCreateDispatchHook.installAtMainOffset(0x002ceac0));
 
-    // [cblk-diag7] AINB `ItemCreate` node execute @ +0x14dd688 (the real
-    // method behind the +0x14dd670 wrapper; the wrapper's bl at +0x8 makes it
-    // unhookable) -- the on-hit dispense path from the decoded block AINB
-    // graph.  Counts every fire + logs the first 48 with the owning-actor
-    // walk [[node+8]+8]+0x1f8 (vtable as NSO offset + position float scan).
-    // Plus the clarity-specific `BlockClarityShapeCast` execute @ +0x161c3b4
-    // as a count-only per-frame control / dispatch-correlation proof.  Rates
-    // print once/second from playerTickLatchHook (grep cblk-diag7).
-    // (Supersedes the retired [cblk-diag6] +0x1462e50 slot-26 hook --
-    // confirmed never called at runtime: definition/editor class.)
+    // [cblk-diag7c] AINB node-execute probes: ItemCreate @ +0x14dd688 (the
+    // on-hit dispense action -- PRIMARY hit-signal candidate), the clarity-
+    // specific BlockClarityShapeCast Query @ +0x161c3b4 (live-confirmed
+    // 2026-07-04 to dispatch: 11 fires exactly at the clarity reveal), and
+    // the BlockUpMove bump action @ +0x146397c.  All three handlers are
+    // REGISTER-TRANSPARENT naked asm thunks (count + stash x0 + br orig;
+    // x9-x11/x16-x17 scratch only) after the 2026-07-04 crash traced to a
+    // C++ lambda handler's freedom to clobber x8/v-regs on an unknown-ABI
+    // callee -- see the probe design block.  The orig backup-stub pointers
+    // are published to the asm-visible globals right after install; the
+    // game is not running yet at hkMain time, so the ordering is safe.
+    // All logging/dereferencing lives in playerTickLatchHook's ring drains
+    // (grep cblk-diag7).
     installHook("ItemCreateExec", 0x14dd688,
-                itemCreateExecHook.installAtMainOffset(0x14dd688));
+                itemCreateProbeHook.installAtMainOffset(0x14dd688));
+    g_cblkIcOrig = reinterpret_cast<void*>(itemCreateProbeHook.orig);
     installHook("BlockClarityShapeCastExec", 0x161c3b4,
-                blockClarityShapeCastExecHook.installAtMainOffset(0x161c3b4));
-    // [cblk-diag7b] BlockUpMove execute @ +0x146397c -- the node catalog tags
-    // it Execute + HitMoveDir input (an on-hit action, NOT the per-frame
-    // query the earlier correlation assumed), so it rides along as a third
-    // candidate: count + isolated-fire edge log.
+                shapeCastProbeHook.installAtMainOffset(0x161c3b4));
+    g_cblkScOrig = reinterpret_cast<void*>(shapeCastProbeHook.orig);
     installHook("BlockUpMoveExec", 0x146397c,
-                blockUpMoveExecHook.installAtMainOffset(0x146397c));
+                blockUpMoveProbeHook.installAtMainOffset(0x146397c));
+    g_cblkBumOrig = reinterpret_cast<void*>(blockUpMoveProbeHook.orig);
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",
