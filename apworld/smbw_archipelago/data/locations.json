@@ -3083,7 +3083,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Y Button|)} AND {OptOne(|R Button|)}"
+    "requires": "|Parachute Cap Badge| AND ({OptOne(|Y Button|)} AND {OptOne(|R Button|)})"
   },
   {
     "name": "W4: Parachute Cap II - Top of Flag",
