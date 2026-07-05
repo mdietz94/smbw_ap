@@ -2746,7 +2746,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Elephant Fruit|"
+    "requires": []
   },
   {
     "name": "W4: Rolling-Ball Hall - 10 Coin #3",
@@ -2755,7 +2755,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": []
+    "requires": "|Elephant Fruit|"
   },
   {
     "name": "W4: Ninji Jump Party - Normal Exit",
@@ -3083,7 +3083,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Y Button|)} AND {OptOne(|R Button|)}"
+    "requires": "|Parachute Cap Badge| AND ({OptOne(|Y Button|)} AND {OptOne(|R Button|)})"
   },
   {
     "name": "W4: Parachute Cap II - Top of Flag",
@@ -4569,7 +4569,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Elephant Fruit|"
+    "requires": []
   },
   {
     "name": "W6: Hot-Hot Hot! - 10 Coin #3",
