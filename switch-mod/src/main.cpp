@@ -368,13 +368,24 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 // static wrappers of ShapeCast pass only x0, but the interpreter dispatch
 // path is unobservable -- so the probes must be transparent for ANY ABI.
 //
-// DESIGN: each probe is a NAKED ASM thunk that uses ONLY x9-x11/x16-x17
-// (registers no callee may read as inputs, per AAPCS64), no stack, no
-// flag-setting instructions: it atomically bumps a counter (ldxr/stxr --
-// the Switch's Cortex-A57 has no LSE), stores x0 (the node) into a 16-slot
-// ring, and tail-`br`s to the orig backup stub.  x0-x8, v0-v31, LR, SP all
-// pass through untouched.  ALL logging/dereferencing moved to the game
-// thread: playerTickLatchHook drains the rings once per frame.
+// DESIGN: each probe is a NAKED ASM thunk that uses ONLY x9-x17 (registers
+// no callee may read as inputs, per AAPCS64), no stack, no flag-setting
+// instructions: it atomically bumps a counter (ldxr/stxr -- the Switch's
+// Cortex-A57 has no LSE), captures identity words into a ring, and
+// tail-`br`s to the orig backup stub.  x0-x8, v0-v31, LR, SP all pass
+// through untouched.  ALL logging moved to the game thread:
+// playerTickLatchHook drains the rings once per frame.
+//
+// SECOND CRASH POST-MORTEM (2026-07-05, first diag7c playtest): identity
+// capture MUST happen inside the thunk AT FIRE TIME, and the drain must be
+// LOG-ONLY.  The 7c drain dereferenced the ring's node pointer a frame
+// later; a one-shot node ctx freed after the bump dispatch left a stale
+// pointer whose walk chased a wild address -- under Ryujinx host-mapped
+// memory that is an instant HOST-process death (log truncated mid-write,
+// no guest trace; fired the moment an ordinary coin block was bumped,
+// which also tentatively confirms ItemCreate dispatches on block bumps).
+// The thunk's capture loads mirror the method's own unconditional first
+// loads, so they are exactly as safe as letting orig run.
 //
 // (Retired predecessors: [cblk-diag5] +0x1e02100 exb-evaluator filter and
 // [cblk-diag6] +0x1462e50 slot-26 method, both confirmed never-called;
@@ -387,7 +398,15 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 }  // namespace (temporarily closed for the extern "C" probe symbols)
 extern "C" {
 std::uint64_t g_cblkIcCount = 0;             // ItemCreate  @ +0x14dd688
-std::uint64_t g_cblkIcRing[16] = {};
+// 8 fires x 4 words: {node, owner, owner[0] (vtable-ish), owner[+0x208]},
+// ALL captured at fire time inside the thunk where they are provably
+// readable (the capture mirrors the method's own unconditional first
+// loads).  The drain must NEVER dereference these values: a one-shot node
+// ctx can be freed the moment the bump dispatch completes, and a stale
+// cross-frame deref can chase a wild address -- under Ryujinx's host-mapped
+// memory that is a HARD host-process death (the 2026-07-05 crash: log
+// truncated mid-write, no guest trace).
+std::uint64_t g_cblkIcRing[8 * 4] = {};
 void*         g_cblkIcOrig = nullptr;
 std::uint64_t g_cblkScCount = 0;             // ShapeCast   @ +0x161c3b4
 std::uint64_t g_cblkScRing[16] = {};
@@ -409,16 +428,28 @@ __asm__(R"(
     .global cblkIcProbe
     .type   cblkIcProbe, %function
 cblkIcProbe:
+    // Fire-time identity capture.  These four loads MIRROR the hooked
+    // method's own unconditional first loads (ldr x8,[x0,#8]; ldr x8,[x8,#8];
+    // ldr x8,[x8,#0x1f8]; ldr [x8,#0x208] -- offline disasm of +0x14dd688),
+    // so each access is exactly as safe as letting orig run.  x9-x15 are
+    // AAPCS64 caller-saved temporaries no callee reads as inputs.
+    ldr     x9, [x0, #8]
+    ldr     x9, [x9, #8]
+    ldr     x10, [x9, #0x1f8]
+    ldr     x11, [x10]
+    ldr     x12, [x10, #0x208]
     adrp    x16, g_cblkIcCount
     add     x16, x16, :lo12:g_cblkIcCount
-1:  ldxr    x9, [x16]
-    add     x10, x9, #1
-    stxr    w11, x10, [x16]
-    cbnz    w11, 1b
+1:  ldxr    x13, [x16]
+    add     x14, x13, #1
+    stxr    w15, x14, [x16]
+    cbnz    w15, 1b
     adrp    x17, g_cblkIcRing
     add     x17, x17, :lo12:g_cblkIcRing
-    and     x9, x9, #15
-    str     x0, [x17, x9, lsl #3]
+    and     x13, x13, #7
+    add     x17, x17, x13, lsl #5
+    stp     x0, x10, [x17]
+    stp     x11, x12, [x17, #16]
     adrp    x16, g_cblkIcOrig
     ldr     x16, [x16, :lo12:g_cblkIcOrig]
     br      x16
@@ -536,77 +567,46 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                     static_cast<unsigned long long>(bum));
             }
 
-            // Drain the ItemCreate ring: full identity dump per fire, cap 48
-            // lines.  Owner walk = [[node+8]+8]+0x1f8 (the method's own first
-            // loads); the object outlives the <=1-frame drain latency (it is
-            // the block actor's AINB instance).  Every deref null-guarded.
+            // Drain the ItemCreate ring, cap 48 lines.  LOG-ONLY: every
+            // identity word ({node, owner, owner[0], owner[+0x208]}) was
+            // captured by the thunk AT FIRE TIME; dereferencing anything
+            // here, a frame later, is forbidden -- a freed one-shot node ctx
+            // made a cross-frame walk chase a wild address and hard-killed
+            // the host process (2026-07-05 crash).  vtOff is arithmetic on
+            // the captured value, not a read.
             {
                 static std::uint64_t s_seen = 0;        // game thread only
                 static std::atomic<unsigned> s_lines{0};
-                if (ic - s_seen > 16) s_seen = ic - 16;  // ring overwrote
+                if (ic - s_seen > 8) s_seen = ic - 8;    // ring overwrote
+                const auto* mm = hk::ro::getMainModule();
+                const ::ptr base = mm ? mm->range().start() : ::ptr(0);
+                const ::ptr limit = base ? base + 0x2800000 : ::ptr(0);
                 for (; s_seen < ic; ++s_seen) {
-                    void* node = reinterpret_cast<void*>(__atomic_load_n(
-                        &g_cblkIcRing[s_seen & 15], __ATOMIC_RELAXED));
+                    const std::uint64_t* slot =
+                        &g_cblkIcRing[(s_seen & 7) * 4];
+                    const std::uint64_t node =
+                        __atomic_load_n(&slot[0], __ATOMIC_RELAXED);
+                    const std::uint64_t owner =
+                        __atomic_load_n(&slot[1], __ATOMIC_RELAXED);
+                    const std::uint64_t vt =
+                        __atomic_load_n(&slot[2], __ATOMIC_RELAXED);
+                    const std::uint64_t w208 =
+                        __atomic_load_n(&slot[3], __ATOMIC_RELAXED);
                     const unsigned line =
                         s_lines.fetch_add(1, std::memory_order_relaxed);
                     if (line >= 48) continue;
-
-                    void* owner = nullptr;
-                    if (node) {
-                        auto* p1 = *reinterpret_cast<std::uint8_t**>(
-                            reinterpret_cast<std::uint8_t*>(node) + 8);
-                        if (p1) {
-                            auto* p2 =
-                                *reinterpret_cast<std::uint8_t**>(p1 + 8);
-                            if (p2) {
-                                owner =
-                                    *reinterpret_cast<void**>(p2 + 0x1f8);
-                            }
-                        }
-                    }
-                    const auto* mm = hk::ro::getMainModule();
-                    const ::ptr base = mm ? mm->range().start() : ::ptr(0);
-                    std::uint64_t vt = 0, vtOff = 0;
-                    std::uint64_t w[4] = {0, 0, 0, 0};
-                    // Offsets in the owner holding a position word (97.0f =
-                    // 0x42c20000 / 13.5f = 0x41580000, the W1-1 Mario block);
-                    // finding one confirms identity AND discovers the actor
-                    // position offset.  Bound 0x240: the method itself reads
-                    // owner+0x208, so >=0x210 bytes are known-mapped.
-                    int posHit[4] = {-1, -1, -1, -1};
-                    if (owner) {
-                        auto* ob = reinterpret_cast<std::uint8_t*>(owner);
-                        vt = *reinterpret_cast<std::uint64_t*>(ob);
-                        if (base && vt >= base) vtOff = vt - base;
-                        for (int i = 0; i < 4; ++i) {
-                            w[i] = *reinterpret_cast<std::uint64_t*>(
-                                ob + 8 + 8 * i);
-                        }
-                        unsigned nHit = 0;
-                        for (unsigned off = 0; off < 0x240 && nHit < 4;
-                             off += 4) {
-                            const std::uint32_t word =
-                                *reinterpret_cast<std::uint32_t*>(ob + off);
-                            if (word == 0x42c20000u ||
-                                word == 0x41580000u) {
-                                posHit[nHit++] = static_cast<int>(off);
-                            }
-                        }
-                    }
+                    const std::uint64_t vtOff =
+                        (base && vt >= base && vt < limit) ? vt - base : 0;
                     SMBWAP_LOG_INFO(
-                        "[cblk-diag7] itemCreate fire#%llu frame=%u node=%p "
-                        "owner=%p vt=0x%llx (NSO+0x%llx)",
-                        static_cast<unsigned long long>(s_seen), frame, node,
-                        owner, static_cast<unsigned long long>(vt),
-                        static_cast<unsigned long long>(vtOff));
-                    SMBWAP_LOG_INFO(
-                        "[cblk-diag7]   owner[+0x08..0x20]=0x%llx 0x%llx "
-                        "0x%llx 0x%llx posScan=%d,%d,%d,%d",
-                        static_cast<unsigned long long>(w[0]),
-                        static_cast<unsigned long long>(w[1]),
-                        static_cast<unsigned long long>(w[2]),
-                        static_cast<unsigned long long>(w[3]),
-                        posHit[0], posHit[1], posHit[2], posHit[3]);
+                        "[cblk-diag7] itemCreate fire#%llu frame=%u "
+                        "node=0x%llx owner=0x%llx vt=0x%llx (NSO+0x%llx) "
+                        "[owner+0x208]=0x%llx",
+                        static_cast<unsigned long long>(s_seen), frame,
+                        static_cast<unsigned long long>(node),
+                        static_cast<unsigned long long>(owner),
+                        static_cast<unsigned long long>(vt),
+                        static_cast<unsigned long long>(vtOff),
+                        static_cast<unsigned long long>(w208));
                 }
             }
 
@@ -763,7 +763,8 @@ HkTrampoline<void*, void*> getDamageReactionPlayerNoHook =
 //   wrapper) -- the on-hit dispense action node (`ItemCreate`x3 on the
 //   decoded block graph's hit path, catalog-tagged Execute).  PRIMARY
 //   candidate for the per-hit signal.  Owner walk (from its own first
-//   loads): owner = [[node+8]+8]+0x1f8; done in the tick drain, not here.
+//   loads): owner = [[node+8]+8]+0x1f8; captured INSIDE the thunk at fire
+//   time (never in the drain -- see the 2026-07-05 post-mortem above).
 //
 //   BlockClarityShapeCast execute @ +0x161c3b4 -- clarity-specific Query
 //   node (catalog-tagged).  LIVE-CONFIRMED 2026-07-04 to dispatch: fired
