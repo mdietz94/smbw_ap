@@ -411,20 +411,15 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 // thread_local (Result 0xCA8 abort).  Hoisted OUT of the anonymous namespace
 // so the C names are unambiguous for the asm block.
 }  // namespace (temporarily closed for the extern "C" probe symbols)
+// (The retired ItemCreate @ +0x14dd688 and BlockClarityShapeCast @
+// +0x161c3b4 probes were removed after the 2026-07-07 captures settled the
+// ranking: ItemCreate is a singleton-method entry with no per-block
+// identity; ShapeCast's bump-coincidence proved unreliable (no tick on the
+// third session's clarity bump).  Git history has both thunks.)
 extern "C" {
-std::uint64_t g_cblkIcCount = 0;             // ItemCreate  @ +0x14dd688
-// 8 fires x 4 words: raw {x0, x1, x2, x3} at entry -- NO dereferencing in
-// the thunk (rule 1 above); the drain walks them via cblkSafeReadU64 only.
-std::uint64_t g_cblkIcRing[8 * 4] = {};
-void*         g_cblkIcOrig = nullptr;
-std::uint64_t g_cblkScCount = 0;             // ShapeCast   @ +0x161c3b4
-std::uint64_t g_cblkScRing[16] = {};
-void*         g_cblkScOrig = nullptr;
 std::uint64_t g_cblkBumCount = 0;            // BlockUpMove @ +0x146397c
 std::uint64_t g_cblkBumRing[16] = {};
 void*         g_cblkBumOrig = nullptr;
-void cblkIcProbe();
-void cblkScProbe();
 void cblkBumProbe();
 }
 
@@ -433,46 +428,6 @@ void cblkBumProbe();
 __asm__(R"(
     .pushsection .text
     .balign 4
-
-    .global cblkIcProbe
-    .type   cblkIcProbe, %function
-cblkIcProbe:
-    // ZERO-DEREF capture: raw x0-x3 only (the 2026-07-07 crash proved the
-    // entry is also called with a non-node registration-record x0, so NO
-    // pointer walk is safe here).  x13-x17 are AAPCS64 scratch no callee
-    // reads as inputs.
-    adrp    x16, g_cblkIcCount
-    add     x16, x16, :lo12:g_cblkIcCount
-1:  ldxr    x13, [x16]
-    add     x14, x13, #1
-    stxr    w15, x14, [x16]
-    cbnz    w15, 1b
-    adrp    x17, g_cblkIcRing
-    add     x17, x17, :lo12:g_cblkIcRing
-    and     x13, x13, #7
-    add     x17, x17, x13, lsl #5
-    stp     x0, x1, [x17]
-    stp     x2, x3, [x17, #16]
-    adrp    x16, g_cblkIcOrig
-    ldr     x16, [x16, :lo12:g_cblkIcOrig]
-    br      x16
-
-    .global cblkScProbe
-    .type   cblkScProbe, %function
-cblkScProbe:
-    adrp    x16, g_cblkScCount
-    add     x16, x16, :lo12:g_cblkScCount
-1:  ldxr    x9, [x16]
-    add     x10, x9, #1
-    stxr    w11, x10, [x16]
-    cbnz    w11, 1b
-    adrp    x17, g_cblkScRing
-    add     x17, x17, :lo12:g_cblkScRing
-    and     x9, x9, #15
-    str     x0, [x17, x9, lsl #3]
-    adrp    x16, g_cblkScOrig
-    ldr     x16, [x16, :lo12:g_cblkScOrig]
-    br      x16
 
     .global cblkBumProbe
     .type   cblkBumProbe, %function
@@ -511,41 +466,6 @@ inline bool cblkSafeReadU64(std::uint64_t addr, std::uint64_t* out) {
     if (addr + 8 > info.base_address + info.size) return false;
     *out = *reinterpret_cast<const volatile std::uint64_t*>(addr);
     return true;
-}
-
-// Length (0..want) readable at [addr, addr+want), bounded by the queried
-// region's end.  One QueryMemory, then raw reads inside the span are safe.
-inline std::uint64_t cblkSafeSpan(std::uint64_t addr, std::uint64_t want) {
-    if (addr == 0 || (addr & 7) != 0) return 0;
-    hk::svc::MemoryInfo info {};
-    u32 pageInfo = 0;
-    if (hk::svc::QueryMemory(&info, &pageInfo, addr).failed()) return 0;
-    if ((info.permission & hk::svc::MemoryPermission_Read) == 0) return 0;
-    const std::uint64_t end = info.base_address + info.size;
-    if (addr >= end) return 0;
-    const std::uint64_t avail = end - addr;
-    return avail < want ? avail : want;
-}
-
-// Guarded node-ctx-shaped walk: h1=[p+8], h2=[h1+8], owner=[h2+0x1f8],
-// vt=[owner].  Returns a bitmask of which hops succeeded (bit0=h1..bit3=vt);
-// failed hops leave zeros.  Purely diagnostic -- on a registration-record
-// x0 the walk just reports early misses instead of faulting.
-inline unsigned cblkGuardedWalk(std::uint64_t p, std::uint64_t* h1,
-                                std::uint64_t* h2, std::uint64_t* owner,
-                                std::uint64_t* vt) {
-    unsigned ok = 0;
-    if (cblkSafeReadU64(p + 8, h1)) {
-        ok |= 1;
-        if (cblkSafeReadU64(*h1 + 8, h2)) {
-            ok |= 2;
-            if (cblkSafeReadU64(*h2 + 0x1f8, owner)) {
-                ok |= 4;
-                if (cblkSafeReadU64(*owner, vt)) ok |= 8;
-            }
-        }
-    }
-    return ok;
 }
 
 // Frame counter owned by playerTickLatchHook; the diag7 drain logs stamp
@@ -591,121 +511,35 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
         // increment) so a stale shop arm expires within a few frames.
         probe::badgeShopTextTick();
 
-        // [cblk-diag7c] per-second AINB node-execute rate log + ring drains.
-        // The probes are register-transparent asm thunks that only count and
-        // stash the node ptr (x0); ALL logging and every game-memory read
-        // happens HERE, on the game thread, once per frame.  Reading the
-        // counters against the bump timing:
-        //   itemCreate flat while idle, +1..3 per block bump -> THE hit
-        //     signal; blockUpMove burst-per-bump (both block kinds) -> also
-        //     a hit signal (shared node, needs identity filter);
-        //   a counter climbing every second while idle -> per-frame node;
-        //   itemCreate/blockUpMove stay 0 through bumps while shapeCast
-        //     bursts on reveal -> per-node hook route dead for actions ->
-        //     AINB graph injection (SetIntToGameData node, poll gmd).
+        // [cblk-hit] character-block hit detection, game-thread half.  The
+        // BlockUpMove probe (register-transparent asm thunk) only counts and
+        // stashes the node ptr; HERE, once per frame, we edge-detect per
+        // node, clarity-filter by the graph-layout delta, and emit.  See the
+        // [cblk-hit] hook-object comment for the full derivation.
         {
             const std::uint32_t frame =
                 s_tickFrame.fetch_add(1, std::memory_order_relaxed);
-            const std::uint64_t ic =
-                __atomic_load_n(&g_cblkIcCount, __ATOMIC_RELAXED);
-            const std::uint64_t sc =
-                __atomic_load_n(&g_cblkScCount, __ATOMIC_RELAXED);
             const std::uint64_t bum =
                 __atomic_load_n(&g_cblkBumCount, __ATOMIC_RELAXED);
-            if (frame % 60 == 0) {
-                SMBWAP_LOG_INFO(
-                    "[cblk-diag7] frame=%u itemCreate=%llu shapeCast=%llu "
-                    "blockUpMove=%llu",
-                    frame,
-                    static_cast<unsigned long long>(ic),
-                    static_cast<unsigned long long>(sc),
-                    static_cast<unsigned long long>(bum));
-            }
 
-            // Drain the ItemCreate ring, cap 48 fires.  Logs the raw
-            // {x0,x1,x2,x3} the thunk captured, classifies x0 via
-            // svcQueryMemory (region state/perm distinguishes .bss
-            // registration record vs heap node ctx), then attempts the
-            // node-ctx-shaped walk via guarded reads only.
+            // Per-node rising-edge detect + clarity filter + emit.
+            // A bump = ~3-14 consecutive-frame fires of ONE node; the 4-slot
+            // dedup (120-frame window) turns that into a single edge.  The
+            // clarity filter is the graph-layout delta node-[node+0x28]
+            // (0x17d0 = ObjectBlockClarityCharacter's firing BlockUpMove
+            // node; 0x1690 = the regular ?-block graph).  Unknown deltas are
+            // logged (throttled) and NOT emitted -- they surface other
+            // BlockUpMove users / sibling clarity node instances for
+            // accept-listing without risking false checks.
             {
                 static std::uint64_t s_seen = 0;        // game thread only
-                static std::atomic<unsigned> s_lines{0};
-                if (ic - s_seen > 8) s_seen = ic - 8;    // ring overwrote
-                const auto* mm = hk::ro::getMainModule();
-                const ::ptr base = mm ? mm->range().start() : ::ptr(0);
-                const ::ptr limit = base ? base + 0x4000000 : ::ptr(0);
-                for (; s_seen < ic; ++s_seen) {
-                    const std::uint64_t* slot =
-                        &g_cblkIcRing[(s_seen & 7) * 4];
-                    std::uint64_t r[4];
-                    for (int i = 0; i < 4; ++i) {
-                        r[i] = __atomic_load_n(&slot[i], __ATOMIC_RELAXED);
-                    }
-                    const unsigned line =
-                        s_lines.fetch_add(1, std::memory_order_relaxed);
-                    if (line >= 48) continue;
-                    // Classify x0's memory region (state + perm).
-                    std::uint32_t x0state = 0xffffffffu, x0perm = 0;
-                    {
-                        hk::svc::MemoryInfo mi {};
-                        u32 pg = 0;
-                        if (!hk::svc::QueryMemory(&mi, &pg, r[0]).failed()) {
-                            x0state = static_cast<std::uint32_t>(mi.state);
-                            x0perm = static_cast<std::uint32_t>(mi.permission);
-                        }
-                    }
-                    // x0 as main-relative offset when it's in-module.
-                    const std::uint64_t x0off =
-                        (base && r[0] >= base && r[0] < limit) ? r[0] - base
-                                                               : 0;
-                    std::uint64_t h1 = 0, h2 = 0, owner = 0, vt = 0;
-                    const unsigned ok =
-                        cblkGuardedWalk(r[0], &h1, &h2, &owner, &vt);
-                    const std::uint64_t vtOff =
-                        (base && vt >= base && vt < limit) ? vt - base : 0;
-                    SMBWAP_LOG_INFO(
-                        "[cblk-diag7] itemCreate fire#%llu frame=%u "
-                        "x0=0x%llx (main+0x%llx state=0x%x perm=0x%x) "
-                        "x1=0x%llx x2=0x%llx x3=0x%llx",
-                        static_cast<unsigned long long>(s_seen), frame,
-                        static_cast<unsigned long long>(r[0]),
-                        static_cast<unsigned long long>(x0off),
-                        x0state, x0perm,
-                        static_cast<unsigned long long>(r[1]),
-                        static_cast<unsigned long long>(r[2]),
-                        static_cast<unsigned long long>(r[3]));
-                    SMBWAP_LOG_INFO(
-                        "[cblk-diag7]   walk ok=0x%x h1=0x%llx h2=0x%llx "
-                        "owner=0x%llx vt=0x%llx (NSO+0x%llx)",
-                        ok,
-                        static_cast<unsigned long long>(h1),
-                        static_cast<unsigned long long>(h2),
-                        static_cast<unsigned long long>(owner),
-                        static_cast<unsigned long long>(vt),
-                        static_cast<unsigned long long>(vtOff));
-                }
-            }
-
-            // Drain the BlockUpMove ring -- THE hit-signal candidate
-            // (2026-07-07 capture: 9 consecutive-frame fires per bump, one
-            // STABLE node ptr per block instance, flat otherwise).  Goal of
-            // this round: node -> WHICH block.  Per distinct node (deduped:
-            // a bump is ~9-14 fires of one node; log each node at most once
-            // per 120 frames) we log the node's own vtable, chase the heap
-            // ptr at [n+0x28] (the identity lead), and scan its region-
-            // bounded window for the W1-1 Mario clarity block's position
-            // words (97.0f=0x42c20000 / 13.5f=0x41580000) -- a hit both
-            // confirms "this node = that block" and hands us the position
-            // offset for the real hook's identity read.
-            {
-                static std::uint64_t s_seen = 0;        // game thread only
-                static std::atomic<unsigned> s_lines{0};
                 static std::uint64_t s_dedupNode[4] = {};
                 static std::uint32_t s_dedupFrame[4] = {};
+                static std::atomic<unsigned> s_unkLines{0};
+                static std::atomic<std::uint32_t> s_emits{0};
+                constexpr std::uint64_t kClarityDelta = 0x17d0;
+                constexpr std::uint64_t kRegularDelta = 0x1690;
                 if (bum - s_seen > 16) s_seen = bum - 16;
-                const auto* mm = hk::ro::getMainModule();
-                const ::ptr base = mm ? mm->range().start() : ::ptr(0);
-                const ::ptr limit = base ? base + 0x4000000 : ::ptr(0);
                 for (; s_seen < bum; ++s_seen) {
                     const std::uint64_t node = __atomic_load_n(
                         &g_cblkBumRing[s_seen & 15], __ATOMIC_RELAXED);
@@ -725,128 +559,49 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                     }
                     s_dedupNode[victim] = node;
                     s_dedupFrame[victim] = frame;
-                    const unsigned line =
-                        s_lines.fetch_add(1, std::memory_order_relaxed);
-                    if (line >= 24) continue;
-                    std::uint64_t nvt = 0, p28 = 0, p70 = 0;
-                    cblkSafeReadU64(node, &nvt);
-                    cblkSafeReadU64(node + 0x28, &p28);
-                    cblkSafeReadU64(node + 0x70, &p70);
-                    const std::uint64_t nvtOff =
-                        (base && nvt >= base && nvt < limit) ? nvt - base : 0;
-                    SMBWAP_LOG_INFO(
-                        "[cblk-diag7] blockUpMove NODE#%llu frame=%u "
-                        "node=0x%llx nvt=0x%llx (NSO+0x%llx) p28=0x%llx "
-                        "p70=0x%llx delta=0x%llx",
-                        static_cast<unsigned long long>(s_seen), frame,
-                        static_cast<unsigned long long>(node),
-                        static_cast<unsigned long long>(nvt),
-                        static_cast<unsigned long long>(nvtOff),
-                        static_cast<unsigned long long>(p28),
-                        static_cast<unsigned long long>(p70),
-                        static_cast<unsigned long long>(node - p28));
-                    // [cblk-diag7g] the graph-instance object at p28: dump
-                    // its first 16 words, and for each pointer-shaped word
-                    // sniff the pointee for an ASCII name (>=6 printable
-                    // chars) -- hunting a field that NAMES the graph
-                    // ("ObjectBlockClarityCharacter…" vs the regular-block
-                    // graph) = a precise clarity discriminator.  The 07-07
-                    // posScan came back empty (actors don't store plain
-                    // position floats -- matches the CE/live-debug finding),
-                    // so a name/def pointer is the identity play.
-                    const std::uint64_t span = cblkSafeSpan(p28, 0x80);
-                    std::uint64_t w[16] = {};
-                    for (unsigned i = 0; i * 8 + 8 <= span && i < 16; ++i) {
-                        w[i] = *reinterpret_cast<std::uint64_t*>(p28 + i * 8);
+
+                    std::uint64_t p28 = 0;
+                    if (!cblkSafeReadU64(node + 0x28, &p28) || p28 == 0 ||
+                        p28 >= node) {
+                        continue;  // not the expected node shape
                     }
-                    SMBWAP_LOG_INFO(
-                        "[cblk-diag7]   p28[00..38]=%llx %llx %llx %llx "
-                        "%llx %llx %llx %llx",
-                        static_cast<unsigned long long>(w[0]),
-                        static_cast<unsigned long long>(w[1]),
-                        static_cast<unsigned long long>(w[2]),
-                        static_cast<unsigned long long>(w[3]),
-                        static_cast<unsigned long long>(w[4]),
-                        static_cast<unsigned long long>(w[5]),
-                        static_cast<unsigned long long>(w[6]),
-                        static_cast<unsigned long long>(w[7]));
-                    SMBWAP_LOG_INFO(
-                        "[cblk-diag7]   p28[40..78]=%llx %llx %llx %llx "
-                        "%llx %llx %llx %llx",
-                        static_cast<unsigned long long>(w[8]),
-                        static_cast<unsigned long long>(w[9]),
-                        static_cast<unsigned long long>(w[10]),
-                        static_cast<unsigned long long>(w[11]),
-                        static_cast<unsigned long long>(w[12]),
-                        static_cast<unsigned long long>(w[13]),
-                        static_cast<unsigned long long>(w[14]),
-                        static_cast<unsigned long long>(w[15]));
-                    unsigned strLogged = 0;
-                    for (unsigned i = 0; i < 16 && strLogged < 3; ++i) {
-                        // Pointer-shaped: 8-aligned-ish, above 64 KiB, below
-                        // the 39-bit guest ceiling.
-                        if (w[i] < 0x10000ull ||
-                            w[i] >= (1ull << 39)) continue;
-                        const std::uint64_t sspan = cblkSafeSpan(
-                            w[i] & ~7ull, 0x28);
-                        if (sspan < 16) continue;
-                        char buf[33];
-                        unsigned printable = 0;
-                        const char* src =
-                            reinterpret_cast<const char*>(w[i] & ~7ull);
-                        for (unsigned k = 0;
-                             k < 32 && k < sspan; ++k) {
-                            const char c = src[k];
-                            if (c >= 0x20 && c < 0x7f) {
-                                buf[printable++] = c;
-                            } else {
-                                break;
-                            }
-                        }
-                        buf[printable] = '\0';
-                        if (printable >= 6) {
-                            ++strLogged;
+                    const std::uint64_t delta = node - p28;
+                    if (delta == kClarityDelta) {
+                        const std::uint32_t n =
+                            s_emits.fetch_add(1, std::memory_order_relaxed);
+                        SMBWAP_LOG_INFO(
+                            "[cblk-hit] CHARACTER BLOCK HIT #%u frame=%u "
+                            "node=0x%llx -> enqueueCharBlockHit",
+                            n, frame,
+                            static_cast<unsigned long long>(node));
+                        // chara=-1 + pos zeros: the client resolves the AP
+                        // location from (current course, current character)
+                        // and drops non-matches (processor.py).
+                        smbwap::ap::enqueueCharBlockHit(
+                            /*player_slot=*/0u, /*chara=*/-1,
+                            0.0f, 0.0f, 0.0f);
+                    } else if (delta != kRegularDelta) {
+                        // Unknown BlockUpMove user -- log for accept-listing.
+                        const unsigned u = s_unkLines.fetch_add(
+                            1, std::memory_order_relaxed);
+                        if (u < 20) {
                             SMBWAP_LOG_INFO(
-                                "[cblk-diag7]   p28[+0x%02x] -> str \"%s\"",
-                                i * 8, buf);
+                                "[cblk-hit] unknown-delta bump #%u frame=%u "
+                                "node=0x%llx delta=0x%llx (no emit)",
+                                u, frame,
+                                static_cast<unsigned long long>(node),
+                                static_cast<unsigned long long>(delta));
                         }
                     }
                 }
             }
 
-            // Drain the ShapeCast ring, cap 16 fires.  ShapeCast only moves
-            // on CLARITY interaction (burst on approach/reveal, +1 at the
-            // clarity bump; regular blocks leave it flat -- 2026-07-07
-            // captures), so if its node shares an instance ptr (e.g. the
-            // [x0+0x28] field) with the clarity block's BlockUpMove node,
-            // that shared value is a PRECISE clarity discriminator for the
-            // real hook.
-            {
-                static std::uint64_t s_seen = 0;        // game thread only
-                static std::atomic<unsigned> s_lines{0};
-                if (sc - s_seen > 16) s_seen = sc - 16;
-                for (; s_seen < sc; ++s_seen) {
-                    const std::uint64_t x0v = __atomic_load_n(
-                        &g_cblkScRing[s_seen & 15], __ATOMIC_RELAXED);
-                    const unsigned line =
-                        s_lines.fetch_add(1, std::memory_order_relaxed);
-                    if (line >= 16) continue;
-                    std::uint64_t v0 = 0, v8 = 0, v28 = 0, v70 = 0;
-                    cblkSafeReadU64(x0v, &v0);
-                    cblkSafeReadU64(x0v + 8, &v8);
-                    cblkSafeReadU64(x0v + 0x28, &v28);
-                    cblkSafeReadU64(x0v + 0x70, &v70);
-                    SMBWAP_LOG_INFO(
-                        "[cblk-diag7] shapeCast fire#%llu frame=%u x0=0x%llx "
-                        "[+0]=0x%llx [+8]=0x%llx [+0x28]=0x%llx "
-                        "[+0x70]=0x%llx",
-                        static_cast<unsigned long long>(s_seen), frame,
-                        static_cast<unsigned long long>(x0v),
-                        static_cast<unsigned long long>(v0),
-                        static_cast<unsigned long long>(v8),
-                        static_cast<unsigned long long>(v28),
-                        static_cast<unsigned long long>(v70));
-                }
+            // Once-per-second heartbeat (grep cblk-hit): total BlockUpMove
+            // fires -- flat while idle, small bursts on bumps.
+            if (frame % 600 == 0) {
+                SMBWAP_LOG_INFO(
+                    "[cblk-hit] frame=%u blockUpMove=%llu", frame,
+                    static_cast<unsigned long long>(bum));
             }
         }
 
@@ -973,35 +728,41 @@ HkTrampoline<void*, void*> getDamageReactionPlayerNoHook =
     });
 
 // =========================================================================
-// [cblk-diag7c] PROBE HOOK OBJECTS -- see the probe design block above.
+// [cblk-hit] CHARACTER-BLOCK HIT HOOK -- BlockUpMove @ +0x146397c
 // =========================================================================
 //
-// TARGETS (all verified true function entries, all first instructions
-// trivially relocatable -- hakkun TrampolineHook patches exactly ONE insn):
+// THE character-block hit signal, settled by the diag7 capture series
+// (2026-07-04..07-07):
+//   * BlockUpMove is the bump action node (catalog-tagged Execute, input
+//     HitMoveDir).  A bump = ~3-14 fires on consecutive frames, ONE stable
+//     node ptr per block instance; flat otherwise.  Verified for the
+//     clarity block AND regular ?-blocks across three captures.
+//   * CLARITY FILTER: node - [node+0x28] (the node's offset inside its
+//     owning AINB graph-instance allocation) is a compile-time property of
+//     the graph layout: the ObjectBlockClarityCharacter graph puts its
+//     firing BlockUpMove node at delta 0x17d0; every regular-block bump
+//     observed (6 blocks, 2 sessions) sits at 0x1690.  Exact-match on
+//     0x17d0 -> clarity bump; 0x1690 -> known regular (counted, silent);
+//     any OTHER delta is logged (throttled) but NOT emitted, so unknown
+//     BlockUpMove users (ten-count blocks, sibling clarity node instances
+//     for other bump variants) surface in the log for accept-listing
+//     without risking false checks.
+//   * Rejected filters: position (actors never store plain floats -- CE +
+//     live-GDB + diag7f all agree), ShapeCast bump-coincidence (no tick on
+//     the 07-07 session-3 clarity bump), ItemCreate (singleton entry, no
+//     per-block identity).
 //
-//   ItemCreate execute @ +0x14dd688 (real method behind the +0x14dd670
-//   wrapper) -- the on-hit dispense action node (`ItemCreate`x3 on the
-//   decoded block graph's hit path, catalog-tagged Execute).  PRIMARY
-//   candidate for the per-hit signal.  Owner walk (from its own first
-//   loads): owner = [[node+8]+8]+0x1f8; captured INSIDE the thunk at fire
-//   time (never in the drain -- see the 2026-07-05 post-mortem above).
+// EMIT: on the per-node rising edge (first fire of a node in 120 frames),
+// delta==0x17d0 -> enqueueCharBlockHit(slot=0, chara=-1, 0,0,0).  The
+// client resolves the AP location from (current course, current character)
+// via the offline table and silently drops anything that doesn't map to a
+// real character block (processor.py _handle_char_block_hit); the
+// character_block_sanity option gates it apworld-side.  Single-player ->
+// player slot 0.
 //
-//   BlockClarityShapeCast execute @ +0x161c3b4 -- clarity-specific Query
-//   node (catalog-tagged).  LIVE-CONFIRMED 2026-07-04 to dispatch: fired
-//   11x exactly at the clarity-reveal moment (first-ever positive dispatch
-//   observation; validates the name-string->impl correlation).  Kept as
-//   the burst-on-reveal control.
-//
-//   BlockUpMove execute @ +0x146397c -- bump action node, catalog-tagged
-//   Execute with input HitMoveDir (the earlier "per-frame" dismissal was a
-//   misread; the catalog says on-hit).  Shared with regular ?-blocks:
-//   expected flat-idle / burst-per-bump for both block kinds.
-//
-// The probes are the naked asm thunks defined above; these objects only own
+// The probe is the naked asm thunk defined above; this object only owns
 // the install + the orig backup stub.  The void(*)() signature is a
-// placeholder -- the thunks never touch the real (unknown) ABI.
-hk::hook::TrampolineHook<void (*)()> itemCreateProbeHook{&cblkIcProbe};
-hk::hook::TrampolineHook<void (*)()> shapeCastProbeHook{&cblkScProbe};
+// placeholder -- the thunk never touches the real (unknown) ABI.
 hk::hook::TrampolineHook<void (*)()> blockUpMoveProbeHook{&cblkBumProbe};
 
 // =========================================================================
@@ -2375,25 +2136,14 @@ extern "C" void hkMain() {
     installHook("ActorCreateDispatch", 0x002ceac0,
                 actorCreateDispatchHook.installAtMainOffset(0x002ceac0));
 
-    // [cblk-diag7c] AINB node-execute probes: ItemCreate @ +0x14dd688 (the
-    // on-hit dispense action -- PRIMARY hit-signal candidate), the clarity-
-    // specific BlockClarityShapeCast Query @ +0x161c3b4 (live-confirmed
-    // 2026-07-04 to dispatch: 11 fires exactly at the clarity reveal), and
-    // the BlockUpMove bump action @ +0x146397c.  All three handlers are
-    // REGISTER-TRANSPARENT naked asm thunks (count + stash x0 + br orig;
-    // x9-x11/x16-x17 scratch only) after the 2026-07-04 crash traced to a
-    // C++ lambda handler's freedom to clobber x8/v-regs on an unknown-ABI
-    // callee -- see the probe design block.  The orig backup-stub pointers
-    // are published to the asm-visible globals right after install; the
-    // game is not running yet at hkMain time, so the ordering is safe.
-    // All logging/dereferencing lives in playerTickLatchHook's ring drains
-    // (grep cblk-diag7).
-    installHook("ItemCreateExec", 0x14dd688,
-                itemCreateProbeHook.installAtMainOffset(0x14dd688));
-    g_cblkIcOrig = reinterpret_cast<void*>(itemCreateProbeHook.orig);
-    installHook("BlockClarityShapeCastExec", 0x161c3b4,
-                shapeCastProbeHook.installAtMainOffset(0x161c3b4));
-    g_cblkScOrig = reinterpret_cast<void*>(shapeCastProbeHook.orig);
+    // [cblk-hit] CHARACTER-BLOCK HIT: BlockUpMove execute @ +0x146397c.
+    // Register-transparent naked asm thunk (count + stash x0 + br orig);
+    // the game-thread half in playerTickLatchHook edge-detects per node,
+    // clarity-filters by the graph-layout delta (0x17d0), and emits
+    // enqueueCharBlockHit.  The orig backup-stub pointer is published to
+    // the asm-visible global right after install; the game is not running
+    // yet at hkMain time, so the ordering is safe.  (The diag7 ItemCreate
+    // and ShapeCast probes are retired -- see the [cblk-hit] hook comment.)
     installHook("BlockUpMoveExec", 0x146397c,
                 blockUpMoveProbeHook.installAtMainOffset(0x146397c));
     g_cblkBumOrig = reinterpret_cast<void*>(blockUpMoveProbeHook.orig);
