@@ -734,40 +734,83 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                     cblkSafeReadU64(node + 0x70, &p70);
                     const std::uint64_t nvtOff =
                         (base && nvt >= base && nvt < limit) ? nvt - base : 0;
-                    // Position hunt + first words of the [n+0x28] target.
-                    std::uint64_t w28_0 = 0, w28_1 = 0;
-                    int posHit[4] = {-1, -1, -1, -1};
-                    const std::uint64_t span = cblkSafeSpan(p28, 0x280);
-                    if (span >= 16) {
-                        w28_0 = *reinterpret_cast<std::uint64_t*>(p28);
-                        w28_1 = *reinterpret_cast<std::uint64_t*>(p28 + 8);
-                    }
-                    unsigned nHit = 0;
-                    for (std::uint64_t off = 0; off + 4 <= span && nHit < 4;
-                         off += 4) {
-                        const std::uint32_t w =
-                            *reinterpret_cast<std::uint32_t*>(p28 + off);
-                        if (w == 0x42c20000u || w == 0x41580000u) {
-                            posHit[nHit++] = static_cast<int>(off);
-                        }
-                    }
                     SMBWAP_LOG_INFO(
                         "[cblk-diag7] blockUpMove NODE#%llu frame=%u "
                         "node=0x%llx nvt=0x%llx (NSO+0x%llx) p28=0x%llx "
-                        "p70=0x%llx",
+                        "p70=0x%llx delta=0x%llx",
                         static_cast<unsigned long long>(s_seen), frame,
                         static_cast<unsigned long long>(node),
                         static_cast<unsigned long long>(nvt),
                         static_cast<unsigned long long>(nvtOff),
                         static_cast<unsigned long long>(p28),
-                        static_cast<unsigned long long>(p70));
+                        static_cast<unsigned long long>(p70),
+                        static_cast<unsigned long long>(node - p28));
+                    // [cblk-diag7g] the graph-instance object at p28: dump
+                    // its first 16 words, and for each pointer-shaped word
+                    // sniff the pointee for an ASCII name (>=6 printable
+                    // chars) -- hunting a field that NAMES the graph
+                    // ("ObjectBlockClarityCharacter…" vs the regular-block
+                    // graph) = a precise clarity discriminator.  The 07-07
+                    // posScan came back empty (actors don't store plain
+                    // position floats -- matches the CE/live-debug finding),
+                    // so a name/def pointer is the identity play.
+                    const std::uint64_t span = cblkSafeSpan(p28, 0x80);
+                    std::uint64_t w[16] = {};
+                    for (unsigned i = 0; i * 8 + 8 <= span && i < 16; ++i) {
+                        w[i] = *reinterpret_cast<std::uint64_t*>(p28 + i * 8);
+                    }
                     SMBWAP_LOG_INFO(
-                        "[cblk-diag7]   p28[0]=0x%llx p28[8]=0x%llx "
-                        "span=0x%llx posScan=%d,%d,%d,%d",
-                        static_cast<unsigned long long>(w28_0),
-                        static_cast<unsigned long long>(w28_1),
-                        static_cast<unsigned long long>(span),
-                        posHit[0], posHit[1], posHit[2], posHit[3]);
+                        "[cblk-diag7]   p28[00..38]=%llx %llx %llx %llx "
+                        "%llx %llx %llx %llx",
+                        static_cast<unsigned long long>(w[0]),
+                        static_cast<unsigned long long>(w[1]),
+                        static_cast<unsigned long long>(w[2]),
+                        static_cast<unsigned long long>(w[3]),
+                        static_cast<unsigned long long>(w[4]),
+                        static_cast<unsigned long long>(w[5]),
+                        static_cast<unsigned long long>(w[6]),
+                        static_cast<unsigned long long>(w[7]));
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag7]   p28[40..78]=%llx %llx %llx %llx "
+                        "%llx %llx %llx %llx",
+                        static_cast<unsigned long long>(w[8]),
+                        static_cast<unsigned long long>(w[9]),
+                        static_cast<unsigned long long>(w[10]),
+                        static_cast<unsigned long long>(w[11]),
+                        static_cast<unsigned long long>(w[12]),
+                        static_cast<unsigned long long>(w[13]),
+                        static_cast<unsigned long long>(w[14]),
+                        static_cast<unsigned long long>(w[15]));
+                    unsigned strLogged = 0;
+                    for (unsigned i = 0; i < 16 && strLogged < 3; ++i) {
+                        // Pointer-shaped: 8-aligned-ish, above 64 KiB, below
+                        // the 39-bit guest ceiling.
+                        if (w[i] < 0x10000ull ||
+                            w[i] >= (1ull << 39)) continue;
+                        const std::uint64_t sspan = cblkSafeSpan(
+                            w[i] & ~7ull, 0x28);
+                        if (sspan < 16) continue;
+                        char buf[33];
+                        unsigned printable = 0;
+                        const char* src =
+                            reinterpret_cast<const char*>(w[i] & ~7ull);
+                        for (unsigned k = 0;
+                             k < 32 && k < sspan; ++k) {
+                            const char c = src[k];
+                            if (c >= 0x20 && c < 0x7f) {
+                                buf[printable++] = c;
+                            } else {
+                                break;
+                            }
+                        }
+                        buf[printable] = '\0';
+                        if (printable >= 6) {
+                            ++strLogged;
+                            SMBWAP_LOG_INFO(
+                                "[cblk-diag7]   p28[+0x%02x] -> str \"%s\"",
+                                i * 8, buf);
+                        }
+                    }
                 }
             }
 
