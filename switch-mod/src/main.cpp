@@ -513,6 +513,20 @@ inline bool cblkSafeReadU64(std::uint64_t addr, std::uint64_t* out) {
     return true;
 }
 
+// Length (0..want) readable at [addr, addr+want), bounded by the queried
+// region's end.  One QueryMemory, then raw reads inside the span are safe.
+inline std::uint64_t cblkSafeSpan(std::uint64_t addr, std::uint64_t want) {
+    if (addr == 0 || (addr & 7) != 0) return 0;
+    hk::svc::MemoryInfo info {};
+    u32 pageInfo = 0;
+    if (hk::svc::QueryMemory(&info, &pageInfo, addr).failed()) return 0;
+    if ((info.permission & hk::svc::MemoryPermission_Read) == 0) return 0;
+    const std::uint64_t end = info.base_address + info.size;
+    if (addr >= end) return 0;
+    const std::uint64_t avail = end - addr;
+    return avail < want ? avail : want;
+}
+
 // Guarded node-ctx-shaped walk: h1=[p+8], h2=[h1+8], owner=[h2+0x1f8],
 // vt=[owner].  Returns a bitmask of which hops succeeded (bit0=h1..bit3=vt);
 // failed hops leave zeros.  Purely diagnostic -- on a registration-record
@@ -672,13 +686,22 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                 }
             }
 
-            // Drain the BlockUpMove ring, cap 24 fires: node ptr + the same
-            // guarded walk (BUM's true node layout is unverified -- misses
-            // just log as low ok-bits), plus the flag words its own method
-            // reads (node+0x28 covers the +0x29 byte, +0x70 covers +0x75).
+            // Drain the BlockUpMove ring -- THE hit-signal candidate
+            // (2026-07-07 capture: 9 consecutive-frame fires per bump, one
+            // STABLE node ptr per block instance, flat otherwise).  Goal of
+            // this round: node -> WHICH block.  Per distinct node (deduped:
+            // a bump is ~9-14 fires of one node; log each node at most once
+            // per 120 frames) we log the node's own vtable, chase the heap
+            // ptr at [n+0x28] (the identity lead), and scan its region-
+            // bounded window for the W1-1 Mario clarity block's position
+            // words (97.0f=0x42c20000 / 13.5f=0x41580000) -- a hit both
+            // confirms "this node = that block" and hands us the position
+            // offset for the real hook's identity read.
             {
                 static std::uint64_t s_seen = 0;        // game thread only
                 static std::atomic<unsigned> s_lines{0};
+                static std::uint64_t s_dedupNode[4] = {};
+                static std::uint32_t s_dedupFrame[4] = {};
                 if (bum - s_seen > 16) s_seen = bum - 16;
                 const auto* mm = hk::ro::getMainModule();
                 const ::ptr base = mm ? mm->range().start() : ::ptr(0);
@@ -686,28 +709,100 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                 for (; s_seen < bum; ++s_seen) {
                     const std::uint64_t node = __atomic_load_n(
                         &g_cblkBumRing[s_seen & 15], __ATOMIC_RELAXED);
+                    bool dup = false;
+                    for (int i = 0; i < 4; ++i) {
+                        if (s_dedupNode[i] == node &&
+                            frame - s_dedupFrame[i] < 120u) {
+                            s_dedupFrame[i] = frame;
+                            dup = true;
+                            break;
+                        }
+                    }
+                    if (dup) continue;
+                    int victim = 0;
+                    for (int i = 1; i < 4; ++i) {
+                        if (s_dedupFrame[i] < s_dedupFrame[victim]) victim = i;
+                    }
+                    s_dedupNode[victim] = node;
+                    s_dedupFrame[victim] = frame;
                     const unsigned line =
                         s_lines.fetch_add(1, std::memory_order_relaxed);
                     if (line >= 24) continue;
-                    std::uint64_t h1 = 0, h2 = 0, owner = 0, vt = 0;
-                    const unsigned ok =
-                        cblkGuardedWalk(node, &h1, &h2, &owner, &vt);
-                    std::uint64_t w28 = 0, w70 = 0;
-                    cblkSafeReadU64(node + 0x28, &w28);
-                    cblkSafeReadU64(node + 0x70, &w70);
-                    const std::uint64_t vtOff =
-                        (base && vt >= base && vt < limit) ? vt - base : 0;
+                    std::uint64_t nvt = 0, p28 = 0, p70 = 0;
+                    cblkSafeReadU64(node, &nvt);
+                    cblkSafeReadU64(node + 0x28, &p28);
+                    cblkSafeReadU64(node + 0x70, &p70);
+                    const std::uint64_t nvtOff =
+                        (base && nvt >= base && nvt < limit) ? nvt - base : 0;
+                    // Position hunt + first words of the [n+0x28] target.
+                    std::uint64_t w28_0 = 0, w28_1 = 0;
+                    int posHit[4] = {-1, -1, -1, -1};
+                    const std::uint64_t span = cblkSafeSpan(p28, 0x280);
+                    if (span >= 16) {
+                        w28_0 = *reinterpret_cast<std::uint64_t*>(p28);
+                        w28_1 = *reinterpret_cast<std::uint64_t*>(p28 + 8);
+                    }
+                    unsigned nHit = 0;
+                    for (std::uint64_t off = 0; off + 4 <= span && nHit < 4;
+                         off += 4) {
+                        const std::uint32_t w =
+                            *reinterpret_cast<std::uint32_t*>(p28 + off);
+                        if (w == 0x42c20000u || w == 0x41580000u) {
+                            posHit[nHit++] = static_cast<int>(off);
+                        }
+                    }
                     SMBWAP_LOG_INFO(
-                        "[cblk-diag7] blockUpMove fire#%llu frame=%u "
-                        "node=0x%llx ok=0x%x owner=0x%llx vt=0x%llx "
-                        "(NSO+0x%llx) [n+0x28]=0x%llx [n+0x70]=0x%llx",
+                        "[cblk-diag7] blockUpMove NODE#%llu frame=%u "
+                        "node=0x%llx nvt=0x%llx (NSO+0x%llx) p28=0x%llx "
+                        "p70=0x%llx",
                         static_cast<unsigned long long>(s_seen), frame,
-                        static_cast<unsigned long long>(node), ok,
-                        static_cast<unsigned long long>(owner),
-                        static_cast<unsigned long long>(vt),
-                        static_cast<unsigned long long>(vtOff),
-                        static_cast<unsigned long long>(w28),
-                        static_cast<unsigned long long>(w70));
+                        static_cast<unsigned long long>(node),
+                        static_cast<unsigned long long>(nvt),
+                        static_cast<unsigned long long>(nvtOff),
+                        static_cast<unsigned long long>(p28),
+                        static_cast<unsigned long long>(p70));
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag7]   p28[0]=0x%llx p28[8]=0x%llx "
+                        "span=0x%llx posScan=%d,%d,%d,%d",
+                        static_cast<unsigned long long>(w28_0),
+                        static_cast<unsigned long long>(w28_1),
+                        static_cast<unsigned long long>(span),
+                        posHit[0], posHit[1], posHit[2], posHit[3]);
+                }
+            }
+
+            // Drain the ShapeCast ring, cap 16 fires.  ShapeCast only moves
+            // on CLARITY interaction (burst on approach/reveal, +1 at the
+            // clarity bump; regular blocks leave it flat -- 2026-07-07
+            // captures), so if its node shares an instance ptr (e.g. the
+            // [x0+0x28] field) with the clarity block's BlockUpMove node,
+            // that shared value is a PRECISE clarity discriminator for the
+            // real hook.
+            {
+                static std::uint64_t s_seen = 0;        // game thread only
+                static std::atomic<unsigned> s_lines{0};
+                if (sc - s_seen > 16) s_seen = sc - 16;
+                for (; s_seen < sc; ++s_seen) {
+                    const std::uint64_t x0v = __atomic_load_n(
+                        &g_cblkScRing[s_seen & 15], __ATOMIC_RELAXED);
+                    const unsigned line =
+                        s_lines.fetch_add(1, std::memory_order_relaxed);
+                    if (line >= 16) continue;
+                    std::uint64_t v0 = 0, v8 = 0, v28 = 0, v70 = 0;
+                    cblkSafeReadU64(x0v, &v0);
+                    cblkSafeReadU64(x0v + 8, &v8);
+                    cblkSafeReadU64(x0v + 0x28, &v28);
+                    cblkSafeReadU64(x0v + 0x70, &v70);
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag7] shapeCast fire#%llu frame=%u x0=0x%llx "
+                        "[+0]=0x%llx [+8]=0x%llx [+0x28]=0x%llx "
+                        "[+0x70]=0x%llx",
+                        static_cast<unsigned long long>(s_seen), frame,
+                        static_cast<unsigned long long>(x0v),
+                        static_cast<unsigned long long>(v0),
+                        static_cast<unsigned long long>(v8),
+                        static_cast<unsigned long long>(v28),
+                        static_cast<unsigned long long>(v70));
                 }
             }
         }
