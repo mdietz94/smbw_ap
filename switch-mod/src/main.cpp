@@ -376,16 +376,31 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 // through untouched.  ALL logging moved to the game thread:
 // playerTickLatchHook drains the rings once per frame.
 //
-// SECOND CRASH POST-MORTEM (2026-07-05, first diag7c playtest): identity
-// capture MUST happen inside the thunk AT FIRE TIME, and the drain must be
-// LOG-ONLY.  The 7c drain dereferenced the ring's node pointer a frame
-// later; a one-shot node ctx freed after the bump dispatch left a stale
-// pointer whose walk chased a wild address -- under Ryujinx host-mapped
-// memory that is an instant HOST-process death (log truncated mid-write,
-// no guest trace; fired the moment an ordinary coin block was bumped,
-// which also tentatively confirms ItemCreate dispatches on block bumps).
-// The thunk's capture loads mirror the method's own unconditional first
-// loads, so they are exactly as safe as letting orig run.
+// SECOND CRASH POST-MORTEM (2026-07-05, first diag7c playtest): the 7c
+// drain dereferenced the ring's node pointer a frame later; the stale/
+// non-node value walked to a wild address -- under Ryujinx host-mapped
+// memory an out-of-guest-range deref is an instant HOST-process death
+// (log truncated mid-write, no guest trace).
+//
+// THIRD CRASH POST-MORTEM (2026-07-07) -- the decisive one: "capture at
+// fire time by mirroring the method's own first loads" ALSO faulted,
+// because the premise "x0 = node ctx" is false for the FIRST call.  The
+// guest trace showed x0 = main+0x3490138 (a .bss record), x1 = 8, x2 = a
+// stack buffer, with `ldarb`-guard / __cxa_guard_acquire one-time-init
+// machinery in the caller chain: node-class entries receive a lazy
+// REGISTRATION/metadata call with a completely different argument
+// convention the first time the class runs.  A node-ctx-shaped walk on
+// that record chases string bytes into unmapped memory.  (This also
+// retro-explains 07-04: the C++ lambda's register clobbering corrupted
+// that same registration machinery -> delayed heap-execution crash.)
+//
+// STANDING RULES, born of three crashes:
+//   1. The thunk performs ZERO dereferences -- it stores raw registers
+//      (x0-x3) only.  No assumption about the callee's convention holds
+//      for every call.
+//   2. The drain may dereference captured values ONLY through
+//      cblkSafeReadU64 (svcQueryMemory-validated, permission-checked,
+//      region-bounded).  An unmapped hop logs as a miss, never faults.
 //
 // (Retired predecessors: [cblk-diag5] +0x1e02100 exb-evaluator filter and
 // [cblk-diag6] +0x1462e50 slot-26 method, both confirmed never-called;
@@ -398,14 +413,8 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 }  // namespace (temporarily closed for the extern "C" probe symbols)
 extern "C" {
 std::uint64_t g_cblkIcCount = 0;             // ItemCreate  @ +0x14dd688
-// 8 fires x 4 words: {node, owner, owner[0] (vtable-ish), owner[+0x208]},
-// ALL captured at fire time inside the thunk where they are provably
-// readable (the capture mirrors the method's own unconditional first
-// loads).  The drain must NEVER dereference these values: a one-shot node
-// ctx can be freed the moment the bump dispatch completes, and a stale
-// cross-frame deref can chase a wild address -- under Ryujinx's host-mapped
-// memory that is a HARD host-process death (the 2026-07-05 crash: log
-// truncated mid-write, no guest trace).
+// 8 fires x 4 words: raw {x0, x1, x2, x3} at entry -- NO dereferencing in
+// the thunk (rule 1 above); the drain walks them via cblkSafeReadU64 only.
 std::uint64_t g_cblkIcRing[8 * 4] = {};
 void*         g_cblkIcOrig = nullptr;
 std::uint64_t g_cblkScCount = 0;             // ShapeCast   @ +0x161c3b4
@@ -428,16 +437,10 @@ __asm__(R"(
     .global cblkIcProbe
     .type   cblkIcProbe, %function
 cblkIcProbe:
-    // Fire-time identity capture.  These four loads MIRROR the hooked
-    // method's own unconditional first loads (ldr x8,[x0,#8]; ldr x8,[x8,#8];
-    // ldr x8,[x8,#0x1f8]; ldr [x8,#0x208] -- offline disasm of +0x14dd688),
-    // so each access is exactly as safe as letting orig run.  x9-x15 are
-    // AAPCS64 caller-saved temporaries no callee reads as inputs.
-    ldr     x9, [x0, #8]
-    ldr     x9, [x9, #8]
-    ldr     x10, [x9, #0x1f8]
-    ldr     x11, [x10]
-    ldr     x12, [x10, #0x208]
+    // ZERO-DEREF capture: raw x0-x3 only (the 2026-07-07 crash proved the
+    // entry is also called with a non-node registration-record x0, so NO
+    // pointer walk is safe here).  x13-x17 are AAPCS64 scratch no callee
+    // reads as inputs.
     adrp    x16, g_cblkIcCount
     add     x16, x16, :lo12:g_cblkIcCount
 1:  ldxr    x13, [x16]
@@ -448,8 +451,8 @@ cblkIcProbe:
     add     x17, x17, :lo12:g_cblkIcRing
     and     x13, x13, #7
     add     x17, x17, x13, lsl #5
-    stp     x0, x10, [x17]
-    stp     x11, x12, [x17, #16]
+    stp     x0, x1, [x17]
+    stp     x2, x3, [x17, #16]
     adrp    x16, g_cblkIcOrig
     ldr     x16, [x16, :lo12:g_cblkIcOrig]
     br      x16
@@ -492,6 +495,44 @@ cblkBumProbe:
 )");
 
 namespace {  // reopened after the extern "C" probe symbols
+
+// [cblk-diag7e] svcQueryMemory-guarded 8-byte read -- the ONLY sanctioned
+// way to dereference a captured game pointer outside its call context
+// (rule 2 above).  Validates mapping, read permission, and that the read
+// stays inside the queried region.  Returns false (never faults) on any
+// miss, including null/unaligned addresses.
+inline bool cblkSafeReadU64(std::uint64_t addr, std::uint64_t* out) {
+    *out = 0;
+    if (addr == 0 || (addr & 7) != 0) return false;
+    hk::svc::MemoryInfo info {};
+    u32 pageInfo = 0;
+    if (hk::svc::QueryMemory(&info, &pageInfo, addr).failed()) return false;
+    if ((info.permission & hk::svc::MemoryPermission_Read) == 0) return false;
+    if (addr + 8 > info.base_address + info.size) return false;
+    *out = *reinterpret_cast<const volatile std::uint64_t*>(addr);
+    return true;
+}
+
+// Guarded node-ctx-shaped walk: h1=[p+8], h2=[h1+8], owner=[h2+0x1f8],
+// vt=[owner].  Returns a bitmask of which hops succeeded (bit0=h1..bit3=vt);
+// failed hops leave zeros.  Purely diagnostic -- on a registration-record
+// x0 the walk just reports early misses instead of faulting.
+inline unsigned cblkGuardedWalk(std::uint64_t p, std::uint64_t* h1,
+                                std::uint64_t* h2, std::uint64_t* owner,
+                                std::uint64_t* vt) {
+    unsigned ok = 0;
+    if (cblkSafeReadU64(p + 8, h1)) {
+        ok |= 1;
+        if (cblkSafeReadU64(*h1 + 8, h2)) {
+            ok |= 2;
+            if (cblkSafeReadU64(*h2 + 0x1f8, owner)) {
+                ok |= 4;
+                if (cblkSafeReadU64(*owner, vt)) ok |= 8;
+            }
+        }
+    }
+    return ok;
+}
 
 // Frame counter owned by playerTickLatchHook; the diag7 drain logs stamp
 // themselves with it so bump-time fires correlate against the once/second
@@ -567,65 +608,106 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                     static_cast<unsigned long long>(bum));
             }
 
-            // Drain the ItemCreate ring, cap 48 lines.  LOG-ONLY: every
-            // identity word ({node, owner, owner[0], owner[+0x208]}) was
-            // captured by the thunk AT FIRE TIME; dereferencing anything
-            // here, a frame later, is forbidden -- a freed one-shot node ctx
-            // made a cross-frame walk chase a wild address and hard-killed
-            // the host process (2026-07-05 crash).  vtOff is arithmetic on
-            // the captured value, not a read.
+            // Drain the ItemCreate ring, cap 48 fires.  Logs the raw
+            // {x0,x1,x2,x3} the thunk captured, classifies x0 via
+            // svcQueryMemory (region state/perm distinguishes .bss
+            // registration record vs heap node ctx), then attempts the
+            // node-ctx-shaped walk via guarded reads only.
             {
                 static std::uint64_t s_seen = 0;        // game thread only
                 static std::atomic<unsigned> s_lines{0};
                 if (ic - s_seen > 8) s_seen = ic - 8;    // ring overwrote
                 const auto* mm = hk::ro::getMainModule();
                 const ::ptr base = mm ? mm->range().start() : ::ptr(0);
-                const ::ptr limit = base ? base + 0x2800000 : ::ptr(0);
+                const ::ptr limit = base ? base + 0x4000000 : ::ptr(0);
                 for (; s_seen < ic; ++s_seen) {
                     const std::uint64_t* slot =
                         &g_cblkIcRing[(s_seen & 7) * 4];
-                    const std::uint64_t node =
-                        __atomic_load_n(&slot[0], __ATOMIC_RELAXED);
-                    const std::uint64_t owner =
-                        __atomic_load_n(&slot[1], __ATOMIC_RELAXED);
-                    const std::uint64_t vt =
-                        __atomic_load_n(&slot[2], __ATOMIC_RELAXED);
-                    const std::uint64_t w208 =
-                        __atomic_load_n(&slot[3], __ATOMIC_RELAXED);
+                    std::uint64_t r[4];
+                    for (int i = 0; i < 4; ++i) {
+                        r[i] = __atomic_load_n(&slot[i], __ATOMIC_RELAXED);
+                    }
                     const unsigned line =
                         s_lines.fetch_add(1, std::memory_order_relaxed);
                     if (line >= 48) continue;
+                    // Classify x0's memory region (state + perm).
+                    std::uint32_t x0state = 0xffffffffu, x0perm = 0;
+                    {
+                        hk::svc::MemoryInfo mi {};
+                        u32 pg = 0;
+                        if (!hk::svc::QueryMemory(&mi, &pg, r[0]).failed()) {
+                            x0state = static_cast<std::uint32_t>(mi.state);
+                            x0perm = static_cast<std::uint32_t>(mi.permission);
+                        }
+                    }
+                    // x0 as main-relative offset when it's in-module.
+                    const std::uint64_t x0off =
+                        (base && r[0] >= base && r[0] < limit) ? r[0] - base
+                                                               : 0;
+                    std::uint64_t h1 = 0, h2 = 0, owner = 0, vt = 0;
+                    const unsigned ok =
+                        cblkGuardedWalk(r[0], &h1, &h2, &owner, &vt);
                     const std::uint64_t vtOff =
                         (base && vt >= base && vt < limit) ? vt - base : 0;
                     SMBWAP_LOG_INFO(
                         "[cblk-diag7] itemCreate fire#%llu frame=%u "
-                        "node=0x%llx owner=0x%llx vt=0x%llx (NSO+0x%llx) "
-                        "[owner+0x208]=0x%llx",
+                        "x0=0x%llx (main+0x%llx state=0x%x perm=0x%x) "
+                        "x1=0x%llx x2=0x%llx x3=0x%llx",
                         static_cast<unsigned long long>(s_seen), frame,
-                        static_cast<unsigned long long>(node),
+                        static_cast<unsigned long long>(r[0]),
+                        static_cast<unsigned long long>(x0off),
+                        x0state, x0perm,
+                        static_cast<unsigned long long>(r[1]),
+                        static_cast<unsigned long long>(r[2]),
+                        static_cast<unsigned long long>(r[3]));
+                    SMBWAP_LOG_INFO(
+                        "[cblk-diag7]   walk ok=0x%x h1=0x%llx h2=0x%llx "
+                        "owner=0x%llx vt=0x%llx (NSO+0x%llx)",
+                        ok,
+                        static_cast<unsigned long long>(h1),
+                        static_cast<unsigned long long>(h2),
                         static_cast<unsigned long long>(owner),
                         static_cast<unsigned long long>(vt),
-                        static_cast<unsigned long long>(vtOff),
-                        static_cast<unsigned long long>(w208));
+                        static_cast<unsigned long long>(vtOff));
                 }
             }
 
-            // Drain the BlockUpMove ring: node ptr + frame per fire, cap 24
-            // lines (a bump = a small burst; a per-frame node saturates the
-            // cap immediately, which is itself the answer).
+            // Drain the BlockUpMove ring, cap 24 fires: node ptr + the same
+            // guarded walk (BUM's true node layout is unverified -- misses
+            // just log as low ok-bits), plus the flag words its own method
+            // reads (node+0x28 covers the +0x29 byte, +0x70 covers +0x75).
             {
                 static std::uint64_t s_seen = 0;        // game thread only
                 static std::atomic<unsigned> s_lines{0};
                 if (bum - s_seen > 16) s_seen = bum - 16;
+                const auto* mm = hk::ro::getMainModule();
+                const ::ptr base = mm ? mm->range().start() : ::ptr(0);
+                const ::ptr limit = base ? base + 0x4000000 : ::ptr(0);
                 for (; s_seen < bum; ++s_seen) {
-                    void* node = reinterpret_cast<void*>(__atomic_load_n(
-                        &g_cblkBumRing[s_seen & 15], __ATOMIC_RELAXED));
+                    const std::uint64_t node = __atomic_load_n(
+                        &g_cblkBumRing[s_seen & 15], __ATOMIC_RELAXED);
                     const unsigned line =
                         s_lines.fetch_add(1, std::memory_order_relaxed);
                     if (line >= 24) continue;
+                    std::uint64_t h1 = 0, h2 = 0, owner = 0, vt = 0;
+                    const unsigned ok =
+                        cblkGuardedWalk(node, &h1, &h2, &owner, &vt);
+                    std::uint64_t w28 = 0, w70 = 0;
+                    cblkSafeReadU64(node + 0x28, &w28);
+                    cblkSafeReadU64(node + 0x70, &w70);
+                    const std::uint64_t vtOff =
+                        (base && vt >= base && vt < limit) ? vt - base : 0;
                     SMBWAP_LOG_INFO(
-                        "[cblk-diag7] blockUpMove fire#%llu frame=%u node=%p",
-                        static_cast<unsigned long long>(s_seen), frame, node);
+                        "[cblk-diag7] blockUpMove fire#%llu frame=%u "
+                        "node=0x%llx ok=0x%x owner=0x%llx vt=0x%llx "
+                        "(NSO+0x%llx) [n+0x28]=0x%llx [n+0x70]=0x%llx",
+                        static_cast<unsigned long long>(s_seen), frame,
+                        static_cast<unsigned long long>(node), ok,
+                        static_cast<unsigned long long>(owner),
+                        static_cast<unsigned long long>(vt),
+                        static_cast<unsigned long long>(vtOff),
+                        static_cast<unsigned long long>(w28),
+                        static_cast<unsigned long long>(w70));
                 }
             }
         }
