@@ -3,10 +3,12 @@
 The 12 characters are AP items (7 base precollected + 5 "Character
 (Easy)" pool items); the Switch forces a committed selection of a
 locked character onto a random unlocked one (CharaSelectCommit hook +
-per-frame sweep).  These tests pin the client-side mask derivation: the
-character_gating slot_data gate, the roster bit order (the game's enum
-order -- Nabbit at roster index 7, Yoshis at 8-11), and the
-ReceivedItems push.
+per-frame sweep).  The gate is ALWAYS on -- no slot_data flag: the mask
+derives purely from received character items, so it stays 0 (inert)
+until any arrive.  These tests pin the client-side mask derivation: the
+roster bit order (the game's enum order -- Nabbit at roster index 7,
+Yoshis at 8-11), the no-items-inert fallback, and the Connected /
+ReceivedItems pushes.
 
 Same Archipelago-availability guard pattern as the other
 test_context_* files.
@@ -81,25 +83,16 @@ class TestContextCharaGate(unittest.IsolatedAsyncioTestCase):
 
     # ---- mask derivation -------------------------------------------------
 
-    def test_not_gating_means_vanilla(self) -> None:
-        # Seed without the character_gating marker (old seed): mask 0
-        # (gate inert) no matter what items arrived.
-        self.assertFalse(self.ctx.character_gating)
-        self._recv(self.MARIO_ID, self.NABBIT_ID)
-        self.assertEqual(self.ctx._recompute_unlocked_chara_mask(), 0)
-
-    def test_gating_with_no_items_is_zero(self) -> None:
-        # Defensive: no character items received yet -> mask 0 keeps the
-        # Switch gate inert rather than stranding the player with no
-        # pickable character.
-        self.ctx.character_gating = True
+    def test_no_items_is_zero(self) -> None:
+        # No character items received yet -> mask 0 keeps the Switch gate
+        # inert (never strand the player with no pickable character; also
+        # the natural state of a seed without character items).
         self.assertEqual(self.ctx._recompute_unlocked_chara_mask(), 0)
 
     def test_roster_bit_positions(self) -> None:
         # Roster order is the GAME's enum order: Mario bit 0, Nabbit bit
         # 7 (before the Yoshis), Green Yoshi bit 8, Light-Blue Yoshi bit
         # 11.
-        self.ctx.character_gating = True
         self._recv(self.MARIO_ID)
         self.assertEqual(self.ctx._recompute_unlocked_chara_mask(), 1 << 0)
         self._recv(self.NABBIT_ID)
@@ -111,32 +104,27 @@ class TestContextCharaGate(unittest.IsolatedAsyncioTestCase):
             (1 << 0) | (1 << 7) | (1 << 8) | (1 << 11))
 
     def test_non_character_items_ignored(self) -> None:
-        self.ctx.character_gating = True
         self._recv(self.OTHER_ID)
         self.assertEqual(self.ctx._recompute_unlocked_chara_mask(), 0)
         self._recv(self.LUIGI_ID)
         self.assertEqual(self.ctx._recompute_unlocked_chara_mask(), 1 << 1)
 
-    # ---- ReceivedItems push ------------------------------------------------
+    # ---- push triggers -----------------------------------------------------
 
     async def test_received_items_pushes_mask(self) -> None:
-        self.ctx.character_gating = True
         self._recv(self.MARIO_ID, self.NABBIT_ID)
         await self.ctx._handle_received_items({"items": []})
         self.ctx.lan_server.send_set_unlocked_charas.assert_called_with(
             (1 << 0) | (1 << 7))
 
     async def test_connected_pushes_mask(self) -> None:
-        # The Connected slot_data handler flips the gate on and pushes
-        # immediately (repairs a locked pre-selected character even when
-        # the connect-time ReceivedItems batch is empty).
+        # Connected pushes the current mask unconditionally (no slot_data
+        # flag) so a locked pre-selected character is repaired even when
+        # the connect-time ReceivedItems batch is empty.
         self._recv(self.MARIO_ID)
-        await self.ctx._handle_ap_package(
-            "Connected", {"slot_data": {"character_gating": True}})
-        self.assertTrue(self.ctx.character_gating)
+        await self.ctx._handle_ap_package("Connected", {"slot_data": {}})
         self.ctx.lan_server.send_set_unlocked_charas.assert_called_with(1 << 0)
 
-    async def test_connected_old_seed_stays_vanilla(self) -> None:
+    async def test_connected_no_items_pushes_zero(self) -> None:
         await self.ctx._handle_ap_package("Connected", {"slot_data": {}})
-        self.assertFalse(self.ctx.character_gating)
         self.ctx.lan_server.send_set_unlocked_charas.assert_called_with(0)

@@ -218,10 +218,10 @@ ItemGetDenyProvider = Callable[[], int]
 
 # Character-selection gating (2026-07-08): returns the unlocked-character
 # mask to assert on the Switch (bit i = roster index i received from AP;
-# order on :class:`wire.SetUnlockedCharasMsg`).  0 = gate inert (vanilla
-# selection, also the old-seed / character_gating-off case).  Replayed on
-# HelloMsg and the periodic tick, and pushed by SMBWContext on Connected +
-# every ReceivedItems.
+# order on :class:`wire.SetUnlockedCharasMsg`).  Always on -- no slot_data
+# flag; 0 = gate inert (vanilla selection; the no-character-items-received
+# case).  Replayed on HelloMsg and the periodic tick, and pushed by
+# SMBWContext on Connected + every ReceivedItems.
 UnlockedCharasProvider = Callable[[], int]
 
 # AP-authoritative badge-shop ownership (2026-06).  Returns the

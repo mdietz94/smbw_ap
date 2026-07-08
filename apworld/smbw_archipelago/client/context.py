@@ -225,13 +225,6 @@ class SMBWContext(CommonContext):
         self.powerup_gating: bool = False
         self._itemget_deny_override: int | None = None
 
-        # Character-selection gating (2026-07-08).  ``character_gating``
-        # is set from slot_data on Connected -- True for seeds that want
-        # the Switch to force a selection of a locked (not-yet-received)
-        # character onto a random unlocked one.  When False (old seeds),
-        # the unlocked-chara mask stays 0 and the Switch gate is inert.
-        self.character_gating: bool = False
-
         # Level-entry gate.  ``entry_gating_enabled`` defaults ON (the
         # feature is the request); an apworld can ship a
         # ``level_entry_gating`` slot_data key to turn it off per-seed.
@@ -387,17 +380,11 @@ class SMBWContext(CommonContext):
                 self.lan_server.send_set_itemget_deny(
                     self._recompute_itemget_deny_mask())
 
-            # Character-selection gating.  Default OFF when the key is
-            # missing (seed generated before the gate existed) -- those
-            # seeds keep vanilla character selection.  Push immediately
-            # so a locked pre-selected character is repaired even if the
+            # Character-selection gating (always on, no slot_data flag --
+            # the mask derives purely from received character items and
+            # stays 0/inert until any arrive).  Push immediately so a
+            # locked pre-selected character is repaired even if the
             # connect-time ReceivedItems batch is empty.
-            cg = bool(slot_data.get("character_gating"))
-            if cg != self.character_gating:
-                log.info(
-                    "character_gating: %s (from slot_data)",
-                    "ENABLED" if cg else "disabled")
-            self.character_gating = cg
             if self.lan_server is not None:
                 self.lan_server.send_set_unlocked_charas(
                     self._recompute_unlocked_chara_mask())
@@ -560,15 +547,15 @@ class SMBWContext(CommonContext):
     def _recompute_unlocked_chara_mask(self) -> int:
         """The Switch-facing unlocked-character mask (bit i = ROSTER index
         i received from AP; bit order on
-        :class:`wire.SetUnlockedCharasMsg` -- note it differs from the
-        provisional PlayerCharaType order ``char_block_table`` uses:
-        Nabbit/Totten is roster index 7, before the Yoshis).  Returns 0
-        (gate inert, vanilla selection) when this seed doesn't gate
-        characters, or defensively when NO character item has been
-        received yet -- a 0 mask must never strand the player with no
-        pickable character."""
-        if not self.character_gating:
-            return 0
+        :class:`wire.SetUnlockedCharasMsg`, the game's enum order:
+        Nabbit/Totten is roster index 7, before the Yoshis).  Always on --
+        no slot_data flag: the mask derives purely from received character
+        items, so it returns 0 (gate inert, vanilla selection) until any
+        character item arrives.  The 7 base characters are precollected
+        (starting_items), so every seed with character items in its
+        datapackage engages the gate at connect; a seed without them
+        never leaves 0.  A 0 mask must never strand the player with no
+        pickable character -- the Switch treats it as gate-off."""
         names: set[str] = set()
         for it in self.items_received:
             item_id = getattr(it, "item", None)
