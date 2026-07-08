@@ -429,12 +429,12 @@ def _handle_char_block_hit(
 ) -> list[ProcessorEmit]:
     """A player-specific ObjectBlockClarityCharacter block was bumped.
 
-    The GetDamageReactionPlayerNo hook over-fires (it's a shared AI node);
-    the filtering happens HERE by intersecting (current course, hitting
-    character) against the offline char-block table.  Only a (course,
-    charaType) pair that actually has a placed character block resolves to
-    a CheckEmitted; everything else (regular ? blocks, courses with no
-    character block for this character) is dropped silently.
+    The Switch's BlockUpMove hook pre-filters to clarity blocks (the
+    graph-layout delta), so an event here IS a character-block bump; the
+    remaining resolution -- WHICH block -- happens by intersecting
+    (current course, hitting character) against the offline char-block
+    table.  A (course, charaType) pair without a placed character block
+    (e.g. an unmapped clarity variant) is still dropped silently.
 
     Character resolution, in order:
       1. The event's ``chara`` (0-11) if the Switch resolved it.
@@ -443,6 +443,12 @@ def _handle_char_block_hit(
       3. Else, if the current course has EXACTLY ONE character block, that
          block's single chara is unambiguous (covers the single-player
          common case even when neither 1 nor 2 is available).
+
+    CHARACTER-UNLOCK GATE: the hit only counts if the hitting character's
+    AP item has been received (``state.unlocked_charas``, pushed by the
+    context on every ReceivedItems).  The gate sits BEFORE the emit dedup
+    so a re-bump after the character is unlocked still credits; while the
+    set is empty (pre-connect) hits are dropped, not banked.
 
     The CheckEmitted carries ``metadata["chara"]`` which BridgeState uses
     as the per-course dedup sub_key, and which ``location_table.lookup_name``
@@ -483,6 +489,18 @@ def _handle_char_block_hit(
             "char_block_hit at stage_key=0x%08x chara=%d: no character block "
             "for this pair (regular block or non-charblock course); dropping",
             sk & 0xFFFFFFFF, chara)
+        return []
+
+    # Character-unlock gate (see docstring): no credit for hitting a block
+    # with a character the player hasn't received from AP.  Dropped BEFORE
+    # emit_check so the dedup doesn't swallow a legitimate later re-bump.
+    if not state.is_character_unlocked(chara):
+        log.info(
+            "char_block_hit at stage_key=0x%08x chara=%d (%s): character "
+            "not unlocked in AP; dropping (re-bump after unlocking to "
+            "credit)",
+            sk & 0xFFFFFFFF, chara,
+            char_block_table.chara_item_name(chara) or "?")
         return []
 
     check = CheckEmitted(

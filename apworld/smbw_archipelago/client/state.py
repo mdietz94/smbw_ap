@@ -91,7 +91,27 @@ class BridgeState:
         # StatusUpdate(CLIENT_GOAL).
         self.goal_complete: bool = False
 
+        # Character-block sanity: the set of PlayerCharaTypes (0-11) whose
+        # AP character item has been received.  Pushed by the context on
+        # every ReceivedItems (char_block_table.charas_for_item_names over
+        # items_received).  The processor's char_block_hit gate drops hits
+        # by a character not in this set -- BEFORE the emit dedup, so a
+        # re-bump after the character is later unlocked still credits.
+        # Empty until the connect-time ReceivedItems batch lands (strict:
+        # no credit while unknown).
+        self.unlocked_charas: set[int] = set()
+
     # ---- Mutators -----------------------------------------------------
+
+    def set_unlocked_charas(self, charas: set[int]) -> None:
+        """Replace the unlocked-character set (context, on ReceivedItems)."""
+        with self._lock:
+            self.unlocked_charas = set(charas)
+
+    def is_character_unlocked(self, chara: int) -> bool:
+        """True if the character's AP item has been received."""
+        with self._lock:
+            return chara in self.unlocked_charas
 
     def set_current_course(self, course: CurrentCourse | None) -> None:
         """Update the active course on a course_in PlayReport. Pass None

@@ -57,9 +57,14 @@ class TestCharBlockTable(unittest.TestCase):
 
 
 class TestCharBlockProcessor(unittest.TestCase):
-    def _state(self, stage_key=_W1_1, chara=0):
+    def _state(self, stage_key=_W1_1, chara=0, unlocked=None):
         st = BridgeState()
         st.mark_course_entered(CurrentCourse(stage_key=stage_key, chara=chara))
+        # Unless a test says otherwise, all characters are unlocked (the
+        # context pushes this set from items_received; the seven base
+        # characters are precollected so this is the common live state).
+        st.set_unlocked_charas(
+            set(range(12)) if unlocked is None else set(unlocked))
         return st
 
     def test_matching_character_emits(self):
@@ -104,11 +109,64 @@ class TestCharBlockProcessor(unittest.TestCase):
         sk = 0x04BF20CF  # _STAGE_THE_SUGARSTAR_TRIAL
         st = BridgeState()
         st.mark_course_entered(CurrentCourse(stage_key=sk, chara=2))
+        st.set_unlocked_charas(set(range(12)))
         e1 = process_event(st, CharBlockHitMsg(player_slot=0, chara=2))
         e2 = process_event(st, CharBlockHitMsg(player_slot=0, chara=7))
         self.assertEqual(len(e1), 1)
         self.assertEqual(len(e2), 1)
         self.assertNotEqual(e1[0].metadata["chara"], e2[0].metadata["chara"])
+
+
+class TestCharBlockUnlockGate(unittest.TestCase):
+    """A block hit only credits when the hitting character's AP item has
+    been received (state.unlocked_charas, pushed by the context)."""
+
+    def _state(self, unlocked, chara=0):
+        st = BridgeState()
+        st.mark_course_entered(CurrentCourse(stage_key=_W1_1, chara=chara))
+        st.set_unlocked_charas(set(unlocked))
+        return st
+
+    def test_locked_character_dropped(self):
+        st = self._state(unlocked=set())  # nothing received yet
+        emits = process_event(st, CharBlockHitMsg(player_slot=0, chara=0))
+        self.assertEqual(emits, [])
+
+    def test_unlocked_character_emits(self):
+        st = self._state(unlocked={0})
+        emits = process_event(st, CharBlockHitMsg(player_slot=0, chara=0))
+        self.assertEqual(len(emits), 1)
+        self.assertEqual(emits[0].metadata["chara"], 0)
+
+    def test_rebump_after_unlock_credits(self):
+        # The gate sits BEFORE the emit dedup: a hit while locked must not
+        # burn the (course, chara) dedup key.
+        st = self._state(unlocked=set())
+        first = process_event(st, CharBlockHitMsg(player_slot=0, chara=0))
+        self.assertEqual(first, [])
+        st.set_unlocked_charas({0})  # character item arrives
+        second = process_event(st, CharBlockHitMsg(player_slot=0, chara=0))
+        self.assertEqual(len(second), 1)
+
+    def test_other_character_unlock_does_not_leak(self):
+        # Only Mario is unlocked; a Mario-block hit resolved via the
+        # course-chara fallback still requires MARIO to be unlocked --
+        # unlocking someone else doesn't help.
+        st = self._state(unlocked={5})
+        emits = process_event(st, CharBlockHitMsg(player_slot=0, chara=0))
+        self.assertEqual(emits, [])
+
+    def test_chara_item_names_roster(self):
+        # The gate's chara->item mapping: spot-check the divergent entry
+        # (roster says "Yoshi"; the AP item is "Green Yoshi") and the set
+        # builder.
+        self.assertEqual(char_block_table.chara_item_name(7), "Green Yoshi")
+        self.assertEqual(char_block_table.chara_item_name(0), "Mario")
+        self.assertIsNone(char_block_table.chara_item_name(12))
+        self.assertEqual(
+            char_block_table.charas_for_item_names(
+                {"Mario", "Green Yoshi", "Nabbit", "Spring Feet Badge"}),
+            {0, 7, 11})
 
 
 if __name__ == "__main__":

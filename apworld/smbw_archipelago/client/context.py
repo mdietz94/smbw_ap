@@ -39,6 +39,7 @@ from CommonClient import CommonContext  # type: ignore
 from NetUtils import ClientStatus  # type: ignore
 
 from . import badge_table
+from . import char_block_table
 from . import coin_table
 from . import powerup_table
 from . import royal_seed_table
@@ -507,6 +508,27 @@ class SMBWContext(CommonContext):
             mask &= ~(1 << bit)
         return mask
 
+    def _recompute_unlocked_charas(self) -> set[int]:
+        """The set of PlayerCharaTypes (0-11) whose AP character item has
+        been received.  Same items_received walk as the power-up deny
+        mask; feeds the processor's char_block_hit character-unlock gate
+        via BridgeState.  The seven base characters are precollected
+        (starting_items) so they arrive in the connect-time ReceivedItems
+        batch; the five "Character (Easy)" items are pool items and
+        unlock as found."""
+        names: set[str] = set()
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                names.add(self.item_names.lookup_in_game(int(item_id)))
+            except Exception:
+                continue
+        return char_block_table.charas_for_item_names(names)
+
     def set_itemget_deny_override(self, mask: int | None) -> None:
         """`/deny_powerups` entry point.  Set or clear the deny-mask
         override and immediately push it to the Switch.  Passing ``None``
@@ -856,6 +878,13 @@ class SMBWContext(CommonContext):
 
     async def _handle_received_items(self, args: dict) -> None:
         items = args.get("items", []) or []
+
+        # Character-block sanity: refresh the unlocked-character set the
+        # processor's char_block_hit gate reads (a hit only counts when
+        # the hitting character's AP item has been received).  Pushed
+        # into BridgeState (not the Switch) -- the gate is client-side.
+        self.bridge_state.set_unlocked_charas(
+            self._recompute_unlocked_charas())
 
         new_mask = self._recompute_badge_mask()
         new_seed_counts = self._recompute_wonder_seed_counts()

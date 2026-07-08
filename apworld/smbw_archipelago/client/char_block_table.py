@@ -73,10 +73,45 @@ _TABLE: Final[dict[tuple[int, int], str]] = _load()
 
 def lookup(stage_key: int, chara: int) -> str | None:
     """Resolve a (course stage_key, hitting charaType) to its AP location
-    name, or ``None`` if no character block exists for that pair (the
-    common case -- the GetDamageReactionPlayerNo hook over-fires on every
-    block-damage resolve, and only real character-block courses map)."""
+    name, or ``None`` if no character block exists for that pair (regular
+    blocks / courses without a block for this character)."""
     return _TABLE.get((int(stage_key) & 0xFFFFFFFF, int(chara)))
+
+
+# PlayerCharaType (0-11) -> AP character ITEM name (items.json).  Same
+# provisional roster-order mapping as the generator's CHARA_NAMES
+# (scripts/romfs/build_charblock_table.py), except index 7 uses the item's
+# name "Green Yoshi" (the roster calls it just "Yoshi").  Used by the
+# character-unlock gate: a block hit only counts if the hitting character
+# has been received as an AP item (indices 0-6 are precollected via
+# starting_items; the "Character (Easy)" five are pool items).
+CHARA_ITEM_NAMES: Final[tuple[str, ...]] = (
+    "Mario",             # 0
+    "Luigi",             # 1
+    "Peach",             # 2
+    "Daisy",             # 3
+    "Yellow Toad",       # 4
+    "Blue Toad",         # 5
+    "Toadette",          # 6
+    "Green Yoshi",       # 7
+    "Red Yoshi",         # 8
+    "Yellow Yoshi",      # 9
+    "Light-Blue Yoshi",  # 10
+    "Nabbit",            # 11
+)
+
+
+def chara_item_name(chara: int) -> str | None:
+    """The AP item name for a PlayerCharaType, or ``None`` out of range."""
+    return (CHARA_ITEM_NAMES[chara]
+            if 0 <= chara < len(CHARA_ITEM_NAMES) else None)
+
+
+def charas_for_item_names(names: "set[str] | frozenset[str]") -> set[int]:
+    """The set of PlayerCharaTypes whose AP character item is in ``names``.
+    Used by the context to turn items_received into the unlocked-chara set
+    it pushes into BridgeState."""
+    return {i for i, n in enumerate(CHARA_ITEM_NAMES) if n in names}
 
 
 def charas_for_stage(stage_key: int) -> set[int]:
