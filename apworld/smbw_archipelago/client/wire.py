@@ -699,9 +699,10 @@ class SetUnlockedCharasMsg:
 
     ``mask`` bit i == roster index i is a character the player has
     received from AP.  Bit order is the GAME's roster-enum order (the
-    GameDataList character enum / the name table @NSO 0x71034efad8), NOT
-    the provisional PlayerCharaType order in ``char_block_table`` --
-    note Nabbit (Totten) sits at roster index 7, before the Yoshis:
+    GameDataList character enum / the name table @NSO 0x71034efad8; the
+    same order ``char_block_table.CHARA_ITEM_NAMES`` uses since its
+    PR #163 correction) -- note Nabbit (Totten) sits at roster index 7,
+    before the Yoshis:
 
     ========  =================  ======================
     bit       game name          AP item name

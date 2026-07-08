@@ -208,13 +208,26 @@ class TestRoundTrip(unittest.TestCase):
     def test_set_unlocked_charas_roster_shape(self):
         # The roster table is the wire contract: 12 entries, Nabbit at
         # roster index 7 (BEFORE the Yoshis -- the game's enum order,
-        # not char_block_table's provisional PlayerCharaType order).
+        # confirmed 2026-07-08 from the GameDataList LocalPlayerCharaType
+        # EnumArray RawValues).
         roster = SetUnlockedCharasMsg.ROSTER_ITEM_NAMES
         self.assertEqual(len(roster), 12)
         self.assertEqual(roster[0], "Mario")
         self.assertEqual(roster[7], "Nabbit")
         self.assertEqual(roster[8], "Green Yoshi")
         self.assertEqual(roster[11], "Light-Blue Yoshi")
+
+    def test_set_unlocked_charas_matches_char_block_table(self):
+        # Drift guard: char_block_table.CHARA_ITEM_NAMES uses the same
+        # confirmed enum order since PR #163.  Skipped (not failed) while
+        # running against a pre-#163 table so the two PRs can merge in
+        # either order; once both are in, any future divergence between
+        # the wire contract and the char-block mapping fails here.
+        from ..char_block_table import CHARA_ITEM_NAMES
+        if CHARA_ITEM_NAMES[7] != "Nabbit":
+            self.skipTest("pre-#163 char_block_table (provisional order)")
+        self.assertEqual(
+            SetUnlockedCharasMsg.ROSTER_ITEM_NAMES, CHARA_ITEM_NAMES)
 
     def test_set_badge_shop_state(self):
         self._round_trip(SetBadgeShopStateMsg(
