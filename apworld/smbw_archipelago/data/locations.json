@@ -5602,7 +5602,7 @@
     "requires": []
   },
   {
-    "name": "W3: The Sugarstar Trial - Yoshi Block",
+    "name": "W3: The Sugarstar Trial - Nabbit Block",
     "region": "W3 4 Seeds",
     "category": [
       "Character Block"
@@ -5618,7 +5618,7 @@
     "requires": []
   },
   {
-    "name": "W2: Cruising with Linking Lifts - Red Yoshi Block",
+    "name": "W2: Cruising with Linking Lifts - Yoshi Block",
     "region": "W2 9 Seeds",
     "category": [
       "Character Block"
@@ -5634,7 +5634,7 @@
     "requires": []
   },
   {
-    "name": "W1: Piranha Plants on Parade - Yellow Yoshi Block",
+    "name": "W1: Piranha Plants on Parade - Red Yoshi Block",
     "region": "W1 Start",
     "category": [
       "Character Block"
@@ -5650,7 +5650,7 @@
     "requires": []
   },
   {
-    "name": "PI: Blewbird Roost - Red Yoshi Block",
+    "name": "PI: Blewbird Roost - Yoshi Block",
     "region": "PI Pre-W2 2 Seeds",
     "category": [
       "Character Block"
@@ -5658,7 +5658,7 @@
     "requires": []
   },
   {
-    "name": "W4: Sunbaked Desert Palace - Yoshi Block",
+    "name": "W4: Sunbaked Desert Palace - Nabbit Block",
     "region": "W4 15 Seeds",
     "category": [
       "Character Block"
@@ -5666,7 +5666,7 @@
     "requires": []
   },
   {
-    "name": "W4: Sunbaked Desert Palace - Nabbit Block",
+    "name": "W4: Sunbaked Desert Palace - Light-Blue Yoshi Block",
     "region": "W4 15 Seeds",
     "category": [
       "Character Block"
@@ -5682,7 +5682,7 @@
     "requires": []
   },
   {
-    "name": "PI: Muncher Fields - Nabbit Block",
+    "name": "PI: Muncher Fields - Light-Blue Yoshi Block",
     "region": "PI 8 Seeds",
     "category": [
       "Character Block"
@@ -5730,7 +5730,7 @@
     "requires": []
   },
   {
-    "name": "W2: Puzzling Park - Yoshi Block",
+    "name": "W2: Puzzling Park - Nabbit Block",
     "region": "W2 Start",
     "category": [
       "Character Block"
@@ -5738,7 +5738,7 @@
     "requires": []
   },
   {
-    "name": "W2: Puzzling Park - Light-Blue Yoshi Block",
+    "name": "W2: Puzzling Park - Yellow Yoshi Block",
     "region": "W2 Start",
     "category": [
       "Character Block"
@@ -5754,7 +5754,7 @@
     "requires": []
   },
   {
-    "name": "Special: Triple Threat Deluge - Light-Blue Yoshi Block",
+    "name": "Special: Triple Threat Deluge - Yellow Yoshi Block",
     "region": "W3 10 Seeds",
     "category": [
       "Character Block"
@@ -5786,7 +5786,7 @@
     "requires": []
   },
   {
-    "name": "PI: Petal Isles Flying Battleship - Red Yoshi Block",
+    "name": "PI: Petal Isles Flying Battleship - Yoshi Block",
     "region": "PI 8 Seeds",
     "category": [
       "Character Block"
@@ -5834,7 +5834,7 @@
     "requires": []
   },
   {
-    "name": "W4: Secrets of Shova Mansion - Light-Blue Yoshi Block",
+    "name": "W4: Secrets of Shova Mansion - Yellow Yoshi Block",
     "region": "W4 Start",
     "category": [
       "Character Block"
@@ -5866,7 +5866,7 @@
     "requires": []
   },
   {
-    "name": "W1: Cosmic Hoppos - Nabbit Block",
+    "name": "W1: Cosmic Hoppos - Light-Blue Yoshi Block",
     "region": "W1 Post-Bulrush Express",
     "category": [
       "Character Block"
@@ -5882,7 +5882,7 @@
     "requires": []
   },
   {
-    "name": "PI: Robbird Cove - Yoshi Block",
+    "name": "PI: Robbird Cove - Nabbit Block",
     "region": "PI Pre-W2 2 Seeds",
     "category": [
       "Character Block"
@@ -5898,7 +5898,7 @@
     "requires": []
   },
   {
-    "name": "W2: Outmaway Valley - Yoshi Block",
+    "name": "W2: Outmaway Valley - Nabbit Block",
     "region": "W2 Start",
     "category": [
       "Character Block"
@@ -5930,7 +5930,7 @@
     "requires": []
   },
   {
-    "name": "W5: Taily's Toxic Pond - Yoshi Block",
+    "name": "W5: Taily's Toxic Pond - Nabbit Block",
     "region": "W5 Start",
     "category": [
       "Character Block"
@@ -5962,7 +5962,7 @@
     "requires": []
   },
   {
-    "name": "Special: Wonder Gauntlet - Light-Blue Yoshi Block",
+    "name": "Special: Wonder Gauntlet - Yellow Yoshi Block",
     "region": "Special End",
     "category": [
       "Character Block"
@@ -5978,7 +5978,7 @@
     "requires": []
   },
   {
-    "name": "PI: Maw-Maw Mouthful - Yoshi Block",
+    "name": "PI: Maw-Maw Mouthful - Nabbit Block",
     "region": "PI 8 Seeds",
     "category": [
       "Character Block"
@@ -5994,7 +5994,7 @@
     "requires": []
   },
   {
-    "name": "W6: Dragon Boneyard - Red Yoshi Block",
+    "name": "W6: Dragon Boneyard - Yoshi Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6010,7 +6010,7 @@
     "requires": []
   },
   {
-    "name": "PI: Leaping Smackerel - Yellow Yoshi Block",
+    "name": "PI: Leaping Smackerel - Red Yoshi Block",
     "region": "PI Pre-W2",
     "category": [
       "Character Block"
@@ -6050,7 +6050,7 @@
     "requires": []
   },
   {
-    "name": "W4: Ninji Jump Party - Red Yoshi Block",
+    "name": "W4: Ninji Jump Party - Yoshi Block",
     "region": "W4 Start",
     "category": [
       "Character Block"
@@ -6058,7 +6058,7 @@
     "requires": []
   },
   {
-    "name": "W4: Ninji Jump Party - Nabbit Block",
+    "name": "W4: Ninji Jump Party - Light-Blue Yoshi Block",
     "region": "W4 Start",
     "category": [
       "Character Block"
@@ -6074,7 +6074,7 @@
     "requires": []
   },
   {
-    "name": "PI: Gnawsher Lair - Yellow Yoshi Block",
+    "name": "PI: Gnawsher Lair - Red Yoshi Block",
     "region": "PI 8 Seeds",
     "category": [
       "Character Block"
@@ -6106,7 +6106,7 @@
     "requires": []
   },
   {
-    "name": "W1: Bulrush Express - Light-Blue Yoshi Block",
+    "name": "W1: Bulrush Express - Yellow Yoshi Block",
     "region": "W1 10 Seeds",
     "category": [
       "Character Block"
@@ -6122,7 +6122,7 @@
     "requires": []
   },
   {
-    "name": "W4: Bloomps of the Desert Skies - Yellow Yoshi Block",
+    "name": "W4: Bloomps of the Desert Skies - Red Yoshi Block",
     "region": "W4 Start",
     "category": [
       "Character Block"
@@ -6154,7 +6154,7 @@
     "requires": []
   },
   {
-    "name": "W6: Pull, Turn, Burn - Yellow Yoshi Block",
+    "name": "W6: Pull, Turn, Burn - Red Yoshi Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6170,7 +6170,7 @@
     "requires": []
   },
   {
-    "name": "W6: Deep Magma Bog Palace - Red Yoshi Block",
+    "name": "W6: Deep Magma Bog Palace - Yoshi Block",
     "region": "W6 25 Seeds",
     "category": [
       "Character Block"
@@ -6186,7 +6186,7 @@
     "requires": []
   },
   {
-    "name": "Special: Bounce, Bounce, Bounce - Yellow Yoshi Block",
+    "name": "Special: Bounce, Bounce, Bounce - Red Yoshi Block",
     "region": "W1 Post-Jet Run",
     "category": [
       "Character Block"
@@ -6202,7 +6202,7 @@
     "requires": []
   },
   {
-    "name": "W1: Angry Spikes and Sinkin' Pipes - Yellow Yoshi Block",
+    "name": "W1: Angry Spikes and Sinkin' Pipes - Red Yoshi Block",
     "region": "W1 10 Seeds",
     "category": [
       "Character Block"
@@ -6242,7 +6242,7 @@
     "requires": []
   },
   {
-    "name": "W1: Pipe-Rock Plateau Palace - Yellow Yoshi Block",
+    "name": "W1: Pipe-Rock Plateau Palace - Red Yoshi Block",
     "region": "W1 14 Seeds",
     "category": [
       "Character Block"
@@ -6250,7 +6250,7 @@
     "requires": []
   },
   {
-    "name": "W1: Pipe-Rock Plateau Palace - Light-Blue Yoshi Block",
+    "name": "W1: Pipe-Rock Plateau Palace - Yellow Yoshi Block",
     "region": "W1 14 Seeds",
     "category": [
       "Character Block"
@@ -6282,7 +6282,7 @@
     "requires": []
   },
   {
-    "name": "W2: Up 'n' Down with Puffy Lifts - Nabbit Block",
+    "name": "W2: Up 'n' Down with Puffy Lifts - Light-Blue Yoshi Block",
     "region": "W2 9 Seeds",
     "category": [
       "Character Block"
@@ -6290,7 +6290,7 @@
     "requires": []
   },
   {
-    "name": "PI: Jewel-Block Cave - Yellow Yoshi Block",
+    "name": "PI: Jewel-Block Cave - Red Yoshi Block",
     "region": "PI 8 Seeds",
     "category": [
       "Character Block"
@@ -6298,7 +6298,7 @@
     "requires": []
   },
   {
-    "name": "PI: Jewel-Block Cave - Nabbit Block",
+    "name": "PI: Jewel-Block Cave - Light-Blue Yoshi Block",
     "region": "PI 8 Seeds",
     "category": [
       "Character Block"
@@ -6306,7 +6306,7 @@
     "requires": []
   },
   {
-    "name": "W6: Deep Magma Bog Flying Battleship - Red Yoshi Block",
+    "name": "W6: Deep Magma Bog Flying Battleship - Yoshi Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6314,7 +6314,7 @@
     "requires": []
   },
   {
-    "name": "W6: Deep Magma Bog Flying Battleship - Yellow Yoshi Block",
+    "name": "W6: Deep Magma Bog Flying Battleship - Red Yoshi Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6330,7 +6330,7 @@
     "requires": []
   },
   {
-    "name": "Special: Piranha Plant Reprise - Yellow Yoshi Block",
+    "name": "Special: Piranha Plant Reprise - Red Yoshi Block",
     "region": "Pre-W4 Special",
     "category": [
       "Character Block"
@@ -6338,7 +6338,7 @@
     "requires": []
   },
   {
-    "name": "W3: The Hoppycat Trial - Yoshi Block",
+    "name": "W3: The Hoppycat Trial - Nabbit Block",
     "region": "W3 Start",
     "category": [
       "Character Block"
@@ -6346,7 +6346,7 @@
     "requires": []
   },
   {
-    "name": "W3: The Hoppycat Trial - Red Yoshi Block",
+    "name": "W3: The Hoppycat Trial - Yoshi Block",
     "region": "W3 Start",
     "category": [
       "Character Block"
@@ -6378,7 +6378,7 @@
     "requires": []
   },
   {
-    "name": "W1: Swamp Pipe Crawl - Red Yoshi Block",
+    "name": "W1: Swamp Pipe Crawl - Yoshi Block",
     "region": "W1 10 Seeds",
     "category": [
       "Character Block"
@@ -6410,7 +6410,7 @@
     "requires": []
   },
   {
-    "name": "W1: Welcome to the Flower Kingdom! - Red Yoshi Block",
+    "name": "W1: Welcome to the Flower Kingdom! - Yoshi Block",
     "region": "W1 Start",
     "category": [
       "Character Block"
@@ -6418,7 +6418,7 @@
     "requires": []
   },
   {
-    "name": "W4: Flight of the Bloomps - Yoshi Block",
+    "name": "W4: Flight of the Bloomps - Nabbit Block",
     "region": "W4 Start",
     "category": [
       "Character Block"
@@ -6426,7 +6426,7 @@
     "requires": []
   },
   {
-    "name": "W4: Flight of the Bloomps - Yellow Yoshi Block",
+    "name": "W4: Flight of the Bloomps - Red Yoshi Block",
     "region": "W4 Start",
     "category": [
       "Character Block"
@@ -6434,7 +6434,7 @@
     "requires": []
   },
   {
-    "name": "W2: Fluff-Puff Peaks Palace - Light-Blue Yoshi Block",
+    "name": "W2: Fluff-Puff Peaks Palace - Yellow Yoshi Block",
     "region": "W2 14 Seeds",
     "category": [
       "Character Block"
@@ -6442,7 +6442,7 @@
     "requires": []
   },
   {
-    "name": "W2: Fluff-Puff Peaks Palace - Nabbit Block",
+    "name": "W2: Fluff-Puff Peaks Palace - Light-Blue Yoshi Block",
     "region": "W2 14 Seeds",
     "category": [
       "Character Block"
@@ -6458,7 +6458,7 @@
     "requires": []
   },
   {
-    "name": "W3: The Midway Trial - Nabbit Block",
+    "name": "W3: The Midway Trial - Light-Blue Yoshi Block",
     "region": "W3 4 Seeds",
     "category": [
       "Character Block"
@@ -6474,7 +6474,7 @@
     "requires": []
   },
   {
-    "name": "W4: Color-Switch Dungeon - Red Yoshi Block",
+    "name": "W4: Color-Switch Dungeon - Yoshi Block",
     "region": "W4 Start",
     "category": [
       "Character Block"
@@ -6506,7 +6506,7 @@
     "requires": []
   },
   {
-    "name": "W6: Raarghs in the Ruins - Yoshi Block",
+    "name": "W6: Raarghs in the Ruins - Nabbit Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6522,7 +6522,7 @@
     "requires": []
   },
   {
-    "name": "W3: The Sharp Trial - Light-Blue Yoshi Block",
+    "name": "W3: The Sharp Trial - Yellow Yoshi Block",
     "region": "W3 4 Seeds",
     "category": [
       "Character Block"
@@ -6570,7 +6570,7 @@
     "requires": []
   },
   {
-    "name": "PI: Downpour Uproar - Light-Blue Yoshi Block",
+    "name": "PI: Downpour Uproar - Yellow Yoshi Block",
     "region": "PI 5 Seeds",
     "category": [
       "Character Block"
@@ -6634,7 +6634,7 @@
     "requires": []
   },
   {
-    "name": "W3: The Anglefish Trial - Nabbit Block",
+    "name": "W3: The Anglefish Trial - Light-Blue Yoshi Block",
     "region": "W3 Start",
     "category": [
       "Character Block"
@@ -6650,7 +6650,7 @@
     "requires": []
   },
   {
-    "name": "Special: Way of the Goomba - Red Yoshi Block",
+    "name": "Special: Way of the Goomba - Yoshi Block",
     "region": "PI 8 Seeds",
     "category": [
       "Character Block"
@@ -6666,7 +6666,7 @@
     "requires": []
   },
   {
-    "name": "Special: Pole Block Allure - Nabbit Block",
+    "name": "Special: Pole Block Allure - Light-Blue Yoshi Block",
     "region": "W4 Post-Invis",
     "category": [
       "Character Block"
@@ -6698,7 +6698,7 @@
     "requires": []
   },
   {
-    "name": "W3: The Final Trial - Light-Blue Yoshi Block",
+    "name": "W3: The Final Trial - Yellow Yoshi Block",
     "region": "W3 10 Seeds",
     "category": [
       "Character Block"
@@ -6714,7 +6714,7 @@
     "requires": []
   },
   {
-    "name": "W2: Pokipede Pass - Light-Blue Yoshi Block",
+    "name": "W2: Pokipede Pass - Yellow Yoshi Block",
     "region": "W2 Start",
     "category": [
       "Character Block"
@@ -6722,7 +6722,7 @@
     "requires": []
   },
   {
-    "name": "W6: Hot-Hot Hot! - Red Yoshi Block",
+    "name": "W6: Hot-Hot Hot! - Yoshi Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6730,7 +6730,7 @@
     "requires": []
   },
   {
-    "name": "W6: Hot-Hot Hot! - Light-Blue Yoshi Block",
+    "name": "W6: Hot-Hot Hot! - Yellow Yoshi Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6754,7 +6754,7 @@
     "requires": []
   },
   {
-    "name": "Special: Dangerous Donut Ride - Yoshi Block",
+    "name": "Special: Dangerous Donut Ride - Nabbit Block",
     "region": "W5 11 Seeds",
     "category": [
       "Character Block"
@@ -6762,7 +6762,7 @@
     "requires": []
   },
   {
-    "name": "W6: Where the Rrrumbas Rule - Yoshi Block",
+    "name": "W6: Where the Rrrumbas Rule - Nabbit Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6770,7 +6770,7 @@
     "requires": []
   },
   {
-    "name": "W6: Where the Rrrumbas Rule - Nabbit Block",
+    "name": "W6: Where the Rrrumbas Rule - Light-Blue Yoshi Block",
     "region": "W6 Start",
     "category": [
       "Character Block"
@@ -6786,7 +6786,7 @@
     "requires": []
   },
   {
-    "name": "W1: Scram, Skedaddlers! - Nabbit Block",
+    "name": "W1: Scram, Skedaddlers! - Light-Blue Yoshi Block",
     "region": "W1 Start",
     "category": [
       "Character Block"
@@ -6802,7 +6802,7 @@
     "requires": []
   },
   {
-    "name": "W1: Here Come the Hoppos - Light-Blue Yoshi Block",
+    "name": "W1: Here Come the Hoppos - Yellow Yoshi Block",
     "region": "W1 3 Seeds",
     "category": [
       "Character Block"
@@ -6818,7 +6818,7 @@
     "requires": []
   },
   {
-    "name": "W1: Bulrush Coming Through! - Yoshi Block",
+    "name": "W1: Bulrush Coming Through! - Nabbit Block",
     "region": "W1 3 Seeds",
     "category": [
       "Character Block"

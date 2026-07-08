@@ -59,31 +59,35 @@ except ImportError:
     mmh3 = None
 
 
-# PlayerCharaType 0-11 -> AP character name.  Roster order, confirmed
-# against the live ``chara_type_array`` PlayReport field (course_in /
-# course_result both carry it; a PALACE_COURSE_RESULT fixture decoded
-# chara_type 6).  The 12 playable characters in roster order:
+# PlayerCharaType 0-11 -> AP character name.  CONFIRMED enum order from
+# the GameDataList EnumArray entry for LocalPlayerCharaType (hash
+# 0x6c05cce3), whose RawValues are, in index order: Mario, Luigi, Peach,
+# Daisy, KinopioYellow, KinopioBlue, Kinopico(Toadette), Totten(NABBIT),
+# YoshiGreen, YoshiRed, YoshiYellow, YoshiBlue.  The banc PlayerCharaType
+# is an S32 blackboard instance param compared directly against each
+# player's chara type by the actor's CheckPlayerCharaType AI node, so it
+# shares this enum domain.  Corroborated by the NSO name table
+# PTR_s_Mario_71034efad8 and the easy-character range check
+# ``idx-7 < 5`` in FUN_7101772664 (the 5 no-damage characters = Nabbit +
+# the 4 Yoshis).
 CHARA_NAMES: list[str] = [
     "Mario",          # 0
     "Luigi",          # 1
     "Peach",          # 2
     "Daisy",          # 3
-    "Yellow Toad",    # 4
-    "Blue Toad",      # 5
-    "Toadette",       # 6
-    "Yoshi",          # 7
-    "Red Yoshi",      # 8
-    "Yellow Yoshi",   # 9
-    "Light-Blue Yoshi",  # 10
-    "Nabbit",         # 11
+    "Yellow Toad",    # 4  KinopioYellow
+    "Blue Toad",      # 5  KinopioBlue
+    "Toadette",       # 6  Kinopico
+    "Nabbit",         # 7  Totten
+    "Yoshi",          # 8  YoshiGreen
+    "Red Yoshi",      # 9  YoshiRed
+    "Yellow Yoshi",   # 10 YoshiYellow
+    "Light-Blue Yoshi",  # 11 YoshiBlue
 ]
-# NOTE: PROVISIONAL roster-order mapping.  The enum->name assignment is
-# the working hypothesis from the task RE notes; only the *array shape*
-# (one chara_type int per local player, values 0-11) is confirmed from
-# live PlayReport captures.  If a live capture later disproves a specific
-# index, fix it HERE and in client/char_block_table.py's mirror, then
-# regenerate -- the AP location ids are keyed by (stage_key, chara) so a
-# name change does not renumber anything.
+# If a live capture ever disproves a specific index, fix it HERE and in
+# client/char_block_table.py's mirror, then regenerate -- the AP location
+# ids are keyed by (stage_key, chara) so a name change does not renumber
+# anything.
 
 
 def _here() -> str:
