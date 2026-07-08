@@ -497,6 +497,7 @@ void drainInbound() {
             case InboundKind::Pong:
             case InboundKind::OverlayNotice:
             case InboundKind::SetItemGetDenyMask:
+            case InboundKind::SetUnlockedCharas:
             case InboundKind::SetBadgeShopState:
             case InboundKind::SetBadgeShopText:
             case InboundKind::None:

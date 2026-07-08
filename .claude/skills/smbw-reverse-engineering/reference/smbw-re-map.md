@@ -54,10 +54,43 @@ value first (an early CLAUDE.md note had it backwards).
 | `+0x03D3FB0` | Stage-info hash → course-index **TRANSLATOR** (NOT a writer) | `(top_hash, u32* out_index)` | CONFIRMED |
 | `+0x03D4110` | **Murmur3-32** course-name hash (81 names, seed 0) | — | CONFIRMED |
 | `+0x01F27B78` | Object-pointer accessor (badge/typed-obj path) | `(GameDataMgr*, void** out_obj, u32 hash)` | HIGH-CONF |
+| `+0x0387A84` | **EnumArray element WRITER** (container at `gmd+0x2a8`) | `(gmd+0x2a8, u32 value, u32 hash, s32 index) -> bool`; pushes `{value,index,hash}` 0xc-byte entries into the container's deferred ring (head `+0x38`, cap `+0x28`, same overflow→Abort as A/B/D) | CONFIRMED (2026-07-08) |
+| `+0x064F4F0` | **Character EnumArray READER** (roster-index resolving) | `(u32 hash, s32 index, s32* out_roster_idx) -> bool`; string-matches the stored name-hash back to roster index 0-11; index<0 delegates to `+0x221128` (scalar read) | CONFIRMED (2026-07-08) |
+| `+0x1F27F14` | EnumArray fallback/insert path (container at `gmd+0x248`) | `(gmd+0x248, u32 value, u32 hash)`; called by game code when `+0x387A84` returns false | OBSERVED |
+| `+0x096E25C` | **CharaSelectCommit** — commits one player's character selection | `(record*)`: `+0x08` active byte, `+0x10` player slot, `+0x30` roster index (0-11, `0xc`=none); resolves name via table @`0x71034efad8`, murmur3-hashes, writes LocalPlayerCharaType/PlayerCharaType/per-course via `+0x387A84`. Single caller `FUN_7101c41f20`. Clean 5×`stp` prologue — hooked (`CharaSelectCommit`, [charagate]) | CONFIRMED (2026-07-08) |
 
 Switch primitives that drive these live in `switch-mod/src/probe/*.cpp`
 (`ContainerA.cpp`, `ContainerB.cpp`, `ContainerC.cpp`, `PerCourse.cpp`,
-`SeedTrace.cpp`); hooks are installed in `switch-mod/src/main.cpp`.
+`SeedTrace.cpp`, `CharaGate.cpp`); hooks are installed in `switch-mod/src/main.cpp`.
+
+### Character roster (2026-07-08, character-selection gate RE)
+
+The character enum is a **hash enum**: stored values are murmur3-32(seed 0) of
+the roster NAME, not ordinals. Roster order (name table @`0x71034efad8`, ==
+GameDataList enum order; note **Totten/Nabbit at 7, BEFORE the Yoshis** —
+contradicts char_block_table's provisional PlayerCharaType order):
+
+| idx | name | murmur3 | idx | name | murmur3 |
+|---|---|---|---|---|---|
+| 0 | Mario | `0x43C14D27` | 6 | Kinopico (Toadette) | `0xF5BC9633` |
+| 1 | Luigi | `0x8CCA2EB8` | 7 | Totten (Nabbit) | `0x371FE67B` |
+| 2 | Peach | `0x2C231DE5` | 8 | YoshiGreen | `0xCADE4A56` |
+| 3 | Daisy | `0x64248334` | 9 | YoshiRed | `0x5972230D` |
+| 4 | KinopioYellow | `0x69BD0F56` | 10 | YoshiYellow | `0x8C8091A9` |
+| 5 | KinopioBlue | `0xFBD064BE` | 11 | YoshiBlue (Light-Blue) | `0xB3B183B5` |
+
+Character EnumArrays (GameDataList category EnumArray over that enum):
+
+| hash | name | size | persistence |
+|---|---|---|---|
+| `0x6C05CCE3` | `LocalPlayerCharaType` (murmur3-named) | 4 | transient — live per-player selection |
+| `0x71E6F035` | `PlayerCharaType` (murmur3-named) | 4 | transient — in-course chara (PlayReport `chara_type_array` source) |
+| `0xF6AD662D` | unnamed | 8 | SaveFileIndex 3 — persisted selection; **no direct code hash-loads** (serializer-iterated), so forcing the transients is sufficient |
+| `0x586AEF49` | unnamed | 2 | transient, purpose unknown |
+| `0x580B7EB4` | per-course last-played chara | 4 | SaveFileIndex 0 (world-map portrait icons; `FUN_710064f4f0` consumer) |
+
+Easy-character range check `idx-7 < 5` in `FUN_7101772664` corroborates the
+roster order (Totten+Yoshis = the 5 "easy" characters).
 
 ---
 

@@ -36,6 +36,7 @@
 #include "ap/ApFrameBridge.hpp"
 #include "ap/ApProtocol.hpp"
 #include "probe/BadgeShop.hpp"
+#include "probe/CharaGate.hpp"
 #include "probe/DeathLink.hpp"
 #include "probe/Gates.hpp"
 #include "probe/Gmd.hpp"
@@ -584,6 +585,9 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
         // Advance the badge-shop-text arm's freshness clock (cheap atomic
         // increment) so a stale shop arm expires within a few frames.
         probe::badgeShopTextTick();
+        // [charagate] repair character selections made before the bridge
+        // connected (single atomic load when no sweep is armed).
+        probe::charaGateTick();
 
         // [cblk-hit] character-block hit detection, game-thread half.  The
         // BlockUpMove probe (register-transparent asm thunk) only counts and
@@ -1543,6 +1547,24 @@ HkTrampoline<std::uint64_t, long, long, long, long> courseEnterNameHook =
         return r;
     });
 
+// CharaSelectCommit @ NSO +0x96e25c (FUN_710096e25c, single caller
+// FUN_7101c41f20).  Commits one player's character selection: record+0x30
+// holds the roster index (0-11; 0xc = none), record+0x10 the player slot;
+// orig() resolves the index to a name via the table @0x71034efad8,
+// murmur3-hashes it, and pushes the hash into the LocalPlayerCharaType /
+// PlayerCharaType / per-course EnumArrays via the gmd+0x2a8 ring writer.
+// BEFORE orig() we rewrite a locked roster index to a random AP-unlocked
+// one, so the forced character flows through every one of those writes
+// (and the select-UI usage bitmask) as if the player picked it.  Inert
+// until the bridge sends a non-zero set_unlocked_charas mask.  PROLOGUE
+// SAFETY: first 5 instrs stp x29,x30,[sp,#-0x50]! / stp x26,x25 /
+// stp x24,x23 / stp x22,x21 / stp x20,x19 -- no PC-relative.
+HkTrampoline<void, void*> charaSelectCommitHook = hk::hook::trampoline(
+    [](void* rec) -> void {
+        probe::filterCharaCommitRecord(rec);
+        charaSelectCommitHook.orig(rec);
+    });
+
 // ItemGetMaskBuild @ NSO +0x3c4050.
 //
 // Rebuilds the player ItemGet component's per-item-type "can pick up"
@@ -1775,6 +1797,11 @@ extern "C" void hkMain() {
     //   a level/course from the world map (the final-castle enter path).
     installHook("CourseEnterName",     0x0055ee48,
                 courseEnterNameHook.installAtMainOffset(0x0055ee48));
+    // CharaSelectCommit: FUN_710096e25c -- character-selection gate choke
+    // point (see the [charagate] hook-object comment).
+    installHook("CharaSelectCommit", 0x0096e25c,
+                charaSelectCommitHook.installAtMainOffset(0x0096e25c));
+
     // ItemGetMaskBuild: FUN_71003c4050 -- power-up pickup negation choke
     //   point.  Inert while probe::deniedItemGetMask() == 0; see
     //   probe/ItemGetGate.hpp for the RE notes + per-item bit table.

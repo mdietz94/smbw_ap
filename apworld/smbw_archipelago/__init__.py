@@ -359,6 +359,14 @@ class SMBWonderWorld(World):
         # the client leaves pickups vanilla for them.
         slot_data["powerup_gating"] = True
 
+        # Character-selection gating (2026-07-08).  The 12 characters are
+        # AP items (7 base precollected + 5 "Character (Easy)" pool
+        # items); this marker tells the client to push the unlocked-
+        # character mask so the Switch forces a selection of a
+        # not-yet-received character onto a random unlocked one.  Older
+        # seeds lack the key, so the client leaves selection vanilla.
+        slot_data["character_gating"] = True
+
         slot_data = after_fill_slot_data(slot_data, self, self.multiworld, self.player)
 
         return slot_data

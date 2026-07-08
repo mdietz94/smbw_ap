@@ -44,6 +44,7 @@ from . import coin_table
 from . import force_cleared_table
 from . import powerup_table
 from . import royal_seed_table
+from . import wire
 from . import wonder_seed_table
 from . import world_unlock_table
 from .commands import SMBWCommandProcessor
@@ -224,6 +225,13 @@ class SMBWContext(CommonContext):
         self.powerup_gating: bool = False
         self._itemget_deny_override: int | None = None
 
+        # Character-selection gating (2026-07-08).  ``character_gating``
+        # is set from slot_data on Connected -- True for seeds that want
+        # the Switch to force a selection of a locked (not-yet-received)
+        # character onto a random unlocked one.  When False (old seeds),
+        # the unlocked-chara mask stays 0 and the Switch gate is inert.
+        self.character_gating: bool = False
+
         # Level-entry gate.  ``entry_gating_enabled`` defaults ON (the
         # feature is the request); an apworld can ship a
         # ``level_entry_gating`` slot_data key to turn it off per-seed.
@@ -379,6 +387,21 @@ class SMBWContext(CommonContext):
                 self.lan_server.send_set_itemget_deny(
                     self._recompute_itemget_deny_mask())
 
+            # Character-selection gating.  Default OFF when the key is
+            # missing (seed generated before the gate existed) -- those
+            # seeds keep vanilla character selection.  Push immediately
+            # so a locked pre-selected character is repaired even if the
+            # connect-time ReceivedItems batch is empty.
+            cg = bool(slot_data.get("character_gating"))
+            if cg != self.character_gating:
+                log.info(
+                    "character_gating: %s (from slot_data)",
+                    "ENABLED" if cg else "disabled")
+            self.character_gating = cg
+            if self.lan_server is not None:
+                self.lan_server.send_set_unlocked_charas(
+                    self._recompute_unlocked_chara_mask())
+
             # Open-world mode.  The apworld injects ``open_world_active``
             # (the random active world set) and ``palaces_required`` into
             # slot_data; a non-empty list turns the mode on.  Reset the
@@ -533,6 +556,36 @@ class SMBWContext(CommonContext):
             except Exception:
                 continue
         return char_block_table.charas_for_item_names(names)
+
+    def _recompute_unlocked_chara_mask(self) -> int:
+        """The Switch-facing unlocked-character mask (bit i = ROSTER index
+        i received from AP; bit order on
+        :class:`wire.SetUnlockedCharasMsg` -- note it differs from the
+        provisional PlayerCharaType order ``char_block_table`` uses:
+        Nabbit/Totten is roster index 7, before the Yoshis).  Returns 0
+        (gate inert, vanilla selection) when this seed doesn't gate
+        characters, or defensively when NO character item has been
+        received yet -- a 0 mask must never strand the player with no
+        pickable character."""
+        if not self.character_gating:
+            return 0
+        names: set[str] = set()
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                names.add(self.item_names.lookup_in_game(int(item_id)))
+            except Exception:
+                continue
+        mask = 0
+        roster = wire.SetUnlockedCharasMsg.ROSTER_ITEM_NAMES
+        for i, item_name in enumerate(roster):
+            if item_name in names:
+                mask |= 1 << i
+        return mask
 
     def set_itemget_deny_override(self, mask: int | None) -> None:
         """`/deny_powerups` entry point.  Set or clear the deny-mask
@@ -960,6 +1013,12 @@ class SMBWContext(CommonContext):
             # it.  No-ops to 0 when this seed doesn't gate power-ups.
             self.lan_server.send_set_itemget_deny(
                 self._recompute_itemget_deny_mask())
+            # Character-selection gating: re-derive the unlocked mask -- a
+            # newly received character item adds its roster bit, making
+            # that character selectable on the Switch within a tick.
+            # No-ops to 0 when this seed doesn't gate characters.
+            self.lan_server.send_set_unlocked_charas(
+                self._recompute_unlocked_chara_mask())
             # Open-world (2026-06-30): re-assert which secret-exit "replay"
             # courses to force-clear so their secret path spawns.  Idempotent
             # absolute-overwrite; tracks a newly-checked NORMAL_EXIT that

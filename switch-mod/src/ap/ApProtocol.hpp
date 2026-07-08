@@ -391,6 +391,21 @@ struct WireSetBadgeShopText {
     char text[kBadgeShopTextCap] = {};
 };
 
+// Bridge -> Switch.  AP-authoritative character-selection gate
+// (2026-07-08).  `mask` bit i == roster index i is a character the player
+// has received from AP, in the game's roster-enum order (Mario 0, Luigi 1,
+// Peach 2, Daisy 3, KinopioYellow 4, KinopioBlue 5, Kinopico/Toadette 6,
+// Totten/Nabbit 7, YoshiGreen 8, YoshiRed 9, YoshiYellow 10,
+// YoshiBlue/Light-Blue 11).  Applied directly on the rx thread via
+// probe::setUnlockedCharaMask (atomic store; the CharaSelectCommit
+// trampoline + the charaGateTick sweep consume it on the game thread).
+// mask == 0 restores vanilla selection.  Sent on every ReceivedItems,
+// every HelloMsg, and the periodic ~2 s tick (idempotent).  12 meaningful
+// bits; carried as u16 for headroom.
+struct WireSetUnlockedCharas {
+    std::uint16_t mask = 0;
+};
+
 // M3.8 -- DeathLink inbound apply.  Sent when AP bounces a DeathLink for
 // our slot.  `source` is the originating AP slot name; `cause` is the
 // free-form reason (typically "mario_died").  Sizes MUST match KillMsg
@@ -481,6 +496,7 @@ enum class InboundKind : std::uint8_t {
     SetBadgeShopState = 18,
     SetBadgeShopText = 19,
     SetForceClearedCourses = 20,
+    SetUnlockedCharas = 21,
 };
 
 struct InboundMsg {
@@ -506,6 +522,7 @@ struct InboundMsg {
         WireSetBadgeShopState set_badge_shop_state;
         WireSetBadgeShopText set_badge_shop_text;
         WireSetForceClearedCourses set_force_cleared_courses;
+        WireSetUnlockedCharas set_unlocked_charas;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

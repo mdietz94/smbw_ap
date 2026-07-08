@@ -34,6 +34,7 @@ from ..wire import (
     SetItemGetDenyMaskMsg,
     SetRoutableWorldsAbsoluteMsg,
     SetRoyalSeedsAbsoluteMsg,
+    SetUnlockedCharasMsg,
     decode,
     encode,
 )
@@ -191,6 +192,29 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_set_itemget_deny_full_u32(self):
         self._round_trip(SetItemGetDenyMaskMsg(mask=0xFFFFFFFF))
+
+    def test_set_unlocked_charas_zero(self):
+        # 0 == gate inert (vanilla character selection).
+        self._round_trip(SetUnlockedCharasMsg(mask=0))
+
+    def test_set_unlocked_charas_base_roster(self):
+        # The 7 precollected base characters: roster bits 0-6.
+        self._round_trip(SetUnlockedCharasMsg(mask=0x07F))
+
+    def test_set_unlocked_charas_full(self):
+        # All 12 characters received.
+        self._round_trip(SetUnlockedCharasMsg(mask=0xFFF))
+
+    def test_set_unlocked_charas_roster_shape(self):
+        # The roster table is the wire contract: 12 entries, Nabbit at
+        # roster index 7 (BEFORE the Yoshis -- the game's enum order,
+        # not char_block_table's provisional PlayerCharaType order).
+        roster = SetUnlockedCharasMsg.ROSTER_ITEM_NAMES
+        self.assertEqual(len(roster), 12)
+        self.assertEqual(roster[0], "Mario")
+        self.assertEqual(roster[7], "Nabbit")
+        self.assertEqual(roster[8], "Green Yoshi")
+        self.assertEqual(roster[11], "Light-Blue Yoshi")
 
     def test_set_badge_shop_state(self):
         self._round_trip(SetBadgeShopStateMsg(

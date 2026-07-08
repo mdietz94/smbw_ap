@@ -5362,3 +5362,54 @@ HelloMsg replay) + `/deny_powerups` client command.  Default deny mask 0 =
 byte-identical vanilla behavior.  Builds clean; **live validation pending**
 (grab each power-up with `/deny_powerups` active; expect untouchable items
 + `[itemgate]` log lines).
+
+## 2026-07-08 — Character-selection gate RE (force locked selection to an AP-unlocked character)
+
+Goal: when the player selects a character whose AP item hasn't been
+received, force the selection onto a random unlocked character.
+
+**Path was RomFS-first, then a single headless-Ghidra sweep** — no GUI
+session needed (drove the analyzed `Wonder.gpr` project via pyghidra 3.1.0
+read-only; the scan itself was pure-Python movz/movk decoding over the
+`.text` bytes, ~31 hits in seconds).
+
+1. GameDataList: the character roster enum is a **hash enum** — the 12
+   values are murmur3(name) for `Mario..YoshiBlue` (verified against
+   murmur3("Mario")=1136741671, murmur3("Totten")=924837499).  Roster order
+   puts **Totten (Nabbit) at index 7, BEFORE the Yoshis** — the
+   char_block_table PlayerCharaType mapping (Nabbit=11) is likely shifted
+   for 7-11 (spawned follow-up task).
+2. Character EnumArrays: `0x6c05cce3` = murmur3("LocalPlayerCharaType")
+   (transient, size 4), `0x71e6f035` = murmur3("PlayerCharaType")
+   (transient, size 4 — the PlayReport `chara_type_array` source),
+   `0xf6ad662d` (SaveFileIndex 3, size 8 — persisted selection, no direct
+   code hash-loads → serializer-iterated), `0x586aef49` (transient size 2,
+   unknown), `0x580b7eb4` (per-course last-played, SaveFileIndex 0).
+3. Hash-literal sweep (31 sites, 26 fns) surfaced **FUN_710096e25c** — the
+   only fn touching Local+Player+per-course together.  Decompile: takes a
+   record (`+0x08` active byte, `+0x10` player slot, `+0x30` roster index,
+   `0xc`=none), maps index→name via the 12-ptr table @`0x71034efad8`,
+   hashes via FUN_710000e3e0 (murmur3 wrapper), writes all three arrays via
+   **FUN_7100387a84(gmd+0x2a8, value, hash, index)** — the EnumArray
+   deferred-ring writer (same `{value,index,hash}` ring + overflow→Abort
+   shape as containers A/B/D; fallback FUN_7101f27f14(gmd+0x248,...) on
+   false).  Reader: **FUN_710064f4f0(hash, index, out)** string-matches the
+   stored hash back to roster index (the fn the journal already knew as the
+   per-course portrait lookup).  Single caller (FUN_7101c41f20); clean
+   5×stp prologue.
+4. `FUN_7101772664` checks `idx-7 < 5` (easy-character range) —
+   corroborates roster order.
+
+### Shipped (this session)
+
+`probe/CharaGate.{hpp,cpp}` (mask store + commit-record filter + game-thread
+sweep with EnumArray-ring backpressure at the conservative 50%) +
+`charaSelectCommitHook` (main.cpp, NSO +0x96e25c, rewrites record+0x30
+before orig) + `charaGateTick()` from PlayerTickLatch + wire
+`set_unlocked_charas` (Switch: direct atomic apply on rx thread; PC:
+`SetUnlockedCharasMsg` with the roster-order `ROSTER_ITEM_NAMES` contract,
+`send_set_unlocked_charas`, HelloMsg replay + 2s tick + ReceivedItems push)
++ `slot_data["character_gating"]=True` (old seeds vanilla).  Mask 0 =
+byte-identical vanilla behavior.  Builds clean; **live validation pending**
+(select Nabbit/a Yoshi before its item arrives; expect `[charagate]` forced
+log + a random unlocked character committed).
