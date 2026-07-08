@@ -422,6 +422,131 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
         setCourseClearFlagExecuteHook.orig(nerve);
     });
 
+// =========================================================================
+// [cblk-diag7c] REGISTER-TRANSPARENT AINB NODE-EXECUTE PROBES
+// =========================================================================
+//
+// CRASH POST-MORTEM (2026-07-04, first diag7b playtest): the game corrupted
+// itself ~5 s after the FIRST 11 executions of the BlockClarityShapeCast
+// hook (PC/LR/FP ended up executing raw heap full of packed 1.0f floats --
+// unit-normal-looking data where function pointers lived).  ROOT-CAUSE
+// ANALYSIS: hakkun's TrampolineHook patches a SINGLE branch straight to the
+// compiled C++ lambda -- there is NO register-preserving shim.  The lambda
+// owns the full ABI, so every caller-saved register outside its declared
+// signature -- **x8 (the indirect-struct-return pointer!), x9-x17, and all
+// NEON regs** -- is legal compiler scratch BEFORE orig() runs.  For a
+// function whose true signature is unknown (these node executes are
+// dispatched from a .bss interpreter vtable we cannot read statically), a
+// guessed narrow C++ signature can therefore feed the real body garbage in
+// x8/v0-v7 and make it scribble its result through a junk pointer.  The
+// static wrappers of ShapeCast pass only x0, but the interpreter dispatch
+// path is unobservable -- so the probes must be transparent for ANY ABI.
+//
+// DESIGN: each probe is a NAKED ASM thunk that uses ONLY x9-x17 (registers
+// no callee may read as inputs, per AAPCS64), no stack, no flag-setting
+// instructions: it atomically bumps a counter (ldxr/stxr -- the Switch's
+// Cortex-A57 has no LSE), captures identity words into a ring, and
+// tail-`br`s to the orig backup stub.  x0-x8, v0-v31, LR, SP all pass
+// through untouched.  ALL logging moved to the game thread:
+// playerTickLatchHook drains the rings once per frame.
+//
+// SECOND CRASH POST-MORTEM (2026-07-05, first diag7c playtest): the 7c
+// drain dereferenced the ring's node pointer a frame later; the stale/
+// non-node value walked to a wild address -- under Ryujinx host-mapped
+// memory an out-of-guest-range deref is an instant HOST-process death
+// (log truncated mid-write, no guest trace).
+//
+// THIRD CRASH POST-MORTEM (2026-07-07) -- the decisive one: "capture at
+// fire time by mirroring the method's own first loads" ALSO faulted,
+// because the premise "x0 = node ctx" is false for the FIRST call.  The
+// guest trace showed x0 = main+0x3490138 (a .bss record), x1 = 8, x2 = a
+// stack buffer, with `ldarb`-guard / __cxa_guard_acquire one-time-init
+// machinery in the caller chain: node-class entries receive a lazy
+// REGISTRATION/metadata call with a completely different argument
+// convention the first time the class runs.  A node-ctx-shaped walk on
+// that record chases string bytes into unmapped memory.  (This also
+// retro-explains 07-04: the C++ lambda's register clobbering corrupted
+// that same registration machinery -> delayed heap-execution crash.)
+//
+// STANDING RULES, born of three crashes:
+//   1. The thunk performs ZERO dereferences -- it stores raw registers
+//      (x0-x3) only.  No assumption about the callee's convention holds
+//      for every call.
+//   2. The drain may dereference captured values ONLY through
+//      cblkSafeReadU64 (svcQueryMemory-validated, permission-checked,
+//      region-bounded).  An unmapped hop logs as a miss, never faults.
+//
+// (Retired predecessors: [cblk-diag5] +0x1e02100 exb-evaluator filter and
+// [cblk-diag6] +0x1462e50 slot-26 method, both confirmed never-called;
+// [cblk-diag7b] C++ lambda handlers, retired by the crash above.)
+//
+// extern "C" so the file-scope asm below can name these symbols unmangled.
+// Plain u64s (accessed via __atomic_* from C++, ldxr/stxr from asm); NEVER
+// thread_local (Result 0xCA8 abort).  Hoisted OUT of the anonymous namespace
+// so the C names are unambiguous for the asm block.
+}  // namespace (temporarily closed for the extern "C" probe symbols)
+// (The retired ItemCreate @ +0x14dd688 and BlockClarityShapeCast @
+// +0x161c3b4 probes were removed after the 2026-07-07 captures settled the
+// ranking: ItemCreate is a singleton-method entry with no per-block
+// identity; ShapeCast's bump-coincidence proved unreliable (no tick on the
+// third session's clarity bump).  Git history has both thunks.)
+extern "C" {
+std::uint64_t g_cblkBumCount = 0;            // BlockUpMove @ +0x146397c
+std::uint64_t g_cblkBumRing[16] = {};
+void*         g_cblkBumOrig = nullptr;
+void cblkBumProbe();
+}
+
+// The three probe thunks.  Numeric local labels (1b) bind to the nearest
+// definition, so the pattern repeats safely inside one asm block.
+__asm__(R"(
+    .pushsection .text
+    .balign 4
+
+    .global cblkBumProbe
+    .type   cblkBumProbe, %function
+cblkBumProbe:
+    adrp    x16, g_cblkBumCount
+    add     x16, x16, :lo12:g_cblkBumCount
+1:  ldxr    x9, [x16]
+    add     x10, x9, #1
+    stxr    w11, x10, [x16]
+    cbnz    w11, 1b
+    adrp    x17, g_cblkBumRing
+    add     x17, x17, :lo12:g_cblkBumRing
+    and     x9, x9, #15
+    str     x0, [x17, x9, lsl #3]
+    adrp    x16, g_cblkBumOrig
+    ldr     x16, [x16, :lo12:g_cblkBumOrig]
+    br      x16
+
+    .popsection
+)");
+
+namespace {  // reopened after the extern "C" probe symbols
+
+// [cblk-diag7e] svcQueryMemory-guarded 8-byte read -- the ONLY sanctioned
+// way to dereference a captured game pointer outside its call context
+// (rule 2 above).  Validates mapping, read permission, and that the read
+// stays inside the queried region.  Returns false (never faults) on any
+// miss, including null/unaligned addresses.
+inline bool cblkSafeReadU64(std::uint64_t addr, std::uint64_t* out) {
+    *out = 0;
+    if (addr == 0 || (addr & 7) != 0) return false;
+    hk::svc::MemoryInfo info {};
+    u32 pageInfo = 0;
+    if (hk::svc::QueryMemory(&info, &pageInfo, addr).failed()) return false;
+    if ((info.permission & hk::svc::MemoryPermission_Read) == 0) return false;
+    if (addr + 8 > info.base_address + info.size) return false;
+    *out = *reinterpret_cast<const volatile std::uint64_t*>(addr);
+    return true;
+}
+
+// Frame counter owned by playerTickLatchHook; the diag7 drain logs stamp
+// themselves with it so bump-time fires correlate against the once/second
+// rate lines.
+std::atomic<std::uint32_t> s_tickFrame{0};
+
 // PlayerTickLatch @ NSO +0x00273868 -- function-entry trampoline on
 // FUN_7100273868(long param_1, long param_2), the per-frame player tick
 // function.  Replaces the abandoned inline hook at +0x2743BC -- the
@@ -459,6 +584,101 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
         // Advance the badge-shop-text arm's freshness clock (cheap atomic
         // increment) so a stale shop arm expires within a few frames.
         probe::badgeShopTextTick();
+
+        // [cblk-hit] character-block hit detection, game-thread half.  The
+        // BlockUpMove probe (register-transparent asm thunk) only counts and
+        // stashes the node ptr; HERE, once per frame, we edge-detect per
+        // node, clarity-filter by the graph-layout delta, and emit.  See the
+        // [cblk-hit] hook-object comment for the full derivation.
+        {
+            const std::uint32_t frame =
+                s_tickFrame.fetch_add(1, std::memory_order_relaxed);
+            const std::uint64_t bum =
+                __atomic_load_n(&g_cblkBumCount, __ATOMIC_RELAXED);
+
+            // Per-node rising-edge detect + clarity filter + emit.
+            // A bump = ~3-14 consecutive-frame fires of ONE node; the 4-slot
+            // dedup (120-frame window) turns that into a single edge.  The
+            // clarity filter is the graph-layout delta node-[node+0x28]
+            // (0x17d0 = ObjectBlockClarityCharacter's firing BlockUpMove
+            // node; 0x1690 = the regular ?-block graph).  Unknown deltas are
+            // logged (throttled) and NOT emitted -- they surface other
+            // BlockUpMove users / sibling clarity node instances for
+            // accept-listing without risking false checks.
+            {
+                static std::uint64_t s_seen = 0;        // game thread only
+                static std::uint64_t s_dedupNode[4] = {};
+                static std::uint32_t s_dedupFrame[4] = {};
+                static std::atomic<unsigned> s_unkLines{0};
+                static std::atomic<std::uint32_t> s_emits{0};
+                constexpr std::uint64_t kClarityDelta = 0x17d0;
+                constexpr std::uint64_t kRegularDelta = 0x1690;
+                if (bum - s_seen > 16) s_seen = bum - 16;
+                for (; s_seen < bum; ++s_seen) {
+                    const std::uint64_t node = __atomic_load_n(
+                        &g_cblkBumRing[s_seen & 15], __ATOMIC_RELAXED);
+                    bool dup = false;
+                    for (int i = 0; i < 4; ++i) {
+                        if (s_dedupNode[i] == node &&
+                            frame - s_dedupFrame[i] < 120u) {
+                            s_dedupFrame[i] = frame;
+                            dup = true;
+                            break;
+                        }
+                    }
+                    if (dup) continue;
+                    int victim = 0;
+                    for (int i = 1; i < 4; ++i) {
+                        if (s_dedupFrame[i] < s_dedupFrame[victim]) victim = i;
+                    }
+                    s_dedupNode[victim] = node;
+                    s_dedupFrame[victim] = frame;
+
+                    std::uint64_t p28 = 0;
+                    if (!cblkSafeReadU64(node + 0x28, &p28) || p28 == 0 ||
+                        p28 >= node) {
+                        continue;  // not the expected node shape
+                    }
+                    const std::uint64_t delta = node - p28;
+                    if (delta == kClarityDelta) {
+                        const std::uint32_t n =
+                            s_emits.fetch_add(1, std::memory_order_relaxed);
+                        SMBWAP_LOG_INFO(
+                            "[cblk-hit] CHARACTER BLOCK HIT #%u frame=%u "
+                            "node=0x%llx -> enqueueCharBlockHit",
+                            n, frame,
+                            static_cast<unsigned long long>(node));
+                        // chara=-1 + pos zeros: the client resolves the AP
+                        // location from (current course, current character)
+                        // and drops non-matches (processor.py).
+                        smbwap::ap::enqueueCharBlockHit(
+                            /*player_slot=*/0u, /*chara=*/-1,
+                            0.0f, 0.0f, 0.0f);
+                    } else if (delta != kRegularDelta) {
+                        // Unknown BlockUpMove user -- log for accept-listing.
+                        const unsigned u = s_unkLines.fetch_add(
+                            1, std::memory_order_relaxed);
+                        if (u < 20) {
+                            SMBWAP_LOG_INFO(
+                                "[cblk-hit] unknown-delta bump #%u frame=%u "
+                                "node=0x%llx delta=0x%llx (no emit)",
+                                u, frame,
+                                static_cast<unsigned long long>(node),
+                                static_cast<unsigned long long>(delta));
+                        }
+                    }
+                }
+            }
+
+            // Once-per-second heartbeat (grep cblk-hit): total BlockUpMove
+            // fires -- flat while idle, small bursts on bumps.
+            if (frame % 600 == 0) {
+                SMBWAP_LOG_INFO(
+                    "[cblk-hit] frame=%u blockUpMove=%llu", frame,
+                    static_cast<unsigned long long>(bum));
+            }
+        }
+
         playerTickLatchHook.orig(param_1, param_2);
         // NOTE(imgui-overlay): the overlay's per-frame draw is intentionally
         // NOT driven from here — PlayerTickLatch is a logic tick. It's driven
@@ -485,6 +705,52 @@ HkTrampoline<void, void*> gameGoalReachedExecuteHook = hk::hook::trampoline(
             static_cast<unsigned>(s_fires));
         gameGoalReachedExecuteHook.orig(nerve);
     });
+
+// (The retired character-block DIAGNOSTIC hooks -- GetDamageReactionPlayerNo
+// @ +0x168d428, InitActorPlacementInfo enumeration @ +0x5815c, and the
+// actor-create dispatch probe @ +0x2ceac0 -- were removed when the real
+// [cblk-hit] hook shipped.  Full history in the smbwap-character-block-
+// sanity memory + the cblk-diag commits on this branch.)
+
+// =========================================================================
+// [cblk-hit] CHARACTER-BLOCK HIT HOOK -- BlockUpMove @ +0x146397c
+// =========================================================================
+//
+// THE character-block hit signal, settled by the diag7 capture series
+// (2026-07-04..07-07):
+//   * BlockUpMove is the bump action node (catalog-tagged Execute, input
+//     HitMoveDir).  A bump = ~3-14 fires on consecutive frames, ONE stable
+//     node ptr per block instance; flat otherwise.  Verified for the
+//     clarity block AND regular ?-blocks across three captures.
+//   * CLARITY FILTER: node - [node+0x28] (the node's offset inside its
+//     owning AINB graph-instance allocation) is a compile-time property of
+//     the graph layout: the ObjectBlockClarityCharacter graph puts its
+//     firing BlockUpMove node at delta 0x17d0; every regular-block bump
+//     observed (6 blocks, 2 sessions) sits at 0x1690.  Exact-match on
+//     0x17d0 -> clarity bump; 0x1690 -> known regular (counted, silent);
+//     any OTHER delta is logged (throttled) but NOT emitted, so unknown
+//     BlockUpMove users (ten-count blocks, sibling clarity node instances
+//     for other bump variants) surface in the log for accept-listing
+//     without risking false checks.
+//   * Rejected filters: position (actors never store plain floats -- CE +
+//     live-GDB + diag7f all agree), ShapeCast bump-coincidence (no tick on
+//     the 07-07 session-3 clarity bump), ItemCreate (singleton entry, no
+//     per-block identity).
+//
+// EMIT: on the per-node rising edge (first fire of a node in 120 frames),
+// delta==0x17d0 -> enqueueCharBlockHit(slot=0, chara=-1, 0,0,0).  The
+// client resolves the AP location from (current course, current character)
+// via the offline table and silently drops anything that doesn't map to a
+// real character block (processor.py _handle_char_block_hit); the
+// character_block_sanity option gates it apworld-side.  Single-player ->
+// player slot 0.
+//
+// The probe is the naked asm thunk defined above; this object only owns
+// the install + the orig backup stub.  The void(*)() signature is a
+// placeholder -- the thunk never touches the real (unknown) ABI.
+hk::hook::TrampolineHook<void (*)()> blockUpMoveProbeHook{&cblkBumProbe};
+
+
 
 // =========================================================================
 // PLAYREPORT (Phase 2c)
@@ -1432,6 +1698,18 @@ extern "C" void hkMain() {
                 gameGoalReachedExecuteHook.installAtMainOffset(0x015b77a8));
     installHook("PlayerTickLatch",           0x00273868,
                 playerTickLatchHook.installAtMainOffset(0x00273868));
+
+    // [cblk-hit] CHARACTER-BLOCK HIT: BlockUpMove execute @ +0x146397c.
+    // Register-transparent naked asm thunk (count + stash x0 + br orig);
+    // the game-thread half in playerTickLatchHook edge-detects per node,
+    // clarity-filters by the graph-layout delta (0x17d0), and emits
+    // enqueueCharBlockHit.  The orig backup-stub pointer is published to
+    // the asm-visible global right after install; the game is not running
+    // yet at hkMain time, so the ordering is safe.  (The diag7 ItemCreate
+    // and ShapeCast probes are retired -- see the [cblk-hit] hook comment.)
+    installHook("BlockUpMoveExec", 0x146397c,
+                blockUpMoveProbeHook.installAtMainOffset(0x146397c));
+    g_cblkBumOrig = reinterpret_cast<void*>(blockUpMoveProbeHook.orig);
 
     // PLAYREPORT (Phase 2c)
     installSymHook("PlayReportCtor",

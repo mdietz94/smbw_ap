@@ -29,7 +29,13 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from .protocol import BadgeAcquiredMsg, NerveFireMsg, NerveKind, PlayReportMsg
+from .protocol import (
+    BadgeAcquiredMsg,
+    CharBlockHitMsg,
+    NerveFireMsg,
+    NerveKind,
+    PlayReportMsg,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +249,91 @@ class BadgeAcquiredWireMsg:
     @classmethod
     def from_event(cls, ev: BadgeAcquiredMsg) -> BadgeAcquiredWireMsg:
         return cls(internal_id=ev.internal_id, seq=ev.seq)
+
+
+@dataclass(frozen=True)
+class CharBlockHitWireMsg:
+    """Switch -> Bridge.  Character-block sanity: a player-specific
+    ``ObjectBlockClarityCharacter`` block was bumped.
+
+    Wire form of :class:`...protocol.CharBlockHitMsg`.  The GetDamage-
+    ReactionPlayerNo hook fires this on every resolve to a local player
+    slot; the bridge filters by table (see CharBlockHitMsg docstring).
+
+    ``player_slot`` (0-3) and ``seq`` are u32; ``chara`` is the hitting
+    character (0-11, or -1 = "Switch didn't resolve it, bridge falls back
+    to the course's chara_type_array").  ``pos`` is the block world
+    position (``[0,0,0]`` in v1) as 3 floats for the future multi-block
+    pass.
+    """
+
+    T = "char_block_hit"
+
+    player_slot: int
+    chara: int = -1
+    pos: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    seq: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {
+            "t": self.T,
+            "player_slot": self.player_slot,
+            "chara": self.chara,
+            "pos": list(self.pos),
+            "seq": self.seq,
+        }
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> CharBlockHitWireMsg:
+        raw_slot = d.get("player_slot")
+        if not isinstance(raw_slot, int) or isinstance(raw_slot, bool):
+            raise ProtocolError(
+                f"char_block_hit.player_slot must be int, got {raw_slot!r}")
+        # Allow the full u32 range defensively; the bridge only ever uses
+        # slot 0-3 but a noisy hook shouldn't crash the decoder.
+        if not (0 <= raw_slot < (1 << 32)):
+            raise ProtocolError(
+                f"char_block_hit.player_slot out of range: {raw_slot}")
+        raw_chara = d.get("chara", -1)
+        if not isinstance(raw_chara, int) or isinstance(raw_chara, bool):
+            raise ProtocolError(
+                f"char_block_hit.chara must be int, got {raw_chara!r}")
+        if not (-1 <= raw_chara < (1 << 16)):
+            raise ProtocolError(
+                f"char_block_hit.chara out of range: {raw_chara}")
+        raw_pos = d.get("pos", [0.0, 0.0, 0.0])
+        if (not isinstance(raw_pos, list) or len(raw_pos) != 3
+                or not all(isinstance(v, (int, float))
+                           and not isinstance(v, bool) for v in raw_pos)):
+            raise ProtocolError(
+                f"char_block_hit.pos must be a 3-float list, got {raw_pos!r}")
+        raw_seq = d.get("seq", 0)
+        if not isinstance(raw_seq, int) or isinstance(raw_seq, bool):
+            raise ProtocolError(
+                f"char_block_hit.seq must be int, got {raw_seq!r}")
+        return cls(
+            player_slot=raw_slot,
+            chara=raw_chara,
+            pos=(float(raw_pos[0]), float(raw_pos[1]), float(raw_pos[2])),
+            seq=raw_seq,
+        )
+
+    def to_event(self) -> CharBlockHitMsg:
+        return CharBlockHitMsg(
+            player_slot=self.player_slot,
+            chara=self.chara,
+            pos=self.pos,
+            seq=self.seq,
+        )
+
+    @classmethod
+    def from_event(cls, ev: CharBlockHitMsg) -> CharBlockHitWireMsg:
+        return cls(
+            player_slot=ev.player_slot,
+            chara=ev.chara,
+            pos=ev.pos,
+            seq=ev.seq,
+        )
 
 
 @dataclass(frozen=True)
@@ -1170,6 +1261,7 @@ WireMsg = (
     | HelloAckMsg
     | NerveFireWireMsg
     | BadgeAcquiredWireMsg
+    | CharBlockHitWireMsg
     | PlayReportWireMsg
     | SetBadgesAbsoluteMsg
     | SetRoyalSeedsAbsoluteMsg
@@ -1200,6 +1292,7 @@ _FROM_WIRE: dict[str, Any] = {
     HelloAckMsg.T: HelloAckMsg.from_wire,
     NerveFireWireMsg.T: NerveFireWireMsg.from_wire,
     BadgeAcquiredWireMsg.T: BadgeAcquiredWireMsg.from_wire,
+    CharBlockHitWireMsg.T: CharBlockHitWireMsg.from_wire,
     PlayReportWireMsg.T: PlayReportWireMsg.from_wire,
     SetBadgesAbsoluteMsg.T: SetBadgesAbsoluteMsg.from_wire,
     SetRoyalSeedsAbsoluteMsg.T: SetRoyalSeedsAbsoluteMsg.from_wire,

@@ -43,6 +43,12 @@ class CurrentCourse:
     world_no: int = 0
     course_no: int = 0
     world_kind: int = 0
+    # The local player's PlayerCharaType (0-11) for this course, captured
+    # from the ``chara_type_array`` field of the course_in PlayReport.
+    # ``-1`` means "not known" (pre-fix save, or a course_in without the
+    # field).  Used by the character-block sanity handler to resolve which
+    # (course, character) block a CHAR_BLOCK_HIT event credits.
+    chara: int = -1
 
 
 class BridgeState:
@@ -85,7 +91,27 @@ class BridgeState:
         # StatusUpdate(CLIENT_GOAL).
         self.goal_complete: bool = False
 
+        # Character-block sanity: the set of PlayerCharaTypes (0-11) whose
+        # AP character item has been received.  Pushed by the context on
+        # every ReceivedItems (char_block_table.charas_for_item_names over
+        # items_received).  The processor's char_block_hit gate drops hits
+        # by a character not in this set -- BEFORE the emit dedup, so a
+        # re-bump after the character is later unlocked still credits.
+        # Empty until the connect-time ReceivedItems batch lands (strict:
+        # no credit while unknown).
+        self.unlocked_charas: set[int] = set()
+
     # ---- Mutators -----------------------------------------------------
+
+    def set_unlocked_charas(self, charas: set[int]) -> None:
+        """Replace the unlocked-character set (context, on ReceivedItems)."""
+        with self._lock:
+            self.unlocked_charas = set(charas)
+
+    def is_character_unlocked(self, chara: int) -> bool:
+        """True if the character's AP item has been received."""
+        with self._lock:
+            return chara in self.unlocked_charas
 
     def set_current_course(self, course: CurrentCourse | None) -> None:
         """Update the active course on a course_in PlayReport. Pass None
@@ -121,10 +147,14 @@ class BridgeState:
         dedup independently.  For SHOP_SEED the sub_key is the
         PlayReport's ``metadata["shop_slot"]`` so the W4 Secret shop's
         3 priced slots dedup independently within the same shop key."""
-        sub_key = int(
-            check.metadata.get("coin_index")
-            if "coin_index" in check.metadata
-            else check.metadata.get("shop_slot", 0))
+        if "coin_index" in check.metadata:
+            sub_key = int(check.metadata["coin_index"])
+        elif "chara" in check.metadata:
+            # CHARACTER_BLOCK: a single course has up to one block per
+            # character, so the chara (0-11) is the per-course dedup key.
+            sub_key = int(check.metadata["chara"])
+        else:
+            sub_key = int(check.metadata.get("shop_slot", 0))
         key = (check.kind.value, check.stage_key, sub_key)
         with self._lock:
             if key in self._emitted_keys:

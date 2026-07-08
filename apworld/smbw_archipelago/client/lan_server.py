@@ -56,6 +56,7 @@ from . import wire
 from .processor import process_event
 from .protocol import (
     BadgeAcquiredMsg,
+    CharBlockHitMsg,
     CheckEmitted,
     DeathReported,
     GateEntered,
@@ -972,6 +973,14 @@ class LanServer:
                 msg.internal_id, msg.seq)
             badge_ev: BadgeAcquiredMsg = msg.to_event()
             await self._run_processor(badge_ev)
+            return
+
+        if isinstance(msg, wire.CharBlockHitWireMsg):
+            log.debug(
+                "char_block_hit: slot=%d chara=%d seq=%d",
+                msg.player_slot, msg.chara, msg.seq)
+            cb_ev: CharBlockHitMsg = msg.to_event()
+            await self._run_processor(cb_ev)
             return
 
         if isinstance(msg, wire.PlayReportWireMsg):

@@ -39,6 +39,7 @@ from CommonClient import CommonContext  # type: ignore
 from NetUtils import ClientStatus  # type: ignore
 
 from . import badge_table
+from . import char_block_table
 from . import coin_table
 from . import force_cleared_table
 from . import powerup_table
@@ -184,6 +185,13 @@ class SMBWContext(CommonContext):
         # the recipient should still receive the +10.
         self.ten_coin_sanity_enabled: bool = True
 
+        # ``character_block_sanity`` slot_data toggle -- gates the outbound
+        # CHARACTER_BLOCK checks (the player-specific
+        # ObjectBlockClarityCharacter blocks).  Default OFF (plain Toggle in
+        # the apworld); when False the processor's char_block_hit events
+        # still decode but no AP LocationCheck is sent.
+        self.character_block_sanity_enabled: bool = False
+
         # M3.7 goal-option respect (apworld fill_slot_data ships the
         # player's chosen goal as the resolved location name).  None
         # until ``Connected`` populates it; ``handle_goal_completed``
@@ -302,6 +310,19 @@ class SMBWContext(CommonContext):
                     "ten_coin_sanity: %s (from slot_data)",
                     "ENABLED" if tcs else "disabled")
             self.ten_coin_sanity_enabled = tcs
+
+            # ``character_block_sanity`` slot_data toggle -- gates the
+            # outbound CHARACTER_BLOCK checks.  Default OFF (the apworld
+            # option is a plain Toggle); a seed generated without the
+            # option simply omits the key and these checks stay off, so
+            # the GetDamageReactionPlayerNo hook's events are decoded and
+            # dropped harmlessly.
+            cbs = bool(slot_data.get("character_block_sanity", False))
+            if cbs != self.character_block_sanity_enabled:
+                log.info(
+                    "character_block_sanity: %s (from slot_data)",
+                    "ENABLED" if cbs else "disabled")
+            self.character_block_sanity_enabled = cbs
 
             # M3.7 -- pick up the player's chosen goal location from
             # slot_data.  The apworld's fill_slot_data resolves the
@@ -491,6 +512,27 @@ class SMBWContext(CommonContext):
                 continue
             mask &= ~(1 << bit)
         return mask
+
+    def _recompute_unlocked_charas(self) -> set[int]:
+        """The set of PlayerCharaTypes (0-11) whose AP character item has
+        been received.  Same items_received walk as the power-up deny
+        mask; feeds the processor's char_block_hit character-unlock gate
+        via BridgeState.  The seven base characters are precollected
+        (starting_items) so they arrive in the connect-time ReceivedItems
+        batch; the five "Character (Easy)" items are pool items and
+        unlock as found."""
+        names: set[str] = set()
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                names.add(self.item_names.lookup_in_game(int(item_id)))
+            except Exception:
+                continue
+        return char_block_table.charas_for_item_names(names)
 
     def set_itemget_deny_override(self, mask: int | None) -> None:
         """`/deny_powerups` entry point.  Set or clear the deny-mask
@@ -877,6 +919,13 @@ class SMBWContext(CommonContext):
 
     async def _handle_received_items(self, args: dict) -> None:
         items = args.get("items", []) or []
+
+        # Character-block sanity: refresh the unlocked-character set the
+        # processor's char_block_hit gate reads (a hit only counts when
+        # the hitting character's AP item has been received).  Pushed
+        # into BridgeState (not the Switch) -- the gate is client-side.
+        self.bridge_state.set_unlocked_charas(
+            self._recompute_unlocked_charas())
 
         new_mask = self._recompute_badge_mask()
         new_seed_counts = self._recompute_wonder_seed_counts()
@@ -1412,6 +1461,17 @@ class SMBWContext(CommonContext):
                 "badge probe active (mask=0x%x); suppressing AP "
                 "LocationCheck for BADGE_ACQUIRED internal_id=%d",
                 self._badge_probe_mask, check.stage_key)
+            return
+        # Character-block sanity gate: when the option is off for this
+        # seed, the Switch hook still ships char_block_hit events but they
+        # are not AP locations -- drop them before the name lookup so we
+        # don't nag about a "missing" location that simply isn't in play.
+        if (check.kind == CheckKind.CHARACTER_BLOCK
+                and not self.character_block_sanity_enabled):
+            log.debug(
+                "character_block_sanity off; suppressing CHARACTER_BLOCK "
+                "check at stage_key=0x%08x chara=%s",
+                check.stage_key & 0xFFFFFFFF, check.metadata.get("chara"))
             return
         name = lookup_name(check)
         if name is None:

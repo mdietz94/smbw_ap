@@ -77,6 +77,17 @@ bool enqueueNerveFire(NerveKind kind, std::uint32_t seq);
 // interleave.
 bool enqueueBadgeAcquired(std::uint32_t internal_id);
 
+// Character-block sanity -- push a CHAR_BLOCK_HIT event onto the outbound
+// ring.  Called from the GetDamageReactionPlayerNo hook every time that
+// AI-node body resolves the damage invoker to a local player slot 0-3.
+// `player_slot` is 0-3; `chara` is the hitting PlayerCharaType (0-11) or
+// -1 if unresolved (the bridge then falls back to the course's character);
+// `x`/`y`/`z` are the block world position (zeros in v1).  `seq` is
+// auto-assigned from a private per-message-kind counter for log
+// correlation.  Safe to call from the game thread.
+bool enqueueCharBlockHit(std::uint32_t player_slot, std::int32_t chara,
+                         float x, float y, float z);
+
 // Push a PlayReport capture onto the outbound ring.  `room` is a
 // null-terminated event-id string; `payload` is the already-serialized
 // CBOR-ish payload bytes captured by the IPC SaveReport hook.  Truncates

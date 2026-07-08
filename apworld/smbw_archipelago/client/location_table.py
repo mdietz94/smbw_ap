@@ -26,6 +26,7 @@ from __future__ import annotations
 import logging
 from typing import Final
 
+from . import char_block_table
 from .badge_table import _BADGES
 from .protocol import CheckEmitted, CheckKind
 
@@ -1050,6 +1051,16 @@ def lookup_name(check: CheckEmitted) -> str | None:
             log.debug(
                 "location_table: no AP location for ten_coin stage_key=%d index=%d",
                 check.stage_key, idx)
+        return name
+
+    if check.kind == CheckKind.CHARACTER_BLOCK:
+        chara = int(check.metadata.get("chara", -1))
+        name = char_block_table.lookup(check.stage_key, chara)
+        if name is None:
+            log.debug(
+                "location_table: no AP location for character_block "
+                "stage_key=0x%08x chara=%d", check.stage_key & 0xFFFFFFFF,
+                chara)
         return name
 
     if check.kind == CheckKind.SHOP_SEED:

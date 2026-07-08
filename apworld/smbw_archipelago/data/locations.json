@@ -5592,5 +5592,1237 @@
       "10 Coin"
     ],
     "requires": []
+  },
+  {
+    "name": "W3: The Sugarstar Trial - Peach Block",
+    "region": "W3 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Sugarstar Trial - Yoshi Block",
+    "region": "W3 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Cruising with Linking Lifts - Daisy Block",
+    "region": "W2 9 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Cruising with Linking Lifts - Red Yoshi Block",
+    "region": "W2 9 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Piranha Plants on Parade - Luigi Block",
+    "region": "W1 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Piranha Plants on Parade - Yellow Yoshi Block",
+    "region": "W1 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Blewbird Roost - Luigi Block",
+    "region": "PI Pre-W2 2 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Blewbird Roost - Red Yoshi Block",
+    "region": "PI Pre-W2 2 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Sunbaked Desert Palace - Yoshi Block",
+    "region": "W4 15 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Sunbaked Desert Palace - Nabbit Block",
+    "region": "W4 15 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Muncher Fields - Yellow Toad Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Muncher Fields - Nabbit Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Wubba Ruins - Peach Block",
+    "region": "W5 6 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Wubba Ruins - Yellow Toad Block",
+    "region": "W5 6 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Puzzling Park - Luigi Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Puzzling Park - Peach Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Puzzling Park - Yellow Toad Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Puzzling Park - Yoshi Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Puzzling Park - Light-Blue Yoshi Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Triple Threat Deluge - Peach Block",
+    "region": "W3 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Triple Threat Deluge - Light-Blue Yoshi Block",
+    "region": "W3 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Rolling-Ball Hall - Daisy Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Rolling-Ball Hall - Toadette Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Petal Isles Flying Battleship - Toadette Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Petal Isles Flying Battleship - Red Yoshi Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Item Park - Daisy Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Item Park - Toadette Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "BC: KnuckleFest Bowser's Blazing Beats - Yellow Toad Block",
+    "region": "World Bowser",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "BC: KnuckleFest Bowser's Blazing Beats - Blue Toad Block",
+    "region": "World Bowser",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Secrets of Shova Mansion - Toadette Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Secrets of Shova Mansion - Light-Blue Yoshi Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Wavy Ride through the Magma Tube - Mario Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Wavy Ride through the Magma Tube - Luigi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Cosmic Hoppos - Yellow Toad Block",
+    "region": "W1 Post-Bulrush Express",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Cosmic Hoppos - Nabbit Block",
+    "region": "W1 Post-Bulrush Express",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Robbird Cove - Blue Toad Block",
+    "region": "PI Pre-W2 2 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Robbird Cove - Yoshi Block",
+    "region": "PI Pre-W2 2 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Outmaway Valley - Daisy Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Outmaway Valley - Yoshi Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Beware of the Rifts - Mario Block",
+    "region": "W5 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Beware of the Rifts - Peach Block",
+    "region": "W5 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Taily's Toxic Pond - Luigi Block",
+    "region": "W5 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Taily's Toxic Pond - Yoshi Block",
+    "region": "W5 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "BC: Missile Meg Mayhem - Peach Block",
+    "region": "World Bowser",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "BC: Missile Meg Mayhem - Daisy Block",
+    "region": "World Bowser",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Wonder Gauntlet - Daisy Block",
+    "region": "Special End",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Wonder Gauntlet - Light-Blue Yoshi Block",
+    "region": "Special End",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Maw-Maw Mouthful - Blue Toad Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Maw-Maw Mouthful - Yoshi Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Dragon Boneyard - Blue Toad Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Dragon Boneyard - Red Yoshi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Leaping Smackerel - Peach Block",
+    "region": "PI Pre-W2",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Leaping Smackerel - Yellow Yoshi Block",
+    "region": "PI Pre-W2",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Light-Switch Mansion - Luigi Block",
+    "region": "W5 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Light-Switch Mansion - Daisy Block",
+    "region": "W5 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Upshroom Downshroom - Mario Block",
+    "region": "W5 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Upshroom Downshroom - Toadette Block",
+    "region": "W5 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Ninji Jump Party - Red Yoshi Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Ninji Jump Party - Nabbit Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Gnawsher Lair - Mario Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Gnawsher Lair - Yellow Yoshi Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "BC: High-Voltage Gauntlet - Daisy Block",
+    "region": "World Bowser",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "BC: High-Voltage Gauntlet - Yellow Toad Block",
+    "region": "World Bowser",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Bulrush Express - Daisy Block",
+    "region": "W1 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Bulrush Express - Light-Blue Yoshi Block",
+    "region": "W1 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Bloomps of the Desert Skies - Blue Toad Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Bloomps of the Desert Skies - Yellow Yoshi Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "BC: Evade the Seeker Bullet Bills! - Luigi Block",
+    "region": "World Bowser",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "BC: Evade the Seeker Bullet Bills! - Peach Block",
+    "region": "World Bowser",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Pull, Turn, Burn - Toadette Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Pull, Turn, Burn - Yellow Yoshi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Deep Magma Bog Palace - Mario Block",
+    "region": "W6 25 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Deep Magma Bog Palace - Red Yoshi Block",
+    "region": "W6 25 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Bounce, Bounce, Bounce - Luigi Block",
+    "region": "W1 Post-Jet Run",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Bounce, Bounce, Bounce - Yellow Yoshi Block",
+    "region": "W1 Post-Jet Run",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Angry Spikes and Sinkin' Pipes - Peach Block",
+    "region": "W1 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Angry Spikes and Sinkin' Pipes - Yellow Yoshi Block",
+    "region": "W1 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Rolla Koopa Derby - Mario Block",
+    "region": "W1 3 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Rolla Koopa Derby - Toadette Block",
+    "region": "W1 3 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Swaying Ruins - Yellow Toad Block",
+    "region": "W5 Post-Wubba",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Swaying Ruins - Toadette Block",
+    "region": "W5 Post-Wubba",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Pipe-Rock Plateau Palace - Yellow Yoshi Block",
+    "region": "W1 14 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Pipe-Rock Plateau Palace - Light-Blue Yoshi Block",
+    "region": "W1 14 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Solar Roller - Mario Block",
+    "region": "W6 Post-Spring",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Solar Roller - Toadette Block",
+    "region": "W6 Post-Spring",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Up 'n' Down with Puffy Lifts - Peach Block",
+    "region": "W2 9 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Up 'n' Down with Puffy Lifts - Nabbit Block",
+    "region": "W2 9 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Jewel-Block Cave - Yellow Yoshi Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Jewel-Block Cave - Nabbit Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Deep Magma Bog Flying Battleship - Red Yoshi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Deep Magma Bog Flying Battleship - Yellow Yoshi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Piranha Plant Reprise - Peach Block",
+    "region": "Pre-W4 Special",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Piranha Plant Reprise - Yellow Yoshi Block",
+    "region": "Pre-W4 Special",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Hoppycat Trial - Yoshi Block",
+    "region": "W3 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Hoppycat Trial - Red Yoshi Block",
+    "region": "W3 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Condarts Away! - Peach Block",
+    "region": "W2 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Condarts Away! - Toadette Block",
+    "region": "W2 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Swamp Pipe Crawl - Luigi Block",
+    "region": "W1 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Swamp Pipe Crawl - Red Yoshi Block",
+    "region": "W1 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Valley Fulla Snootles - Mario Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Valley Fulla Snootles - Daisy Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Welcome to the Flower Kingdom! - Mario Block",
+    "region": "W1 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Welcome to the Flower Kingdom! - Red Yoshi Block",
+    "region": "W1 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Flight of the Bloomps - Yoshi Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Flight of the Bloomps - Yellow Yoshi Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Fluff-Puff Peaks Palace - Light-Blue Yoshi Block",
+    "region": "W2 14 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Fluff-Puff Peaks Palace - Nabbit Block",
+    "region": "W2 14 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Midway Trial - Toadette Block",
+    "region": "W3 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Midway Trial - Nabbit Block",
+    "region": "W3 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Color-Switch Dungeon - Yellow Toad Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Color-Switch Dungeon - Red Yoshi Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Pole Block Passage - Luigi Block",
+    "region": "W2 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Pole Block Passage - Blue Toad Block",
+    "region": "W2 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Raarghs in the Ruins - Mario Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Raarghs in the Ruins - Yoshi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Sharp Trial - Mario Block",
+    "region": "W3 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Sharp Trial - Light-Blue Yoshi Block",
+    "region": "W3 4 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Poison Ruins - Daisy Block",
+    "region": "W5 11 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W5: Poison Ruins - Blue Toad Block",
+    "region": "W5 11 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Fluff-Puff Peaks Flying Battleship - Blue Toad Block",
+    "region": "W2 9 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Fluff-Puff Peaks Flying Battleship - Toadette Block",
+    "region": "W2 9 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Downpour Uproar - Daisy Block",
+    "region": "PI 5 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "PI: Downpour Uproar - Light-Blue Yoshi Block",
+    "region": "PI 5 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: The Desert Mystery - Peach Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: The Desert Mystery - Blue Toad Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Armads on the Roll - Luigi Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Armads on the Roll - Yellow Toad Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Countdown to Drop Down - Mario Block",
+    "region": "W2 9 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Countdown to Drop Down - Yellow Toad Block",
+    "region": "W2 9 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Anglefish Trial - Luigi Block",
+    "region": "W3 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Anglefish Trial - Nabbit Block",
+    "region": "W3 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Way of the Goomba - Luigi Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Way of the Goomba - Red Yoshi Block",
+    "region": "PI 8 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Pole Block Allure - Daisy Block",
+    "region": "W4 Post-Invis",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Pole Block Allure - Nabbit Block",
+    "region": "W4 Post-Invis",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Sproings in the Twilight Forest - Mario Block",
+    "region": "W1 Post-Bulrush Express",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Sproings in the Twilight Forest - Toadette Block",
+    "region": "W1 Post-Bulrush Express",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Final Trial - Blue Toad Block",
+    "region": "W3 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W3: The Final Trial - Light-Blue Yoshi Block",
+    "region": "W3 10 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Pokipede Pass - Luigi Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W2: Pokipede Pass - Light-Blue Yoshi Block",
+    "region": "W2 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Hot-Hot Hot! - Red Yoshi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Hot-Hot Hot! - Light-Blue Yoshi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W4: Pipe Park - Blue Toad Block",
+    "region": "W4 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Dangerous Donut Ride - Yellow Toad Block",
+    "region": "W5 11 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "Special: Dangerous Donut Ride - Yoshi Block",
+    "region": "W5 11 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Where the Rrrumbas Rule - Yoshi Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W6: Where the Rrrumbas Rule - Nabbit Block",
+    "region": "W6 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Scram, Skedaddlers! - Daisy Block",
+    "region": "W1 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Scram, Skedaddlers! - Nabbit Block",
+    "region": "W1 Start",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Here Come the Hoppos - Peach Block",
+    "region": "W1 3 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Here Come the Hoppos - Light-Blue Yoshi Block",
+    "region": "W1 3 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Bulrush Coming Through! - Yellow Toad Block",
+    "region": "W1 3 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
+  },
+  {
+    "name": "W1: Bulrush Coming Through! - Yoshi Block",
+    "region": "W1 3 Seeds",
+    "category": [
+      "Character Block"
+    ],
+    "requires": []
   }
 ]
