@@ -44,6 +44,22 @@ def detect_lan_ip() -> str:
         s.close()
 
 
+def lan_subnet_seed() -> str:
+    """This machine's LAN IP, suitable as a bridge-discovery /24 sweep seed.
+
+    The Switch seeds its discovery sweep from ``BRIDGE_HOST_STRING``;
+    defaulting that to the setup machine's own LAN IP means the Switch
+    sweeps the same ``/24`` the PC client lives on, so a player on any
+    subnet is found without typing a seed by hand.
+
+    Returns ``""`` (not ``"127.0.0.1"``) when only loopback is available,
+    so callers fall back to the compiled-in default instead of seeding a
+    useless ``127.0.0.0/24`` sweep.
+    """
+    ip = detect_lan_ip()
+    return "" if ip == _LOOPBACK else ip
+
+
 def is_plausible_ipv4(s: str) -> bool:
     """Loose IPv4 validator -- accepts ``"a.b.c.d"`` with each octet 0-255.
 

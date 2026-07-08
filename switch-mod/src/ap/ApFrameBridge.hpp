@@ -129,6 +129,14 @@ inline constexpr std::uint32_t kCastleMaskBit = 8;
 // from any thread; read from the game-thread predicate trampoline.
 std::uint32_t getRoutableWorldMask();
 
+// Read the AP-authoritative "force IsInClearedCourse" mask cached by
+// drainInbound on SetForceClearedCourses.  Bit N set == the Nth secret-exit
+// replay course (kForceClearedCourses in main.cpp) should have
+// IsInClearedCourse forced true at scene-load so its secret path spawns.
+// 0 == nothing to force (the SceneTransition hook no-ops).  Safe from any
+// thread; read from the game-thread SceneTransition hook.
+std::uint32_t getForceClearedCoursesMask();
+
 }  // namespace smbwap::ap
 
 // Forward declarations for the grant primitives that live in main.cpp's
@@ -169,6 +177,13 @@ bool setWonderSeedBitfieldAbsolute(std::uint64_t bits_lo,
 // slots, so the GrantHashKeyed dispatch routes bool hashes through
 // grantContainerBBool instead.
 bool grantContainerACounter(std::uint32_t hash, std::uint32_t value);
+
+// Pure read of a container-A scalar (Int/Enum) by hash via FUN_710012ae94.
+// Returns 0 when gmd isn't live or the hash isn't in container-A.  No
+// dirty-queue write -> safe from the SceneTransition hook.  Used to identify
+// the current course (world_val 0x9f5ead3c + CourseInfo.CourseId 0xdf82e9ab)
+// for the open-world secret-exit unlock.
+std::uint32_t readContainerAValue(std::uint32_t hash);
 
 // Open-world seed: raise a container-A counter to `floor` only when the
 // live value is below it (never lowers, preserving a higher value).  Used

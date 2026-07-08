@@ -341,6 +341,19 @@ struct WireSetRoutableWorldsAbsolute {
     std::uint16_t mask = 0;
 };
 
+// Bridge -> Switch.  Open-world (2026-06-30): force the transient
+// IsInClearedCourse flag for secret-exit "replay" courses so their secret
+// goal spawns + wall blocks are removed.  `mask` bit N == the Nth course in
+// force_cleared_table.FORCE_CLEARED_COURSES (mirrored as kForceClearedCourses
+// in main.cpp) should be treated as already-cleared.  main.cpp reads
+// (world_val, CourseInfo.CourseId) at scene-load and, on a match whose bit is
+// set, writes IsInClearedCourse (0xbef2db36) via probe::grantContainerBBool.
+// mask == 0 means nothing to force (the write no-ops -> vanilla behavior).
+// Carried as a u16 for headroom.
+struct WireSetForceClearedCourses {
+    std::uint16_t mask = 0;
+};
+
 // Bridge -> Switch.  Power-up pickup negation (M3.1 / M5 groundwork).
 // `mask` bits name runtime item-get types the player must NOT be able to
 // pick up (bit table in probe/ItemGetGate.hpp: FireFlower bit 2,
@@ -467,6 +480,7 @@ enum class InboundKind : std::uint8_t {
     SetItemGetDenyMask = 17,
     SetBadgeShopState = 18,
     SetBadgeShopText = 19,
+    SetForceClearedCourses = 20,
 };
 
 struct InboundMsg {
@@ -491,6 +505,7 @@ struct InboundMsg {
         WireSetItemGetDenyMask set_itemget_deny_mask;
         WireSetBadgeShopState set_badge_shop_state;
         WireSetBadgeShopText set_badge_shop_text;
+        WireSetForceClearedCourses set_force_cleared_courses;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

@@ -74,6 +74,21 @@ IncrementShadow s_increment_shadow[kShadowSlots] = {};
 
 }  // namespace
 
+std::uint32_t readContainerAValue(std::uint32_t hash) {
+    // Pure read of a container-A scalar (Int/Enum category) by hash via the
+    // persistent-container reader FUN_710012ae94.  Returns 0 when gmd isn't
+    // live yet or the hash isn't in container-A (a miss leaves out=0).  No
+    // dirty-queue write, so no backpressure / scene-transition concern --
+    // safe to call from the SceneTransition hook.  Used to identify the
+    // current course (world_val 0x9f5ead3c + CourseInfo.CourseId 0xdf82e9ab)
+    // for the open-world secret-exit unlock.
+    void* gmd = gmdSingleton();
+    if (gmd == nullptr) return 0;
+    std::uint32_t out = 0;
+    containerAReader()(gmd, &out, hash);
+    return out;
+}
+
 bool grantContainerACounter(std::uint32_t hash, std::uint32_t value) {
     void* gmd = gmdSingleton();
     if (gmd == nullptr) return false;

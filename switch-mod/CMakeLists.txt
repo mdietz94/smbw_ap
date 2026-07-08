@@ -46,6 +46,34 @@ set(SOURCES_CXX
 add_executable(${PROJECT_NAME} ${SOURCES_CXX})
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
+# Bridge-discovery subnet seed. The Switch subsdk has no broadcast probe;
+# after a loopback attempt (Ryujinx-on-same-host) it sweeps the /24 that
+# this IP falls in, looking for the PC client (src/ap/ApDiscovery.cpp). The
+# default seeds a 192.168.1.0/24 sweep; override at configure time when the
+# play network is on a different subnet:
+#     -DBRIDGE_HOST_STRING="10.0.0.5"
+# The value only needs to be SOME address on the right /24 — it is a sweep
+# seed, not a connection target. ApDiscovery.cpp also #defines the same
+# default as a safety net for non-cmake builds; forwarding it here is what
+# actually lets the configure-time override reach the compiler.
+set(BRIDGE_HOST_STRING "192.168.1.1" CACHE STRING
+    "Subnet seed for the Switch bridge-discovery /24 sweep")
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    BRIDGE_HOST_STRING="${BRIDGE_HOST_STRING}")
+message(STATUS "smbwap: bridge-discovery sweep seed = ${BRIDGE_HOST_STRING}")
+
+# Interpreter for the build-time Python tools (deploy.py -> import lz4.block,
+# elf2nso.py -> import elftools). LibHakkun's deploy.cmake / generate_exefs.cmake
+# call bare `python`; patch_hakkun.py rewrites those to `${SMBWAP_PYTHON}` so the
+# wizard can point them at the exact interpreter it installed lz4/pyelftools into
+# (build.py passes -DSMBWAP_PYTHON=<resolved>). On a box with more than one Python
+# bare `python` can resolve to an interpreter missing those --user deps, and the
+# build dies with ModuleNotFoundError right after linking. Defaults to `python` so
+# a manual cmake build (no -D) keeps the legacy behavior.
+set(SMBWAP_PYTHON "python" CACHE STRING
+    "Python interpreter for build-time tools (deploy.py, elf2nso.py)")
+message(STATUS "smbwap: build-time Python = ${SMBWAP_PYTHON}")
+
 # nn::os / nn::nifm / nn::socket / malloc / free / aligned_alloc are
 # undefined at link time -- they're resolved at module-load via nnrtld
 # walking the AutoLoadList (the .data anchor at `_ZN2nn2ro6detail15g_pAutoLoadListE`

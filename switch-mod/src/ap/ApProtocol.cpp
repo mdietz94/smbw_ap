@@ -539,6 +539,34 @@ bool parseSetRoutableWorldsAbsolute(util::json::Reader& r,
     return saw_mask;
 }
 
+bool parseSetForceClearedCourses(util::json::Reader& r,
+                                 WireSetForceClearedCourses& out) {
+    // Cursor positioned just after "t":"set_force_cleared_courses".  One
+    // required field: "mask" -> u16 in [0, 2**16).  Bit N == the Nth
+    // secret-exit "replay" course should have IsInClearedCourse forced.
+    std::string_view key;
+    bool saw_mask = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "mask")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0 || v > 0xFFFF) return false;
+            out.mask = static_cast<std::uint16_t>(v);
+            saw_mask = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_mask;
+}
+
 bool parseSetItemGetDenyMask(util::json::Reader& r,
                              WireSetItemGetDenyMask& out) {
     // Cursor positioned just after "t":"set_itemget_deny".  One required
@@ -854,6 +882,11 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::SetRoutableWorldsAbsolute;
         out.set_routable_worlds_absolute = WireSetRoutableWorldsAbsolute{};
         if (!parseSetRoutableWorldsAbsolute(r, out.set_routable_worlds_absolute)) return false;
+    } else if (std::strcmp(t_val, "set_force_cleared_courses") == 0) {
+        out.kind = InboundKind::SetForceClearedCourses;
+        out.set_force_cleared_courses = WireSetForceClearedCourses{};
+        if (!parseSetForceClearedCourses(r, out.set_force_cleared_courses))
+            return false;
     } else if (std::strcmp(t_val, "apply_world_unlock") == 0) {
         out.kind = InboundKind::ApplyWorldUnlock;
         out.apply_world_unlock = WireApplyWorldUnlock{};

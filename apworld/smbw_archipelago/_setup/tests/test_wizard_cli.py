@@ -209,6 +209,54 @@ def test_cli_main_rejects_unknown_phase() -> None:
     assert rc == 2
 
 
+def test_cli_main_passes_bridge_host_into_options(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--bridge-host <addr>` should land on PipelineOptions.bridge_host."""
+    seen: list[W.PipelineOptions] = []
+
+    def fake_pipeline(opts, callback=None):  # type: ignore[no-untyped-def]
+        seen.append(opts)
+        return W.PipelineOutcome(ok=True, phases_run=list(opts.phases))
+
+    monkeypatch.setattr(W, "run_pipeline", fake_pipeline)
+    rc = W.main(["--phases", "build", "--bridge-host", "10.0.0.5"])
+    assert rc == 0
+    assert seen[0].bridge_host == "10.0.0.5"
+
+
+def test_cli_main_rejects_bad_bridge_host() -> None:
+    """A malformed bridge IP is rejected before the pipeline runs."""
+    rc = W.main(["--phases", "build", "--bridge-host", "not-an-ip"])
+    assert rc == 2
+
+
+def test_cli_main_bridge_host_auto_resolves_lan_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`--bridge-host auto` resolves to this machine's LAN IP."""
+    from ...client import net_util
+    monkeypatch.setattr(net_util, "detect_lan_ip", lambda: "192.168.5.9")
+    seen: list[W.PipelineOptions] = []
+    monkeypatch.setattr(W, "run_pipeline", lambda opts, callback=None: (
+        seen.append(opts) or W.PipelineOutcome(ok=True, phases_run=list(opts.phases))))
+    rc = W.main(["--phases", "build", "--bridge-host", "auto"])
+    assert rc == 0
+    assert seen[0].bridge_host == "192.168.5.9"
+
+
+def test_run_pipeline_threads_bridge_host_into_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PipelineOptions.bridge_host must reach run_build()."""
+    monkeypatch.setattr(W, "run_probe", lambda **_kw: W.ProbeOutcome(
+        ok=True, results=[], missing_keys=[]))
+    monkeypatch.setattr(W, "run_junction", lambda **_kw: W.JunctionOutcomeWrapper(ok=True))
+    seen: dict[str, object] = {}
+
+    def fake_build(**kw):  # type: ignore[no-untyped-def]
+        seen.update(kw)
+        return W.BuildOutcomeWrapper(ok=True, outputs={})
+
+    monkeypatch.setattr(W, "run_build", fake_build)
+    W.run_pipeline(W.PipelineOptions(phases=("build",), bridge_host="192.168.0.9"))
+    assert seen.get("bridge_host") == "192.168.0.9"
+
+
 def test_run_junction_skips_when_not_in_dev_clone(monkeypatch: pytest.MonkeyPatch) -> None:
     """When the wizard runs from a packaged install (no ``.git`` in the
     apworld's parent tree), the junction phase has nothing meaningful

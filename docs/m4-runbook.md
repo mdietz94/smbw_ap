@@ -48,17 +48,30 @@ Copy-Item "C:\Users\maxwe\Documents\smwonder_archipelago\switch-mod\build\subsdk
           -Destination "$dst\main.npdm" -Force
 ```
 
-If discovery doesn't find the bridge automatically (Switch on a different
-subnet than `192.168.1.0/24`), reconfigure with an explicit seed:
+**Bridge discovery + the subnet seed.** The Switch has no broadcast probe:
+after a loopback attempt (Ryujinx-on-same-host) it sweeps the `/24` that
+`BRIDGE_HOST_STRING` falls in. `/setup` now auto-fills that seed with the
+setup machine's own LAN IP, so the Switch sweeps the same `/24` the PC client
+lives on — a player on any subnet is normally found with no input.
+
+Override only if you'll *play* on a different network than the one you ran
+`/setup` from. The seed only needs to be *some* address on the right `/24`:
+
+- **In SMBW Client:** `/setup_ip 192.168.7.42` — opens the wizard with the
+  "Bridge IP" field prefilled; click Run. (Plain `/setup` shows the same
+  field, pre-filled with the auto-detected IP; edit or clear it as needed.)
+- **Headless:** `python -m apworld.smbw_archipelago._setup.wizard_cli \
+  --phases build,deploy --deploy-target ryujinx --bridge-host 192.168.7.42`
+  (use `--bridge-host auto` for the detected LAN IP).
+
+All paths forward `-DBRIDGE_HOST_STRING` to cmake and reconfigure when the
+seed differs from the cached one. The raw cmake form still works too:
 
 ```pwsh
 & "C:\Program Files\CMake\bin\cmake.exe" `
     -S ... -B ... -G Ninja `
-    -DCMAKE_TOOLCHAIN_FILE=... `
     -DBRIDGE_HOST_STRING="192.168.7.42"
 ```
-
-The seed only needs to be *some* address on the right /24.
 
 ## Start the AP server
 

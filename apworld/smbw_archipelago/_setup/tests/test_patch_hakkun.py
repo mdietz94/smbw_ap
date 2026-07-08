@@ -128,20 +128,58 @@ class NsoHeader(struct.Struct):
 '''
 
 
-def _make_tree(root: Path, nso_body: str) -> Path:
-    """Build a minimal switch-mod tree with sys/tools/nso.py."""
+# Verbatim copies of the upstream LibHakkun cmake files the interpreter
+# patch targets (pinned rev 9892726b). Trimmed to the lines that matter —
+# each must contain at least one `COMMAND python ` so the rewrite has a
+# target.
+_UPSTREAM_DEPLOY_CMAKE = (
+    "add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD\n"
+    "    COMMAND python ${CMAKE_CURRENT_SOURCE_DIR}/sys/tools/deploy.py "
+    "${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_NAME}\n"
+    ")\n"
+)
+_UPSTREAM_GENEXEFS_CMAKE = (
+    "function(generate_exefs)\n"
+    "    add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD\n"
+    "        COMMAND python ${CMAKE_SOURCE_DIR}/sys/tools/senobi/build_npdm.py "
+    "${CMAKE_CURRENT_BINARY_DIR}/npdm.json ${CMAKE_CURRENT_BINARY_DIR}/main.npdm\n"
+    "        COMMAND python ${PROJECT_SOURCE_DIR}/sys/tools/elf2nso.py "
+    "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.nso -c\n"
+    "    )\n"
+    "endfunction()\n"
+)
+
+
+def _make_tree(
+    root: Path,
+    nso_body: str,
+    *,
+    with_cmake: bool = True,
+) -> Path:
+    """Build a minimal switch-mod tree with sys/tools/nso.py.
+
+    When ``with_cmake`` (the default), also lays down the two cmake files
+    the interpreter patch targets so the full patch set can apply.
+    """
     tools = root / "sys" / "tools"
     tools.mkdir(parents=True)
     nso = tools / "nso.py"
     nso.write_text(nso_body, encoding="utf-8")
+    if with_cmake:
+        cmake = root / "sys" / "cmake"
+        cmake.mkdir(parents=True)
+        (cmake / "deploy.cmake").write_text(_UPSTREAM_DEPLOY_CMAKE, encoding="utf-8")
+        (cmake / "generate_exefs.cmake").write_text(
+            _UPSTREAM_GENEXEFS_CMAKE, encoding="utf-8"
+        )
     return nso
 
 
 def test_applies_on_clean_upstream(tmp_path: Path) -> None:
-    """First-run case: upstream nso.py present, patch lands."""
+    """First-run case: upstream nso.py + cmake present, all patches land."""
     nso = _make_tree(tmp_path, _UPSTREAM_NSO_PY)
     results = P.apply_patches(tmp_path)
-    assert [r.status for r in results] == ["applied"]
+    assert [r.status for r in results] == ["applied", "applied", "applied"]
     patched = nso.read_text(encoding="utf-8")
     # Sentinel embedded so reruns short-circuit.
     assert P._NSO_SENTINEL in patched
@@ -153,14 +191,19 @@ def test_applies_on_clean_upstream(tmp_path: Path) -> None:
 
 
 def test_already_applied_is_idempotent(tmp_path: Path) -> None:
-    """Second-run case: sentinel present, file untouched."""
+    """Second-run case: every sentinel present, files untouched."""
     nso = _make_tree(tmp_path, _UPSTREAM_NSO_PY)
     P.apply_patches(tmp_path)
     first = nso.read_text(encoding="utf-8")
+    deploy = tmp_path / "sys" / "cmake" / "deploy.cmake"
+    first_deploy = deploy.read_text(encoding="utf-8")
 
     results = P.apply_patches(tmp_path)
-    assert [r.status for r in results] == ["already-applied"]
+    assert [r.status for r in results] == [
+        "already-applied", "already-applied", "already-applied",
+    ]
     assert nso.read_text(encoding="utf-8") == first
+    assert deploy.read_text(encoding="utf-8") == first_deploy
 
 
 def test_missing_file_reported(tmp_path: Path) -> None:
@@ -213,6 +256,83 @@ def test_patched_module_instantiates(tmp_path: Path) -> None:
     payload = hdr.save()
     assert isinstance(payload, (bytes, bytearray))
     assert len(payload) == hdr._fmt.size
+
+
+def test_cmake_interpreter_patch_replaces_python(tmp_path: Path) -> None:
+    """deploy.cmake + generate_exefs.cmake get every bare `COMMAND python `
+    routed through ${SMBWAP_PYTHON}, with no bare invocation left behind."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    P.apply_patches(tmp_path)
+
+    for name in ("deploy.cmake", "generate_exefs.cmake"):
+        text = (tmp_path / "sys" / "cmake" / name).read_text(encoding="utf-8")
+        assert P._CMAKE_PY_SENTINEL in text
+        assert "COMMAND ${SMBWAP_PYTHON} " in text
+        # No bare `COMMAND python ` survives (the failure mode we're fixing).
+        assert "COMMAND python " not in text
+
+
+def test_cmake_interpreter_patch_is_idempotent(tmp_path: Path) -> None:
+    """Re-running leaves the cmake files byte-identical (sentinel guard)."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    P.apply_patches(tmp_path)
+    deploy = tmp_path / "sys" / "cmake" / "deploy.cmake"
+    once = deploy.read_text(encoding="utf-8")
+    # The single-replacement guard must not double-rewrite the token.
+    assert "${${SMBWAP_PYTHON}}" not in once
+    P.apply_patches(tmp_path)
+    assert deploy.read_text(encoding="utf-8") == once
+
+
+def test_cmake_interpreter_patch_missing_reported(tmp_path: Path) -> None:
+    """No cmake files (only nso.py): the two cmake patches report missing."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY, with_cmake=False)
+    results = P.apply_patches(tmp_path)
+    statuses = [r.status for r in results]
+    assert statuses == ["applied", "missing", "missing"]
+    assert any("not found" in r.detail for r in results[1:])
+
+
+def test_cmake_interpreter_patch_upstream_shifted(tmp_path: Path) -> None:
+    """A cmake file that no longer carries `COMMAND python ` is reported
+    as upstream-shifted rather than silently mangled."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    deploy = tmp_path / "sys" / "cmake" / "deploy.cmake"
+    deploy.write_text(
+        "add_custom_command(TARGET x POST_BUILD\n"
+        "    COMMAND ${Python3_EXECUTABLE} sys/tools/deploy.py\n)\n",
+        encoding="utf-8",
+    )
+    results = P.apply_patches(tmp_path)
+    deploy_result = next(r for r in results if "deploy.cmake" in r.name)
+    assert deploy_result.status == "upstream-shifted"
+    assert "refreshed" in deploy_result.detail
+
+
+def test_cmake_patch_token_matches_real_submodule_if_present() -> None:
+    """Guardrail: if the LibHakkun submodule is checked out, the two
+    target cmake files must still contain the bare `COMMAND python ` token
+    our patch keys on — otherwise a release would ship a no-op patch and
+    the lz4 build failure would return.
+
+    Skipped when the submodule isn't initialized, or was already patched
+    in-place by a prior build run.
+    """
+    here = Path(__file__).resolve()
+    repo = here.parents[4]
+    cmake_dir = repo / "switch-mod" / "sys" / "cmake"
+    if not (cmake_dir / "deploy.cmake").is_file():
+        pytest.skip("LibHakkun submodule not initialized")
+    for rel in P._CMAKE_PY_TARGETS:
+        target = repo / "switch-mod" / rel
+        content = target.read_text(encoding="utf-8")
+        if P._CMAKE_PY_SENTINEL in content:
+            continue  # already patched in-place by a prior build run
+        assert P._CMAKE_PY_OLD in content, (
+            f"{target} no longer contains `{P._CMAKE_PY_OLD.strip()}`; "
+            f"LibHakkun changed how it invokes Python and the interpreter "
+            f"patch needs to be refreshed"
+        )
 
 
 def test_patch_old_string_matches_real_submodule_if_present() -> None:

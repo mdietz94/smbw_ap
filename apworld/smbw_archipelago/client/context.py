@@ -41,6 +41,7 @@ from NetUtils import ClientStatus  # type: ignore
 from . import badge_table
 from . import char_block_table
 from . import coin_table
+from . import force_cleared_table
 from . import powerup_table
 from . import royal_seed_table
 from . import wonder_seed_table
@@ -400,6 +401,10 @@ class SMBWContext(CommonContext):
                         self._recompute_routable_worlds_mask())
                     self.lan_server.send_apply_world_unlock(
                         *self._world_unlock_hashes())
+                    # Secret-exit "replay" course unlock (force
+                    # IsInClearedCourse); idempotent, replays on HelloMsg.
+                    self.lan_server.send_set_force_cleared_courses(
+                        self._recompute_force_cleared_mask())
 
             # Badge-shop AP ownership: push the shop masks now that the
             # reverse maps + checked_locations (carried by Connected) are
@@ -849,6 +854,42 @@ class SMBWContext(CommonContext):
             mask |= (1 << ROUTABLE_CASTLE_BIT)
         return mask
 
+    def _recompute_force_cleared_mask(self) -> int:
+        """Bitmask of secret-exit "replay" courses to force-clear.
+
+        Bit N (per :data:`force_cleared_table.FORCE_CLEARED_COURSES`) is set
+        when that course should have the transient ``IsInClearedCourse`` flag
+        forced true on the Switch so its secret goal spawns + wall blocks are
+        removed.  Rule: the course has **no** ``NORMAL_EXIT`` location ->
+        always; else its ``NORMAL_EXIT`` location has been checked (so the
+        player plays the normal exit first).
+
+        Applies in **both** open-world and standard mode (2026-07-01).  It is
+        *necessary* in open-world -- the synthesized access flow bypasses the
+        linear world-clear that arms the flag natively.  In standard mode the
+        game most likely sets the flag itself on replay of a cleared course,
+        making this redundant; but we could not RE-confirm which persistent
+        field the game reads to set it (the hash is mov/movk-materialized +
+        data-driven, un-searchable with the current Ghidra bridge), so we
+        cannot rule out that an AP-authoritative overwrite (Wonder Seeds, ...)
+        clobbers that source.  Forcing the flag is a safe no-op if unnecessary
+        (setting true when already true) and a fix if it isn't -- so we force
+        in both per the "safe if unnecessary" call.
+
+        Side-effect-free; wired as the LanServer
+        ``force_cleared_courses_provider`` so it replays on HelloMsg + tick."""
+        mask = 0
+        for bit, (_secret_loc, normal_loc) in enumerate(
+                force_cleared_table.FORCE_CLEARED_COURSES):
+            if normal_loc is None:
+                include = True
+            else:
+                nid = self._location_name_to_id.get(normal_loc)
+                include = nid is not None and nid in self.checked_locations
+            if include:
+                mask |= (1 << bit)
+        return mask
+
     def _open_world_royal_seed_mask(self) -> int | None:
         """Royal Seeds are NEVER pushed to the Switch.  The in-game Royal Seed
         state stays purely vanilla -- the player collects them by clearing
@@ -919,6 +960,13 @@ class SMBWContext(CommonContext):
             # it.  No-ops to 0 when this seed doesn't gate power-ups.
             self.lan_server.send_set_itemget_deny(
                 self._recompute_itemget_deny_mask())
+            # Open-world (2026-06-30): re-assert which secret-exit "replay"
+            # courses to force-clear so their secret path spawns.  Idempotent
+            # absolute-overwrite; tracks a newly-checked NORMAL_EXIT that
+            # gates a course's inclusion.  No-op (mask 0) when open-world is
+            # inactive.
+            self.lan_server.send_set_force_cleared_courses(
+                self._recompute_force_cleared_mask())
             # Open-world: once the player holds enough AP Royal Seeds, flag the
             # Castle route routable so the player can travel to Bowser.  Royal
             # Seeds are NOT pushed to the Switch -- the in-game seed state is

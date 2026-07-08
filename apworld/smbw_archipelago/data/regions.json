@@ -10,20 +10,20 @@
     "connects_to": [
       "W1 10 Seeds"
     ],
-    "requires": "|W1 Wonder Seed:3| AND |Parachute Cap Badge|"
+    "requires": "|W1 Wonder Seed:3|"
   },
   "W1 10 Seeds": {
     "connects_to": [
       "W1 Post-Bulrush Express",
       "W1 14 Seeds"
     ],
-    "requires": "|W1 Wonder Seed:10| AND |Auto Super Mushroom Badge|"
+    "requires": "|W1 Wonder Seed:10|"
   },
   "W1 Post-Bulrush Express": {
     "connects_to": [
       "W1 Post-Jet Run"
     ],
-    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND (|Elephant Fruit| OR |Drill Mushroom|) AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   "W1 Post-Jet Run": {
     "connects_to": [],
@@ -52,11 +52,11 @@
     "connects_to": [
       "PI 8 Seeds"
     ],
-    "requires": "|Petal Isles Wonder Seed:5|"
+    "requires": "|W2 Wonder Seed:14| AND |Petal Isles Wonder Seed:5|"
   },
   "PI 8 Seeds": {
     "connects_to": [],
-    "requires": "|Petal Isles Wonder Seed:8|"
+    "requires": "|W3 Wonder Seed:10| AND |Crouching High Jump Badge| AND |Petal Isles Wonder Seed:8|"
   },
   "W2 Start": {
     "connects_to": [

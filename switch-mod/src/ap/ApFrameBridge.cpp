@@ -45,6 +45,18 @@ std::uint32_t getRoutableWorldMask() {
     return g_routable_world_mask.load(std::memory_order_relaxed);
 }
 
+// AP-authoritative open-world "force IsInClearedCourse" mask.  Updated by
+// drainInbound on every SetForceClearedCourses; read by the SceneTransition
+// hook in main.cpp, which -- on scene-load for a matching secret-exit replay
+// course whose bit is set -- writes IsInClearedCourse so its secret path
+// spawns.  Bit N == kForceClearedCourses[N] in main.cpp.  Atomic so the
+// scene hook and drainInbound never tear the u32.
+static std::atomic<std::uint32_t> g_force_cleared_courses_mask{0};
+
+std::uint32_t getForceClearedCoursesMask() {
+    return g_force_cleared_courses_mask.load(std::memory_order_relaxed);
+}
+
 bool enqueueNerveFire(NerveKind kind, std::uint32_t seq) {
     OutboundEvent ev;
     ev.kind = OutboundKind::NerveFire;
@@ -271,16 +283,19 @@ void drainInbound() {
     InboundMsg last_wsc{};
     InboundMsg last_wsa{};
     InboundMsg last_routable{};
+    InboundMsg last_force_cleared{};
     bool has_badges = false;
     bool has_seeds = false;
     bool has_wsc = false;
     bool has_wsa = false;
     bool has_routable = false;
+    bool has_force_cleared = false;
     int dedup_badges_skipped = 0;
     int dedup_seeds_skipped = 0;
     int dedup_wsc_skipped = 0;
     int dedup_wsa_skipped = 0;
     int dedup_routable_skipped = 0;
+    int dedup_force_cleared_skipped = 0;
 
     InboundMsg msg;
     int drained = 0;
@@ -394,6 +409,12 @@ void drainInbound() {
                 if (has_routable) ++dedup_routable_skipped;
                 last_routable = msg;
                 has_routable = true;
+                break;
+            }
+            case InboundKind::SetForceClearedCourses: {
+                if (has_force_cleared) ++dedup_force_cleared_skipped;
+                last_force_cleared = msg;
+                has_force_cleared = true;
                 break;
             }
             case InboundKind::Kill: {
@@ -596,6 +617,23 @@ void drainInbound() {
             (mask & 0x10) ? '1' : '0', (mask & 0x20) ? '1' : '0',
             (mask & 0x40) ? '1' : '0', (mask & 0x80) ? '1' : '0',
             (mask & (1u << kCastleMaskBit)) ? '1' : '0');
+    }
+
+    if (has_force_cleared) {
+        // Open-world (2026-06-30) -- AP-authoritative "force IsInClearedCourse"
+        // mask.  Pure atomic store to our own static; the gameplay effect
+        // happens lazily when the SceneTransition hook in main.cpp reads this
+        // mask at course-load and, for a matching secret-exit replay course,
+        // writes IsInClearedCourse.  Like the routable mask, no game-memory
+        // write here -> no backpressure / scene-transition concern; the client
+        // re-sends on every tick + HelloMsg.
+        const auto mask = last_force_cleared.set_force_cleared_courses.mask;
+        g_force_cleared_courses_mask.store(mask, std::memory_order_relaxed);
+        const char* verb = coalesceVerb(
+            dedup_suffix, sizeof(dedup_suffix), dedup_force_cleared_skipped);
+        SMBWAP_LOG_INFO(
+            "[grant] %s SetForceClearedCourses(mask=0x%04x)%s -> cached",
+            verb, static_cast<unsigned>(mask), dedup_suffix);
     }
 
     if (has_wsc) {

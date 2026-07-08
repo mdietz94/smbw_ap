@@ -51,6 +51,40 @@ def test_compose_build_env_prepends_python_dir(monkeypatch: pytest.MonkeyPatch, 
     assert str(py_exe.parent) in env["PATH"].split(os.pathsep)
 
 
+def test_compose_build_env_resolved_python_wins_over_path_python(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Regression: the wizard resolves a specific Python (e.g. 3.12 via
+    `py -3.12`) and installs lz4 / pyelftools into it, but the build's
+    cmake POST_BUILD runs bare `python elf2nso.py` / `deploy.py`. If a
+    DIFFERENT Python (e.g. 3.14) sits first on the inherited PATH and the
+    resolved one is also already on PATH (just later), the old skip-if-
+    present prepend left 3.14 winning — so the build died with
+    `ModuleNotFoundError: No module named 'lz4'` right after linking.
+
+    The resolved Python's dir must be relocated to the FRONT, ahead of
+    the other Python, regardless of whether it was already on PATH."""
+    other_py_dir = tmp_path / "py314"
+    resolved_dir = tmp_path / "py312"
+    other_py_dir.mkdir()
+    resolved_dir.mkdir()
+    py_exe = resolved_dir / "python.exe"
+    py_exe.write_text("", encoding="utf-8")
+    # Inherited PATH: the wrong Python first, the resolved one already
+    # present but later — the exact shape that defeated skip-if-present.
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join([str(other_py_dir), str(resolved_dir)])
+    )
+    monkeypatch.setattr(B, "resolved_llvm_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_ninja_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: str(py_exe))
+    env = B._compose_build_env()
+    parts = env["PATH"].split(os.pathsep)
+    assert parts.index(str(resolved_dir)) < parts.index(str(other_py_dir))
+    # And no duplicate entry left behind by the relocation.
+    assert parts.count(str(resolved_dir)) == 1
+
+
 def test_compose_build_env_prepends_ninja(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     ninja_bin = str(tmp_path / "ninja-dir")
     monkeypatch.setattr(B, "resolved_llvm_bin", lambda: None)
@@ -85,6 +119,8 @@ def test_run_build_phase_skips_configure_when_cache_exists(monkeypatch: pytest.M
     """If CMakeCache.txt is present, configure should be skipped by
     default — that's the dev re-build optimization."""
     monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    # Isolate the seed/cache skip logic from the interpreter-drift check.
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: None)
     bd = tmp_path / "switch-mod" / "build"
     bd.mkdir(parents=True)
     (bd / "CMakeCache.txt").write_text("", encoding="utf-8")
@@ -139,6 +175,224 @@ def test_run_build_phase_runs_configure_when_cache_missing(monkeypatch: pytest.M
     outcome = B.run_build_phase(skip_configure_if_ready=True)
     assert outcome.ok is True
     assert saw_configure == [True]
+
+
+def test_run_build_phase_forces_configure_when_bridge_host_set(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A bridge_host override must reach cmake even when CMakeCache.txt
+    exists — otherwise the -DBRIDGE_HOST_STRING never lands. So configure
+    is forced, and bridge_host is threaded into it."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    (bd / "CMakeCache.txt").write_text("", encoding="utf-8")  # cache present
+
+    configure_calls: list[Any] = []
+
+    def fake_configure(**kw: Any) -> B.BuildResult:
+        configure_calls.append(kw)
+        return B.BuildResult(True, 0, "")
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "cmake_configure", fake_configure)
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    outcome = B.run_build_phase(skip_configure_if_ready=True, bridge_host="10.0.0.5")
+    assert outcome.ok is True
+    # Configure ran despite the cache, and carried the override.
+    assert len(configure_calls) == 1
+    assert configure_calls[0].get("bridge_host") == "10.0.0.5"
+
+
+def test_run_build_phase_skips_configure_when_cached_seed_matches(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A normal /setup always passes a seed; when the cache already holds
+    that exact seed, configure should still be skipped (fast rebuild)."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    # Isolate the seed skip logic from the interpreter-drift check.
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: None)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    (bd / "CMakeCache.txt").write_text(
+        "BRIDGE_HOST_STRING:STRING=192.168.7.42\n", encoding="utf-8")
+
+    configure_calls: list[Any] = []
+    monkeypatch.setattr(B, "cmake_configure",
+                        lambda **kw: configure_calls.append(kw) or B.BuildResult(True, 0, ""))
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    outcome = B.run_build_phase(skip_configure_if_ready=True, bridge_host="192.168.7.42")
+    assert outcome.ok is True
+    assert configure_calls == []   # same seed → no reconfigure
+
+
+def test_run_build_phase_reconfigures_when_cached_seed_differs(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """When the requested seed differs from the cached one, configure
+    must run so the new -DBRIDGE_HOST_STRING lands."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    (bd / "CMakeCache.txt").write_text(
+        "BRIDGE_HOST_STRING:STRING=192.168.1.1\n", encoding="utf-8")
+
+    configure_calls: list[Any] = []
+    monkeypatch.setattr(B, "cmake_configure",
+                        lambda **kw: configure_calls.append(kw) or B.BuildResult(True, 0, ""))
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    outcome = B.run_build_phase(skip_configure_if_ready=True, bridge_host="10.0.0.5")
+    assert outcome.ok is True
+    assert len(configure_calls) == 1
+    assert configure_calls[0].get("bridge_host") == "10.0.0.5"
+
+
+def test_cached_bridge_host_reads_cmakecache(tmp_path: Path,
+                                             monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    assert B.cached_bridge_host() is None   # no cache yet
+    (bd / "CMakeCache.txt").write_text(
+        "SOME_OTHER:STRING=x\nBRIDGE_HOST_STRING:STRING=10.1.2.3\n", encoding="utf-8")
+    assert B.cached_bridge_host() == "10.1.2.3"
+
+
+def test_cmake_configure_forwards_bridge_host_define(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """cmake_configure must add -DBRIDGE_HOST_STRING=<addr> to the cmake
+    command line when bridge_host is given (and omit it otherwise)."""
+    src = tmp_path / "switch-mod"
+    (src / "sys" / "cmake").mkdir(parents=True)
+    (src / "sys" / "cmake" / "module.cmake").write_text("", encoding="utf-8")
+    monkeypatch.setattr(B, "is_dev_clone", lambda: True)
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(B, "resolved_cmake", lambda: "cmake")
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: None)
+    monkeypatch.setattr(B, "_apply_hakkun_patches", lambda *a, **k: None)
+    monkeypatch.setattr(B, "_compose_build_env", lambda: {})
+
+    captured: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_kw: Any) -> B.BuildResult:
+        captured.append(cmd)
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "_stream_subprocess", fake_stream)
+
+    B.cmake_configure(bridge_host="192.168.7.42")
+    assert any(a == "-DBRIDGE_HOST_STRING=192.168.7.42" for a in captured[0])
+
+    captured.clear()
+    B.cmake_configure()  # no override
+    assert not any(a.startswith("-DBRIDGE_HOST_STRING") for a in captured[0])
+
+
+def test_cmake_configure_forwards_resolved_python(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """cmake_configure pins the build-time interpreter via -DSMBWAP_PYTHON,
+    forward-slashed, so deploy.py/elf2nso.py run under the Python the wizard
+    installed lz4/pyelftools into (not bare `python` off PATH)."""
+    src = tmp_path / "switch-mod"
+    (src / "sys" / "cmake").mkdir(parents=True)
+    (src / "sys" / "cmake" / "module.cmake").write_text("", encoding="utf-8")
+    monkeypatch.setattr(B, "is_dev_clone", lambda: True)
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(B, "resolved_cmake", lambda: "cmake")
+    # Forward-slash path so the assertion is identical on the Linux CI and a
+    # Windows host (`Path.as_posix()` only rewrites separators it recognizes
+    # as such for the running OS; on Windows a real `C:\...` path is
+    # forward-slashed, which is why build.py uses as_posix()).
+    resolved = "/opt/python311/bin/python"
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: resolved)
+    monkeypatch.setattr(B, "_apply_hakkun_patches", lambda *a, **k: None)
+    monkeypatch.setattr(B, "_compose_build_env", lambda: {})
+
+    captured: list[list[str]] = []
+    monkeypatch.setattr(
+        B, "_stream_subprocess",
+        lambda cmd, **_kw: captured.append(cmd) or B.BuildResult(True, 0, ""),
+    )
+
+    B.cmake_configure()
+    assert f"-DSMBWAP_PYTHON={resolved}" in captured[0]
+
+
+def test_run_build_phase_reconfigures_when_cached_python_differs(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """An existing build dir whose cached SMBWAP_PYTHON no longer matches the
+    resolved interpreter must reconfigure — this is the lz4-ModuleNotFound
+    fix: re-pin so the POST_BUILD rules call the Python that has the deps."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: "/opt/py311/bin/python")
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    (bd / "CMakeCache.txt").write_text(
+        "SMBWAP_PYTHON:STRING=/usr/bin/python3\n", encoding="utf-8")
+
+    configure_calls: list[Any] = []
+    monkeypatch.setattr(B, "cmake_configure",
+                        lambda **kw: configure_calls.append(kw) or B.BuildResult(True, 0, ""))
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    outcome = B.run_build_phase(skip_configure_if_ready=True)
+    assert outcome.ok is True
+    assert len(configure_calls) == 1   # drift forced a reconfigure
+
+
+def test_run_build_phase_skips_configure_when_cached_python_matches(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """When the cached interpreter already matches the resolved one (stored
+    via as_posix()), the fast rebuild path is preserved."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    # Forward-slash path: as_posix() is a no-op on it on every OS, so the
+    # cached value below matches and no reconfigure is forced.
+    resolved = "/opt/py/python"
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: resolved)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    (bd / "CMakeCache.txt").write_text(
+        "SMBWAP_PYTHON:STRING=/opt/py/python\n", encoding="utf-8")
+
+    configure_calls: list[Any] = []
+    monkeypatch.setattr(B, "cmake_configure",
+                        lambda **kw: configure_calls.append(kw) or B.BuildResult(True, 0, ""))
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    outcome = B.run_build_phase(skip_configure_if_ready=True)
+    assert outcome.ok is True
+    assert configure_calls == []   # interpreter unchanged → no reconfigure
 
 
 def test_run_build_phase_fails_on_missing_artifacts(monkeypatch: pytest.MonkeyPatch,
