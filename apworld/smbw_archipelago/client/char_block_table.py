@@ -22,12 +22,12 @@ check per (course, charaType), so this table has ~154 rows.  Refining the
 collapsed courses to per-block checks needs the Switch hook to ship the
 block position (reserved field in the wire event, zeros in v1).
 
-PlayerCharaType 0-11 -> character name is the roster-order mapping in the
-generator (CHARA_NAMES) -- PROVISIONAL on the enum->name assignment (only
-the array shape is confirmed from live PlayReport ``chara_type_array``
-captures); the location NAMES bake the mapping in, but the lookup key here
-is the raw (stage_key, chara) int pair, so a future name correction
-doesn't renumber any AP location.
+PlayerCharaType 0-11 -> character name is the game's enum order,
+CONFIRMED from the GameDataList LocalPlayerCharaType (0x6c05cce3)
+EnumArray RawValues (Totten/Nabbit=7, the four Yoshis=8-11); the location
+NAMES bake the mapping in, but the lookup key here is the raw
+(stage_key, chara) int pair, so a name correction doesn't renumber any
+AP location.
 """
 
 from __future__ import annotations
@@ -79,25 +79,27 @@ def lookup(stage_key: int, chara: int) -> str | None:
 
 
 # PlayerCharaType (0-11) -> AP character ITEM name (items.json).  Same
-# provisional roster-order mapping as the generator's CHARA_NAMES
-# (scripts/romfs/build_charblock_table.py), except index 7 uses the item's
-# name "Green Yoshi" (the roster calls it just "Yoshi").  Used by the
-# character-unlock gate: a block hit only counts if the hitting character
-# has been received as an AP item (indices 0-6 are precollected via
-# starting_items; the "Character (Easy)" five are pool items).
+# CONFIRMED enum-order mapping as the generator's CHARA_NAMES
+# (scripts/romfs/build_charblock_table.py -- from the GameDataList
+# LocalPlayerCharaType EnumArray RawValues: ... Totten=7, YoshiGreen=8,
+# YoshiRed=9, YoshiYellow=10, YoshiBlue=11), except index 8 uses the
+# item's name "Green Yoshi" (the roster calls it just "Yoshi").  Used by
+# the character-unlock gate: a block hit only counts if the hitting
+# character has been received as an AP item (indices 0-6 are precollected
+# via starting_items; the "Character (Easy)" five are pool items).
 CHARA_ITEM_NAMES: Final[tuple[str, ...]] = (
     "Mario",             # 0
     "Luigi",             # 1
     "Peach",             # 2
     "Daisy",             # 3
-    "Yellow Toad",       # 4
-    "Blue Toad",         # 5
-    "Toadette",          # 6
-    "Green Yoshi",       # 7
-    "Red Yoshi",         # 8
-    "Yellow Yoshi",      # 9
-    "Light-Blue Yoshi",  # 10
-    "Nabbit",            # 11
+    "Yellow Toad",       # 4  KinopioYellow
+    "Blue Toad",         # 5  KinopioBlue
+    "Toadette",          # 6  Kinopico
+    "Nabbit",            # 7  Totten
+    "Green Yoshi",       # 8  YoshiGreen
+    "Red Yoshi",         # 9  YoshiRed
+    "Yellow Yoshi",      # 10 YoshiYellow
+    "Light-Blue Yoshi",  # 11 YoshiBlue
 )
 
 
