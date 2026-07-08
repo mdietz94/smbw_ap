@@ -105,7 +105,7 @@ class TestCharBlockProcessor(unittest.TestCase):
         self.assertEqual(second, [])
 
     def test_two_characters_same_course_dedup_independently(self):
-        # W3 Sugarstar Trial has Peach (2) and Yoshi (7) blocks.
+        # W3 Sugarstar Trial has Peach (2) and Nabbit (7) blocks.
         sk = 0x04BF20CF  # _STAGE_THE_SUGARSTAR_TRIAL
         st = BridgeState()
         st.mark_course_entered(CurrentCourse(stage_key=sk, chara=2))
@@ -157,16 +157,17 @@ class TestCharBlockUnlockGate(unittest.TestCase):
         self.assertEqual(emits, [])
 
     def test_chara_item_names_roster(self):
-        # The gate's chara->item mapping: spot-check the divergent entry
-        # (roster says "Yoshi"; the AP item is "Green Yoshi") and the set
-        # builder.
-        self.assertEqual(char_block_table.chara_item_name(7), "Green Yoshi")
+        # The gate's chara->item mapping: spot-check the confirmed enum
+        # order (Totten/Nabbit=7, YoshiGreen=8 -- roster says "Yoshi",
+        # the AP item is "Green Yoshi") and the set builder.
+        self.assertEqual(char_block_table.chara_item_name(7), "Nabbit")
+        self.assertEqual(char_block_table.chara_item_name(8), "Green Yoshi")
         self.assertEqual(char_block_table.chara_item_name(0), "Mario")
         self.assertIsNone(char_block_table.chara_item_name(12))
         self.assertEqual(
             char_block_table.charas_for_item_names(
                 {"Mario", "Green Yoshi", "Nabbit", "Spring Feet Badge"}),
-            {0, 7, 11})
+            {0, 7, 8})
 
 
 if __name__ == "__main__":

@@ -7,7 +7,7 @@
  {
   "stage_key": 79634639,
   "chara": 7,
-  "name": "W3: The Sugarstar Trial - Yoshi Block"
+  "name": "W3: The Sugarstar Trial - Nabbit Block"
  },
  {
   "stage_key": 222099741,
@@ -17,7 +17,7 @@
  {
   "stage_key": 222099741,
   "chara": 8,
-  "name": "W2: Cruising with Linking Lifts - Red Yoshi Block"
+  "name": "W2: Cruising with Linking Lifts - Yoshi Block"
  },
  {
   "stage_key": 232160011,
@@ -27,7 +27,7 @@
  {
   "stage_key": 232160011,
   "chara": 9,
-  "name": "W1: Piranha Plants on Parade - Yellow Yoshi Block"
+  "name": "W1: Piranha Plants on Parade - Red Yoshi Block"
  },
  {
   "stage_key": 274035071,
@@ -37,17 +37,17 @@
  {
   "stage_key": 274035071,
   "chara": 8,
-  "name": "PI: Blewbird Roost - Red Yoshi Block"
+  "name": "PI: Blewbird Roost - Yoshi Block"
  },
  {
   "stage_key": 426349598,
   "chara": 7,
-  "name": "W4: Sunbaked Desert Palace - Yoshi Block"
+  "name": "W4: Sunbaked Desert Palace - Nabbit Block"
  },
  {
   "stage_key": 426349598,
   "chara": 11,
-  "name": "W4: Sunbaked Desert Palace - Nabbit Block"
+  "name": "W4: Sunbaked Desert Palace - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 431101596,
@@ -57,7 +57,7 @@
  {
   "stage_key": 431101596,
   "chara": 11,
-  "name": "PI: Muncher Fields - Nabbit Block"
+  "name": "PI: Muncher Fields - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 565420398,
@@ -87,12 +87,12 @@
  {
   "stage_key": 634214862,
   "chara": 7,
-  "name": "W2: Puzzling Park - Yoshi Block"
+  "name": "W2: Puzzling Park - Nabbit Block"
  },
  {
   "stage_key": 634214862,
   "chara": 10,
-  "name": "W2: Puzzling Park - Light-Blue Yoshi Block"
+  "name": "W2: Puzzling Park - Yellow Yoshi Block"
  },
  {
   "stage_key": 650191271,
@@ -102,7 +102,7 @@
  {
   "stage_key": 650191271,
   "chara": 10,
-  "name": "Special: Triple Threat Deluge - Light-Blue Yoshi Block"
+  "name": "Special: Triple Threat Deluge - Yellow Yoshi Block"
  },
  {
   "stage_key": 740284458,
@@ -122,7 +122,7 @@
  {
   "stage_key": 795315661,
   "chara": 8,
-  "name": "PI: Petal Isles Flying Battleship - Red Yoshi Block"
+  "name": "PI: Petal Isles Flying Battleship - Yoshi Block"
  },
  {
   "stage_key": 859486196,
@@ -152,7 +152,7 @@
  {
   "stage_key": 896005440,
   "chara": 10,
-  "name": "W4: Secrets of Shova Mansion - Light-Blue Yoshi Block"
+  "name": "W4: Secrets of Shova Mansion - Yellow Yoshi Block"
  },
  {
   "stage_key": 908858034,
@@ -172,7 +172,7 @@
  {
   "stage_key": 921133890,
   "chara": 11,
-  "name": "W1: Cosmic Hoppos - Nabbit Block"
+  "name": "W1: Cosmic Hoppos - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 979253884,
@@ -182,7 +182,7 @@
  {
   "stage_key": 979253884,
   "chara": 7,
-  "name": "PI: Robbird Cove - Yoshi Block"
+  "name": "PI: Robbird Cove - Nabbit Block"
  },
  {
   "stage_key": 1016401398,
@@ -192,7 +192,7 @@
  {
   "stage_key": 1016401398,
   "chara": 7,
-  "name": "W2: Outmaway Valley - Yoshi Block"
+  "name": "W2: Outmaway Valley - Nabbit Block"
  },
  {
   "stage_key": 1068648332,
@@ -212,7 +212,7 @@
  {
   "stage_key": 1087277962,
   "chara": 7,
-  "name": "W5: Taily's Toxic Pond - Yoshi Block"
+  "name": "W5: Taily's Toxic Pond - Nabbit Block"
  },
  {
   "stage_key": 1214704431,
@@ -232,7 +232,7 @@
  {
   "stage_key": 1215425413,
   "chara": 10,
-  "name": "Special: Wonder Gauntlet - Light-Blue Yoshi Block"
+  "name": "Special: Wonder Gauntlet - Yellow Yoshi Block"
  },
  {
   "stage_key": 1254298559,
@@ -242,7 +242,7 @@
  {
   "stage_key": 1254298559,
   "chara": 7,
-  "name": "PI: Maw-Maw Mouthful - Yoshi Block"
+  "name": "PI: Maw-Maw Mouthful - Nabbit Block"
  },
  {
   "stage_key": 1313600916,
@@ -252,7 +252,7 @@
  {
   "stage_key": 1313600916,
   "chara": 8,
-  "name": "W6: Dragon Boneyard - Red Yoshi Block"
+  "name": "W6: Dragon Boneyard - Yoshi Block"
  },
  {
   "stage_key": 1316304144,
@@ -262,7 +262,7 @@
  {
   "stage_key": 1316304144,
   "chara": 9,
-  "name": "PI: Leaping Smackerel - Yellow Yoshi Block"
+  "name": "PI: Leaping Smackerel - Red Yoshi Block"
  },
  {
   "stage_key": 1386224389,
@@ -287,12 +287,12 @@
  {
   "stage_key": 1428484156,
   "chara": 8,
-  "name": "W4: Ninji Jump Party - Red Yoshi Block"
+  "name": "W4: Ninji Jump Party - Yoshi Block"
  },
  {
   "stage_key": 1428484156,
   "chara": 11,
-  "name": "W4: Ninji Jump Party - Nabbit Block"
+  "name": "W4: Ninji Jump Party - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 1578265110,
@@ -302,7 +302,7 @@
  {
   "stage_key": 1578265110,
   "chara": 9,
-  "name": "PI: Gnawsher Lair - Yellow Yoshi Block"
+  "name": "PI: Gnawsher Lair - Red Yoshi Block"
  },
  {
   "stage_key": 1815827070,
@@ -322,7 +322,7 @@
  {
   "stage_key": 1860654305,
   "chara": 10,
-  "name": "W1: Bulrush Express - Light-Blue Yoshi Block"
+  "name": "W1: Bulrush Express - Yellow Yoshi Block"
  },
  {
   "stage_key": 1990952673,
@@ -332,7 +332,7 @@
  {
   "stage_key": 1990952673,
   "chara": 9,
-  "name": "W4: Bloomps of the Desert Skies - Yellow Yoshi Block"
+  "name": "W4: Bloomps of the Desert Skies - Red Yoshi Block"
  },
  {
   "stage_key": 2049000344,
@@ -352,7 +352,7 @@
  {
   "stage_key": 2085191700,
   "chara": 9,
-  "name": "W6: Pull, Turn, Burn - Yellow Yoshi Block"
+  "name": "W6: Pull, Turn, Burn - Red Yoshi Block"
  },
  {
   "stage_key": 2119317526,
@@ -362,7 +362,7 @@
  {
   "stage_key": 2119317526,
   "chara": 8,
-  "name": "W6: Deep Magma Bog Palace - Red Yoshi Block"
+  "name": "W6: Deep Magma Bog Palace - Yoshi Block"
  },
  {
   "stage_key": 2225295089,
@@ -372,7 +372,7 @@
  {
   "stage_key": 2225295089,
   "chara": 9,
-  "name": "Special: Bounce, Bounce, Bounce - Yellow Yoshi Block"
+  "name": "Special: Bounce, Bounce, Bounce - Red Yoshi Block"
  },
  {
   "stage_key": 2276949139,
@@ -382,7 +382,7 @@
  {
   "stage_key": 2276949139,
   "chara": 9,
-  "name": "W1: Angry Spikes and Sinkin' Pipes - Yellow Yoshi Block"
+  "name": "W1: Angry Spikes and Sinkin' Pipes - Red Yoshi Block"
  },
  {
   "stage_key": 2289431732,
@@ -407,12 +407,12 @@
  {
   "stage_key": 2308078743,
   "chara": 9,
-  "name": "W1: Pipe-Rock Plateau Palace - Yellow Yoshi Block"
+  "name": "W1: Pipe-Rock Plateau Palace - Red Yoshi Block"
  },
  {
   "stage_key": 2308078743,
   "chara": 10,
-  "name": "W1: Pipe-Rock Plateau Palace - Light-Blue Yoshi Block"
+  "name": "W1: Pipe-Rock Plateau Palace - Yellow Yoshi Block"
  },
  {
   "stage_key": 2365886520,
@@ -432,27 +432,27 @@
  {
   "stage_key": 2595532421,
   "chara": 11,
-  "name": "W2: Up 'n' Down with Puffy Lifts - Nabbit Block"
+  "name": "W2: Up 'n' Down with Puffy Lifts - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 2616818859,
   "chara": 9,
-  "name": "PI: Jewel-Block Cave - Yellow Yoshi Block"
+  "name": "PI: Jewel-Block Cave - Red Yoshi Block"
  },
  {
   "stage_key": 2616818859,
   "chara": 11,
-  "name": "PI: Jewel-Block Cave - Nabbit Block"
+  "name": "PI: Jewel-Block Cave - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 2634500029,
   "chara": 8,
-  "name": "W6: Deep Magma Bog Flying Battleship - Red Yoshi Block"
+  "name": "W6: Deep Magma Bog Flying Battleship - Yoshi Block"
  },
  {
   "stage_key": 2634500029,
   "chara": 9,
-  "name": "W6: Deep Magma Bog Flying Battleship - Yellow Yoshi Block"
+  "name": "W6: Deep Magma Bog Flying Battleship - Red Yoshi Block"
  },
  {
   "stage_key": 2759521707,
@@ -462,17 +462,17 @@
  {
   "stage_key": 2759521707,
   "chara": 9,
-  "name": "Special: Piranha Plant Reprise - Yellow Yoshi Block"
+  "name": "Special: Piranha Plant Reprise - Red Yoshi Block"
  },
  {
   "stage_key": 2764564935,
   "chara": 7,
-  "name": "W3: The Hoppycat Trial - Yoshi Block"
+  "name": "W3: The Hoppycat Trial - Nabbit Block"
  },
  {
   "stage_key": 2764564935,
   "chara": 8,
-  "name": "W3: The Hoppycat Trial - Red Yoshi Block"
+  "name": "W3: The Hoppycat Trial - Yoshi Block"
  },
  {
   "stage_key": 2801748829,
@@ -492,7 +492,7 @@
  {
   "stage_key": 2827295165,
   "chara": 8,
-  "name": "W1: Swamp Pipe Crawl - Red Yoshi Block"
+  "name": "W1: Swamp Pipe Crawl - Yoshi Block"
  },
  {
   "stage_key": 2913185086,
@@ -512,27 +512,27 @@
  {
   "stage_key": 2937190396,
   "chara": 8,
-  "name": "W1: Welcome to the Flower Kingdom! - Red Yoshi Block"
+  "name": "W1: Welcome to the Flower Kingdom! - Yoshi Block"
  },
  {
   "stage_key": 2980087809,
   "chara": 7,
-  "name": "W4: Flight of the Bloomps - Yoshi Block"
+  "name": "W4: Flight of the Bloomps - Nabbit Block"
  },
  {
   "stage_key": 2980087809,
   "chara": 9,
-  "name": "W4: Flight of the Bloomps - Yellow Yoshi Block"
+  "name": "W4: Flight of the Bloomps - Red Yoshi Block"
  },
  {
   "stage_key": 2997908564,
   "chara": 10,
-  "name": "W2: Fluff-Puff Peaks Palace - Light-Blue Yoshi Block"
+  "name": "W2: Fluff-Puff Peaks Palace - Yellow Yoshi Block"
  },
  {
   "stage_key": 2997908564,
   "chara": 11,
-  "name": "W2: Fluff-Puff Peaks Palace - Nabbit Block"
+  "name": "W2: Fluff-Puff Peaks Palace - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 3125427066,
@@ -542,7 +542,7 @@
  {
   "stage_key": 3125427066,
   "chara": 11,
-  "name": "W3: The Midway Trial - Nabbit Block"
+  "name": "W3: The Midway Trial - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 3215985754,
@@ -552,7 +552,7 @@
  {
   "stage_key": 3215985754,
   "chara": 8,
-  "name": "W4: Color-Switch Dungeon - Red Yoshi Block"
+  "name": "W4: Color-Switch Dungeon - Yoshi Block"
  },
  {
   "stage_key": 3307563614,
@@ -572,7 +572,7 @@
  {
   "stage_key": 3335469394,
   "chara": 7,
-  "name": "W6: Raarghs in the Ruins - Yoshi Block"
+  "name": "W6: Raarghs in the Ruins - Nabbit Block"
  },
  {
   "stage_key": 3376496226,
@@ -582,7 +582,7 @@
  {
   "stage_key": 3376496226,
   "chara": 10,
-  "name": "W3: The Sharp Trial - Light-Blue Yoshi Block"
+  "name": "W3: The Sharp Trial - Yellow Yoshi Block"
  },
  {
   "stage_key": 3400217657,
@@ -612,7 +612,7 @@
  {
   "stage_key": 3425876239,
   "chara": 10,
-  "name": "PI: Downpour Uproar - Light-Blue Yoshi Block"
+  "name": "PI: Downpour Uproar - Yellow Yoshi Block"
  },
  {
   "stage_key": 3589705147,
@@ -652,7 +652,7 @@
  {
   "stage_key": 3734960019,
   "chara": 11,
-  "name": "W3: The Anglefish Trial - Nabbit Block"
+  "name": "W3: The Anglefish Trial - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 3756278297,
@@ -662,7 +662,7 @@
  {
   "stage_key": 3756278297,
   "chara": 8,
-  "name": "Special: Way of the Goomba - Red Yoshi Block"
+  "name": "Special: Way of the Goomba - Yoshi Block"
  },
  {
   "stage_key": 3785990522,
@@ -672,7 +672,7 @@
  {
   "stage_key": 3785990522,
   "chara": 11,
-  "name": "Special: Pole Block Allure - Nabbit Block"
+  "name": "Special: Pole Block Allure - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 3824014817,
@@ -692,7 +692,7 @@
  {
   "stage_key": 3875699630,
   "chara": 10,
-  "name": "W3: The Final Trial - Light-Blue Yoshi Block"
+  "name": "W3: The Final Trial - Yellow Yoshi Block"
  },
  {
   "stage_key": 3978592604,
@@ -702,17 +702,17 @@
  {
   "stage_key": 3978592604,
   "chara": 10,
-  "name": "W2: Pokipede Pass - Light-Blue Yoshi Block"
+  "name": "W2: Pokipede Pass - Yellow Yoshi Block"
  },
  {
   "stage_key": 4005216533,
   "chara": 8,
-  "name": "W6: Hot-Hot Hot! - Red Yoshi Block"
+  "name": "W6: Hot-Hot Hot! - Yoshi Block"
  },
  {
   "stage_key": 4005216533,
   "chara": 10,
-  "name": "W6: Hot-Hot Hot! - Light-Blue Yoshi Block"
+  "name": "W6: Hot-Hot Hot! - Yellow Yoshi Block"
  },
  {
   "stage_key": 4024079209,
@@ -727,17 +727,17 @@
  {
   "stage_key": 4032045072,
   "chara": 7,
-  "name": "Special: Dangerous Donut Ride - Yoshi Block"
+  "name": "Special: Dangerous Donut Ride - Nabbit Block"
  },
  {
   "stage_key": 4035018554,
   "chara": 7,
-  "name": "W6: Where the Rrrumbas Rule - Yoshi Block"
+  "name": "W6: Where the Rrrumbas Rule - Nabbit Block"
  },
  {
   "stage_key": 4035018554,
   "chara": 11,
-  "name": "W6: Where the Rrrumbas Rule - Nabbit Block"
+  "name": "W6: Where the Rrrumbas Rule - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 4224756375,
@@ -747,7 +747,7 @@
  {
   "stage_key": 4224756375,
   "chara": 11,
-  "name": "W1: Scram, Skedaddlers! - Nabbit Block"
+  "name": "W1: Scram, Skedaddlers! - Light-Blue Yoshi Block"
  },
  {
   "stage_key": 4225195192,
@@ -757,7 +757,7 @@
  {
   "stage_key": 4225195192,
   "chara": 10,
-  "name": "W1: Here Come the Hoppos - Light-Blue Yoshi Block"
+  "name": "W1: Here Come the Hoppos - Yellow Yoshi Block"
  },
  {
   "stage_key": 4268769213,
@@ -767,6 +767,6 @@
  {
   "stage_key": 4268769213,
   "chara": 7,
-  "name": "W1: Bulrush Coming Through! - Yoshi Block"
+  "name": "W1: Bulrush Coming Through! - Nabbit Block"
  }
 ]
