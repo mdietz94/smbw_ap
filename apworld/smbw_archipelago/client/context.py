@@ -1101,6 +1101,17 @@ class SMBWContext(CommonContext):
                     log.debug("no lan_server bound; cannot forward grant")
                     continue
                 self.lan_server.send_increment_hash_keyed(hash_, delta)
+            elif item_name in wire.SetUnlockedCharasMsg.ROSTER_ITEM_NAMES:
+                # Character items are applied upstream via the
+                # SetUnlockedCharas mask push (see _recompute_unlocked_chara_mask
+                # above) plus the char-block unlock gate -- not through a
+                # per-item grant here.  The 7 base characters are precollected,
+                # so they all arrive in the connect-time batch; log at debug so
+                # they don't look like unrecognised items.
+                log.debug(
+                    "character item received: %r (id=%s) -- covered by "
+                    "SetUnlockedCharas push", item_name, item_id)
+                continue
             else:
                 log.info(
                     "received unhandled item %r (id=%s); ignoring "

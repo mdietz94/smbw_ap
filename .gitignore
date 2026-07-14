@@ -36,3 +36,7 @@ switch-mod/lib/std/
 # OS noise
 Thumbs.db
 .DS_Store
+
+# Intermediate splice artifact from scripts/romfs/build_charblock_table.py
+# (the real output is spliced into data/locations.json)
+apworld/smbw_archipelago/data/_character_block_locations.json
