@@ -199,6 +199,7 @@ GrantMsg = (
     | wire.SetRoutableWorldsAbsoluteMsg
     | wire.SetForceClearedCoursesMsg
     | wire.SetItemGetDenyMaskMsg
+    | wire.SetUnlockedCharasMsg
     | wire.GrantHashKeyedMsg
     | wire.IncrementHashKeyedMsg
     | wire.SetWonderSeedCountsMsg
@@ -214,6 +215,14 @@ GrantMsg = (
 # :data:`BadgeMaskProvider` -- replayed on HelloMsg and the periodic tick,
 # and pushed by SMBWContext on Connected + every ReceivedItems.
 ItemGetDenyProvider = Callable[[], int]
+
+# Character-selection gating (2026-07-08): returns the unlocked-character
+# mask to assert on the Switch (bit i = roster index i received from AP;
+# order on :class:`wire.SetUnlockedCharasMsg`).  Always on -- no slot_data
+# flag; 0 = gate inert (vanilla selection; the no-character-items-received
+# case).  Replayed on HelloMsg and the periodic tick, and pushed by
+# SMBWContext on Connected + every ReceivedItems.
+UnlockedCharasProvider = Callable[[], int]
 
 # AP-authoritative badge-shop ownership (2026-06).  Returns the
 # ``(managed_mask, sold_mask)`` pair (bit == badge internal_id) the Switch
@@ -284,6 +293,7 @@ class LanServer:
         open_world_royal_seed_provider: OpenWorldRoyalSeedProvider | None = None,
         world_unlock_hashes_provider: WorldUnlockHashesProvider | None = None,
         itemget_deny_provider: ItemGetDenyProvider | None = None,
+        unlocked_charas_provider: UnlockedCharasProvider | None = None,
         badge_shop_state_provider: BadgeShopStateProvider | None = None,
         badge_shop_text_provider: BadgeShopTextProvider | None = None,
     ) -> None:
@@ -300,6 +310,7 @@ class LanServer:
         self._open_world_royal_seed_provider = open_world_royal_seed_provider
         self._world_unlock_hashes_provider = world_unlock_hashes_provider
         self._itemget_deny_provider = itemget_deny_provider
+        self._unlocked_charas_provider = unlocked_charas_provider
         self._badge_shop_state_provider = badge_shop_state_provider
         self._badge_shop_text_provider = badge_shop_text_provider
 
@@ -319,6 +330,11 @@ class LanServer:
         # :meth:`send_set_itemget_deny` (0 = vanilla pickups).  Kept so a
         # HelloMsg (Switch reboot / reconnect) replays the gate.
         self._itemget_deny_mask: int = 0
+
+        # Last unlocked-character mask pushed via
+        # :meth:`send_set_unlocked_charas` (0 = vanilla selection).  Kept
+        # so a HelloMsg (Switch reboot / reconnect) replays the gate.
+        self._unlocked_charas_mask: int = 0
 
         # Last badge-shop ownership masks pushed via
         # :meth:`send_set_badge_shop_state` ((0, 0) = vanilla shop).  Kept
@@ -526,6 +542,30 @@ class LanServer:
         except asyncio.QueueFull:
             log.error(
                 "send_set_itemget_deny(mask=0x%x): outbound queue full; "
+                "dropping", mask)
+
+    def send_set_unlocked_charas(self, mask: int) -> None:
+        """Enqueue a SetUnlockedCharas (character-selection gate) to the
+        active Switch client.  ``mask`` bit i = roster index i is a
+        character received from AP (bit order on
+        :class:`wire.SetUnlockedCharasMsg`).  0 disables the gate.
+
+        Idempotent absolute-overwrite; replayed on HelloMsg via
+        :meth:`_push_unlocked_charas_now` so a Switch reboot mid-session
+        re-applies the gate."""
+        msg = wire.SetUnlockedCharasMsg(mask=mask)
+        self._unlocked_charas_mask = mask
+        if self._send_queue is None:
+            log.warning(
+                "send_set_unlocked_charas(mask=0x%x): no Switch client "
+                "connected; dropping (will replay on HelloMsg)", mask)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug("send_set_unlocked_charas: enqueued mask=0x%x", mask)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_unlocked_charas(mask=0x%x): outbound queue full; "
                 "dropping", mask)
 
     def send_set_badge_shop_state(self, managed: int, sold: int) -> None:
@@ -951,6 +991,10 @@ class LanServer:
             # mask so a Switch reboot mid-session keeps ungranted
             # power-ups untouchable.  No-op while the mask is 0.
             self._push_itemget_deny_now()
+            # Character-selection gating (2026-07-08): re-assert the
+            # unlocked-character mask so a Switch reboot mid-session keeps
+            # locked characters unselectable.  No-op while the mask is 0.
+            self._push_unlocked_charas_now()
             # Badge-shop AP ownership (2026-06-10): re-assert which shop
             # badges are sold-out vs purchasable so the shop reflects AP's
             # view after a Switch reboot / save reload.  No-op while no
@@ -1297,6 +1341,24 @@ class LanServer:
             return
         self.send_set_itemget_deny(mask)
 
+    def _push_unlocked_charas_now(self) -> None:
+        """Push the AP-authoritative unlocked-character mask (HelloMsg
+        replay + periodic tick).  Pulls from the provider when wired (the
+        SMBWContext recompute); otherwise replays the last explicitly sent
+        mask.  No-op while the mask is 0 AND nothing non-zero was ever
+        sent -- a fresh Switch boot already starts with the gate off."""
+        if self._unlocked_charas_provider is not None:
+            try:
+                mask = int(self._unlocked_charas_provider())
+            except Exception:
+                log.exception("unlocked_charas_provider raised; skipping sync")
+                return
+        else:
+            mask = self._unlocked_charas_mask
+        if mask == 0 and self._unlocked_charas_mask == 0:
+            return
+        self.send_set_unlocked_charas(mask)
+
     def _push_badge_shop_state_now(self) -> None:
         """Push the AP-authoritative badge-shop ownership masks (HelloMsg
         replay + periodic tick).  Pulls from the provider when wired (the
@@ -1367,6 +1429,7 @@ class LanServer:
                 self._push_open_world_royal_seeds_now()
                 self._push_force_cleared_courses_now()
                 self._push_itemget_deny_now()
+                self._push_unlocked_charas_now()
                 self._push_badge_shop_state_now()
                 self._push_badge_shop_text_now()
         except asyncio.CancelledError:
@@ -1407,6 +1470,7 @@ class LanServer:
         last_wonder_seed_bits: tuple[int, int] | None = None
         last_routable_worlds_mask: int | None = None
         last_force_cleared_mask: int | None = None
+        last_unlocked_charas_mask: int | None = None
         try:
             while True:
                 msg = await queue.get()
@@ -1480,6 +1544,11 @@ class LanServer:
                             last_force_cleared_mask = msg.mask
                     elif isinstance(msg, wire.SetItemGetDenyMaskMsg):
                         log.info("-> set_itemget_deny mask=0x%x", msg.mask)
+                    elif isinstance(msg, wire.SetUnlockedCharasMsg):
+                        if msg.mask != last_unlocked_charas_mask:
+                            log.info(
+                                "-> set_unlocked_charas mask=0x%x", msg.mask)
+                            last_unlocked_charas_mask = msg.mask
                     elif isinstance(msg, wire.SetWonderSeedsAbsoluteMsg):
                         tup = (msg.bits_lo, msg.bits_hi)
                         if tup != last_wonder_seed_bits:

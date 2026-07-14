@@ -44,6 +44,7 @@ from . import coin_table
 from . import force_cleared_table
 from . import powerup_table
 from . import royal_seed_table
+from . import wire
 from . import wonder_seed_table
 from . import world_unlock_table
 from .commands import SMBWCommandProcessor
@@ -379,6 +380,15 @@ class SMBWContext(CommonContext):
                 self.lan_server.send_set_itemget_deny(
                     self._recompute_itemget_deny_mask())
 
+            # Character-selection gating (always on, no slot_data flag --
+            # the mask derives purely from received character items and
+            # stays 0/inert until any arrive).  Push immediately so a
+            # locked pre-selected character is repaired even if the
+            # connect-time ReceivedItems batch is empty.
+            if self.lan_server is not None:
+                self.lan_server.send_set_unlocked_charas(
+                    self._recompute_unlocked_chara_mask())
+
             # Open-world mode.  The apworld injects ``open_world_active``
             # (the random active world set) and ``palaces_required`` into
             # slot_data; a non-empty list turns the mode on.  Reset the
@@ -533,6 +543,36 @@ class SMBWContext(CommonContext):
             except Exception:
                 continue
         return char_block_table.charas_for_item_names(names)
+
+    def _recompute_unlocked_chara_mask(self) -> int:
+        """The Switch-facing unlocked-character mask (bit i = ROSTER index
+        i received from AP; bit order on
+        :class:`wire.SetUnlockedCharasMsg`, the game's enum order:
+        Nabbit/Totten is roster index 7, before the Yoshis).  Always on --
+        no slot_data flag: the mask derives purely from received character
+        items, so it returns 0 (gate inert, vanilla selection) until any
+        character item arrives.  The 7 base characters are precollected
+        (starting_items), so every seed with character items in its
+        datapackage engages the gate at connect; a seed without them
+        never leaves 0.  A 0 mask must never strand the player with no
+        pickable character -- the Switch treats it as gate-off."""
+        names: set[str] = set()
+        for it in self.items_received:
+            item_id = getattr(it, "item", None)
+            if item_id is None and isinstance(it, dict):
+                item_id = it.get("item")
+            if item_id is None:
+                continue
+            try:
+                names.add(self.item_names.lookup_in_game(int(item_id)))
+            except Exception:
+                continue
+        mask = 0
+        roster = wire.SetUnlockedCharasMsg.ROSTER_ITEM_NAMES
+        for i, item_name in enumerate(roster):
+            if item_name in names:
+                mask |= 1 << i
+        return mask
 
     def set_itemget_deny_override(self, mask: int | None) -> None:
         """`/deny_powerups` entry point.  Set or clear the deny-mask
@@ -960,6 +1000,12 @@ class SMBWContext(CommonContext):
             # it.  No-ops to 0 when this seed doesn't gate power-ups.
             self.lan_server.send_set_itemget_deny(
                 self._recompute_itemget_deny_mask())
+            # Character-selection gating: re-derive the unlocked mask -- a
+            # newly received character item adds its roster bit, making
+            # that character selectable on the Switch within a tick.
+            # No-ops to 0 when this seed doesn't gate characters.
+            self.lan_server.send_set_unlocked_charas(
+                self._recompute_unlocked_chara_mask())
             # Open-world (2026-06-30): re-assert which secret-exit "replay"
             # courses to force-clear so their secret path spawns.  Idempotent
             # absolute-overwrite; tracks a newly-checked NORMAL_EXIT that

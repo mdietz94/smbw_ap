@@ -45,6 +45,7 @@ namespace nn::os {
 #include "ApProtocol.hpp"
 #include "ApState.hpp"
 #include "probe/BadgeShop.hpp"
+#include "probe/CharaGate.hpp"
 #include "probe/ItemGetGate.hpp"
 #include "ui/ApDebugConsole.hpp"
 #include "util/Json.hpp"
@@ -774,6 +775,18 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 "[itemgate] received SetItemGetDenyMask(mask=0x%08x)",
                 msg.set_itemget_deny_mask.mask);
             probe::setDeniedItemGetMask(msg.set_itemget_deny_mask.mask);
+            return;
+        case InboundKind::SetUnlockedCharas:
+            // AP-authoritative character-selection gate (2026-07-08).
+            // Applied directly on the network thread -- setUnlockedCharaMask
+            // is a single atomic store consumed by the CharaSelectCommit
+            // trampoline + the charaGateTick sweep on the game thread, so
+            // no ring trip is needed (same direct-apply pattern as
+            // SetItemGetDenyMask).
+            SMBWAP_LOG_INFO(
+                "[charagate] received SetUnlockedCharas(mask=0x%03x)",
+                msg.set_unlocked_charas.mask);
+            probe::setUnlockedCharaMask(msg.set_unlocked_charas.mask);
             return;
         case InboundKind::SetBadgeShopState:
             // AP-authoritative Poplin badge-shop ownership (2026-06-10).

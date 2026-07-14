@@ -693,6 +693,72 @@ class SetItemGetDenyMaskMsg:
 
 
 @dataclass(frozen=True)
+class SetUnlockedCharasMsg:
+    """Bridge -> Switch.  AP-authoritative character-selection gate
+    (2026-07-08).
+
+    ``mask`` bit i == roster index i is a character the player has
+    received from AP.  Bit order is the GAME's roster-enum order (the
+    GameDataList character enum / the name table @NSO 0x71034efad8; the
+    same order ``char_block_table.CHARA_ITEM_NAMES`` uses since its
+    PR #163 correction) -- note Nabbit (Totten) sits at roster index 7,
+    before the Yoshis:
+
+    ========  =================  ======================
+    bit       game name          AP item name
+    ========  =================  ======================
+    0         Mario              Mario
+    1         Luigi              Luigi
+    2         Peach              Peach
+    3         Daisy              Daisy
+    4         KinopioYellow      Yellow Toad
+    5         KinopioBlue        Blue Toad
+    6         Kinopico           Toadette
+    7         Totten             Nabbit
+    8         YoshiGreen         Green Yoshi
+    9         YoshiRed           Red Yoshi
+    10        YoshiYellow        Yellow Yoshi
+    11        YoshiBlue          Light-Blue Yoshi
+    ========  =================  ======================
+
+    Switch-side, the CharaSelectCommit trampoline (NSO +0x96e25c)
+    rewrites any committed selection of a locked character to a random
+    unlocked one, and a per-frame sweep repairs selections made before
+    the bridge connected.  A mask of 0 disables the gate (vanilla
+    selection); sending a full 12-bit mask also disables any forcing in
+    practice since everything is allowed.
+
+    Idempotent absolute-overwrite; sent on every ReceivedItems, every
+    Switch HelloMsg, and the periodic ~2 s tick.
+    """
+
+    T = "set_unlocked_charas"
+
+    #: bit index -> AP item name, in roster order (see class docstring).
+    ROSTER_ITEM_NAMES: tuple[str, ...] = (
+        "Mario", "Luigi", "Peach", "Daisy",
+        "Yellow Toad", "Blue Toad", "Toadette", "Nabbit",
+        "Green Yoshi", "Red Yoshi", "Yellow Yoshi", "Light-Blue Yoshi",
+    )
+
+    mask: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "mask": self.mask}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetUnlockedCharasMsg:
+        raw = d.get("mask")
+        if not isinstance(raw, int) or isinstance(raw, bool):
+            raise ProtocolError(
+                f"set_unlocked_charas.mask must be int, got {raw!r}")
+        if not (0 <= raw < (1 << 16)):
+            raise ProtocolError(
+                f"set_unlocked_charas.mask out of range [0, 2**16): {raw}")
+        return cls(mask=raw)
+
+
+@dataclass(frozen=True)
 class SetBadgeShopStateMsg:
     """Bridge -> Switch.  AP-authoritative Poplin badge-shop ownership.
 
@@ -1269,6 +1335,7 @@ WireMsg = (
     | SetForceClearedCoursesMsg
     | ApplyWorldUnlockMsg
     | SetItemGetDenyMaskMsg
+    | SetUnlockedCharasMsg
     | SetBadgeShopStateMsg
     | SetBadgeShopTextMsg
     | GrantHashKeyedMsg
@@ -1300,6 +1367,7 @@ _FROM_WIRE: dict[str, Any] = {
     SetForceClearedCoursesMsg.T: SetForceClearedCoursesMsg.from_wire,
     ApplyWorldUnlockMsg.T: ApplyWorldUnlockMsg.from_wire,
     SetItemGetDenyMaskMsg.T: SetItemGetDenyMaskMsg.from_wire,
+    SetUnlockedCharasMsg.T: SetUnlockedCharasMsg.from_wire,
     SetBadgeShopStateMsg.T: SetBadgeShopStateMsg.from_wire,
     SetBadgeShopTextMsg.T: SetBadgeShopTextMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
