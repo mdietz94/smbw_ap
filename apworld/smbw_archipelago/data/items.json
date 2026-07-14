@@ -1,24 +1,6 @@
 [
   {
     "count": 1,
-    "name": "Elephant Fruit",
-    "category": [
-      "Power-Up",
-      "Elephant"
-    ],
-    "progression": true
-  },
-  {
-    "count": 1,
-    "name": "Fire Flower",
-    "category": [
-      "Power-Up",
-      "Fire"
-    ],
-    "progression": true
-  },
-  {
-    "count": 1,
     "name": "Parachute Cap Badge",
     "category": [
       "Badge"
@@ -102,15 +84,6 @@
     "name": "W2 Royal Seed",
     "category": [
       "Royal Seed"
-    ],
-    "progression": true
-  },
-  {
-    "count": 1,
-    "name": "Bubble Flower",
-    "category": [
-      "Power-Up",
-      "Bubble"
     ],
     "progression": true
   },
@@ -228,15 +201,6 @@
   },
   {
     "count": 1,
-    "name": "Drill Mushroom",
-    "category": [
-      "Power-Up",
-      "Drill"
-    ],
-    "progression": true
-  },
-  {
-    "count": 1,
     "name": "Boosting Spin Jump Badge",
     "category": [
       "Badge"
@@ -304,6 +268,7 @@
     "name": "All Elephant Power Badge",
     "category": [
       "Badge",
+      "Power-Up",
       "Elephant"
     ],
     "progression": true
@@ -313,6 +278,7 @@
     "name": "All Fire Power Badge",
     "category": [
       "Badge",
+      "Power-Up",
       "Fire"
     ],
     "progression": true
@@ -322,6 +288,7 @@
     "name": "All Bubble Flower Badge",
     "category": [
       "Badge",
+      "Power-Up",
       "Bubble"
     ],
     "progression": true
@@ -331,6 +298,7 @@
     "name": "All Drill Power Badge",
     "category": [
       "Badge",
+      "Power-Up",
       "Drill"
     ],
     "progression": true
