@@ -1,9 +1,9 @@
 """Custom rule functions invokable from `requires` strings in
 locations.json / regions.json via the `{func_name(args)}` DSL.
 
-Only `OptOne` is currently referenced (see locations.json — every
-`{OptOne(|Item|)}` clause routes here).  Add new rule functions below
-as the requires DSL expands.
+Nothing references these today — the `{OptOne(...)}` clauses left with the
+button / Wonder Flower / Wonder Effect items (abandoned M3.5/M3.6 shuffles).
+`OptOne` stays available for optional-item gating if the DSL is used again.
 """
 from worlds.AutoWorld import World
 from ..Helpers import clamp

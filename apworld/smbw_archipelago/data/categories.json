@@ -1,8 +1,20 @@
 {
-    "Button": {"yaml_option": ["button_shuffle"]},
-    "10 Coin": {"hidden": true, "yaml_option": ["ten_coin_sanity"]},
-    "Gold Flag": {"hidden": true, "yaml_option": ["gold_flag_sanity"]},
-    "Character Block": {"hidden": true, "yaml_option": ["character_block_sanity"]},
-    "Wonder Flower": {"yaml_option": ["wonder_flower_rando"]},
-    "Wonder Effect": {"yaml_option": ["wonder_effect_rando"]}
+  "10 Coin": {
+    "hidden": true,
+    "yaml_option": [
+      "ten_coin_sanity"
+    ]
+  },
+  "Gold Flag": {
+    "hidden": true,
+    "yaml_option": [
+      "gold_flag_sanity"
+    ]
+  },
+  "Character Block": {
+    "hidden": true,
+    "yaml_option": [
+      "character_block_sanity"
+    ]
   }
+}

@@ -1,962 +1,458 @@
 [
   {
-    
-		"count":  1,
-    
-		"name": "Elephant Fruit",
-    
-		"category": [
-      "Power-Up"
+    "count": 1,
+    "name": "Elephant Fruit",
+    "category": [
+      "Power-Up",
+      "Elephant"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Fire Flower",
-    
-		"category": [
-      "Power-Up"
+    "count": 1,
+    "name": "Fire Flower",
+    "category": [
+      "Power-Up",
+      "Fire"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Parachute Cap Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Parachute Cap Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Wall-Climb Jump Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Wall-Climb Jump Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Coin Reward Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Coin Reward Badge",
+    "category": [
       "Badge"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Auto Super Mushroom Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Auto Super Mushroom Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Jet Run Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Jet Run Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Y Button",
-    
-		"category": [
-      "Button"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "ZL Button/Down",
-    
-		"category": [
-      "Button"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "R Button",
-    
-		"category": [
-      "Button"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Up",
-    
-		"category": [
-      "Button"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count": "35",
-    
-		"name": "W1 Wonder Seed",
-    
-		"category": [
+    "count": "35",
+    "name": "W1 Wonder Seed",
+    "category": [
       "Wonder Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "W1 Royal Seed",
-    
-		"category": [
+    "count": 1,
+    "name": "W1 Royal Seed",
+    "category": [
       "Royal Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count": "19",
-    
-		"name": "Special World Wonder Seed",
-    
-		"category": [
+    "count": "19",
+    "name": "Special World Wonder Seed",
+    "category": [
       "Wonder Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count": "34",
-    
-		"name": "Petal Isles Wonder Seed",
-    
-		"category": [
+    "count": "34",
+    "name": "Petal Isles Wonder Seed",
+    "category": [
       "Wonder Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count": "30",
-    
-		"name": "W2 Wonder Seed",
-    
-		"category": [
+    "count": "30",
+    "name": "W2 Wonder Seed",
+    "category": [
       "Wonder Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "W2 Royal Seed",
-    
-		"category": [
+    "count": 1,
+    "name": "W2 Royal Seed",
+    "category": [
       "Royal Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Bubble Flower",
-    
-		"category": [
-      "Power-Up"
+    "count": 1,
+    "name": "Bubble Flower",
+    "category": [
+      "Power-Up",
+      "Bubble"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Dolphin Kick Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Dolphin Kick Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Floating High Jump Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Floating High Jump Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Add ! Blocks Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Add ! Blocks Badge",
+    "category": [
       "Badge"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Safety Bounce Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Safety Bounce Badge",
+    "category": [
       "Badge"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Spring Feet Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Spring Feet Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count": "20",
-    
-		"name": "W3 Wonder Seed",
-    
-		"category": [
+    "count": "20",
+    "name": "W3 Wonder Seed",
+    "category": [
       "Wonder Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "W3 Royal Seed",
-    
-		"category": [
+    "count": 1,
+    "name": "W3 Royal Seed",
+    "category": [
       "Royal Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Crouching High Jump Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Crouching High Jump Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count": "36",
-    
-		"name": "W4 Wonder Seed",
-    
-		"category": [
+    "count": "36",
+    "name": "W4 Wonder Seed",
+    "category": [
       "Wonder Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "W4 Royal Seed",
-    
-		"category": [
+    "count": 1,
+    "name": "W4 Royal Seed",
+    "category": [
       "Royal Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Timed High Jump Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Timed High Jump Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Fast Dash Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Fast Dash Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Invisibility Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Invisibility Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Rhythm Jump Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Rhythm Jump Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Drill Mushroom",
-
-		"category": [
-      "Power-Up"
+    "count": 1,
+    "name": "Drill Mushroom",
+    "category": [
+      "Power-Up",
+      "Drill"
     ],
-
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Boosting Spin Jump Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Boosting Spin Jump Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count": "21",
-    
-		"name": "W5 Wonder Seed",
-    
-		"category": [
+    "count": "21",
+    "name": "W5 Wonder Seed",
+    "category": [
       "Wonder Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "W5 Royal Seed",
-    
-		"category": [
+    "count": 1,
+    "name": "W5 Royal Seed",
+    "category": [
       "Royal Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Grappling Vine Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Grappling Vine Badge",
+    "category": [
       "Badge"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Sensor Badge",
-
-		"category": [
+    "count": 1,
+    "name": "Sensor Badge",
+    "category": [
       "Badge"
     ],
-
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Coin Magnet Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "Coin Magnet Badge",
+    "category": [
       "Badge"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count": "30",
-    
-		"name": "W6 Wonder Seed",
-    
-		"category": [
+    "count": "30",
+    "name": "W6 Wonder Seed",
+    "category": [
       "Wonder Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "W6 Royal Seed",
-    
-		"category": [
+    "count": 1,
+    "name": "W6 Royal Seed",
+    "category": [
       "Royal Seed"
     ],
-    
-		"progression": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "All Elephant Power Badge",
-    
-		"category": [
+    "count": 1,
+    "name": "All Elephant Power Badge",
+    "category": [
+      "Badge",
+      "Elephant"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "All Fire Power Badge",
+    "category": [
+      "Badge",
+      "Fire"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "All Bubble Flower Badge",
+    "category": [
+      "Badge",
+      "Bubble"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "All Drill Power Badge",
+    "category": [
+      "Badge",
+      "Drill"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "Sound Off? Badge",
+    "category": [
       "Badge"
     ],
-    
-		"useful": true
+    "progression": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "All Fire Power Badge",
-    
-		"category": [
-      "Badge"
-    ],
-    
-		"useful": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "All Bubble Flower Badge",
-    
-		"category": [
-      "Badge"
-    ],
-    
-		"useful": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "All Drill Power Badge",
-    
-		"category": [
-      "Badge"
-    ],
-    
-		"useful": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Sound Off? Badge",
-    
-		"category": [
-      "Badge"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count": "306",
-    
-		"name": "10 Coin",
-    
-		"category": [
+    "count": "306",
+    "name": "10 Coin",
+    "category": [
       "10 Coin"
     ],
-    
-		"filler": true
+    "filler": true
   },
   {
-    
-		"count": "89",
-    
-		"name": "Gold Flag",
-    
-		"category": [
+    "count": "89",
+    "name": "Gold Flag",
+    "category": [
       "Gold Flag"
     ],
-    
-		"filler": true
+    "filler": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Mario",
-    
-		"category": [
+    "count": 1,
+    "name": "Mario",
+    "category": [
       "Character"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Luigi",
-    
-		"category": [
+    "count": 1,
+    "name": "Luigi",
+    "category": [
       "Character"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Peach",
-    
-		"category": [
+    "count": 1,
+    "name": "Peach",
+    "category": [
       "Character"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Daisy",
-    
-		"category": [
+    "count": 1,
+    "name": "Daisy",
+    "category": [
       "Character"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Yellow Toad",
-    
-		"category": [
+    "count": 1,
+    "name": "Yellow Toad",
+    "category": [
       "Character"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Blue Toad",
-    
-		"category": [
+    "count": 1,
+    "name": "Blue Toad",
+    "category": [
       "Character"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Toadette",
-    
-		"category": [
+    "count": 1,
+    "name": "Toadette",
+    "category": [
       "Character"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Green Yoshi",
-    
-		"category": [
+    "count": 1,
+    "name": "Green Yoshi",
+    "category": [
       "Character (Easy)"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Red Yoshi",
-    
-		"category": [
+    "count": 1,
+    "name": "Red Yoshi",
+    "category": [
       "Character (Easy)"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Light-Blue Yoshi",
-    
-		"category": [
+    "count": 1,
+    "name": "Light-Blue Yoshi",
+    "category": [
       "Character (Easy)"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Yellow Yoshi",
-    
-		"category": [
+    "count": 1,
+    "name": "Yellow Yoshi",
+    "category": [
       "Character (Easy)"
     ],
-    
-		"useful": true
+    "useful": true
   },
   {
-    
-		"count":  1,
-    
-		"name": "Nabbit",
-    
-		"category": [
+    "count": 1,
+    "name": "Nabbit",
+    "category": [
       "Character (Easy)"
     ],
-    
-		"useful": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Flower",
-    
-		"category": [
-      "Wonder Flower"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Environment",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Musical",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Star Rain",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Tokens",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Stretch",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Air Swim",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Wall Walking",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Puffy Lift",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Bowser Sniper",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Skydive",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Hoppycat",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Time Modifier",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Balloon",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Shadow Clone",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Goomba",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Quiz",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Wubba",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Spike Ball",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Wonder Effect - Metal Cap",
-    
-		"category": [
-      "Wonder Effect"
-    ],
-    
-		"progression": true
+    "useful": true
   }
 ]
