@@ -204,4 +204,21 @@ void charaGateTick() {
     s_sweep_pending.store(false, std::memory_order_relaxed);
 }
 
+std::int32_t currentChara(std::int32_t slot) {
+    // Same liveness gates as the sweep: the reader walks the gmd EnumArray
+    // container, so the singleton must be deserialized and we must be clear
+    // of the scene-transition window.  A -1 return just makes the bridge
+    // fall back to its (weaker) resolution and, worst case, drop the bump.
+    if (slot < 0 || slot >= kPlayerSlots) return -1;
+    if (!isSaveLoaded() || isInSceneTransitionWindow()) return -1;
+    void* gmd = gmdSingleton();
+    if (gmd == nullptr) return -1;
+    const std::uintptr_t base = mainBase();
+    auto reader = reinterpret_cast<CharaReaderFn>(base + kCharaReaderOff);
+    std::int32_t idx = -1;
+    if (!reader(kHashLocalPlayerCharaType, slot, &idx)) return -1;
+    if (idx < 0 || idx >= static_cast<std::int32_t>(kCharaCount)) return -1;
+    return idx;
+}
+
 }  // namespace probe

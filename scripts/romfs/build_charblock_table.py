@@ -84,6 +84,28 @@ CHARA_NAMES: list[str] = [
     "Yellow Yoshi",   # 10 YoshiYellow
     "Light-Blue Yoshi",  # 11 YoshiBlue
 ]
+
+# AP *item* names per chara index -- used to build each Character Block
+# location's `requires`.  Identical to CHARA_NAMES except the green Yoshi:
+# the block *name* reads "... - Yoshi Block", but the AP character item is
+# "Green Yoshi" (matching items.json / the client roster), so the requires
+# must reference "Green Yoshi", not "Yoshi".
+CHARA_ITEM_NAMES: list[str] = list(CHARA_NAMES)
+CHARA_ITEM_NAMES[8] = "Green Yoshi"
+
+
+def _charblock_requires(chara: int) -> str:
+    """The `requires` DSL clause gating a Character Block check on its
+    character.  Wrapped in OptOne so the count clamps to the itempool:
+    the (random) precollected starter has pool-count 0 -> `|Char:0|`
+    (always reachable, since it's always held), while the characters left
+    in the pool resolve to `|Char:1|` (gated on finding them).  Only
+    emitted when character_block_sanity is on -- these rows don't exist
+    otherwise -- and paired with promoting character items to progression
+    in hooks/World.after_create_item."""
+    name = (CHARA_ITEM_NAMES[chara] if 0 <= chara < len(CHARA_ITEM_NAMES)
+            else f"Chara{chara}")
+    return f"{{OptOne(|{name}|)}}"
 # If a live capture ever disproves a specific index, fix it HERE and in
 # client/char_block_table.py's mirror, then regenerate -- the AP location
 # ids are keyed by (stage_key, chara) so a name change does not renumber
@@ -234,7 +256,7 @@ def main() -> int:
             "name": r["name"],
             "course_name": r["course_name"],
             "category": ["Character Block"],
-            "requires": [],
+            "requires": _charblock_requires(r["chara"]),
         })
     data_out = os.path.join(
         root, "apworld", "smbw_archipelago", "data",
@@ -285,7 +307,7 @@ def splice_locations(root: str, rows: list[dict]) -> None:
             "name": r["name"],
             "region": region,
             "category": ["Character Block"],
-            "requires": [],
+            "requires": _charblock_requires(r["chara"]),
         })
         appended += 1
 

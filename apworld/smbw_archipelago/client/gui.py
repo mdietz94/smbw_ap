@@ -47,7 +47,7 @@ from kivy.uix.boxlayout import BoxLayout  # type: ignore
 from kivy.uix.label import Label  # type: ignore
 from kivy.uix.scrollview import ScrollView  # type: ignore
 
-from . import badge_table, royal_seed_table, wonder_seed_table
+from . import badge_table, royal_seed_table, wonder_seed_table, wire
 
 if typing.TYPE_CHECKING:  # pragma: no cover
     from .context import SMBWContext
@@ -154,6 +154,7 @@ class SMBWManager(GameManager):
         self._lbl_goal = self._mk_label(inner, "Goal: not yet")
         self._lbl_openworld = self._mk_label(inner, "", multiline=True)
         self._lbl_seeds = self._mk_label(inner, "", multiline=True)
+        self._lbl_charas = self._mk_label(inner, "", multiline=True)
         self._lbl_badges = self._mk_label(inner, "", multiline=True)
 
         scroll.add_widget(inner)
@@ -238,6 +239,7 @@ class SMBWManager(GameManager):
             self._lbl_openworld.text = ""
 
         self._lbl_seeds.text = _format_seed_table(ctx)
+        self._lbl_charas.text = _format_character_list(ctx)
         self._lbl_badges.text = _format_badge_list(ctx)
 
 
@@ -273,6 +275,41 @@ def _format_seed_table(ctx: "SMBWContext") -> str:
         rows.append(f"  {label} {count:>{count_w}}   {royal}")
     table = "\n".join(rows)
     header = "[b]Seeds by world[/b]    [i]Wonder / Royal[/i]"
+    body = f"[font=RobotoMono]{table}[/font]" if _MONO_OK else table
+    return f"{header}\n{body}"
+
+
+def _format_character_list(ctx: "SMBWContext") -> str:
+    """Playable-character roster with an unlocked marker per slot.
+
+    Reads the same unlocked-character mask pushed to the Switch
+    (``_recompute_unlocked_chara_mask``): bit ``i`` corresponds to
+    ``wire.SetUnlockedCharasMsg.ROSTER_ITEM_NAMES[i]`` (the game's enum
+    order -- Nabbit is index 7, before the Yoshis).  Every roster slot
+    is shown with ``[Y]`` (unlocked) / ``[ ]`` (locked) so the player
+    can see progression, mirroring the seed table's Royal column.
+
+    A seed that doesn't shuffle characters leaves the mask 0 (the
+    Switch treats that as gate-off -- every character stays
+    vanilla-selectable), so we surface that explicitly rather than
+    drawing twelve misleading locked rows.
+    """
+    roster = wire.SetUnlockedCharasMsg.ROSTER_ITEM_NAMES
+    try:
+        mask = ctx._recompute_unlocked_chara_mask()
+    except Exception:
+        mask = 0
+    if mask == 0:
+        return ("[b]Characters[/b]\n"
+                "  [i](not gated -- all characters available)[/i]")
+    unlocked = sum(1 for i in range(len(roster)) if mask & (1 << i))
+    name_w = max(len(n) for n in roster)
+    rows: list[str] = []
+    for i, name in enumerate(roster):
+        marker = "[Y]" if (mask & (1 << i)) else "[ ]"
+        rows.append(f"  {name.ljust(name_w)}   {marker}")
+    table = "\n".join(rows)
+    header = f"[b]Characters unlocked[/b] ([b]{unlocked}[/b]/{len(roster)})"
     body = f"[font=RobotoMono]{table}[/font]" if _MONO_OK else table
     return f"{header}\n{body}"
 
