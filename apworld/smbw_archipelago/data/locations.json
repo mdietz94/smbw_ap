@@ -895,7 +895,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|All Elephant Power Badge|"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge|"
   },
   {
     "name": "W1: Pipe-Rock Plateau Palace - 10 Coin #3",
@@ -1120,7 +1120,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|All Bubble Flower Badge|"
+    "requires": "|Bubble Flower| OR |All Bubble Flower Badge|"
   },
   {
     "name": "W2: Outmaway Valley - Normal Exit",
@@ -1829,7 +1829,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|All Elephant Power Badge| OR |All Bubble Flower Badge|"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge| OR |Bubble Flower| OR |All Bubble Flower Badge|"
   },
   {
     "name": "W2: Cruising with Linking Lifts - 10 Coin #3",
@@ -2154,7 +2154,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": "|All Elephant Power Badge|"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge|"
   },
   {
     "name": "W3: An Empty Park? - Wonder Seed",
@@ -2583,7 +2583,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|All Drill Power Badge| OR |Red Yoshi|"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge| OR |Red Yoshi|"
   },
   {
     "name": "PI: Poplin Shop (East) - Wonder Seed",
@@ -2755,7 +2755,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|All Elephant Power Badge|"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge|"
   },
   {
     "name": "W4: Ninji Jump Party - Normal Exit",
@@ -3258,7 +3258,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "|All Drill Power Badge|"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge|"
   },
   {
     "name": "W4: Raise the Stage - Wonder Seed",
@@ -4327,7 +4327,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|All Drill Power Badge|"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge|"
   },
   {
     "name": "W6: Where the Rrrumbas Rule - Wonder Seed",
@@ -4362,7 +4362,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|All Drill Power Badge|"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge|"
   },
   {
     "name": "W6: Where the Rrrumbas Rule - 10 Coin #3",
@@ -4423,7 +4423,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|All Drill Power Badge|"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge|"
   },
   {
     "name": "W6: Pull, Turn, Burn - Normal Exit",
@@ -4734,7 +4734,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
+    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Boosting Spin Jump II - Top of Flag",
@@ -4743,7 +4743,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
+    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #1",
@@ -4752,7 +4752,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
+    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #2",
@@ -4761,7 +4761,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
+    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #3",
@@ -4770,7 +4770,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
+    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Grappling Vine II - Normal Exit",
@@ -4857,7 +4857,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|All Elephant Power Badge| AND |All Bubble Flower Badge| AND |All Drill Power Badge|"
+    "requires": "(|Elephant Fruit| OR |All Elephant Power Badge|) AND (|Bubble Flower| OR |All Bubble Flower Badge|) AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Hot-Hot Rocks - Wonder Seed",
@@ -4865,7 +4865,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|All Elephant Power Badge|"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge|"
   },
   {
     "name": "W6: Observatory #2 - Wonder Seed",

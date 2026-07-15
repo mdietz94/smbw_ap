@@ -1,6 +1,22 @@
 [
   {
     "count": 1,
+    "name": "Elephant Fruit",
+    "category": [
+      "Power-Up"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "Fire Flower",
+    "category": [
+      "Power-Up"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
     "name": "Parachute Cap Badge",
     "category": [
       "Badge"
@@ -84,6 +100,14 @@
     "name": "W2 Royal Seed",
     "category": [
       "Royal Seed"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "Bubble Flower",
+    "category": [
+      "Power-Up"
     ],
     "progression": true
   },
@@ -201,6 +225,14 @@
   },
   {
     "count": 1,
+    "name": "Drill Mushroom",
+    "category": [
+      "Power-Up"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
     "name": "Boosting Spin Jump Badge",
     "category": [
       "Badge"
@@ -308,7 +340,7 @@
     "progression": true
   },
   {
-    "count": 291,
+    "count": 287,
     "name": "10 Coin",
     "category": [
       "10 Coin"

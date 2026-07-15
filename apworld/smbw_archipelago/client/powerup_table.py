@@ -16,20 +16,21 @@ for old seeds.
 """
 from __future__ import annotations
 
-# AP item name -> deny-mask bit position.  The "All X Power" badges ARE the
-# power-up access items (2026-07-13): the standalone power-up pool items were
-# removed, and receiving the badge unlocks picking X up (equipping it also
-# turns every spawned power-up into X).  The old power-up item names stay
-# mapped so seeds generated before the removal keep gating correctly.
+# AP item name -> deny-mask bit position.  The "All X Power" badges alias
+# their power-up's bit: since PR #167 the logic accepts the badge as an
+# alternative to the power-up item (equipping it turns every spawned
+# power-up into X), so receiving the badge must also unlock picking X up --
+# otherwise a badge-satisfied seed would be logically beatable while the
+# mask physically denies the pickup.
 DENY_BIT_FOR_ITEM: dict[str, int] = {
-    "All Fire Power Badge": 2,       # FireFlower
-    "Fire Flower": 2,                # pre-2026-07-13 seeds
-    "All Elephant Power Badge": 5,   # ElephantSuit
-    "Elephant Fruit": 5,             # pre-2026-07-13 seeds
-    "All Drill Power Badge": 12,     # DrillSuit
-    "Drill Mushroom": 12,            # pre-2026-07-13 seeds
-    "All Bubble Flower Badge": 18,   # AwaFlower
-    "Bubble Flower": 18,             # pre-2026-07-13 seeds
+    "Fire Flower": 2,       # FireFlower
+    "All Fire Power Badge": 2,
+    "Elephant Fruit": 5,    # ElephantSuit
+    "All Elephant Power Badge": 5,
+    "Drill Mushroom": 12,   # DrillSuit
+    "All Drill Power Badge": 12,
+    "Bubble Flower": 18,    # AwaFlower
+    "All Bubble Flower Badge": 18,
 }
 
 # Every bit the AP integration gates.  Pickups for types outside this mask

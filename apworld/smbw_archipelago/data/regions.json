@@ -188,7 +188,7 @@
     "connects_to": [
       "Post-Badge"
     ],
-    "requires": "|All Elephant Power Badge| AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16|"
+    "requires": "(|Elephant Fruit| OR |All Elephant Power Badge|) AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16|"
   },
   "Post-Badge": {
     "connects_to": [],
