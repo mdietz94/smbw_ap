@@ -85,54 +85,6 @@
   },
   {
     
-		"count":  1,
-    
-		"name": "Y Button",
-    
-		"category": [
-      "Button"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "ZL Button/Down",
-    
-		"category": [
-      "Button"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "R Button",
-    
-		"category": [
-      "Button"
-    ],
-    
-		"progression": true
-  },
-  {
-    
-		"count":  1,
-    
-		"name": "Up",
-    
-		"category": [
-      "Button"
-    ],
-    
-		"progression": true
-  },
-  {
-    
 		"count": "35",
     
 		"name": "W1 Wonder Seed",

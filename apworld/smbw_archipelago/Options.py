@@ -9,14 +9,12 @@ from .Items import item_table
 # Options the Switch mod can't yet enforce in-game; force off and hide
 # from the user-visible yaml until the matching milestone lands.  See
 # docs/milestones.md M7 "Deferred from M3":
-#   button_shuffle      -> M3.6 (button-input suppression)
 #   wonder_flower_rando -> M3.5 (Wonder Flower spawn/touch suppression)
 #   wonder_effect_rando -> M3.5 (Wonder Effect start suppression)
 # Items in the matching categories stay out of the pool because
 # Helpers.is_category_enabled checks the option value (which is locked
 # to 0 by _LockedOffToggle).
 _DEFERRED_OPTIONS = frozenset({
-    "button_shuffle",
     "wonder_flower_rando",
     "wonder_effect_rando",
 })

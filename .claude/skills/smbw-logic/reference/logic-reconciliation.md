@@ -116,7 +116,8 @@ apworld logic suite green.
   trials are **not** behind a Dolphin Kick branch).
 - `W3: The Anglefish Trial` 10-Coins: **#3** is the Elephant-Fruit coin (its
   requirement was previously on **#1** — swapped to match the game,
-  player-reported). #1 / #2 need only `{OptOne(|Y Button|)}`.
+  player-reported). #1 / #2 are open (they only ever gated on a button, now
+  removed — see Buttons removed below).
 - `W3 4 Seeds` — gated on Crouching High Jump (the badge wall above) plus
   `|W3 Wonder Seed:4|`.
 - `World Bowser`: `|@Royal Seed:6|` only (Bowser unlock is 6 Royal Seeds; the
@@ -208,6 +209,30 @@ apworld logic suite green.
 - **Secret-flag tops**: topping either the normal-exit or secret-exit flagpole
   fires the same per-course `TOP_OF_FLAG` check (no separate
   `TOP_OF_SECRET_FLAG` kind).
+
+---
+
+## Buttons removed (`button_shuffle` dropped entirely)
+
+The `button_shuffle` feature — four progression items **Y Button / R Button /
+Up / ZL Button/Down** (the `Button` category, gated by the hidden-and-locked
+`button_shuffle` option) — was **removed wholesale** (player-requested). It was
+always a `_LockedOffToggle` (never in the pool), so with the option off every
+`{OptOne(|<X> Button|)}` token already evaluated to TRUE (`|X:0|`). Removal makes
+that permanent:
+
+- **Items** (`items.json`): the four Button items deleted.
+- **Category** (`categories.json`): `Button` entry deleted; **Options.py**:
+  `button_shuffle` dropped from `_DEFERRED_OPTIONS` (the option is no longer
+  generated).
+- **Logic** (`locations.json` / `regions.json`): every `{OptOne(|Y Button|)}` /
+  `{OptOne(|R Button|)}` / `{OptOne(|Up|)}` / `{OptOne(|ZL Button/Down|)}` token
+  was substituted with TRUE and the boolean expression simplified (equal-
+  precedence, left-associative `AND`/`OR`, matching `Rules.py`). A clause that
+  collapsed to always-true became `""`. **No logic change for anyone playing the
+  default** (button_shuffle was off ⇒ these were already TRUE); only the ability
+  to turn the feature on is gone. Non-button `{OptOne(...)}` tokens (Wonder
+  Effects / Wonder Flower / characters) are untouched.
 
 ---
 
