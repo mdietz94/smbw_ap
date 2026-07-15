@@ -647,16 +647,20 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                     if (delta == kClarityDelta) {
                         const std::uint32_t n =
                             s_emits.fetch_add(1, std::memory_order_relaxed);
+                        // Resolve the hitting character live on the Switch:
+                        // course_in PlayReports don't carry it, so the client
+                        // can't attribute a multi-block course (e.g. W1-1 has
+                        // Mario + Yoshi blocks) on its own.  -1 if the read
+                        // misses; the client then falls back / drops.
+                        const std::int32_t hitChara = probe::currentChara(0);
                         SMBWAP_LOG_INFO(
                             "[cblk-hit] CHARACTER BLOCK HIT #%u frame=%u "
-                            "node=0x%llx -> enqueueCharBlockHit",
+                            "node=0x%llx chara=%d -> enqueueCharBlockHit",
                             n, frame,
-                            static_cast<unsigned long long>(node));
-                        // chara=-1 + pos zeros: the client resolves the AP
-                        // location from (current course, current character)
-                        // and drops non-matches (processor.py).
+                            static_cast<unsigned long long>(node),
+                            static_cast<int>(hitChara));
                         smbwap::ap::enqueueCharBlockHit(
-                            /*player_slot=*/0u, /*chara=*/-1,
+                            /*player_slot=*/0u, /*chara=*/hitChara,
                             0.0f, 0.0f, 0.0f);
                     } else if (delta != kRegularDelta) {
                         // Unknown BlockUpMove user -- log for accept-listing.

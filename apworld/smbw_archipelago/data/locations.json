@@ -22,7 +22,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Welcome to the Flower Kingdom! - 10 Coin #1",
@@ -82,7 +82,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Piranha Plants on Parade - 10 Coin #1",
@@ -91,7 +91,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Piranha Plants on Parade - 10 Coin #2",
@@ -134,7 +134,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Scram, Skedaddlers! - 10 Coin #1",
@@ -152,7 +152,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Scram, Skedaddlers! - 10 Coin #3",
@@ -211,7 +211,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Bulrush Coming Through! - 10 Coin #2",
@@ -220,7 +220,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Bulrush Coming Through! - 10 Coin #3",
@@ -254,7 +254,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Here Come the Hoppos - 10 Coin #1",
@@ -281,7 +281,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Rolla Koopa Derby - Normal Exit",
@@ -306,7 +306,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Rolla Koopa Derby - 10 Coin #1",
@@ -341,7 +341,7 @@
     "category": [
       "World 1"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Parachute Cap I - Top of Flag",
@@ -350,7 +350,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Parachute Cap I - 10 Coin #1",
@@ -359,7 +359,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Parachute Cap Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Parachute Cap I - 10 Coin #2",
@@ -368,7 +368,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Parachute Cap Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Parachute Cap I - 10 Coin #3",
@@ -377,7 +377,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Parachute Cap Badge|"
+    "requires": ""
   },
   {
     "name": "W1: Hurry, Hurry - Wonder Seed",
@@ -417,7 +417,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "|Auto Super Mushroom Badge|"
+    "requires": []
   },
   {
     "name": "W1: Swamp Pipe Crawl - Normal Exit",
@@ -442,7 +442,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Swamp Pipe Crawl - 10 Coin #1",
@@ -451,7 +451,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Swamp Pipe Crawl - 10 Coin #2",
@@ -460,7 +460,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Swamp Pipe Crawl - 10 Coin #3",
@@ -469,7 +469,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Angry Spikes and Sinkin' Pipes - Normal Exit",
@@ -494,7 +494,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Angry Spikes and Sinkin' Pipes - 10 Coin #1",
@@ -503,7 +503,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W1: Angry Spikes and Sinkin' Pipes - 10 Coin #2",
@@ -589,7 +589,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W1: Wall-Climb Jump I - Top of Flag",
@@ -598,7 +598,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W1: Wall-Climb Jump I - 10 Coin #1",
@@ -607,7 +607,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W1: Wall-Climb Jump I - 10 Coin #2",
@@ -616,7 +616,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W1: Wall-Climb Jump I - 10 Coin #3",
@@ -625,7 +625,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W1: Pipe-Rock Rumble - Wonder Seed",
@@ -694,7 +694,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|@Elephant:1|"
+    "requires": []
   },
   {
     "name": "W1: Sproings in the Twilight Forest - 10 Coin #2",
@@ -772,7 +772,7 @@
     "category": [
       "World 1"
     ],
-    "requires": ""
+    "requires": "|Jet Run Badge|"
   },
   {
     "name": "W1: Jet Run I - Top of Flag",
@@ -781,7 +781,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": ""
+    "requires": "|Jet Run Badge|"
   },
   {
     "name": "W1: Jet Run I - 10 Coin #1",
@@ -895,7 +895,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "|@Elephant:1|"
+    "requires": "|All Elephant Power Badge|"
   },
   {
     "name": "W1: Pipe-Rock Plateau Palace - 10 Coin #3",
@@ -945,7 +945,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Leaping Smackerel - 10 Coin #1",
@@ -963,7 +963,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Leaping Smackerel - 10 Coin #3",
@@ -972,7 +972,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Dolphin Kick I - Normal Exit",
@@ -980,7 +980,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": []
+    "requires": "|Dolphin Kick Badge|"
   },
   {
     "name": "PI: Dolphin Kick I - Top of Flag",
@@ -989,7 +989,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": "|Dolphin Kick Badge|"
   },
   {
     "name": "PI: Dolphin Kick I - 10 Coin #1",
@@ -1041,7 +1041,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Robbird Cove - 10 Coin #1",
@@ -1050,7 +1050,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Robbird Cove - 10 Coin #2",
@@ -1059,7 +1059,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Robbird Cove - 10 Coin #3",
@@ -1076,7 +1076,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Blewbird Roost - Wonder Seed",
@@ -1093,7 +1093,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Blewbird Roost - 10 Coin #1",
@@ -1102,7 +1102,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Blewbird Roost - 10 Coin #2",
@@ -1111,7 +1111,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Blewbird Roost - 10 Coin #3",
@@ -1120,7 +1120,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|@Bubble:1|"
+    "requires": "|All Bubble Flower Badge|"
   },
   {
     "name": "W2: Outmaway Valley - Normal Exit",
@@ -1153,7 +1153,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W2: Outmaway Valley - 10 Coin #1",
@@ -1162,7 +1162,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W2: Outmaway Valley - 10 Coin #2",
@@ -1205,7 +1205,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W2: Pokipede Pass - 10 Coin #1",
@@ -1240,7 +1240,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Wall-Climb Jump II - Top of Flag",
@@ -1249,7 +1249,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Wall-Climb Jump II - 10 Coin #1",
@@ -1258,7 +1258,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Wall-Climb Jump II - 10 Coin #2",
@@ -1267,7 +1267,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Wall-Climb Jump II - 10 Coin #3",
@@ -1276,7 +1276,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Wall-Climb Jump Badge|"
+    "requires": "|Wall-Climb Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Puzzling Park - Wonder Seed",
@@ -1317,7 +1317,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W2: Condarts Away! - 10 Coin #1",
@@ -1369,7 +1369,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W2: Pole Block Passage - 10 Coin #1",
@@ -1464,7 +1464,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Floating High Jump I - Top of Flag",
@@ -1473,7 +1473,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #1",
@@ -1482,7 +1482,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #2",
@@ -1491,7 +1491,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #3",
@@ -1500,7 +1500,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Fluff-Puff Kerfuff - Wonder Seed",
@@ -1664,7 +1664,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W2: Up 'n' Down with Puffy Lifts - 10 Coin #1",
@@ -1768,7 +1768,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W2: Countdown to Drop Down - 10 Coin #2",
@@ -1777,7 +1777,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W2: Countdown to Drop Down - 10 Coin #3",
@@ -1829,7 +1829,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|@Elephant:1| OR |@Bubble:1|"
+    "requires": "|All Elephant Power Badge| OR |All Bubble Flower Badge|"
   },
   {
     "name": "W2: Cruising with Linking Lifts - 10 Coin #3",
@@ -1946,7 +1946,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": []
+    "requires": "|Dolphin Kick Badge|"
   },
   {
     "name": "PI: Dolphin Kick II - Top of Flag",
@@ -1955,7 +1955,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": "|Dolphin Kick Badge|"
   },
   {
     "name": "PI: Dolphin Kick II - 10 Coin #1",
@@ -2033,7 +2033,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "PI: Downpour Uproar - 10 Coin #3",
@@ -2075,7 +2075,7 @@
       "World 3",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W3: The Hoppycat Trial - 10 Coin #1",
@@ -2136,7 +2136,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W3: The Anglefish Trial - 10 Coin #2",
@@ -2145,7 +2145,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W3: The Anglefish Trial - 10 Coin #3",
@@ -2154,7 +2154,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": "|@Elephant:1|"
+    "requires": "|All Elephant Power Badge|"
   },
   {
     "name": "W3: An Empty Park? - Wonder Seed",
@@ -2583,7 +2583,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|@Drill:1|"
+    "requires": "|All Drill Power Badge| OR |Red Yoshi|"
   },
   {
     "name": "PI: Poplin Shop (East) - Wonder Seed",
@@ -2633,7 +2633,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: Armads on the Roll - 10 Coin #2",
@@ -2685,7 +2685,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: The Desert Mystery - 10 Coin #2",
@@ -2694,7 +2694,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: The Desert Mystery - 10 Coin #3",
@@ -2703,7 +2703,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: Rolling-Ball Hall - Normal Exit",
@@ -2755,7 +2755,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|@Elephant:1|"
+    "requires": "|All Elephant Power Badge|"
   },
   {
     "name": "W4: Ninji Jump Party - Normal Exit",
@@ -2963,7 +2963,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: Secrets of Shova Mansion - Normal Exit",
@@ -3092,7 +3092,7 @@
       "World 4",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: Parachute Cap II - 10 Coin #1",
@@ -3180,7 +3180,7 @@
       "World 4",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: Invisibility I - 10 Coin #1",
@@ -3250,7 +3250,7 @@
     "category": [
       "World 4"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: Treasure Vault - Wonder Seed",
@@ -3258,7 +3258,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "|@Drill:1|"
+    "requires": "|All Drill Power Badge|"
   },
   {
     "name": "W4: Raise the Stage - Wonder Seed",
@@ -3274,7 +3274,7 @@
     "category": [
       "World 4"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: Floating Wonder Tokens - Wonder Seed",
@@ -3417,7 +3417,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": []
+    "requires": ""
   },
   {
     "name": "W4: Sunbaked Desert Palace - 10 Coin #3",
@@ -4327,7 +4327,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|@Drill:1|"
+    "requires": "|All Drill Power Badge|"
   },
   {
     "name": "W6: Where the Rrrumbas Rule - Wonder Seed",
@@ -4362,7 +4362,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|@Drill:1|"
+    "requires": "|All Drill Power Badge|"
   },
   {
     "name": "W6: Where the Rrrumbas Rule - 10 Coin #3",
@@ -4423,7 +4423,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|@Drill:1|"
+    "requires": "|All Drill Power Badge|"
   },
   {
     "name": "W6: Pull, Turn, Burn - Normal Exit",
@@ -4734,7 +4734,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |@Drill:1|"
+    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
   },
   {
     "name": "W6: Boosting Spin Jump II - Top of Flag",
@@ -4743,7 +4743,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |@Drill:1|"
+    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #1",
@@ -4752,7 +4752,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |@Drill:1|"
+    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #2",
@@ -4761,7 +4761,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |@Drill:1|"
+    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #3",
@@ -4770,7 +4770,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND |@Drill:1|"
+    "requires": "|Boosting Spin Jump Badge| AND |All Drill Power Badge|"
   },
   {
     "name": "W6: Grappling Vine II - Normal Exit",
@@ -4857,7 +4857,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|@Elephant:1| AND |@Bubble:1| AND |@Drill:1|"
+    "requires": "|All Elephant Power Badge| AND |All Bubble Flower Badge| AND |All Drill Power Badge|"
   },
   {
     "name": "W6: Hot-Hot Rocks - Wonder Seed",
@@ -4865,7 +4865,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|@Elephant:1|"
+    "requires": "|All Elephant Power Badge|"
   },
   {
     "name": "W6: Observatory #2 - Wonder Seed",
@@ -4948,7 +4948,7 @@
     "category": [
       "World 6"
     ],
-    "requires": ""
+    "requires": "|Jet Run Badge|"
   },
   {
     "name": "W6: Jet Run II - Top of Flag",
@@ -4957,7 +4957,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": ""
+    "requires": "|Jet Run Badge|"
   },
   {
     "name": "W6: Jet Run II - 10 Coin #1",
@@ -5599,7 +5599,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W3: The Sugarstar Trial - Nabbit Block",
@@ -5607,7 +5607,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W2: Cruising with Linking Lifts - Daisy Block",
@@ -5615,7 +5615,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W2: Cruising with Linking Lifts - Yoshi Block",
@@ -5623,7 +5623,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W1: Piranha Plants on Parade - Luigi Block",
@@ -5631,7 +5631,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W1: Piranha Plants on Parade - Red Yoshi Block",
@@ -5639,7 +5639,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "PI: Blewbird Roost - Luigi Block",
@@ -5647,7 +5647,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "PI: Blewbird Roost - Yoshi Block",
@@ -5655,7 +5655,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W4: Sunbaked Desert Palace - Nabbit Block",
@@ -5663,7 +5663,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W4: Sunbaked Desert Palace - Light-Blue Yoshi Block",
@@ -5671,7 +5671,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "PI: Muncher Fields - Yellow Toad Block",
@@ -5679,7 +5679,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "PI: Muncher Fields - Light-Blue Yoshi Block",
@@ -5687,7 +5687,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "W5: Wubba Ruins - Peach Block",
@@ -5695,7 +5695,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W5: Wubba Ruins - Yellow Toad Block",
@@ -5703,7 +5703,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W2: Puzzling Park - Luigi Block",
@@ -5711,7 +5711,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W2: Puzzling Park - Peach Block",
@@ -5719,7 +5719,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W2: Puzzling Park - Yellow Toad Block",
@@ -5727,7 +5727,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W2: Puzzling Park - Nabbit Block",
@@ -5735,7 +5735,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W2: Puzzling Park - Yellow Yoshi Block",
@@ -5743,7 +5743,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "Special: Triple Threat Deluge - Peach Block",
@@ -5751,7 +5751,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "Special: Triple Threat Deluge - Yellow Yoshi Block",
@@ -5759,7 +5759,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W4: Rolling-Ball Hall - Daisy Block",
@@ -5767,7 +5767,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W4: Rolling-Ball Hall - Toadette Block",
@@ -5775,7 +5775,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "PI: Petal Isles Flying Battleship - Toadette Block",
@@ -5783,7 +5783,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "PI: Petal Isles Flying Battleship - Yoshi Block",
@@ -5791,7 +5791,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W6: Item Park - Daisy Block",
@@ -5799,7 +5799,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W6: Item Park - Toadette Block",
@@ -5807,7 +5807,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "BC: KnuckleFest Bowser's Blazing Beats - Yellow Toad Block",
@@ -5815,7 +5815,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "BC: KnuckleFest Bowser's Blazing Beats - Blue Toad Block",
@@ -5823,7 +5823,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "W4: Secrets of Shova Mansion - Toadette Block",
@@ -5831,7 +5831,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W4: Secrets of Shova Mansion - Yellow Yoshi Block",
@@ -5839,7 +5839,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W6: Wavy Ride through the Magma Tube - Mario Block",
@@ -5847,7 +5847,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W6: Wavy Ride through the Magma Tube - Luigi Block",
@@ -5855,7 +5855,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W1: Cosmic Hoppos - Yellow Toad Block",
@@ -5863,7 +5863,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W1: Cosmic Hoppos - Light-Blue Yoshi Block",
@@ -5871,7 +5871,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "PI: Robbird Cove - Blue Toad Block",
@@ -5879,7 +5879,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "PI: Robbird Cove - Nabbit Block",
@@ -5887,7 +5887,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W2: Outmaway Valley - Daisy Block",
@@ -5895,7 +5895,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W2: Outmaway Valley - Nabbit Block",
@@ -5903,7 +5903,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W5: Beware of the Rifts - Mario Block",
@@ -5911,7 +5911,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W5: Beware of the Rifts - Peach Block",
@@ -5919,7 +5919,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W5: Taily's Toxic Pond - Luigi Block",
@@ -5927,7 +5927,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W5: Taily's Toxic Pond - Nabbit Block",
@@ -5935,7 +5935,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "BC: Missile Meg Mayhem - Peach Block",
@@ -5943,7 +5943,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "BC: Missile Meg Mayhem - Daisy Block",
@@ -5951,7 +5951,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "Special: Wonder Gauntlet - Daisy Block",
@@ -5959,7 +5959,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "Special: Wonder Gauntlet - Yellow Yoshi Block",
@@ -5967,7 +5967,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "PI: Maw-Maw Mouthful - Blue Toad Block",
@@ -5975,7 +5975,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "PI: Maw-Maw Mouthful - Nabbit Block",
@@ -5983,7 +5983,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W6: Dragon Boneyard - Blue Toad Block",
@@ -5991,7 +5991,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "W6: Dragon Boneyard - Yoshi Block",
@@ -5999,7 +5999,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "PI: Leaping Smackerel - Peach Block",
@@ -6007,7 +6007,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "PI: Leaping Smackerel - Red Yoshi Block",
@@ -6015,7 +6015,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "W5: Light-Switch Mansion - Luigi Block",
@@ -6023,7 +6023,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W5: Light-Switch Mansion - Daisy Block",
@@ -6031,7 +6031,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W5: Upshroom Downshroom - Mario Block",
@@ -6039,7 +6039,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W5: Upshroom Downshroom - Toadette Block",
@@ -6047,7 +6047,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W4: Ninji Jump Party - Yoshi Block",
@@ -6055,7 +6055,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W4: Ninji Jump Party - Light-Blue Yoshi Block",
@@ -6063,7 +6063,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "PI: Gnawsher Lair - Mario Block",
@@ -6071,7 +6071,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "PI: Gnawsher Lair - Red Yoshi Block",
@@ -6079,7 +6079,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "BC: High-Voltage Gauntlet - Daisy Block",
@@ -6087,7 +6087,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "BC: High-Voltage Gauntlet - Yellow Toad Block",
@@ -6095,7 +6095,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W1: Bulrush Express - Daisy Block",
@@ -6103,7 +6103,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W1: Bulrush Express - Yellow Yoshi Block",
@@ -6111,7 +6111,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W4: Bloomps of the Desert Skies - Blue Toad Block",
@@ -6119,7 +6119,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "W4: Bloomps of the Desert Skies - Red Yoshi Block",
@@ -6127,7 +6127,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "BC: Evade the Seeker Bullet Bills! - Luigi Block",
@@ -6135,7 +6135,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "BC: Evade the Seeker Bullet Bills! - Peach Block",
@@ -6143,7 +6143,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W6: Pull, Turn, Burn - Toadette Block",
@@ -6151,7 +6151,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W6: Pull, Turn, Burn - Red Yoshi Block",
@@ -6159,7 +6159,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "W6: Deep Magma Bog Palace - Mario Block",
@@ -6167,7 +6167,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W6: Deep Magma Bog Palace - Yoshi Block",
@@ -6175,7 +6175,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "Special: Bounce, Bounce, Bounce - Luigi Block",
@@ -6183,7 +6183,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "Special: Bounce, Bounce, Bounce - Red Yoshi Block",
@@ -6191,7 +6191,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "W1: Angry Spikes and Sinkin' Pipes - Peach Block",
@@ -6199,7 +6199,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W1: Angry Spikes and Sinkin' Pipes - Red Yoshi Block",
@@ -6207,7 +6207,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "W1: Rolla Koopa Derby - Mario Block",
@@ -6215,7 +6215,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W1: Rolla Koopa Derby - Toadette Block",
@@ -6223,7 +6223,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W5: Swaying Ruins - Yellow Toad Block",
@@ -6231,7 +6231,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W5: Swaying Ruins - Toadette Block",
@@ -6239,7 +6239,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W1: Pipe-Rock Plateau Palace - Red Yoshi Block",
@@ -6247,7 +6247,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "W1: Pipe-Rock Plateau Palace - Yellow Yoshi Block",
@@ -6255,7 +6255,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "Special: Solar Roller - Mario Block",
@@ -6263,7 +6263,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "Special: Solar Roller - Toadette Block",
@@ -6271,7 +6271,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W2: Up 'n' Down with Puffy Lifts - Peach Block",
@@ -6279,7 +6279,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W2: Up 'n' Down with Puffy Lifts - Light-Blue Yoshi Block",
@@ -6287,7 +6287,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "PI: Jewel-Block Cave - Red Yoshi Block",
@@ -6295,7 +6295,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "PI: Jewel-Block Cave - Light-Blue Yoshi Block",
@@ -6303,7 +6303,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "W6: Deep Magma Bog Flying Battleship - Yoshi Block",
@@ -6311,7 +6311,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W6: Deep Magma Bog Flying Battleship - Red Yoshi Block",
@@ -6319,7 +6319,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "Special: Piranha Plant Reprise - Peach Block",
@@ -6327,7 +6327,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "Special: Piranha Plant Reprise - Red Yoshi Block",
@@ -6335,7 +6335,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "W3: The Hoppycat Trial - Nabbit Block",
@@ -6343,7 +6343,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W3: The Hoppycat Trial - Yoshi Block",
@@ -6351,7 +6351,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W2: Condarts Away! - Peach Block",
@@ -6359,7 +6359,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W2: Condarts Away! - Toadette Block",
@@ -6367,7 +6367,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W1: Swamp Pipe Crawl - Luigi Block",
@@ -6375,7 +6375,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W1: Swamp Pipe Crawl - Yoshi Block",
@@ -6383,7 +6383,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W4: Valley Fulla Snootles - Mario Block",
@@ -6391,7 +6391,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W4: Valley Fulla Snootles - Daisy Block",
@@ -6399,7 +6399,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W1: Welcome to the Flower Kingdom! - Mario Block",
@@ -6407,7 +6407,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W1: Welcome to the Flower Kingdom! - Yoshi Block",
@@ -6415,7 +6415,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W4: Flight of the Bloomps - Nabbit Block",
@@ -6423,7 +6423,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W4: Flight of the Bloomps - Red Yoshi Block",
@@ -6431,7 +6431,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Red Yoshi|)}"
   },
   {
     "name": "W2: Fluff-Puff Peaks Palace - Yellow Yoshi Block",
@@ -6439,7 +6439,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W2: Fluff-Puff Peaks Palace - Light-Blue Yoshi Block",
@@ -6447,7 +6447,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "W3: The Midway Trial - Toadette Block",
@@ -6455,7 +6455,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W3: The Midway Trial - Light-Blue Yoshi Block",
@@ -6463,7 +6463,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "W4: Color-Switch Dungeon - Yellow Toad Block",
@@ -6471,7 +6471,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W4: Color-Switch Dungeon - Yoshi Block",
@@ -6479,7 +6479,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W2: Pole Block Passage - Luigi Block",
@@ -6487,7 +6487,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W2: Pole Block Passage - Blue Toad Block",
@@ -6495,7 +6495,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "W6: Raarghs in the Ruins - Mario Block",
@@ -6503,7 +6503,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W6: Raarghs in the Ruins - Nabbit Block",
@@ -6511,7 +6511,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W3: The Sharp Trial - Mario Block",
@@ -6519,7 +6519,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W3: The Sharp Trial - Yellow Yoshi Block",
@@ -6527,7 +6527,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W5: Poison Ruins - Daisy Block",
@@ -6535,7 +6535,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W5: Poison Ruins - Blue Toad Block",
@@ -6543,7 +6543,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "W2: Fluff-Puff Peaks Flying Battleship - Blue Toad Block",
@@ -6551,7 +6551,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "W2: Fluff-Puff Peaks Flying Battleship - Toadette Block",
@@ -6559,7 +6559,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "PI: Downpour Uproar - Daisy Block",
@@ -6567,7 +6567,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "PI: Downpour Uproar - Yellow Yoshi Block",
@@ -6575,7 +6575,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W4: The Desert Mystery - Peach Block",
@@ -6583,7 +6583,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W4: The Desert Mystery - Blue Toad Block",
@@ -6591,7 +6591,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "W4: Armads on the Roll - Luigi Block",
@@ -6599,7 +6599,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W4: Armads on the Roll - Yellow Toad Block",
@@ -6607,7 +6607,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W2: Countdown to Drop Down - Mario Block",
@@ -6615,7 +6615,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W2: Countdown to Drop Down - Yellow Toad Block",
@@ -6623,7 +6623,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W3: The Anglefish Trial - Luigi Block",
@@ -6631,7 +6631,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W3: The Anglefish Trial - Light-Blue Yoshi Block",
@@ -6639,7 +6639,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "Special: Way of the Goomba - Luigi Block",
@@ -6647,7 +6647,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "Special: Way of the Goomba - Yoshi Block",
@@ -6655,7 +6655,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "Special: Pole Block Allure - Daisy Block",
@@ -6663,7 +6663,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "Special: Pole Block Allure - Light-Blue Yoshi Block",
@@ -6671,7 +6671,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "W1: Sproings in the Twilight Forest - Mario Block",
@@ -6679,7 +6679,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Mario|)}"
   },
   {
     "name": "W1: Sproings in the Twilight Forest - Toadette Block",
@@ -6687,7 +6687,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Toadette|)}"
   },
   {
     "name": "W3: The Final Trial - Blue Toad Block",
@@ -6695,7 +6695,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "W3: The Final Trial - Yellow Yoshi Block",
@@ -6703,7 +6703,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W2: Pokipede Pass - Luigi Block",
@@ -6711,7 +6711,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Luigi|)}"
   },
   {
     "name": "W2: Pokipede Pass - Yellow Yoshi Block",
@@ -6719,7 +6719,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W6: Hot-Hot Hot! - Yoshi Block",
@@ -6727,7 +6727,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Green Yoshi|)}"
   },
   {
     "name": "W6: Hot-Hot Hot! - Yellow Yoshi Block",
@@ -6735,7 +6735,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W4: Pipe Park - Blue Toad Block",
@@ -6743,7 +6743,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Blue Toad|)}"
   },
   {
     "name": "Special: Dangerous Donut Ride - Yellow Toad Block",
@@ -6751,7 +6751,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "Special: Dangerous Donut Ride - Nabbit Block",
@@ -6759,7 +6759,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W6: Where the Rrrumbas Rule - Nabbit Block",
@@ -6767,7 +6767,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   },
   {
     "name": "W6: Where the Rrrumbas Rule - Light-Blue Yoshi Block",
@@ -6775,7 +6775,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "W1: Scram, Skedaddlers! - Daisy Block",
@@ -6783,7 +6783,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Daisy|)}"
   },
   {
     "name": "W1: Scram, Skedaddlers! - Light-Blue Yoshi Block",
@@ -6791,7 +6791,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Light-Blue Yoshi|)}"
   },
   {
     "name": "W1: Here Come the Hoppos - Peach Block",
@@ -6799,7 +6799,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Peach|)}"
   },
   {
     "name": "W1: Here Come the Hoppos - Yellow Yoshi Block",
@@ -6807,7 +6807,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Yoshi|)}"
   },
   {
     "name": "W1: Bulrush Coming Through! - Yellow Toad Block",
@@ -6815,7 +6815,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Yellow Toad|)}"
   },
   {
     "name": "W1: Bulrush Coming Through! - Nabbit Block",
@@ -6823,6 +6823,6 @@
     "category": [
       "Character Block"
     ],
-    "requires": []
+    "requires": "{OptOne(|Nabbit|)}"
   }
 ]

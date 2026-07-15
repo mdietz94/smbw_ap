@@ -329,9 +329,12 @@ Per the manual's `wonder_flower_rando` and `wonder_effect_rando` yaml flags:
 - **Wonder Flower**: when AP hasn't granted the `Wonder Flower` item, suppress the actor's spawn or `onTouch`. Hook the actor's init or interaction virtual.
 - **Wonder Effect** (15 effect types): when AP hasn't granted the level's native effect type, refuse to start the Wonder phase. We have a candidate: `vt_off=0x3346330` fires on Wonder Flower touch (observed in M1 testing) — peek that Nerve and find what *starts* the effect, then we early-out if the effect type isn't AP-granted.
 
-### M3.6 — Button-input suppression (4 items, opt-in)
+### M3.6 — Button-input suppression — ❌ dropped (feature removed)
 
-For `button_shuffle` yaml flag — locks Y, ZL/Down, R, Up button capability until AP grants the item. Hook player-input polling (likely the `PlayerControlRef` component referenced in wondar's `include/game/actor/component/PlayerControlRef.h`). Per-button gates inside the input read; if not AP-granted, force-zero the bit before the game sees it.
+`button_shuffle` was removed entirely (items + `Button` category + option +
+logic tokens; see the smbw-logic reconciliation record "Buttons removed"). The
+milestone is no longer planned. *(Was: lock Y, ZL/Down, R, Up button capability
+until AP grants the item, via a `PlayerControlRef` input-poll hook.)*
 
 ### M3.7 — game-completion goal hook — ✅ shipped 2026-05-25
 
@@ -538,9 +541,8 @@ Items in the matching categories therefore stay out of the pool
 0).  Re-enable each by removing it from `_DEFERRED_OPTIONS` once the
 Switch-side enforcement lands:
 
-- **`button_shuffle`** → unlocks with **M3.6** (player-input
-  suppression hook on the `PlayerControlRef` component).  Items: Y
-  Button, ZL Button/Down, R Button, Up.
+- **`button_shuffle`** → ❌ removed entirely (items + category + option +
+  logic tokens dropped); M3.6 no longer planned.
 - **`wonder_flower_rando`** → unlocks with **M3.5** (Wonder Flower
   spawn/touch suppression).  Items: Wonder Flower (1).
 - **`wonder_effect_rando`** → unlocks with **M3.5** (Wonder Effect

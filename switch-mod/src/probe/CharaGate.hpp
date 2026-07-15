@@ -53,4 +53,13 @@ void filterCharaCommitRecord(void* rec);
 // / PlayerCharaType arrays (all 4 player slots) to unlocked picks.
 void charaGateTick();
 
+// Game thread: the roster index (0-11) the given player slot is CURRENTLY
+// playing as, read live from the LocalPlayerCharaType EnumArray, or -1 if
+// unavailable (save not live / scene transition / reader miss).  The
+// character-block bump probe stamps this onto the char_block_hit event so
+// the bridge can attribute the bump to the hitting character -- course_in
+// PlayReports don't carry the character, so the client can't resolve it
+// on its own (see [[smbwap-character-block-sanity]]).
+std::int32_t currentChara(std::int32_t slot);
+
 }  // namespace probe

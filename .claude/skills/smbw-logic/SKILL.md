@@ -46,38 +46,50 @@ palace." `requires` syntax: `|Item|`, `|Item:N|` (count), `|@Category:N|`,
 `AND`/`OR`/parens, and `{OptOne(|X|)}` (movement/effects treated as
 expected-available helpers). See `Rules.py` for the exact compile.
 
-## ⚠️ The load-bearing gotcha: badge **progression walls**
+## Badge logic — two layers (per-check + progression walls)
 
-**Rule (current):** *a level that **grants** a badge **requires** that badge in
-logic.* AP is the sole badge authority — the in-game grant is reverted by the
-forced-death / M5 path — so you must receive the badge from AP before clearing
-the level that would have handed it to you. *Exception:* badges handed over in
-the **overworld** (only **Sensor**, given before W5 Upshroom Downshroom) stay
-ungated. This supersedes an older "badges are auto-present in their own challenge
-level" assumption — **do not re-strip these requirements.**
+Badges gate logic in two independent ways. **The full rules, the structural
+set, the Yoshi bypass, the open-coin exceptions, and the All-Power-Up-badge
+rule all live in [`reference/logic-reconciliation.md`](reference/logic-reconciliation.md)
+— read it before touching any badge gate.** The load-bearing summary:
 
-**Why a `requires` on the location isn't always enough.** Because Wonder Seeds
-are pool items, AP fill never strands a required item behind a badge gate it
-can't open first — so a badge level that is an **optional side spur** is already
-safe (all 18 badge-challenge "I/II" levels). The danger is a badge level that is
-a **forced progression wall** (you must clear it to physically advance the
-world). The seeds-only region graph can't see walls, so without an **explicit
-badge requirement on the region transition**, fill happily buries the badge in a
-later world → **unwinnable seed** (this is exactly how Parachute Cap once landed
-in W6 while the Pipe-Rock Badge House blocked all of W1).
+**(A) Per-check (location layer).** A badge challenge "*X I/II*" course is judged
+check-by-check, not gated wholesale:
+- **10-Coins → require the badge** (safe default), *except* a vetted open set
+  (`_OPEN_COIN_LEVELS`, currently **Parachute Cap I** — coins doable with
+  nothing). Pinned by `test_badge_challenge_coins_require_their_badge` +
+  `test_open_coin_levels_stay_open`.
+- **Normal Exit / Top of Flag → require the badge only for *structural*
+  courses** (`_STRUCTURAL_BADGE_LEVELS`: Wall-Climb Jump, Grappling Vine,
+  Boosting Spin Jump, Floating High Jump, Crouching High Jump, **Dolphin Kick**,
+  **Jet Run** — I & II). Others (Spring Feet, Invisibility, Parachute Cap) stay
+  open. Pinned by `test_structural_badge_levels_gate_completion` /
+  `test_nonstructural_badge_completion_stays_open`.
+- **Yoshi bypass:** a Yoshi clears the *climb/float* structural courses, so
+  Wall-Climb Jump I/II and Floating High Jump I carry `... OR |@Yoshi:1|` on
+  every check (`Yoshi` category = the four Yoshis, not Nabbit).
 
-**The three known walls — gated in `regions.json`, pinned by
+**(B) Progression walls (region layer) — the softlock gotcha.** Because Wonder
+Seeds are pool items, fill never strands a required item behind a badge gate it
+can't open first, so an **optional side-spur** badge level is already safe. The
+danger is a badge level that is a **forced wall** (you must clear it to advance
+the world): the seeds-only region graph can't see the wall, so without an
+**explicit badge `requires` on the region transition**, fill can bury the badge
+in a later world → **unwinnable seed**.
+
+**Only one real wall — gated in `regions.json`, pinned by
 `tests/test_data_validation.py::test_progression_wall_badges_gate_regions`:**
 
 | Region gate | Wall (level) | Badge |
 |---|---|---|
-| `W1 3 Seeds` | Badge House in Pipe-Rock Plateau | Parachute Cap |
-| `W1 10 Seeds` | Wiggler Race Mountaineering! | Auto Super Mushroom |
 | `W3 4 Seeds` | POOF! Crouching High Jump I | Crouching High Jump |
 
-There are **no other Badge House levels** in the game; every other badge-granting
-level is an optional side spur (fill-safe). Full detail + sources:
-[`reference/logic-reconciliation.md`](reference/logic-reconciliation.md).
+Two former "walls" — **Parachute Cap** (Badge House @ `W1 3 Seeds`) and **Auto
+Super Mushroom** (Wiggler Race Mountaineering! @ `W1 10 Seeds`) — were **removed**
+(player-confirmed): the granting level needs no badge to clear and nothing else
+forces the badge, so they were never real walls (the same test pins their
+*removal*). Mountaineering!'s Normal Exit is likewise open now. Badges handed
+over in the **overworld** (only **Sensor**) stay ungated.
 
 ## Adding or changing a gate — the decision
 

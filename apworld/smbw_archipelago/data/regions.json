@@ -37,7 +37,8 @@
   },
   "PI Pre-W2": {
     "connects_to": [
-      "PI Pre-W2 2 Seeds"
+      "PI Pre-W2 2 Seeds",
+      "Pre-W4 Special"
     ],
     "requires": []
   },
@@ -114,8 +115,7 @@
   "PI Pre-W4": {
     "connects_to": [
       "W4 Start",
-      "PI Post-Airship",
-      "Pre-W4 Special"
+      "PI Post-Airship"
     ],
     "requires": []
   },
@@ -139,7 +139,7 @@
       "W5 Start",
       "W6 Start"
     ],
-    "requires": []
+    "requires": ""
   },
   "W5 Start": {
     "connects_to": [
@@ -182,13 +182,13 @@
   },
   "Pre-W4 Special": {
     "connects_to": [],
-    "requires": "|Special World Wonder Seed:6| AND (|@Elephant:1| OR |Petal Isles Wonder Seed:10| OR (|W5 Wonder Seed:11| AND |Petal Isles Wonder Seed:12|))"
+    "requires": "|Special World Wonder Seed:6|"
   },
   "Special End": {
     "connects_to": [
       "Post-Badge"
     ],
-    "requires": "|@Elephant:1| AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16|"
+    "requires": "|All Elephant Power Badge| AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16|"
   },
   "Post-Badge": {
     "connects_to": [],
