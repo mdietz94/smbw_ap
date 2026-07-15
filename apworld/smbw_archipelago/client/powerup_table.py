@@ -16,12 +16,21 @@ for old seeds.
 """
 from __future__ import annotations
 
-# AP item name -> deny-mask bit position.
+# AP item name -> deny-mask bit position.  The "All X Power" badges alias
+# their power-up's bit: since PR #167 the logic accepts the badge as an
+# alternative to the power-up item (equipping it turns every spawned
+# power-up into X), so receiving the badge must also unlock picking X up --
+# otherwise a badge-satisfied seed would be logically beatable while the
+# mask physically denies the pickup.
 DENY_BIT_FOR_ITEM: dict[str, int] = {
     "Fire Flower": 2,       # FireFlower
+    "All Fire Power Badge": 2,
     "Elephant Fruit": 5,    # ElephantSuit
+    "All Elephant Power Badge": 5,
     "Drill Mushroom": 12,   # DrillSuit
+    "All Drill Power Badge": 12,
     "Bubble Flower": 18,    # AwaFlower
+    "All Bubble Flower Badge": 18,
 }
 
 # Every bit the AP integration gates.  Pickups for types outside this mask

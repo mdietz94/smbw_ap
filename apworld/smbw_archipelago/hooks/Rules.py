@@ -1,9 +1,11 @@
 """Custom rule functions invokable from `requires` strings in
 locations.json / regions.json via the `{func_name(args)}` DSL.
 
-Only `OptOne` is currently referenced (see locations.json — every
-`{OptOne(|Item|)}` clause routes here).  Add new rule functions below
-as the requires DSL expands.
+`OptOne` is referenced by the character-Block checks (`{OptOne(|Mario|)}`
+etc. in locations.json) so a character disabled out of the pool degrades
+to always-reachable.  The button / Wonder Flower / Wonder Effect shuffle
+clauses that used to route here left with their items (abandoned
+M3.5/M3.6 shuffles).
 """
 from worlds.AutoWorld import World
 from ..Helpers import clamp

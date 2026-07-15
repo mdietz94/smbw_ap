@@ -23,7 +23,7 @@
     "connects_to": [
       "W1 Post-Jet Run"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   "W1 Post-Jet Run": {
     "connects_to": [],
@@ -74,7 +74,7 @@
   },
   "W2 Post-Jump": {
     "connects_to": [],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   "W2 9 Seeds": {
     "connects_to": [
@@ -117,7 +117,7 @@
       "W4 Start",
       "PI Post-Airship"
     ],
-    "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   "W4 Start": {
     "connects_to": [
@@ -188,7 +188,7 @@
     "connects_to": [
       "Post-Badge"
     ],
-    "requires": "(|Elephant Fruit| OR |All Elephant Power Badge|) AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Effect - Star Rain|)} AND {OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Effect - Time Modifier|)} AND {OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Effect - Spike Ball|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "(|Elephant Fruit| OR |All Elephant Power Badge|) AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16|"
   },
   "Post-Badge": {
     "connects_to": [],
@@ -198,12 +198,12 @@
     "connects_to": [
       "W5 Post-Swaying"
     ],
-    "requires": "{OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   "W5 Post-Swaying": {
     "connects_to": [
       "W5 11 Seeds"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   }
 }

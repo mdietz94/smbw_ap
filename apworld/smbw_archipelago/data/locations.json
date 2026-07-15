@@ -13,7 +13,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Welcome to the Flower Kingdom! - Top of Flag",
@@ -65,7 +65,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Piranha Plants on Parade - Wonder Seed",
@@ -73,7 +73,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Piranha Plants on Parade - Top of Flag",
@@ -125,7 +125,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Star Rain|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Scram, Skedaddlers! - Top of Flag",
@@ -185,7 +185,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Bulrush Coming Through! - Wonder Seed",
@@ -193,7 +193,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Bulrush Coming Through! - Top of Flag",
@@ -245,7 +245,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Here Come the Hoppos - Top of Flag",
@@ -297,7 +297,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Rolla Koopa Derby - Top of Flag",
@@ -433,7 +433,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Swamp Pipe Crawl - Top of Flag",
@@ -485,7 +485,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Angry Spikes and Sinkin' Pipes - Top of Flag",
@@ -529,7 +529,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Bulrush Express - Secret Exit",
@@ -537,7 +537,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Bulrush Express - Wonder Seed",
@@ -545,7 +545,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Bulrush Express - Top of Flag",
@@ -554,7 +554,7 @@
       "World 1",
       "Gold Flag"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Bulrush Express - 10 Coin #1",
@@ -563,7 +563,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Bulrush Express - 10 Coin #2",
@@ -572,7 +572,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Bulrush Express - 10 Coin #3",
@@ -581,7 +581,7 @@
       "World 1",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Wall-Climb Jump I - Normal Exit",
@@ -676,7 +676,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Stretch|)}"
+    "requires": []
   },
   {
     "name": "W1: Sproings in the Twilight Forest - Top of Flag",
@@ -728,7 +728,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Air Swim|)}"
+    "requires": []
   },
   {
     "name": "W1: Cosmic Hoppos - Top of Flag",
@@ -877,7 +877,7 @@
     "category": [
       "World 1"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W1: Pipe-Rock Plateau Palace - 10 Coin #1",
@@ -936,7 +936,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "PI: Leaping Smackerel - Top of Flag",
@@ -1032,7 +1032,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "PI: Robbird Cove - Top of Flag",
@@ -1084,7 +1084,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "PI: Blewbird Roost - Top of Flag",
@@ -1136,7 +1136,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Outmaway Valley - Wonder Seed",
@@ -1144,7 +1144,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Outmaway Valley - Top of Flag",
@@ -1196,7 +1196,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Pokipede Pass - Top of Flag",
@@ -1292,7 +1292,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Condarts Away! - Normal Exit",
@@ -1308,7 +1308,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Condarts Away! - Top of Flag",
@@ -1360,7 +1360,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Pole Block Passage - Top of Flag",
@@ -1404,7 +1404,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Jump! Jump Jump! - Fake Exit",
@@ -1420,7 +1420,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Jump! Jump Jump! - Top of Flag",
@@ -1429,7 +1429,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Jump! Jump Jump! - 10 Coin #1",
@@ -1438,7 +1438,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Jump! Jump Jump! - 10 Coin #2",
@@ -1447,7 +1447,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Jump! Jump Jump! - 10 Coin #3",
@@ -1456,7 +1456,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Floating High Jump I - Normal Exit",
@@ -1655,7 +1655,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Puffy Lift|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Up 'n' Down with Puffy Lifts - Top of Flag",
@@ -1707,7 +1707,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Fluff-Puff Peaks Flying Battleship - 10 Coin #1",
@@ -1750,7 +1750,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Countdown to Drop Down - Top of Flag",
@@ -1802,7 +1802,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Cruising with Linking Lifts - Top of Flag",
@@ -1829,7 +1829,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Elephant Fruit| OR |All Elephant Power Badge| OR (|Bubble Flower| OR |All Bubble Flower Badge|)"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge| OR |Bubble Flower| OR |All Bubble Flower Badge|"
   },
   {
     "name": "W2: Cruising with Linking Lifts - 10 Coin #3",
@@ -1879,7 +1879,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "{OptOne(|Wonder Effect - Stretch|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W2: Fluff-Puff Peaks Palace - 10 Coin #1",
@@ -2006,7 +2006,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Air Swim|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "PI: Downpour Uproar - Top of Flag",
@@ -2066,7 +2066,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W3: The Hoppycat Trial - Top of Flag",
@@ -2118,7 +2118,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W3: The Anglefish Trial - Top of Flag",
@@ -2154,7 +2154,7 @@
       "World 3",
       "10 Coin"
     ],
-    "requires": "(|Elephant Fruit| OR |All Elephant Power Badge|)"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge|"
   },
   {
     "name": "W3: An Empty Park? - Wonder Seed",
@@ -2246,7 +2246,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W3: The Midway Trial - Top of Flag",
@@ -2298,7 +2298,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "region": "W3 4 Seeds",
@@ -2350,7 +2350,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Star Rain|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W3: The Sugarstar Trial - Top of Flag",
@@ -2410,7 +2410,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W3: The Final Trial - Fake Exit",
@@ -2426,7 +2426,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W3: The Final Trial - Top of Flag",
@@ -2471,7 +2471,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "W3: Royal Seed Mansion - Secret Exit",
@@ -2479,7 +2479,7 @@
     "category": [
       "World 3"
     ],
-    "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "Special: Triple Threat Deluge - Normal Exit",
@@ -2487,7 +2487,7 @@
     "category": [
       "Special World"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "Special: Triple Threat Deluge - Wonder Seed",
@@ -2495,7 +2495,7 @@
     "category": [
       "Special World"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "Special: Triple Threat Deluge - Top of Flag",
@@ -2504,7 +2504,7 @@
       "Special World",
       "Gold Flag"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "Special: Triple Threat Deluge - 10 Coin #1",
@@ -2513,7 +2513,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "Special: Triple Threat Deluge - 10 Coin #2",
@@ -2522,7 +2522,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "Special: Triple Threat Deluge - 10 Coin #3",
@@ -2531,7 +2531,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": []
   },
   {
     "name": "PI: Jewel-Block Cave - Normal Exit",
@@ -2547,7 +2547,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "PI: Jewel-Block Cave - Top of Flag",
@@ -2583,7 +2583,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": []
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge| OR |Red Yoshi|"
   },
   {
     "name": "PI: Poplin Shop (East) - Wonder Seed",
@@ -2615,7 +2615,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Time Modifier|)}"
+    "requires": []
   },
   {
     "name": "W4: Armads on the Roll - Top of Flag",
@@ -2667,7 +2667,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "W4: The Desert Mystery - Top of Flag",
@@ -2719,7 +2719,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)}"
+    "requires": []
   },
   {
     "name": "W4: Rolling-Ball Hall - Top of Flag",
@@ -2755,7 +2755,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "(|Elephant Fruit| OR |All Elephant Power Badge|)"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge|"
   },
   {
     "name": "W4: Ninji Jump Party - Normal Exit",
@@ -2763,7 +2763,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "|Rhythm Jump Badge| AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Musical|)}"
+    "requires": "|Rhythm Jump Badge|"
   },
   {
     "name": "W4: Ninji Jump Party - Wonder Seed",
@@ -2771,7 +2771,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "|Rhythm Jump Badge| AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Musical|)}"
+    "requires": "|Rhythm Jump Badge|"
   },
   {
     "name": "W4: Ninji Jump Party - Top of Flag",
@@ -2780,7 +2780,7 @@
       "World 4",
       "Gold Flag"
     ],
-    "requires": "|Rhythm Jump Badge| AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Musical|)}"
+    "requires": "|Rhythm Jump Badge|"
   },
   {
     "name": "W4: Ninji Jump Party - 10 Coin #1",
@@ -2789,7 +2789,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Rhythm Jump Badge| AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Musical|)}"
+    "requires": "|Rhythm Jump Badge|"
   },
   {
     "name": "W4: Ninji Jump Party - 10 Coin #2",
@@ -2798,7 +2798,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Rhythm Jump Badge| AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Musical|)}"
+    "requires": "|Rhythm Jump Badge|"
   },
   {
     "name": "W4: Ninji Jump Party - 10 Coin #3",
@@ -2807,7 +2807,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Rhythm Jump Badge| AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Musical|)}"
+    "requires": "|Rhythm Jump Badge|"
   },
   {
     "name": "W4: Bloomps of the Desert Skies - Normal Exit",
@@ -2823,7 +2823,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Balloon|)}"
+    "requires": []
   },
   {
     "name": "W4: Bloomps of the Desert Skies - Top of Flag",
@@ -2875,7 +2875,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Time Modifier|)}"
+    "requires": []
   },
   {
     "name": "W4: Valley Fulla Snootles - Top of Flag",
@@ -2927,7 +2927,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Shadow Clone|)}"
+    "requires": []
   },
   {
     "name": "W4: Color-Switch Dungeon - Top of Flag",
@@ -2987,7 +2987,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "W4: Secrets of Shova Mansion - Top of Flag",
@@ -3039,7 +3039,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "W4: Flight of the Bloomps - Top of Flag",
@@ -3258,7 +3258,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "(|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge|"
   },
   {
     "name": "W4: Raise the Stage - Wonder Seed",
@@ -3338,7 +3338,7 @@
     "category": [
       "Special World"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "Special: Pole Block Allure - Wonder Seed",
@@ -3346,7 +3346,7 @@
     "category": [
       "Special World"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "Special: Pole Block Allure - Top of Flag",
@@ -3355,7 +3355,7 @@
       "Special World",
       "Gold Flag"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "Special: Pole Block Allure - 10 Coin #1",
@@ -3364,7 +3364,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "Special: Pole Block Allure - 10 Coin #2",
@@ -3373,7 +3373,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "Special: Pole Block Allure - 10 Coin #3",
@@ -3382,7 +3382,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "W4: Sunbaked Desert Palace - Royal Seed",
@@ -3399,7 +3399,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "{OptOne(|Wonder Effect - Time Modifier|)}"
+    "requires": []
   },
   {
     "name": "W4: Sunbaked Desert Palace - 10 Coin #1",
@@ -3458,7 +3458,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Bowser Sniper|)}"
+    "requires": []
   },
   {
     "name": "PI: Petal Isles Flying Battleship - 10 Coin #1",
@@ -3501,7 +3501,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "PI: Gnawsher Lair - Top of Flag",
@@ -3553,7 +3553,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Goomba|)}"
+    "requires": []
   },
   {
     "name": "PI: Maw-Maw Mouthful - Top of Flag",
@@ -3684,7 +3684,7 @@
     "category": [
       "Special World"
     ],
-    "requires": "{OptOne(|Wonder Effect - Goomba|)}"
+    "requires": []
   },
   {
     "name": "Special: Way of the Goomba - Wonder Seed",
@@ -3692,7 +3692,7 @@
     "category": [
       "Special World"
     ],
-    "requires": "{OptOne(|Wonder Effect - Goomba|)}"
+    "requires": []
   },
   {
     "name": "Special: Way of the Goomba - Top of Flag",
@@ -3701,7 +3701,7 @@
       "Special World",
       "Gold Flag"
     ],
-    "requires": "{OptOne(|Wonder Effect - Goomba|)}"
+    "requires": []
   },
   {
     "name": "Special: Way of the Goomba - 10 Coin #1",
@@ -3710,7 +3710,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Goomba|)}"
+    "requires": []
   },
   {
     "name": "Special: Way of the Goomba - 10 Coin #2",
@@ -3719,7 +3719,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Goomba|)}"
+    "requires": []
   },
   {
     "name": "Special: Way of the Goomba - 10 Coin #3",
@@ -3728,7 +3728,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Goomba|)}"
+    "requires": []
   },
   {
     "name": "W5: Loyal Poplin's House - Wonder Seed",
@@ -3752,7 +3752,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "{OptOne(|Wonder Effect - Musical|)}"
+    "requires": []
   },
   {
     "name": "W5: Upshroom Downshroom - Top of Flag",
@@ -3804,7 +3804,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "{OptOne(|Wonder Effect - Quiz|)}"
+    "requires": []
   },
   {
     "name": "W5: Taily's Toxic Pond - Top of Flag",
@@ -3856,7 +3856,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "{OptOne(|Wonder Effect - Musical|)}"
+    "requires": []
   },
   {
     "name": "W5: Light-Switch Mansion - Top of Flag",
@@ -3908,7 +3908,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Shadow Clone|)}"
+    "requires": []
   },
   {
     "name": "W5: Beware of the Rifts - Top of Flag",
@@ -3976,7 +3976,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "{OptOne(|Wonder Effect - Wubba|)}"
+    "requires": []
   },
   {
     "name": "W5: Wubba Ruins - Fake Exit",
@@ -3992,7 +3992,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "{OptOne(|Wonder Effect - Wubba|)}"
+    "requires": []
   },
   {
     "name": "W5: Wubba Ruins - Top of Flag",
@@ -4036,7 +4036,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "region": "W5 Post-Wubba",
@@ -4052,7 +4052,7 @@
     "category": [
       "World 5"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "region": "W5 Post-Wubba",
@@ -4251,7 +4251,7 @@
     "category": [
       "Special World"
     ],
-    "requires": "{OptOne(|Wonder Effect - Skydive|)}"
+    "requires": []
   },
   {
     "name": "Special: Dangerous Donut Ride - Wonder Seed",
@@ -4259,7 +4259,7 @@
     "category": [
       "Special World"
     ],
-    "requires": "{OptOne(|Wonder Effect - Skydive|)}"
+    "requires": []
   },
   {
     "name": "Special: Dangerous Donut Ride - Top of Flag",
@@ -4268,7 +4268,7 @@
       "Special World",
       "Gold Flag"
     ],
-    "requires": "{OptOne(|Wonder Effect - Skydive|)}"
+    "requires": []
   },
   {
     "name": "Special: Dangerous Donut Ride - 10 Coin #1",
@@ -4277,7 +4277,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Skydive|)}"
+    "requires": []
   },
   {
     "name": "Special: Dangerous Donut Ride - 10 Coin #2",
@@ -4286,7 +4286,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Skydive|)}"
+    "requires": []
   },
   {
     "name": "Special: Dangerous Donut Ride - 10 Coin #3",
@@ -4295,7 +4295,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Skydive|)}"
+    "requires": []
   },
   {
     "name": "Coin Magnet Badge Obtained",
@@ -4327,7 +4327,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "(|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge|"
   },
   {
     "name": "W6: Where the Rrrumbas Rule - Wonder Seed",
@@ -4335,7 +4335,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "{OptOne(|Wonder Effect - Spike Ball|)}"
+    "requires": []
   },
   {
     "name": "W6: Where the Rrrumbas Rule - Top of Flag",
@@ -4362,7 +4362,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "(|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge|"
   },
   {
     "name": "W6: Where the Rrrumbas Rule - 10 Coin #3",
@@ -4387,7 +4387,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "{OptOne(|Wonder Effect - Wall Walking|)}"
+    "requires": []
   },
   {
     "name": "W6: Raarghs in the Ruins - Top of Flag",
@@ -4423,7 +4423,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "(|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "|Drill Mushroom| OR |All Drill Power Badge|"
   },
   {
     "name": "W6: Pull, Turn, Burn - Normal Exit",
@@ -4439,7 +4439,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)}"
+    "requires": []
   },
   {
     "name": "W6: Pull, Turn, Burn - Top of Flag",
@@ -4491,7 +4491,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "{OptOne(|Wonder Effect - Bowser Sniper|)}"
+    "requires": []
   },
   {
     "name": "W6: Deep Magma Bog Flying Battleship - 10 Coin #1",
@@ -4542,7 +4542,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "{OptOne(|Wonder Effect - Tokens|)}"
+    "requires": []
   },
   {
     "name": "W6: Hot-Hot Hot! - Top of Flag",
@@ -4594,7 +4594,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "W6: Wavy Ride through the Magma Tube - Top of Flag",
@@ -4646,7 +4646,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "W6: Dragon Boneyard - Top of Flag",
@@ -4865,7 +4865,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "(|Elephant Fruit| OR |All Elephant Power Badge|)"
+    "requires": "|Elephant Fruit| OR |All Elephant Power Badge|"
   },
   {
     "name": "W6: Observatory #2 - Wonder Seed",
@@ -4913,7 +4913,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "{OptOne(|Wonder Effect - Wubba|)}"
+    "requires": []
   },
   {
     "name": "W6: Deep Magma Bog Palace - 10 Coin #1",
@@ -5140,7 +5140,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "BC: Missile Meg Mayhem - Top of Flag",
@@ -5192,7 +5192,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Metal Cap|)}"
+    "requires": []
   },
   {
     "name": "BC: High-Voltage Gauntlet - Top of Flag",
@@ -5244,7 +5244,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "BC: Evade the Seeker Bullet Bills! - Top of Flag",
@@ -5288,7 +5288,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "BC: KnuckleFest Bowser's Blazing Beats - Wonder Seed",
@@ -5296,7 +5296,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "BC: KnuckleFest Bowser's Blazing Beats - Top of Flag",
@@ -5305,7 +5305,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #1",
@@ -5314,7 +5314,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #2",
@@ -5323,7 +5323,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "BC: KnuckleFest Bowser's Blazing Beats - 10 Coin #3",
@@ -5332,7 +5332,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "BC: Bowser's Rage Stage - Royal Seed",
@@ -5341,7 +5341,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Air Swim|)}"
+    "requires": []
   },
   {
     "name": "All Elephant Power Badge Obtained",
@@ -5349,7 +5349,7 @@
     "category": [
       "Badges"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Air Swim|)}"
+    "requires": []
   },
   {
     "name": "All Fire Power Badge Obtained",
@@ -5357,7 +5357,7 @@
     "category": [
       "Badges"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Air Swim|)}"
+    "requires": []
   },
   {
     "name": "All Bubble Power Badge Obtained",
@@ -5365,7 +5365,7 @@
     "category": [
       "Badges"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Air Swim|)}"
+    "requires": []
   },
   {
     "name": "All Drill Power Badge Obtained",
@@ -5373,7 +5373,7 @@
     "category": [
       "Badges"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Air Swim|)}"
+    "requires": []
   },
   {
     "name": "Special: Piranha Plant Reprise - Normal Exit",
@@ -5555,7 +5555,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "{OptOne(|Wonder Effect - Environment|)}"
+    "requires": []
   },
   {
     "name": "PI: Muncher Fields - Top of Flag",
