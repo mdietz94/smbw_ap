@@ -23,7 +23,7 @@
     "connects_to": [
       "W1 Post-Jet Run"
     ],
-    "requires": "{OptOne(|ZL Button/Down|)} AND {OptOne(|Up|)} AND {OptOne(|Y Button|)} AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   "W1 Post-Jet Run": {
     "connects_to": [],
@@ -33,7 +33,7 @@
     "connects_to": [
       "PI Pre-W2"
     ],
-    "requires": "|W1 Wonder Seed:14| AND {OptOne(|ZL Button/Down|)} AND ({OptOne(|Up|)} OR {OptOne(|Wonder Flower|)} OR {OptOne(|Wonder Effect - Environment|)} OR {OptOne(|Wonder Effect - Musical|)} OR {OptOne(|Wonder Effect - Star Rain|)} OR {OptOne(|Wonder Effect - Tokens|)} OR {OptOne(|Y Button|)} OR {OptOne(|R Button|)})"
+    "requires": "|W1 Wonder Seed:14|"
   },
   "PI Pre-W2": {
     "connects_to": [
@@ -63,7 +63,7 @@
     "connects_to": [
       "W2 4 Seeds"
     ],
-    "requires": "{OptOne(|Up|)} AND |Petal Isles Wonder Seed:5|"
+    "requires": "|Petal Isles Wonder Seed:5|"
   },
   "W2 4 Seeds": {
     "connects_to": [
@@ -74,13 +74,13 @@
   },
   "W2 Post-Jump": {
     "connects_to": [],
-    "requires": "{OptOne(|Y Button|)} AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "{OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}"
   },
   "W2 9 Seeds": {
     "connects_to": [
       "W2 14 Seeds"
     ],
-    "requires": "|W2 Wonder Seed:9| AND (({OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Flower|)}) OR ({OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Flower|)}) OR ({OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Flower|)}) OR {OptOne(|Y Button|)})"
+    "requires": "|W2 Wonder Seed:9|"
   },
   "W2 14 Seeds": {
     "connects_to": [
@@ -139,7 +139,7 @@
       "W5 Start",
       "W6 Start"
     ],
-    "requires": "{OptOne(|Y Button|)}"
+    "requires": ""
   },
   "W5 Start": {
     "connects_to": [
