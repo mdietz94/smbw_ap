@@ -496,48 +496,52 @@
 		"count":  1,
     
 		"name": "All Elephant Power Badge",
-    
+
 		"category": [
-      "Badge"
+      "Badge",
+      "Power-Up"
     ],
-    
-		"useful": true
+
+		"progression": true
   },
   {
     
 		"count":  1,
     
 		"name": "All Fire Power Badge",
-    
+
 		"category": [
-      "Badge"
+      "Badge",
+      "Power-Up"
     ],
-    
-		"useful": true
+
+		"progression": true
   },
   {
     
 		"count":  1,
     
 		"name": "All Bubble Flower Badge",
-    
+
 		"category": [
-      "Badge"
+      "Badge",
+      "Power-Up"
     ],
-    
-		"useful": true
+
+		"progression": true
   },
   {
     
 		"count":  1,
     
 		"name": "All Drill Power Badge",
-    
+
 		"category": [
-      "Badge"
+      "Badge",
+      "Power-Up"
     ],
-    
-		"useful": true
+
+		"progression": true
   },
   {
     
@@ -664,9 +668,10 @@
 		"count":  1,
     
 		"name": "Green Yoshi",
-    
+
 		"category": [
-      "Character (Easy)"
+      "Character (Easy)",
+      "Yoshi"
     ],
     
 		"progression": true
@@ -676,9 +681,10 @@
 		"count":  1,
     
 		"name": "Red Yoshi",
-    
+
 		"category": [
-      "Character (Easy)"
+      "Character (Easy)",
+      "Yoshi"
     ],
     
 		"progression": true
@@ -688,9 +694,10 @@
 		"count":  1,
     
 		"name": "Light-Blue Yoshi",
-    
+
 		"category": [
-      "Character (Easy)"
+      "Character (Easy)",
+      "Yoshi"
     ],
     
 		"progression": true
@@ -700,9 +707,10 @@
 		"count":  1,
     
 		"name": "Yellow Yoshi",
-    
+
 		"category": [
-      "Character (Easy)"
+      "Character (Easy)",
+      "Yoshi"
     ],
     
 		"progression": true

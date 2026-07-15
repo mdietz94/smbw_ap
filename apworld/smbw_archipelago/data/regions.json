@@ -37,7 +37,8 @@
   },
   "PI Pre-W2": {
     "connects_to": [
-      "PI Pre-W2 2 Seeds"
+      "PI Pre-W2 2 Seeds",
+      "Pre-W4 Special"
     ],
     "requires": []
   },
@@ -114,8 +115,7 @@
   "PI Pre-W4": {
     "connects_to": [
       "W4 Start",
-      "PI Post-Airship",
-      "Pre-W4 Special"
+      "PI Post-Airship"
     ],
     "requires": "{OptOne(|Wonder Effect - Hoppycat|)} AND {OptOne(|Wonder Flower|)}"
   },
@@ -182,13 +182,13 @@
   },
   "Pre-W4 Special": {
     "connects_to": [],
-    "requires": "{OptOne(|Y Button|)} AND |Special World Wonder Seed:6| AND ((|Elephant Fruit|) OR (|Petal Isles Wonder Seed:10|) OR (|W5 Wonder Seed:11| AND |Petal Isles Wonder Seed:12|)) AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Effect - Spike Ball|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "|Special World Wonder Seed:6|"
   },
   "Special End": {
     "connects_to": [
       "Post-Badge"
     ],
-    "requires": "|Elephant Fruit| AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Effect - Star Rain|)} AND {OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Effect - Time Modifier|)} AND {OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Effect - Spike Ball|)} AND {OptOne(|Wonder Flower|)}"
+    "requires": "(|Elephant Fruit| OR |All Elephant Power Badge|) AND |W5 Wonder Seed:11| AND |Special World Wonder Seed:16| AND {OptOne(|Wonder Effect - Environment|)} AND {OptOne(|Wonder Effect - Musical|)} AND {OptOne(|Wonder Effect - Tokens|)} AND {OptOne(|Wonder Effect - Wall Walking|)} AND {OptOne(|Wonder Effect - Bowser Sniper|)} AND {OptOne(|Wonder Effect - Star Rain|)} AND {OptOne(|Wonder Effect - Skydive|)} AND {OptOne(|Wonder Effect - Time Modifier|)} AND {OptOne(|Wonder Effect - Wubba|)} AND {OptOne(|Wonder Effect - Spike Ball|)} AND {OptOne(|Wonder Flower|)}"
   },
   "Post-Badge": {
     "connects_to": [],

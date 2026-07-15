@@ -251,12 +251,28 @@ _BADGE_CHALLENGE_LEVELS = {
 # completion checks, not just the coins, must require the badge) -- maintainer-
 # confirmed: you can't reach the goal without the ability (climb the walls,
 # swing the vine, spin/float/crouch-jump to the exit).
+#
+# Dolphin Kick and Jet Run were added here after a player report ("Dolphin Kick
+# I/II + Jet Run I require their badges for normal exit + top of flag").  Jet
+# Run II is included for consistency + softlock-safety (same badge challenge;
+# gating a check is always the beatability-safe direction -- the player only
+# reached I).
 _STRUCTURAL_BADGE_LEVELS = {
     "Wall-Climb Jump I", "Wall-Climb Jump II",
     "Grappling Vine I", "Grappling Vine II",
     "Boosting Spin Jump I", "Boosting Spin Jump II",
     "Floating High Jump I", "Floating High Jump II",
     "Crouching High Jump I", "Crouching High Jump II",
+    "Dolphin Kick I", "Dolphin Kick II",
+    "Jet Run I", "Jet Run II",
+}
+
+# Badge-challenge levels whose 10-Coins are player-confirmed obtainable WITHOUT
+# the badge (or a Yoshi), so they are NOT gated on the badge.  The default for
+# the class is still "coins require the badge" (safe against burying a Wonder
+# Seed behind a badge the player lacks); this set is the vetted exceptions.
+_OPEN_COIN_LEVELS = {
+    "Parachute Cap I",  # player-confirmed: all 10 coins reachable with nothing
 }
 
 _CHECK_RE = re.compile(r"^[^:]+: (.*?) - (.+)$")
@@ -286,8 +302,10 @@ def test_badge_challenge_coins_require_their_badge():
     """
     offenders = [
         f"{loc['name']} (needs |{badge}|): {requires!r}"
-        for loc, _lvl, kind, badge, requires in _challenge_checks()
-        if kind.startswith("10 Coin") and f"|{badge}|" not in requires
+        for loc, lvl, kind, badge, requires in _challenge_checks()
+        if kind.startswith("10 Coin")
+        and lvl not in _OPEN_COIN_LEVELS
+        and f"|{badge}|" not in requires
     ]
     assert not offenders, (
         "Badge-challenge 10-Coins missing their badge (softlock risk):\n  "
@@ -317,13 +335,27 @@ def test_structural_badge_levels_gate_completion():
 
 def test_nonstructural_badge_completion_stays_open():
     """A badge challenge that is completable without the badge keeps its Normal
-    Exit / Top of Flag open (maintainer scope, PR #137).  Pin Dolphin Kick I --
-    the player-confirmed example -- so a future blanket re-gate is caught."""
+    Exit / Top of Flag open (maintainer scope, PR #137).  Pin Invisibility I --
+    a still-open example -- so a future blanket re-gate is caught.  (Dolphin Kick
+    and Jet Run were the original pin but moved to _STRUCTURAL_BADGE_LEVELS after
+    a player report that they DO require the badge to complete.)"""
     for loc, lvl, kind, badge, requires in _challenge_checks():
-        if lvl == "Dolphin Kick I" and kind in ("Normal Exit", "Top of Flag"):
+        if lvl == "Invisibility I" and kind in ("Normal Exit", "Top of Flag"):
             assert f"|{badge}|" not in requires, (
                 f"{loc['name']} should NOT require |{badge}| "
                 f"(completable without it): {requires!r}"
+            )
+
+
+def test_open_coin_levels_stay_open():
+    """The vetted _OPEN_COIN_LEVELS keep their 10-Coins un-gated (player-
+    confirmed obtainable without the badge).  Pin the removal so a future
+    blanket re-gate of the whole coin class doesn't silently re-add it."""
+    for loc, lvl, kind, badge, requires in _challenge_checks():
+        if lvl in _OPEN_COIN_LEVELS and kind.startswith("10 Coin"):
+            assert f"|{badge}|" not in requires, (
+                f"{loc['name']} should NOT require |{badge}| "
+                f"(player-confirmed obtainable without it): {requires!r}"
             )
 
 

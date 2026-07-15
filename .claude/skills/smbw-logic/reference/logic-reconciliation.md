@@ -17,21 +17,25 @@ badge is practice content, and most courses are **completable without it**. So
 each check is judged on its own (maintainer scope, PR #137 + follow-up player
 reports):
 
-- **10-Coin checks → always require the badge.** The badge-themed coins are the
-  badge-practice collectibles; player-confirmed (*"Dolphin Kick I is completable
-  without the badge, but all the 10 coins require it"*). This is also the safe
-  default — leaving them open let fill bury a needed Wonder Seed behind a badge
-  the player never had (the reported softlock). Pinned by
-  `test_badge_challenge_coins_require_their_badge`.
+- **10-Coin checks → require the badge, except a vetted open set.** The
+  badge-themed coins are the badge-practice collectibles; player-confirmed
+  (*"Dolphin Kick I is completable without the badge, but all the 10 coins
+  require it"*). This is also the safe default — leaving them open let fill bury
+  a needed Wonder Seed behind a badge the player never had (the reported
+  softlock). **Exception — `_OPEN_COIN_LEVELS`:** **Parachute Cap I** — all 10
+  coins are player-confirmed obtainable with **nothing** (no badge, no Yoshi), so
+  its coins are open. Pinned by `test_badge_challenge_coins_require_their_badge`
+  (respects the exemption) + `test_open_coin_levels_stay_open`.
 - **Normal Exit / Top of Flag → require the badge ONLY where it is
   *structurally* required to reach the goal** (maintainer-confirmed). The
   structural courses are **Wall-Climb Jump**, **Grappling Vine**, **Boosting
-  Spin Jump**, **Floating High Jump**, and **Crouching High Jump** (both I & II
-  of each) — you can't climb / swing / spin / float / crouch-jump to the exit
-  without the ability. The remaining courses — **Dolphin Kick, Spring Feet, Jet
-  Run, Invisibility, Parachute Cap** (I & II) — are completable without the
-  badge, so their completion checks stay **open**. Pinned by
-  `test_structural_badge_levels_gate_completion` /
+  Spin Jump**, **Floating High Jump**, **Crouching High Jump**, **Dolphin Kick**,
+  and **Jet Run** (both I & II of each) — you can't climb / swing / spin / float
+  / crouch-jump / dolphin-kick / jet-dash to the exit without the ability
+  (Dolphin Kick I/II + Jet Run I player-confirmed; Jet Run II gated by extension
+  for safety). The remaining courses — **Spring Feet, Invisibility, Parachute
+  Cap** (I & II) — are completable without the badge, so their completion checks
+  stay **open**. Pinned by `test_structural_badge_levels_gate_completion` /
   `test_nonstructural_badge_completion_stays_open`
   (`_STRUCTURAL_BADGE_LEVELS` is the source of truth).
 
@@ -39,11 +43,21 @@ reports):
 > without its badge, add it to `_STRUCTURAL_BADGE_LEVELS` and gate its Normal
 > Exit / Top of Flag.
 
-**NON-challenge badge levels still require the badge** (these *grant* the badge
-and AP is the sole authority): **Badge House**/Parachute Cap,
-**Mountaineering!**/Auto Super Mushroom, **Ninji Jump Party**/Rhythm Jump,
-**WONDER?**/Sound Off?, plus the overworld **Sensor** exception (ungated, PR
-#116).
+**Yoshi bypasses the movement badge.** A Yoshi (any of the four; category
+`Yoshi`) can climb/float through a structural challenge without the badge, so
+**Wall-Climb Jump I/II** and **Floating High Jump I** carry `... OR |@Yoshi:1|`
+on **every** check (completion + coins) — player-confirmed. The badge token is
+kept alongside (the pin tests only require its presence), and the `|@Yoshi:1|`
+category counts the four Yoshi items (Green/Red/Light-Blue/Yellow) but **not**
+Nabbit. Add the same `OR |@Yoshi:1|` if more Yoshi-clearable challenges surface.
+
+**NON-challenge badge levels — mostly require the badge** (these *grant* the
+badge and AP is the sole authority): **Badge House**/Parachute Cap, **Ninji Jump
+Party**/Rhythm Jump, **WONDER?**/Sound Off?, plus the overworld **Sensor**
+exception (ungated, PR #116). **Mountaineering!** (grants Auto Super Mushroom) is
+**open** — the Wiggler race needs no badge to clear, so its Normal Exit no longer
+requires ASM (player-confirmed "should be in logic"). The ASM badge stays a
+progression pool item but now gates nothing.
 
 **Progression walls — a *separate*, region-layer concern.** Beyond the
 per-check rule above, a region-layer badge gate is correct **only when a level
@@ -149,6 +163,19 @@ apworld logic suite green.
 - `W1: Bulrush Express - Secret Exit`: **no** `|Elephant Fruit|` requirement —
   the secret exit is reachable without it (player-confirmed). Only the button /
   Wonder-Flower helpers remain.
+- `W1: Sproings in the Twilight Forest - 10 Coin #1`: **open** (`requires: []`) —
+  player-confirmed obtainable with nothing; the old `|Elephant Fruit|` gate was
+  wrong.
+- `Pre-W4 Special` (holds **The Semifinal Test: Piranha Plant Reprise**, its only
+  course): re-gated to just `|Special World Wonder Seed:6|` and re-anchored off
+  the **`PI Pre-W2`** hub node (was hung off `PI Pre-W4`, i.e. behind the whole
+  W3 chain + a large Wonder-Effect list). Player-confirmed: reachable with 6
+  Special-World Wonder Seeds after clearing *Climb to the Beat*, well before W3's
+  finale. It stays an `_EXTRA_HUB_REGIONS` member so open-world still strips it.
+  The Special World is otherwise still modelled by placing each special course in
+  a world-progression region (see the Notes limitation) — Piranha Plant Reprise
+  is the one course re-pointed at its true Special-seed gate; a full
+  Special-World remodel is a follow-up.
 
 ## Structural
 
@@ -170,6 +197,14 @@ apworld logic suite green.
   Pinned by `test_ko_arenas_require_a_powerup`. (Power-Ups became real pool
   progression items in M3.1 / `powerup_gating`, so "any power-up" is a real
   gate, not a no-op.)
+- **All-Power-Up badges count as Power-Ups.** Equipping an *All &lt;X&gt; Power*
+  badge keeps you in that form permanently, so the four badges (**All Elephant /
+  Fire / Bubble / Drill Power**) are now `progression: true` and carry the
+  `Power-Up` category **in addition to** `Badge` — that makes any of them satisfy
+  `|@Power-Up:1|` (KO arenas). For a *specific* power-up gate, the matching badge
+  is OR'd in at every site: `|Elephant Fruit|` → `(|Elephant Fruit| OR |All
+  Elephant Power Badge|)`, and likewise Bubble/Drill (Fire has no bare-token
+  gate). Applied to both `locations.json` and `regions.json` (player-requested).
 - **Secret-flag tops**: topping either the normal-exit or secret-exit flagpole
   fires the same per-course `TOP_OF_FLAG` check (no separate
   `TOP_OF_SECRET_FLAG` kind).
