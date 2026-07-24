@@ -118,8 +118,8 @@ bool setPerCourseBitfieldAbsolute(std::uint32_t hash,
     // absolute-set callers retry on the next tick once drain catches up.
     const auto bp = checkContainerD();
     if (bp.refuse) {
-        static std::atomic<std::uint32_t> defer_budget{32};
-        if (defer_budget.fetch_sub(1) > 0) {
+        static std::atomic<std::int32_t> defer_budget{32};
+        if (::smbwap::util::takeBudget(defer_budget)) {
             SMBWAP_LOG_WARN(
                 "[backpressure] setPerCourseBitfieldAbsolute refused: "
                 "qD at %u%% of cap (>= %u%%)  hash=0x%08x course=%u",
@@ -134,8 +134,8 @@ bool setPerCourseBitfieldAbsolute(std::uint32_t hash,
     fn(gmd, bitmask, hash, course_index);
     const auto q_after = readQueueD();
 
-    static std::atomic<std::uint32_t> log_budget{64};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{64};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "SetPerCourseBitfield: hash=0x%08x course=%u value=0x%08x gmd=%p "
             "qD depth %u->%u / cap %u (%u%%)",
@@ -155,8 +155,8 @@ void pushWonderSeedOverride(std::uint32_t value) {
         fn(gmd, value, h);
     }
 
-    static std::atomic<std::uint32_t> log_budget{8};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{8};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "pushWonderSeedOverride: wrote value=%u to all 5 per-world hashes",
             value);
@@ -187,8 +187,8 @@ void pushWonderSeedOverrideCurrentWorld() {
 
     const auto bp = checkContainerA();
     if (bp.refuse) {
-        static std::atomic<std::uint32_t> defer_budget{16};
-        if (defer_budget.fetch_sub(1) > 0) {
+        static std::atomic<std::int32_t> defer_budget{16};
+        if (::smbwap::util::takeBudget(defer_budget)) {
             SMBWAP_LOG_WARN(
                 "[backpressure] pushWonderSeedOverrideCurrentWorld refused: "
                 "%s at %u%% of cap (>= %u%%)",

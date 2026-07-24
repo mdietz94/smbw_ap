@@ -129,8 +129,8 @@ bool setBadgeBitfieldAbsolute(std::uint64_t bits) {
     data[2] = lo;
     data[3] = hi;
 
-    static std::atomic<std::uint32_t> log_budget{16};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{16};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "SetBadgesAbsolute: addr=%p bits=0x%016llx before=0x%08x%08x "
             "after=0x%08x%08x acquired=0x%016llx",
@@ -159,8 +159,8 @@ bool setContainerCBit(std::uint32_t hash, std::uint32_t bit_index, bool value) {
     const std::uint32_t after = value ? (before | mask) : (before & ~mask);
     data[word_idx] = after;
 
-    static std::atomic<std::uint32_t> log_budget{32};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{32};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "SetContainerCBit: hash=0x%08x bit=%u value=%d addr=%p "
             "word_idx=%u  before=0x%08x  after=0x%08x",
@@ -339,8 +339,8 @@ bool clearEquippedBadgesNotOwned(std::uint64_t owned_mask) {
     const int saved  = clearEquipFieldNotOwned(kEquipBadgeSaveHash, owned_mask);
     const int course = clearEquipFieldNotOwned(kCoursePlayerEquipHash, owned_mask);
 
-    static std::atomic<std::uint32_t> log_budget{16};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{16};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "ClearEquippedNotOwned: owned=0x%016llx EquipBadgeSave=%d "
             "CoursePlayerEquip=%d",
@@ -373,8 +373,8 @@ bool setWonderSeedBitfieldAbsolute(std::uint64_t bits_lo, std::uint64_t bits_hi)
     data[2] = hi_a;
     data[3] = hi_b;
 
-    static std::atomic<std::uint32_t> log_budget{16};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{16};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "SetWonderSeedsAbsolute: addr=%p bits_lo=0x%016llx bits_hi=0x%016llx "
             "before=[0x%08x,0x%08x,0x%08x,0x%08x] after=[0x%08x,0x%08x,0x%08x,0x%08x]",

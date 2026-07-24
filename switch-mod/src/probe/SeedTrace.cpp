@@ -133,8 +133,8 @@ void pushWonderSeedContainerDCounts() {
         }
         s_last[b] = count;
 
-        static std::atomic<std::uint32_t> log_budget{64};
-        if (log_budget.fetch_sub(1) > 0) {
+        static std::atomic<std::int32_t> log_budget{64};
+        if (::smbwap::util::takeBudget(log_budget)) {
             SMBWAP_LOG_INFO(
                 "[grant] container-D persist: bucket=%u count=%u "
                 "reg=0x%08x(%u slots) spec=0x%08x(%u slots)",

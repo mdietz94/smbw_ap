@@ -297,9 +297,21 @@ void drainInbound() {
     int dedup_routable_skipped = 0;
     int dedup_force_cleared_skipped = 0;
 
+    // Hard iteration bound (2026-07-23).  The ring holds at most
+    // kInboundCap entries and the producer only refills between frames,
+    // so a healthy drain never approaches this cap -- every observed
+    // steady-state drain pops 5, and the worst cold-boot replay burst
+    // popped 89.  The bound exists so that ANY future ring inconsistency
+    // degrades to a logged anomaly instead of an unbounded spin on the
+    // game thread.  That spin is what froze the game on 2026-07-23: the
+    // deduplicated kinds below `break` without logging, so an endless
+    // pop loop produced no output at all -- the log simply stopped after
+    // the "drainInbound RUN" line, with no guest exception, while every
+    // other guest thread parked in WaitForAddress behind the stalled
+    // frame.  Silence is the worst possible failure mode here.
     InboundMsg msg;
     int drained = 0;
-    while (inboundRing().pop(msg)) {
+    while (drained < static_cast<int>(kInboundCap) && inboundRing().pop(msg)) {
         ++drained;
         switch (msg.kind) {
             case InboundKind::SetBadgesAbsolute: {
@@ -512,6 +524,17 @@ void drainInbound() {
                 break;
         }
     }
+    if (drained >= static_cast<int>(kInboundCap)) {
+        // Never expected: see the bound's rationale above.  Loud and
+        // unthrottled -- if this fires, the ring's head/tail are
+        // inconsistent and the drain would otherwise have hung the game.
+        SMBWAP_LOG_ERROR(
+            "[grant] drainInbound hit the %zu-iteration bound -- inbound "
+            "ring is inconsistent (pendingApprox=%zu). Bailing out of the "
+            "drain to keep the game thread alive.",
+            kInboundCap, inboundRing().pendingApprox());
+    }
+
     // Apply the latest payload of each deduplicable absolute-overwrite
     // kind.  See the comment above the deferral declarations for the
     // last-write-wins rationale.  Each apply block uses coalesceVerb()

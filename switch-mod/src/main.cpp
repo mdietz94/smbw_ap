@@ -1519,7 +1519,7 @@ HkTrampoline<std::uint64_t, long, long, int> sceneChangeReqHook =
     hk::hook::trampoline([](long seqObj, long name, int flag) -> std::uint64_t {
         if (probe::isSaveLoaded() && name != 0) {
             static std::atomic<std::int32_t> log_budget{200};
-            if (log_budget.fetch_sub(1) > 0) {
+            if (::smbwap::util::takeBudget(log_budget)) {
                 SMBWAP_LOG_INFO("[scene-req] stage='%s' flag=%d seq=0x%lx",
                                 reinterpret_cast<const char*>(name), flag,
                                 static_cast<unsigned long>(seqObj));
@@ -1543,7 +1543,7 @@ HkTrampoline<std::uint64_t, long, long, long, long> courseEnterNameHook =
             const char* name = *reinterpret_cast<const char* const*>(
                 static_cast<std::uintptr_t>(seqObj) + 0x640);
             static std::atomic<std::int32_t> log_budget{100};
-            if (name != nullptr && log_budget.fetch_sub(1) > 0) {
+            if (name != nullptr && ::smbwap::util::takeBudget(log_budget)) {
                 SMBWAP_LOG_INFO("[course-enter] stage='%s' seq=0x%lx",
                                 name, static_cast<unsigned long>(seqObj));
             }

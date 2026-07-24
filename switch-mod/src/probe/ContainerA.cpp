@@ -95,8 +95,8 @@ bool grantContainerACounter(std::uint32_t hash, std::uint32_t value) {
 
     const auto bp = checkContainerA();
     if (bp.refuse) {
-        static std::atomic<std::uint32_t> defer_budget{32};
-        if (defer_budget.fetch_sub(1) > 0) {
+        static std::atomic<std::int32_t> defer_budget{32};
+        if (::smbwap::util::takeBudget(defer_budget)) {
             SMBWAP_LOG_WARN(
                 "[backpressure] refused grantContainerACounter(hash=0x%08x, "
                 "value=%u): %s at %u%% of cap (>= %u%%)",
@@ -106,8 +106,8 @@ bool grantContainerACounter(std::uint32_t hash, std::uint32_t value) {
         return false;
     }
     if (bp.warn) {
-        static std::atomic<std::uint32_t> warn_budget{32};
-        if (warn_budget.fetch_sub(1) > 0) {
+        static std::atomic<std::int32_t> warn_budget{32};
+        if (::smbwap::util::takeBudget(warn_budget)) {
             SMBWAP_LOG_WARN(
                 "[backpressure] grantContainerACounter near cap: %s at %u%% "
                 "(>= %u%%)",
@@ -117,8 +117,8 @@ bool grantContainerACounter(std::uint32_t hash, std::uint32_t value) {
 
     containerAWriter()(gmd, value, hash);
 
-    static std::atomic<std::uint32_t> log_budget{16};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{16};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "GrantHashKeyed: hash=0x%08x value=%u gmd=%p",
             hash, value, gmd);
@@ -163,8 +163,8 @@ bool incrementContainerACounter(std::uint32_t hash, std::int32_t delta) {
         return false;
     }
     if (bp.warn) {
-        static std::atomic<std::uint32_t> warn_budget{32};
-        if (warn_budget.fetch_sub(1) > 0) {
+        static std::atomic<std::int32_t> warn_budget{32};
+        if (::smbwap::util::takeBudget(warn_budget)) {
             SMBWAP_LOG_WARN(
                 "[backpressure] incrementContainerACounter near cap: %s at "
                 "%u%% (>= %u%%)",
@@ -222,8 +222,8 @@ bool incrementContainerACounter(std::uint32_t hash, std::int32_t delta) {
         slot->shadow_value = next;
     }
 
-    static std::atomic<std::uint32_t> log_budget{16};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{16};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "IncrementHashKeyed: hash=0x%08x persistent=%u effective=%u "
             "(%s) delta=%d -> %u gmd=%p",
