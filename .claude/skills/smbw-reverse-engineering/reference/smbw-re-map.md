@@ -164,7 +164,7 @@ world-map / Bowser-approach hashes live in §11.
 | `0x390eb960` | per-current-world Wonder-Seed count (the one the gate predicate `+0x1787b40` reads) | A | u32 | CONFIRMED |
 | `0x21f89ab1`, `0x8c20ccb7`, `0xeeff353b`, `0xa0e5f253` | mirrors of `0x390eb960` (update in lockstep) | A | u32 | CONFIRMED |
 | `0x9f5ead3c` | live current-world index (1..9) | A | u32 | CONFIRMED |
-| `0xdf82e9ab` | "current course" / is-clear lookup key (read in the course-clear nerve) | — | — | HIGH-CONF |
+| `0xdf82e9ab` | **`CourseId`** — current course identity | **Enum** (NOT Int) | u32 hash | **CONFIRMED** (GameDataList, 2026-07-21) |
 | `0x60458608` | per-course Wonder-Seed bitfield (Container D) | D | — | ACTIVE (§11) |
 
 **Wonder-Seed bucket convention** (Switch `kWorldValToBucket` in `main.cpp`):
@@ -652,6 +652,141 @@ is why purchase detection hooks the commit fn instead.  Switch impl:
 `probe/BadgeShop.{hpp,cpp}` + the two trampolines in `main.cpp`; bridge message
 `set_badge_shop_state` (`WireSetBadgeShopState{managed,sold}`, applied on the
 network thread); client `SMBWContext._recompute_badge_shop_state`.
+
+---
+
+## 16. Character blocks: the layout discriminator is PROVABLY unusable (2026-07-21)
+
+**Settled by one live capture + the RomFS. Do not re-derive; do not attempt any
+graph-instance-based discriminator.**
+
+### The live capture
+
+Player bumped a plain hidden block in **W3: Unreachable Treasure?**
+(`Course404` — 9 × `BlockClarity`, **zero** character blocks):
+
+```
+[cblk-hit] delta-histogram NEW delta=0x17d0 ... vt=0xba23718 w48=0x1 world=4 course_id=0x0
+[cblk-hit] CHARACTER BLOCK HIT #0 ... chara=0 world=4 course_id=0x0 -> enqueueCharBlockHit
+```
+
+`vt = 0xba23718 - B_main(0x08504000) = NSO +0x351f718` — an exact match for the
+documented character-block graph-instance vtable. **A false AP check was emitted
+for a block that does not exist.** Confirmed false positive.
+
+### Why — the two actors share one byte-identical AI graph
+
+`Pack/Actor/ObjectBlockClarityCharacter.pack.zs` **contains
+`AI/BlockClarity.root.ainb`**, and it is byte-identical to the one in
+`Pack/Actor/BlockClarity.pack.zs` (both `md5 f933187d1a3c2bb52e2f2ac5125ba2ee`).
+The firing `BlockUpMove` node lives in that **shared** graph.
+
+So the plain hidden block and the character block are not merely
+*similar-looking* — at the bumped node they are **the same graph object type**.
+Every graph-instance-derived signal is therefore identical by construction:
+
+| Signal | Plain `BlockClarity` | `ObjectBlockClarityCharacter` | Discriminates? |
+|---|---|---|---|
+| `delta = node - [node+0x28]` | `0x17d0` | `0x17d0` | **NO** |
+| graph-instance vtable | NSO `+0x351f718` | NSO `+0x351f718` | **NO** |
+| `[p28+0x48]` | `1` | `1` | **NO** |
+
+### Consequences — two planned approaches are dead
+
+1. **Reading `PlayerCharaType` from the bumped node's graph instance CANNOT
+   work.** `PlayerCharaType` appears only in the *character* pack, in
+   `AI/ObjectBlockClarityCharacter.root.ainb` + its blackboard param table — a
+   **different graph** from the one that fires `BlockUpMove`. It is not present
+   in the shared graph at any offset. (`grep -rl PlayerCharaType` over the plain
+   pack returns nothing.)
+2. **The "four-way conjunction" fallback is dead** — three of its four signals
+   are the identical-by-construction ones above.
+
+**The only remaining path is actor identity**: walk `node → graph instance →
+owning actor`, then read the actor's gyaml class name (`"BlockClarity"` vs
+`"ObjectBlockClarityCharacter"`) or its placement info. Decompiling
+`BlockUpMove` @ NSO `+0x146397c` is the entry point — it physically moves the
+block, so it must reach the actor. Until that lands, **every character-block
+check is unreliable** in any course containing a plain hidden block: 41 stages
+have both actors, 3 have only the plain one (`Course318`, `Course404`,
+`Course406`), 35 have only the character block.
+
+### ✅ SOLVED — `actor + 0x18` is the discriminator (2026-07-23)
+
+`actor + 0x18` is a direct `char*` to the **leaf gyaml class name**. Live-verified
+in one session:
+
+| bump | `actor+0x18` |
+|---|---|
+| plain hidden block | `"LongBlockClarity"` |
+| character block | `"ObjectBlockClarityCharacter"` |
+
+Same string also reachable at `+0x1f8` and via `+0x8 → +0x20` (fallbacks if
+`+0x18` ever moves). Shipped: the emit path now gates on this and logs
+`[cblk-hit] REJECT non-character clarity bump ... class="..."` for everything
+else.
+
+**RULED OUT — do not retry:** the **actor vtable is identical** for both
+(`NSO +0x344c288`). They are one C++ class driven by different data, so no
+vtable compare works. RTTI is stripped (the 4 words before the vtable are zero),
+so there is no statically-readable class name either.
+
+**Why they're inseparable at the graph level** — the actor's parent-class table
+at `+0x478` shows the shared ancestry directly:
+
+```
++0x478+0x00  "Actor/ObjectBlockClarityCharacter"   <- leaf
++0x478+0x10  "Actor/BlockClarity"                  <- shared parent
++0x478+0x20  "Actor/ObjectReactionBlockBase"
++0x478+0x30  "Actor/ObjectBlockBase"
+```
+
+**Scope correction:** there are **four** Clarity-family actors, not two —
+`BlockClarity` (100 placements), `LongBlockClarity` (26),
+`ObjectBlossomsBlockClarity` (3), `ObjectBlockClarityCharacter` (166). Counting
+all plain variants: **4 stages** have a plain-only Clarity block and **42** have
+both (an earlier note said 3/41 — that only counted `BlockClarity`). The shipped
+check tests *for* the character class by name rather than blocklisting the
+others, so unenumerated variants are rejected by default.
+
+### The actor is ALREADY in a register at our hook (2026-07-21 Ghidra session)
+
+The planned `node → graph instance → owning actor` walk is **unnecessary**.
+`BlockUpMove` disassembles to:
+
+```
+7101463914  (fn entry)  ldr x8,[x0,#0x8]      ; x0 = node
+7101463934              ldr x8,[x8,#0x8]
+7101463938              ldr x19,[x8,#0x1f8]   ; <-- x19 = the ACTOR
+7101463970              mov x0,x19
+7101463974              bl  0x71003b0930
+7101463978              mov x20,x0
+710146397c              mov x0,x19            ; <-- OUR HOOK LANDS HERE
+```
+
+So at hook entry **x19 already holds the actor** and stays live. x0 (what
+`cblkBumProbe` stashes today) is the *return of `FUN_71003b0930(actor)`* — a
+component, not the node. The `+0x28` read and `delta` are computed off that.
+
+x19 is the actor: both `FUN_71003b0930` and `FUN_71003b4c0c` take it and
+dereference `+0x208` (component table), `+0x200` (count), `+0x264` / `+0x294`
+(position), `+0x491` (flags).
+
+**Next step is therefore small**: extend the asm thunk to stash **x19**
+alongside x0, then resolve identity from the actor. `InitActorPlacementInfo`
+(NSO `+0x5815c`) shows the placement layout — **`placement+0x28` is the Gyaml
+class-name `char*`** (`"BlockClarity"` vs `"ObjectBlockClarityCharacter"`) and
+`placement+0x50` is the `Dynamic` node (which carries `PlayerCharaType`). So one
+actor→placement offset unlocks *both* the type discriminator and the block's own
+character. Find that offset by scanning the actor struct at runtime for a
+pointer whose `+0x28` derefs to a string starting `"Block"`/`"ObjectBlock"` —
+offset-free, self-bootstrapping, and it prints the offset for hardcoding.
+
+### Tooling
+
+`scripts/romfs/extract_block_instances.py` (new, replaces the lost scratch
+extractor) emits every block-family placement (gyaml, banc hash, chara,
+translate, layer) and prints the Clarity stage matrix.
 
 ---
 

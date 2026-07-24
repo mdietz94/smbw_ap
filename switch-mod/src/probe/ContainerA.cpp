@@ -42,6 +42,38 @@ using GmdGetCounterFn = void (*)(void* gmd, std::uint32_t* out, std::uint32_t ha
 constexpr std::uint32_t kContainerAWriterOffset = 0x0049F648;
 constexpr std::uint32_t kContainerAReaderOffset = 0x0012AE94;
 
+// Scalar-ENUM reader.  FUN_71003D3FB0 at NSO +0x003D3FB0, signature
+//     bool FUN_71003D3FB0(uint32_t hash, int32_t* out_index);
+// (note: hash FIRST, out second -- the opposite order from the container-A
+// reader above).  Enum-category flags do NOT live in container A; this
+// walks the Enum hash table at gmd+0x260 (values at gmd+0x258, stride
+// 0x38, field +0x1c), falling back to the EnumArray table at gmd+0x2c0.
+//
+// It does NOT return the stored value.  The stored value is a murmur3
+// name-hash; the function passes it to FUN_71003D4110 @ +0x003D4110, which
+// linear-scans the 81-entry course-name string table at
+// PTR_s_Course1_71034dec90, murmur3-ing each name until one matches, and
+// writes that entry's INDEX.
+//
+// *** OFF-BY-ONE TRAP ***  That string table starts at "Course1", so
+// index 0 == "Course1" -- it is NOT the same indexing as GameDataList's
+// RawValues, whose index 0 is "Invalid".  Verified by reading the live
+// table: index 10 -> "Course11", index 60 -> "Course61".  So a CourseId
+// enum name "CourseN" resolves to index N-1.  Comparing against the
+// GameDataList ordinal (or against the raw name-hash) is silently wrong.
+//
+// Derived 2026-07-21 from the game's own read site in the course-clear
+// nerve FUN_7101BF28CC, which does exactly
+//     FUN_710059F894(&h, 0); FUN_71003D3FB0(0xdf82e9ab, &h); FUN_71005E93FC(&h);
+constexpr std::uint32_t kEnumScalarReaderOffset = 0x003D3FB0;
+
+using GmdGetEnumIndexFn = bool (*)(std::uint32_t hash, std::int32_t* out_index);
+
+GmdGetEnumIndexFn enumScalarReader() {
+    return reinterpret_cast<GmdGetEnumIndexFn>(
+        mainBase() + kEnumScalarReaderOffset);
+}
+
 GmdSetCounterFn containerAWriter() {
     return reinterpret_cast<GmdSetCounterFn>(mainBase() + kContainerAWriterOffset);
 }
@@ -75,17 +107,35 @@ IncrementShadow s_increment_shadow[kShadowSlots] = {};
 }  // namespace
 
 std::uint32_t readContainerAValue(std::uint32_t hash) {
-    // Pure read of a container-A scalar (Int/Enum category) by hash via the
+    // Pure read of a container-A **Int** scalar by hash via the
     // persistent-container reader FUN_710012ae94.  Returns 0 when gmd isn't
     // live yet or the hash isn't in container-A (a miss leaves out=0).  No
     // dirty-queue write, so no backpressure / scene-transition concern --
-    // safe to call from the SceneTransition hook.  Used to identify the
-    // current course (world_val 0x9f5ead3c + CourseInfo.CourseId 0xdf82e9ab)
-    // for the open-world secret-exit unlock.
+    // safe to call from the SceneTransition hook.  Used for the live world
+    // index (0x9f5ead3c, GameDataList category Int).
+    //
+    // NOT for Enum-category flags.  It silently returns 0 for them -- that
+    // was the CourseId (0xdf82e9ab) bug: Enum flags live in a different
+    // container entirely.  Use readEnumIndex() below.
     void* gmd = gmdSingleton();
     if (gmd == nullptr) return 0;
     std::uint32_t out = 0;
     containerAReader()(gmd, &out, hash);
+    return out;
+}
+
+std::int32_t readEnumIndex(std::uint32_t hash) {
+    // Read an Enum-category flag, returning the resolved name-table INDEX,
+    // or -1 if gmd isn't live / the hash isn't an Enum / the stored
+    // name-hash matched no table entry.
+    //
+    // For CourseId (0xdf82e9ab) the index is over the course-name table
+    // whose entry 0 is "Course1" -- so enum name "CourseN" => index N-1.
+    // See the kEnumScalarReaderOffset comment for the derivation and the
+    // off-by-one trap.
+    if (gmdSingleton() == nullptr) return -1;
+    std::int32_t out = -1;
+    if (!enumScalarReader()(hash, &out)) return -1;
     return out;
 }
 

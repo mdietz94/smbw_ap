@@ -275,6 +275,144 @@ that permanent:
   skipped "Hidden Character Blocks" category.
 - **Captain Toad cross-world locations**: skipped per user.
 
+## `Post-<X>` regions must inherit their prerequisite's gate (2026-07-20)
+
+**The rule.** A `Post-<X>` region means "you cleared course X". `set_rules`
+composes only `requires(location) AND requires(region)` — there is no
+"course cleared" concept — so the *only* place that precondition can live is the
+region's `requires`. It must repeat whatever X's own **Normal Exit** requires.
+
+**The bug this fixes (player-reported, unbeatable seed).** All seven `Post-*`
+regions carried `requires: []`, encoding "you cleared X" in the region *name*
+only. `W1 Post-Jet Run` therefore put all eight **Bounce, Bounce, Bounce**
+checks in logic with zero items, while *Jet Run I* — the course you must clear to
+unlock them — is `|Jet Run Badge|`. Fill buried a **W1 Wonder Seed** and a
+**Petal Isles Wonder Seed** there; the player could not reach either.
+
+This class is invisible to the existing safety nets: it makes checks *more*
+reachable than reality, so `can_beat_game()` stays true and no `FillError`
+fires. It also escaped the badge progression-wall audit, which was scoped to
+badge levels blocking **world advancement** — Bounce³ is a Special World side
+course, not a world wall.
+
+Current gates (pinned by `test_post_clear_regions_inherit_their_prerequisite_gate`,
+which also fails on any new `Post-*` region it doesn't know about):
+
+| Region | Unlocked by clearing | `requires` |
+|---|---|---|
+| `W1 Post-Jet Run` | W1: Jet Run I | `\|Jet Run Badge\|` |
+| `W2 Post-Jump` | W2: Floating High Jump I | `\|Floating High Jump Badge\| OR \|@Yoshi:1\|` |
+| `W6 Post-Spring` | W6: Jet Run II | `\|Jet Run Badge\|` |
+| `W4 Post-Invis` | W4: Invisibility I | `""` (completion open) |
+| `W5 Post-Wubba` | W5: Wubba Ruins | `""` (completion open) |
+| `W5 Post-Swaying` | W5: Swaying Ruins | `""` (completion open) |
+| `W1 Post-Bulrush Express` | W1: Bulrush Express | `""` (completion open) |
+| `PI Post-Airship` | — (pure routing node, no locations) | `""` |
+
+Note the `Post-*` regions are **mixed buckets** — they also host the
+prerequisite course itself (`W1 Post-Jet Run` holds Jet Run I *and* Bounce³).
+That is why the missing gate was easy to miss, and it is harmless: the
+prerequisite's own checks already carry the same require.
+
+⚠️ `W6 Post-Spring` is misnamed — Solar Roller unlocks off **Jet Run II +
+Invisibility II**, not Spring Feet II (Invisibility II's completion is open, so
+Jet Run's badge is the whole gate).
+
+Verified: Bounce³ goes 8/8 → **0/8** reachable without `|Jet Run Badge|`, 8/8
+with it; 45 generations (3 option sets × 15 seeds) all fill and beat.
+
+## Player-reported course corrections (2026-07-20 playtest)
+
+- **Yoshi's tongue is a real logic tool.** Added `OR |@Yoshi:1|` to
+  **Blewbird Roost 10 Coin #3** (was Bubble-Flower-only), and to every check of
+  **Floating High Jump II** and **Boosting Spin Jump I** (video-confirmed /
+  player-confirmed). `@Yoshi` excludes Nabbit by design. Floating High Jump I
+  already had the Yoshi alternative — II was the asymmetry.
+- **Spring Feet II is structural** — *"completely doable with Yoshi, but
+  impossible without him"*. Its Normal Exit / Top of Flag were **open**; all five
+  checks are now `|Spring Feet Badge| OR |@Yoshi:1|` and the course joined
+  `_STRUCTURAL_BADGE_LEVELS`. Contrast Spring Feet I, whose exits stay open.
+- **Backwards coin gates opened.** **Spring Feet I** and **Invisibility II** had
+  open Normal Exit / Top of Flag but badge-gated 10-Coins — the reverse of
+  reality (*"this is even easier without the badge!"*). Both coin sets are now
+  open and both courses joined `_OPEN_COIN_LEVELS`.
+- **Item Park Toadette Block** inherits the course's power-up wall (Elephant AND
+  Bubble AND Drill, same as its Wonder Seed) — player had Toadette but no way
+  past the wall. ⚠️ Only the *Toadette* block was reported; **Daisy Block** in the
+  same course is still bare `{OptOne(|Daisy|)}` and may need the same treatment.
+- **Not changed:** *Cruising with Linking Lifts 10 Coin #1* was already
+  `requires: []`; the player's Yoshi route is a second way to an already-open
+  check. Only **#2** carries a power-up gate.
+- **The Invisibility Badge gates NOTHING.** Maintainer ruling: *"Invisibility
+  should not require the Invisibility badge, that badge is never required."*
+  Invisibility I's 10-Coins were the last site; `|Invisibility Badge|` now
+  appears in **no** location or region rule. Both courses are in
+  `_OPEN_COIN_LEVELS`, and `test_invisibility_badge_is_never_required` fails if
+  the token is reintroduced anywhere.
+  ⚠️ The item is still `progression: true` in `items.json` while gating nothing.
+  That is *consistent with existing precedent* — Auto Super Mushroom, Timed High
+  Jump, Fast Dash, Sensor and All Fire Power are all progression-but-unreferenced
+  — so it was left alone rather than reclassified in isolation. A deliberate
+  sweep of "progression badges that gate nothing" is the right way to address it.
+
+## `item_counts` leaked across generations (2026-07-20) — the "Peach blocks" bug
+
+**Not a data bug — a cache-lifetime bug**, and the roster IDs were never wrong.
+All 12 character indices were audited end-to-end (RomFS extractor → generated
+table → wire roster → Switch-side murmur3 hashes, hashes recomputed
+independently): **zero mismatches**, and all 154 Character Block rows match
+their `requires`. Peach=2 and Yellow Toad=4 are also identical under the older
+provisional roster order, so no reordering could produce that confusion.
+
+`SMBWonderWorld.item_counts` / `.start_inventory` were **class** attributes
+keyed by *player number*, and `get_item_counts()` only recomputes when the
+per-player entry is empty. So they survived into the next generation in the
+same process (WebHost worker reuse, Universal Tracker regen, batch generation).
+
+Every Character Block is `{OptOne(|<Char>|)}`, and `OptOne` clamps to the cached
+pool count. Exactly one random base character is precollected, so its real pool
+count is 0 → `|Char:0|` → always true — correct for the *actual* starter. With a
+leaked cache the **previous** seed's starter is the one reading 0, so all of
+*that* character's blocks sit in logic for a player who never had them. The real
+starter stays gated at `|X:1|`, which is invisible because the player holds it —
+so exactly one wrong character shows, matching the report. The "after I got
+Yellow Toad" timing was coincidental: the blocks were ungated from the start and
+only became visible as regions opened.
+
+Fixed by shadowing both dicts per-instance in `SMBWonderWorld.__init__`. Pinned
+by `test_item_counts_not_shared_across_generations` (three generations in one
+process, asserting only the current starter is ungated).
+
+⚠️ `test_each_block_gates_on_its_character` was **too weak to catch this** — it
+asserted `any(block is gated)` against an empty-handed state, which passes
+vacuously because the regions aren't reachable either. It now collects every
+non-character item first (so region tolls are satisfied) and asserts the ungated
+set is *exactly* `[starter]`. Any future reachability test in this class must
+satisfy region gates first or it proves nothing.
+
+## Open risks flagged during the roster audit
+
+- **Banc `chara` → roster enum domain is inferred, not read.**
+  `scripts/romfs/build_charblock_table.py` asserts the block's `PlayerCharaType`
+  param shares the `LocalPlayerCharaType` enum domain because the actor's
+  `CheckPlayerCharaType` node compares them directly. That is inference. The
+  upstream extractor (`smbw_re_tmp/charblock_table.py`) and the extracted RomFS
+  are **both gone**, so this link is currently unreproducible from the repo
+  alone — and it is the one the RE map previously caught being wrong
+  (`Nabbit=11` shift). Highest-risk unverified link in the chain.
+- **Roster order for indices 0–6 rests on a single Ghidra name-table read.** The
+  murmur3 hashes prove name↔hash, *not* index↔name. The corroborating range
+  check only constrains 7–11.
+- **`items.json` order is NOT roster order** (indices 53/54 are Light-Blue /
+  Yellow Yoshi, swapped vs roster 10/11). Harmless — AP item ids are independent
+  of roster index — but a trap for anyone assuming they align.
+- **PopTracker item mapping.** `scripts/generate_tracker_logic.py` builds
+  `name2code` by *positional index* into `items.json`, guarded only by a base-id
+  assert. Dropping the 4 Button items shifted every character's AP id by −4
+  (Mario 48 → 44). If the tracker checkout's `item_mapping.lua` isn't
+  regenerated in lockstep, character items bind to the wrong tracker codes.
+  Worth an explicit name-based assert.
+
 ## General audit follow-up
 
 The progression-wall fix was scoped to *badge* levels. The same softlock class
@@ -282,6 +420,12 @@ can exist for any **non-badge forced level** that blocks the only path but is
 modeled as seeds-only. A general wall audit (re-derive each world's forced path
 from the game/PDF, diff against the seed-toll region graph) is the recommended
 next deep pass.
+
+⚠️ **Known drift** spotted 2026-07-20: the "Region-gate facts" section above
+claims `W1 Post-Bulrush Express` requires `|Elephant Fruit| OR |Drill Mushroom|`,
+but `regions.json` has `[]` and `W1: Bulrush Express - Secret Exit` is likewise
+open (player-confirmed reachable without Elephant). The doc line looks stale
+rather than the data being wrong — verify and reconcile.
 
 ---
 

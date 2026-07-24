@@ -229,104 +229,6 @@ HkTrampoline<void, void*> nerveActivateOnceHook = hk::hook::trampoline(
         if (vt_off == kVtableOff_SceneTransition) {
             probe::latchSceneTransitionTick(hk::svc::getSystemTick());
 
-            // Open-world secret-exit unlock (2026-06-30).  A few "replay"
-            // courses (Operation Poplin Rescue, Royal Seed Mansion) only
-            // spawn their secret goal + remove the wall blocks once the
-            // transient bool IsInClearedCourse (0xbef2db36) is set -- which
-            // in the vanilla linear flow happens on re-entry of a cleared
-            // course, but never in open-world (that flow is bypassed).  Here,
-            // at scene-load (this SceneTransition fire, BEFORE the level's
-            // BoolGameDataTag latches IsInClearedCourse at actor-init), we
-            // read the current course identity and, if the bridge flagged it
-            // for force-clear, write the flag so the secret path appears.
-            //
-            // Course identity = (in-game world_val 0x9f5ead3c,
-            // CourseInfo.CourseId enum 0xdf82e9ab).  Both read via the pure
-            // container-A reader (no dirty-queue write -> safe here, unlike
-            // the gated container writers).  The write goes to container-B
-            // (save-data, stable across scene transitions), so it does NOT
-            // need the scene-transition-window guard the per-scene writers
-            // use.  Datamined constants -- see the memory
-            // smbwap-secret-exit-isinclearedcourse.
-            //
-            // *** LIVE-TEST NOTES ***  Two things to confirm on first run
-            // (via the scene_course_probe log below): (1) that CourseInfo.
-            // CourseId (0xdf82e9ab, an Enum) actually reads through the
-            // container-A reader and equals the expected value on entry
-            // (0xcd7c09bb for Operation Poplin Rescue); if it reads 0, the
-            // enum lives in a different container and we need its reader.
-            // (2) that this fire precedes the actor latch (secret path
-            // appears).  If not, move the write to a slightly earlier/later
-            // course-load hook.
-            {
-                const unsigned fc_mask =
-                    smbwap::ap::getForceClearedCoursesMask();
-                if (fc_mask != 0 && probe::isSaveLoaded()) {
-                    const unsigned world_val =
-                        probe::readContainerAValue(0x9f5ead3cu);
-                    const unsigned course_id =
-                        probe::readContainerAValue(0xdf82e9abu);
-
-                    // {mask bit, in-game world_val, CourseInfo.CourseId enum}.
-                    // MUST match FORCE_CLEARED_COURSES bit order in
-                    // apworld/.../client/force_cleared_table.py.
-                    struct ForceClearedCourse {
-                        unsigned bit;
-                        unsigned world_val;
-                        unsigned course_id;
-                        const char* name;
-                    };
-                    static constexpr ForceClearedCourse kForceClearedCourses[] = {
-                        // bit 0: Operation Poplin Rescue (W5 Course551 =
-                        // world_val 6, CourseId "Course11" 0xcd7c09bb).
-                        {0u, 6u, 0xcd7c09bbu, "Operation Poplin Rescue"},
-                        // bit 1: Royal Seed Mansion (W3 Course531 =
-                        // world_val 4, CourseId "Course61" 0x37d76dc1).
-                        {1u, 4u, 0x37d76dc1u, "Royal Seed Mansion"},
-                    };
-
-                    for (const auto& c : kForceClearedCourses) {
-                        if (c.world_val != world_val
-                            || c.course_id != course_id) {
-                            continue;
-                        }
-                        static std::atomic<unsigned> s_fc_log{0};
-                        const bool do_log = s_fc_log.fetch_add(1) < 24;
-                        if ((fc_mask & (1u << c.bit)) != 0) {
-                            const bool ok = probe::grantContainerBBool(
-                                0xbef2db36u, 1u);
-                            if (do_log) {
-                                SMBWAP_LOG_INFO(
-                                    "FORCE_CLEARED: %s (world=%u "
-                                    "course=0x%08x) -> IsInClearedCourse=1 "
-                                    "(grant %s)",
-                                    c.name, world_val, course_id,
-                                    ok ? "ok" : "refused");
-                            }
-                        } else if (do_log) {
-                            SMBWAP_LOG_INFO(
-                                "FORCE_CLEARED: %s matched but bit %u clear "
-                                "in mask 0x%04x -> skip",
-                                c.name, c.bit, fc_mask);
-                        }
-                        break;
-                    }
-
-                    // Bring-up observability: log the raw (world, course) a
-                    // bounded number of times so the first live test confirms
-                    // the CourseInfo.CourseId read + the enum values.  Bounded
-                    // monotonic counter (NOT a fetch_sub budget -- that
-                    // underflows and spams, see the log-budget footgun).
-                    static std::atomic<unsigned> s_probe_log{0};
-                    if (s_probe_log.fetch_add(1) < 40) {
-                        SMBWAP_LOG_INFO(
-                            "scene_course_probe: world_val=%u "
-                            "course_id=0x%08x fc_mask=0x%04x",
-                            world_val, course_id, fc_mask);
-                    }
-                }
-            }
-
             constexpr std::ptrdiff_t kDeathDiscriminator_Off = 0x18;
             constexpr std::uint64_t  kDeathDiscriminator_Val = 0x00ff000600000004ull;
             if (nerve) {
@@ -494,6 +396,21 @@ HkTrampoline<void, void*> setCourseClearFlagExecuteHook = hk::hook::trampoline(
 extern "C" {
 std::uint64_t g_cblkBumCount = 0;            // BlockUpMove @ +0x146397c
 std::uint64_t g_cblkBumRing[16] = {};
+// [cblk-diag9] Parallel ring capturing **x19 = the owning ACTOR**.
+//
+// Ghidra 2026-07-21: our hook at +0x146397c is the `mov x0,x19` at the tail
+// of BlockUpMove's prologue.  x19 was loaded at +0x1463938 as
+//     x8 = [x0(node) + 8]; x8 = [x8 + 8]; x19 = [x8 + 0x1f8]
+// and is still live.  So the actor is sitting in a register -- no
+// node->graph->actor walk needed.  Corroborated by both helpers taking x19
+// and dereferencing +0x208 (component table) / +0x264,+0x294 (position).
+//
+// Storing x19 obeys STANDING RULE 1: it is a plain register READ (x19 is
+// callee-saved; we never write it) with ZERO dereference in the thunk.  The
+// value is validated in the drain via cblkSafeRead*.  Even on the lazy
+// class-REGISTRATION call that killed diag7c, a garbage x19 is just a
+// scan that finds nothing.
+std::uint64_t g_cblkActorRing[16] = {};
 void*         g_cblkBumOrig = nullptr;
 void cblkBumProbe();
 }
@@ -513,10 +430,13 @@ cblkBumProbe:
     add     x10, x9, #1
     stxr    w11, x10, [x16]
     cbnz    w11, 1b
+    and     x9, x9, #15
     adrp    x17, g_cblkBumRing
     add     x17, x17, :lo12:g_cblkBumRing
-    and     x9, x9, #15
     str     x0, [x17, x9, lsl #3]
+    adrp    x17, g_cblkActorRing
+    add     x17, x17, :lo12:g_cblkActorRing
+    str     x19, [x17, x9, lsl #3]
     adrp    x16, g_cblkBumOrig
     ldr     x16, [x16, :lo12:g_cblkBumOrig]
     br      x16
@@ -543,10 +463,209 @@ inline bool cblkSafeReadU64(std::uint64_t addr, std::uint64_t* out) {
     return true;
 }
 
+// [cblk-diag9] svcQueryMemory-guarded C-string read.  Same contract as
+// cblkSafeReadU64 (rule 2: never fault) but byte-granular and
+// alignment-free, because gyaml class-name pointers are not 8-aligned.
+// Copies at most cap-1 bytes, NUL-terminates, stops at the region end.
+// Returns false (buf empty) on any miss.
+inline bool cblkSafeReadCStr(std::uint64_t addr, char* buf, std::size_t cap) {
+    if (cap == 0) return false;
+    buf[0] = '\0';
+    if (addr == 0) return false;
+    hk::svc::MemoryInfo info {};
+    u32 pageInfo = 0;
+    if (hk::svc::QueryMemory(&info, &pageInfo, addr).failed()) return false;
+    if ((info.permission & hk::svc::MemoryPermission_Read) == 0) return false;
+    const std::uint64_t end = info.base_address + info.size;
+    if (addr >= end) return false;
+    const std::uint64_t avail = end - addr;
+    std::size_t n = cap - 1;
+    if (avail < n) n = static_cast<std::size_t>(avail);
+    const auto* src = reinterpret_cast<const volatile char*>(addr);
+    std::size_t i = 0;
+    for (; i < n; ++i) {
+        const char c = src[i];
+        buf[i] = c;
+        if (c == '\0') return true;
+        // Class names are ASCII identifiers; bail early on anything else so
+        // a random pointer into binary data doesn't look like a hit.
+        if (c < 0x20 || c > 0x7e) { buf[i] = '\0'; return i > 0; }
+    }
+    buf[i] = '\0';
+    return true;
+}
+
 // Frame counter owned by playerTickLatchHook; the diag7 drain logs stamp
 // themselves with it so bump-time fires correlate against the once/second
 // rate lines.
 std::atomic<std::uint32_t> s_tickFrame{0};
+
+// ---------------------------------------------------------------------------
+// [cblk-diag8] Stage 0: BlockUpMove delta histogram.
+//
+// WHY: character-block checks are currently discriminated by ONE number --
+// delta = node - [node+0x28], the byte offset of the firing BlockUpMove node
+// inside its owning AINB graph instance.  0x17d0 is ASSUMED to mean
+// ObjectBlockClarityCharacter, but that is a graph-LAYOUT artifact, not actor
+// identity: any other actor whose graph compiles to the same node offset is
+// indistinguishable.  0x17d0 was confirmed on exactly ONE block instance
+// across two sessions, so the sample is far too small to trust.
+//
+// The player-visible symptom ("character block checks fire when you hit any
+// hidden block") is now PARTLY explained by a separate apworld bug (the
+// item_counts cache leak, fixed 2026-07-20), so the remaining severity of the
+// runtime over-firing is genuinely unknown.  This histogram settles it before
+// anyone spends a Ghidra session on actor identity.
+//
+// DECISION RULE: a 0x17d0 line logged in a course that has NO character block
+// is a PROVEN false positive.  That is why every line carries course identity.
+// If no such line appears after a broad bump session, the over-firing is
+// narrower than assumed and the deeper RE should be re-scoped.
+//
+// This is OBSERVABILITY ONLY -- the emit path below is unchanged.
+// ---------------------------------------------------------------------------
+struct CblkDeltaEntry {
+    std::uint64_t delta;
+    std::uint64_t firstNode;
+    std::uint64_t graphVt;   // [p28+0x00] -- graph-instance vtable
+    std::uint64_t w48;       // [p28+0x48] -- 1=clarity / 2=regular (diag7g)
+    std::uint32_t count;
+    unsigned world;          // container-A 0x9f5ead3c at first sight
+    std::int32_t courseIdx;  // CourseId name-table index at first sight
+};
+// Game thread only -- no synchronisation needed.  16 distinct deltas is far
+// more than the 2 seen to date; overflow is counted, not silently dropped.
+CblkDeltaEntry s_cblkHist[16] = {};
+unsigned s_cblkHistN = 0;
+std::uint32_t s_cblkHistOverflow = 0;
+
+// Current course identity, for stamping every [cblk-*] line.  Pure readers,
+// no dirty queue.  Guarded on isSaveLoaded so it is safe outside a loaded
+// save; returns 0/-1 there rather than faulting.
+//
+// courseIdx is the CourseId name-table INDEX (enum name "CourseN" -> N-1),
+// via probe::readEnumIndex.  The earlier version used readContainerAValue
+// here and always logged 0 -- CourseId is Enum-category, not Int.  That is
+// what made the first false-positive capture ambiguous.
+inline void cblkCourseIdentity(unsigned* world, std::int32_t* courseIdx) {
+    *world = 0;
+    *courseIdx = -1;
+    if (!probe::isSaveLoaded()) return;
+    *world = probe::readContainerAValue(0x9f5ead3cu);
+    *courseIdx = probe::readEnumIndex(0xdf82e9abu);
+}
+
+// [cblk-hit] ACTOR CLASS IDENTITY -- the character-block discriminator.
+//
+// SOLVED 2026-07-23 by the diag9 scan (git history has the scan itself).
+//
+// Why this is needed at all (RE map s16): the plain hidden blocks and the
+// character block ship a BYTE-IDENTICAL `BlockClarity.root.ainb`, because
+// they all inherit `Actor/BlockClarity` -- visible at runtime in the actor's
+// parent-class table at +0x478:
+//     +0x478+0x00  "Actor/ObjectBlockClarityCharacter"   <- leaf class
+//     +0x478+0x10  "Actor/BlockClarity"                  <- shared parent
+//     +0x478+0x20  "Actor/ObjectReactionBlockBase"
+//     +0x478+0x30  "Actor/ObjectBlockBase"
+// The firing BlockUpMove node lives in that shared graph, so delta,
+// graph-vtable and [p28+0x48] are identical by construction and cannot
+// discriminate.  Proven live: a false check fired in a course with zero
+// character blocks.
+//
+// RULED OUT: the ACTOR vtable is also identical (NSO+0x344c288 for both) --
+// these are one C++ class driven by different data, so no vtable compare
+// works either.  Don't re-try it.
+//
+// WHAT WORKS: `actor + 0x18` is a direct `char*` to the leaf gyaml class
+// name.  Live-verified in one session -- "LongBlockClarity" on a plain
+// bump, "ObjectBlockClarityCharacter" on a character-block bump.  The same
+// string is reachable at +0x1f8 and via +0x8 -> +0x20 if +0x18 ever moves.
+//
+// There are FOUR Clarity-family actors in the RomFS (BlockClarity 100
+// placements, LongBlockClarity 26, ObjectBlossomsBlockClarity 3,
+// ObjectBlockClarityCharacter 166), so this deliberately tests for the
+// character class by name rather than blocklisting the others -- any
+// Clarity variant we haven't enumerated is rejected by default.
+constexpr const char* kCharBlockClass = "ObjectBlockClarityCharacter";
+constexpr std::uint64_t kActorClassNameOff = 0x18;
+
+// Reads the actor's leaf class name.  Returns false (buf empty) if the
+// actor pointer is null or the name isn't readable -- callers must treat
+// that as "not a character block" and NOT emit.
+bool cblkActorClassName(std::uint64_t actor, char* buf, std::size_t cap) {
+    if (cap) buf[0] = '\0';
+    if (actor == 0) return false;
+    std::uint64_t namePtr = 0;
+    if (!cblkSafeReadU64(actor + kActorClassNameOff, &namePtr)) return false;
+    return cblkSafeReadCStr(namePtr, buf, cap) && buf[0] != '\0';
+}
+
+bool cblkIsCharacterBlock(const char* cls) {
+    const char* a = cls;
+    const char* b = kCharBlockClass;
+    while (*a && *b && *a == *b) { ++a; ++b; }
+    return *a == '\0' && *b == '\0';
+}
+
+// Record one bump against the histogram.  Logs a full line the FIRST time a
+// delta is seen (replacing the old global 20-line cap, which could starve a
+// rare delta behind a chatty one).  Returns nothing; purely diagnostic.
+void cblkHistRecord(std::uint64_t delta, std::uint64_t node,
+                    std::uint64_t p28, std::uint32_t frame) {
+    for (unsigned i = 0; i < s_cblkHistN; ++i) {
+        if (s_cblkHist[i].delta == delta) {
+            ++s_cblkHist[i].count;
+            return;
+        }
+    }
+    if (s_cblkHistN >= 16) {
+        ++s_cblkHistOverflow;
+        return;
+    }
+    CblkDeltaEntry& e = s_cblkHist[s_cblkHistN++];
+    e.delta = delta;
+    e.firstNode = node;
+    e.count = 1;
+    cblkSafeReadU64(p28 + 0x00, &e.graphVt);
+    cblkSafeReadU64(p28 + 0x48, &e.w48);
+    cblkCourseIdentity(&e.world, &e.courseIdx);
+    SMBWAP_LOG_INFO(
+        "[cblk-hit] delta-histogram NEW delta=0x%llx frame=%u node=0x%llx "
+        "p28=0x%llx vt=0x%llx w48=0x%llx world=%u course_idx=%d",
+        static_cast<unsigned long long>(delta), frame,
+        static_cast<unsigned long long>(node),
+        static_cast<unsigned long long>(p28),
+        static_cast<unsigned long long>(e.graphVt),
+        static_cast<unsigned long long>(e.w48),
+        e.world, e.courseIdx);
+}
+
+// Periodic dump of every delta seen so far, so a session's log tail contains
+// the whole picture without needing to scroll back to the NEW lines.
+void cblkHistDump(std::uint32_t frame) {
+    if (s_cblkHistN == 0) return;
+    unsigned world = 0;
+    std::int32_t courseIdx = -1;
+    cblkCourseIdentity(&world, &courseIdx);
+    for (unsigned i = 0; i < s_cblkHistN; ++i) {
+        const CblkDeltaEntry& e = s_cblkHist[i];
+        SMBWAP_LOG_INFO(
+            "[cblk-hit] delta-histogram DUMP frame=%u now_world=%u "
+            "now_course_idx=%d | delta=0x%llx n=%u vt=0x%llx w48=0x%llx "
+            "first_world=%u first_course_idx=%d%s",
+            frame, world, courseIdx,
+            static_cast<unsigned long long>(e.delta), e.count,
+            static_cast<unsigned long long>(e.graphVt),
+            static_cast<unsigned long long>(e.w48),
+            e.world, e.courseIdx,
+            e.delta == 0x17d0 ? "  <== CLARITY (emits a check)" : "");
+    }
+    if (s_cblkHistOverflow != 0) {
+        SMBWAP_LOG_INFO(
+            "[cblk-hit] delta-histogram OVERFLOW dropped=%u distinct deltas "
+            "beyond the 16-slot table", s_cblkHistOverflow);
+    }
+}
 
 // PlayerTickLatch @ NSO +0x00273868 -- function-entry trampoline on
 // FUN_7100273868(long param_1, long param_2), the per-frame player tick
@@ -589,6 +708,118 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
         // connected (single atomic load when no sweep is armed).
         probe::charaGateTick();
 
+        // Open-world secret-exit unlock -- per-frame, latched per course.
+        //
+        // MOVED HERE 2026-07-23 from the SceneTransition nerve.  Two stacked
+        // bugs kept this feature dead since it shipped; fixing only the first
+        // would NOT have fixed it:
+        //   1. CourseId (0xdf82e9ab) is Enum-category, so the container-A Int
+        //      reader always returned 0 -> the match never fired.  Fixed by
+        //      probe::readEnumIndex.
+        //   2. Even with the correct reader, at SceneTransition time CourseId
+        //      still resolves to name-table index 80 == "Invalid" -- proven
+        //      live: `scene_course_probe: world_val=4 course_idx=80` and
+        //      `world_val=1 course_idx=80`, i.e. not yet populated at scene
+        //      load, in two different worlds.  Meanwhile the per-frame
+        //      [cblk-hit] path read real indices (61, 1) during play.
+        // So the read has to happen once the course is actually running.
+        //
+        // A few "replay" courses (Operation Poplin Rescue, Royal Seed Mansion)
+        // only spawn their secret goal + remove the wall blocks when the
+        // transient bool IsInClearedCourse (0xbef2db36) is set.  In the vanilla
+        // linear flow that happens on re-entry of a cleared course; in
+        // open-world that flow is bypassed entirely.
+        //
+        // Latched on (world, course_idx) so the container-B write happens once
+        // per course entry rather than 60x/second -- the dirty queue has a hard
+        // cap and overflowing it Aborts.  Re-arms when the course changes.
+        //
+        // STILL UNCONFIRMED: whether even a first-frame write beats the level's
+        // BoolGameDataTag actor-init latch.  If FORCE_CLEARED logs `grant ok`
+        // and the secret exit still doesn't appear, that's the remaining
+        // problem and the write needs an earlier course-load hook (one where
+        // CourseId is nonetheless already live).
+        {
+            const unsigned fc_mask = smbwap::ap::getForceClearedCoursesMask();
+            if (fc_mask != 0 && probe::isSaveLoaded()
+                && !probe::isInSceneTransitionWindow()) {
+                const unsigned world_val =
+                    probe::readContainerAValue(0x9f5ead3cu);
+                const std::int32_t course_idx =
+                    probe::readEnumIndex(0xdf82e9abu);
+
+                // {mask bit, in-game world_val, CourseId name-table index}.
+                // MUST match FORCE_CLEARED_COURSES bit order in
+                // apworld/.../client/force_cleared_table.py.
+                //
+                // *** index is N-1 for enum name "CourseN" *** -- the
+                // resolver's string table starts at "Course1", so this is NOT
+                // the GameDataList ordinal (whose 0 is "Invalid", and which is
+                // what index 80 means here).  Verified live against the table:
+                // [10]=="Course11", [60]=="Course61", [80]=="Invalid".
+                struct ForceClearedCourse {
+                    unsigned bit;
+                    unsigned world_val;
+                    std::int32_t course_idx;
+                    const char* name;
+                };
+                static constexpr ForceClearedCourse kForceClearedCourses[] = {
+                    // bit 0: Operation Poplin Rescue (W5 Course551 =
+                    // world_val 6, CourseId "Course11" -> index 10).
+                    {0u, 6u, 10, "Operation Poplin Rescue"},
+                    // bit 1: Royal Seed Mansion (W3 Course531 =
+                    // world_val 4, CourseId "Course61" -> index 60).
+                    {1u, 4u, 60, "Royal Seed Mansion"},
+                };
+
+                // Per-course latch: (world << 16) | (idx & 0xffff), or 0 when
+                // not in a matching course.  Only write on a change.
+                static std::atomic<std::uint32_t> s_fcLatch{0};
+                for (const auto& c : kForceClearedCourses) {
+                    if (c.world_val != world_val || c.course_idx != course_idx) {
+                        continue;
+                    }
+                    const std::uint32_t token =
+                        (world_val << 16)
+                        | (static_cast<std::uint32_t>(course_idx) & 0xffffu);
+                    if (s_fcLatch.exchange(token, std::memory_order_relaxed)
+                        == token) {
+                        break;   // already handled this course entry
+                    }
+                    static std::atomic<unsigned> s_fc_log{0};
+                    const bool do_log = s_fc_log.fetch_add(1) < 24;
+                    if ((fc_mask & (1u << c.bit)) != 0) {
+                        const bool ok =
+                            probe::grantContainerBBool(0xbef2db36u, 1u);
+                        if (do_log) {
+                            SMBWAP_LOG_INFO(
+                                "FORCE_CLEARED: %s (world=%u course_idx=%d) "
+                                "-> IsInClearedCourse=1 (grant %s)",
+                                c.name, world_val, course_idx,
+                                ok ? "ok" : "refused");
+                        }
+                    } else if (do_log) {
+                        SMBWAP_LOG_INFO(
+                            "FORCE_CLEARED: %s matched but bit %u clear in "
+                            "mask 0x%04x -> skip", c.name, c.bit, fc_mask);
+                    }
+                    break;
+                }
+
+                // Bounded observability: confirms the enum read is live during
+                // play (contrast the old scene-transition site, which only
+                // ever saw index 80 == "Invalid").
+                static std::atomic<unsigned> s_probe_log{0};
+                static std::atomic<std::int32_t> s_lastIdx{-999};
+                if (s_lastIdx.exchange(course_idx) != course_idx
+                    && s_probe_log.fetch_add(1) < 40) {
+                    SMBWAP_LOG_INFO(
+                        "course_probe: world_val=%u course_idx=%d "
+                        "fc_mask=0x%04x", world_val, course_idx, fc_mask);
+                }
+            }
+        }
+
         // [cblk-hit] character-block hit detection, game-thread half.  The
         // BlockUpMove probe (register-transparent asm thunk) only counts and
         // stashes the node ptr; HERE, once per frame, we edge-detect per
@@ -605,22 +836,23 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
             // dedup (120-frame window) turns that into a single edge.  The
             // clarity filter is the graph-layout delta node-[node+0x28]
             // (0x17d0 = ObjectBlockClarityCharacter's firing BlockUpMove
-            // node; 0x1690 = the regular ?-block graph).  Unknown deltas are
-            // logged (throttled) and NOT emitted -- they surface other
-            // BlockUpMove users / sibling clarity node instances for
-            // accept-listing without risking false checks.
+            // node; 0x1690 = the regular ?-block graph).  Only 0x17d0 emits;
+            // every delta -- known or not -- is recorded in the [cblk-diag8]
+            // histogram, which is how we find out what ELSE shares 0x17d0.
             {
                 static std::uint64_t s_seen = 0;        // game thread only
                 static std::uint64_t s_dedupNode[4] = {};
                 static std::uint32_t s_dedupFrame[4] = {};
-                static std::atomic<unsigned> s_unkLines{0};
                 static std::atomic<std::uint32_t> s_emits{0};
                 constexpr std::uint64_t kClarityDelta = 0x17d0;
-                constexpr std::uint64_t kRegularDelta = 0x1690;
                 if (bum - s_seen > 16) s_seen = bum - 16;
                 for (; s_seen < bum; ++s_seen) {
                     const std::uint64_t node = __atomic_load_n(
                         &g_cblkBumRing[s_seen & 15], __ATOMIC_RELAXED);
+                    // [cblk-diag9] same ring slot -> the actor (x19) captured
+                    // by the SAME thunk invocation as `node`.
+                    const std::uint64_t actor = __atomic_load_n(
+                        &g_cblkActorRing[s_seen & 15], __ATOMIC_RELAXED);
                     bool dup = false;
                     for (int i = 0; i < 4; ++i) {
                         if (s_dedupNode[i] == node &&
@@ -644,7 +876,34 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                         continue;  // not the expected node shape
                     }
                     const std::uint64_t delta = node - p28;
+                    // [cblk-diag8] Stage 0: record EVERY delta, known or not.
+                    // Runs before the branch so 0x17d0 / 0x1690 are counted
+                    // too -- the false-positive test needs the clarity delta's
+                    // course identity, which the old logger never captured.
+                    cblkHistRecord(delta, node, p28, frame);
                     if (delta == kClarityDelta) {
+                        // The delta alone is NOT sufficient -- every Clarity
+                        // variant shares the graph that fires this node.  Gate
+                        // on the actor's leaf class name; anything that isn't
+                        // the character block (plain/Long/Blossoms clarity, or
+                        // an unreadable actor) is dropped without emitting.
+                        char cls[48];
+                        const bool haveCls =
+                            cblkActorClassName(actor, cls, sizeof(cls));
+                        if (!haveCls || !cblkIsCharacterBlock(cls)) {
+                            static std::atomic<std::uint32_t> s_rej{0};
+                            const std::uint32_t r =
+                                s_rej.fetch_add(1, std::memory_order_relaxed);
+                            if (r < 12) {
+                                SMBWAP_LOG_INFO(
+                                    "[cblk-hit] REJECT non-character clarity "
+                                    "bump #%u frame=%u actor=0x%llx class=\"%s\"",
+                                    r, frame,
+                                    static_cast<unsigned long long>(actor),
+                                    haveCls ? cls : "<unreadable>");
+                            }
+                            continue;
+                        }
                         const std::uint32_t n =
                             s_emits.fetch_add(1, std::memory_order_relaxed);
                         // Resolve the hitting character live on the Switch:
@@ -653,28 +912,28 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                         // Mario + Yoshi blocks) on its own.  -1 if the read
                         // misses; the client then falls back / drops.
                         const std::int32_t hitChara = probe::currentChara(0);
+                        // Course identity on the emit line is THE Stage-0
+                        // datum: a hit logged in a course with no character
+                        // block for `chara` is a proven false positive.
+                        unsigned world = 0;
+                        std::int32_t courseIdx = -1;
+                        cblkCourseIdentity(&world, &courseIdx);
                         SMBWAP_LOG_INFO(
                             "[cblk-hit] CHARACTER BLOCK HIT #%u frame=%u "
-                            "node=0x%llx chara=%d -> enqueueCharBlockHit",
+                            "node=0x%llx chara=%d world=%u course_idx=%d "
+                            "class=\"%s\" -> enqueueCharBlockHit",
                             n, frame,
                             static_cast<unsigned long long>(node),
-                            static_cast<int>(hitChara));
+                            static_cast<int>(hitChara), world, courseIdx, cls);
                         smbwap::ap::enqueueCharBlockHit(
                             /*player_slot=*/0u, /*chara=*/hitChara,
                             0.0f, 0.0f, 0.0f);
-                    } else if (delta != kRegularDelta) {
-                        // Unknown BlockUpMove user -- log for accept-listing.
-                        const unsigned u = s_unkLines.fetch_add(
-                            1, std::memory_order_relaxed);
-                        if (u < 20) {
-                            SMBWAP_LOG_INFO(
-                                "[cblk-hit] unknown-delta bump #%u frame=%u "
-                                "node=0x%llx delta=0x%llx (no emit)",
-                                u, frame,
-                                static_cast<unsigned long long>(node),
-                                static_cast<unsigned long long>(delta));
-                        }
                     }
+                    // NOTE: the old "unknown-delta bump" logger lived here with
+                    // a global 20-line cap, and skipped the two known deltas
+                    // entirely.  cblkHistRecord above supersedes it: one line
+                    // per DISTINCT delta (so a rare delta can't be starved by a
+                    // chatty one) plus a periodic full dump.
                 }
             }
 
@@ -684,6 +943,13 @@ HkTrampoline<void, void*, void*> playerTickLatchHook = hk::hook::trampoline(
                 SMBWAP_LOG_INFO(
                     "[cblk-hit] frame=%u blockUpMove=%llu", frame,
                     static_cast<unsigned long long>(bum));
+            }
+            // [cblk-diag8] full histogram every ~30 s, so the tail of a
+            // session log contains the whole picture without scrolling back
+            // to the one-shot NEW lines.  Offset from the heartbeat so the
+            // two don't interleave.
+            if (frame % 1800 == 300) {
+                cblkHistDump(frame);
             }
         }
 

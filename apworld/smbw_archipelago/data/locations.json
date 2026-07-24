@@ -1120,7 +1120,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Bubble Flower| OR |All Bubble Flower Badge|"
+    "requires": "|Bubble Flower| OR |All Bubble Flower Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W2: Outmaway Valley - Normal Exit",
@@ -1569,7 +1569,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Spring Feet I - 10 Coin #2",
@@ -1578,7 +1578,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "W2: Spring Feet I - 10 Coin #3",
@@ -1587,7 +1587,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": ""
   },
   {
     "name": "Special: Climb to the Beat - Normal Exit",
@@ -3189,7 +3189,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Invisibility I - 10 Coin #2",
@@ -3198,7 +3198,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Invisibility I - 10 Coin #3",
@@ -3207,7 +3207,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Sunbaked Skirmish - Wonder Seed",
@@ -3597,7 +3597,7 @@
     "category": [
       "Petal Isles"
     ],
-    "requires": "|Boosting Spin Jump Badge|"
+    "requires": "|Boosting Spin Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "PI: Boosting Spin Jump I - Top of Flag",
@@ -3606,7 +3606,7 @@
       "Petal Isles",
       "Gold Flag"
     ],
-    "requires": "|Boosting Spin Jump Badge|"
+    "requires": "|Boosting Spin Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #1",
@@ -3615,7 +3615,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge|"
+    "requires": "|Boosting Spin Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #2",
@@ -3624,7 +3624,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge|"
+    "requires": "|Boosting Spin Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "PI: Boosting Spin Jump I - 10 Coin #3",
@@ -3633,7 +3633,7 @@
       "Petal Isles",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge|"
+    "requires": "|Boosting Spin Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "PI: Spelunking! - Wonder Seed",
@@ -4690,7 +4690,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Floating High Jump II - Top of Flag",
@@ -4699,7 +4699,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #1",
@@ -4708,7 +4708,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #2",
@@ -4717,7 +4717,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #3",
@@ -4726,7 +4726,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge|"
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Boosting Spin Jump II - Normal Exit",
@@ -5010,7 +5010,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Invisibility II - 10 Coin #2",
@@ -5019,7 +5019,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Invisibility II - 10 Coin #3",
@@ -5028,7 +5028,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Invisibility Badge|"
+    "requires": ""
   },
   {
     "name": "W6: Spring Feet II - Normal Exit",
@@ -5036,7 +5036,7 @@
     "category": [
       "World 6"
     ],
-    "requires": ""
+    "requires": "|Spring Feet Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Spring Feet II - Top of Flag",
@@ -5045,7 +5045,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": ""
+    "requires": "|Spring Feet Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Spring Feet II - 10 Coin #1",
@@ -5054,7 +5054,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": "|Spring Feet Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Spring Feet II - 10 Coin #2",
@@ -5063,7 +5063,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": "|Spring Feet Badge| OR |@Yoshi:1|"
   },
   {
     "name": "W6: Spring Feet II - 10 Coin #3",
@@ -5072,7 +5072,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Spring Feet Badge|"
+    "requires": "|Spring Feet Badge| OR |@Yoshi:1|"
   },
   {
     "region": "W6 Post-Spring",
@@ -5807,7 +5807,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": "{OptOne(|Toadette|)}"
+    "requires": "{OptOne(|Toadette|)} AND (|Elephant Fruit| OR |All Elephant Power Badge|) AND (|Bubble Flower| OR |All Bubble Flower Badge|) AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "BC: KnuckleFest Bowser's Blazing Beats - Yellow Toad Block",
