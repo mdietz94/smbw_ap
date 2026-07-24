@@ -44,8 +44,8 @@ bool grantContainerBBool(std::uint32_t hash, std::uint32_t value) {
 
     const auto bp = checkContainerB();
     if (bp.refuse) {
-        static std::atomic<std::uint32_t> defer_budget{32};
-        if (defer_budget.fetch_sub(1) > 0) {
+        static std::atomic<std::int32_t> defer_budget{32};
+        if (::smbwap::util::takeBudget(defer_budget)) {
             SMBWAP_LOG_WARN(
                 "[backpressure] refused grantContainerBBool(hash=0x%08x, "
                 "value=%u): %s at %u%% of cap (>= %u%%)",
@@ -55,8 +55,8 @@ bool grantContainerBBool(std::uint32_t hash, std::uint32_t value) {
         return false;
     }
     if (bp.warn) {
-        static std::atomic<std::uint32_t> warn_budget{32};
-        if (warn_budget.fetch_sub(1) > 0) {
+        static std::atomic<std::int32_t> warn_budget{32};
+        if (::smbwap::util::takeBudget(warn_budget)) {
             SMBWAP_LOG_WARN(
                 "[backpressure] grantContainerBBool near cap: %s at %u%% "
                 "(>= %u%%)",
@@ -68,8 +68,8 @@ bool grantContainerBBool(std::uint32_t hash, std::uint32_t value) {
         mainBase() + kContainerBWriterOffset);
     fn(gmd, value, hash);
 
-    static std::atomic<std::uint32_t> log_budget{16};
-    if (log_budget.fetch_sub(1) > 0) {
+    static std::atomic<std::int32_t> log_budget{16};
+    if (::smbwap::util::takeBudget(log_budget)) {
         SMBWAP_LOG_INFO(
             "GrantHashKeyedBool: hash=0x%08x value=%u gmd=%p",
             hash, value, gmd);

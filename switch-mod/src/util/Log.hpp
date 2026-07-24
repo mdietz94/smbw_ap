@@ -8,10 +8,33 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdarg>
 #include <cstddef>
+#include <cstdint>
 
 namespace smbwap::util {
+
+// Rate-limit helper for the `static std::atomic<...> log_budget{N};` idiom.
+// Returns true for the first N calls, false forever after.
+//
+// Use this instead of `budget.fetch_sub(1) > 0`.  On an UNSIGNED counter
+// that expression underflows past 0 to UINT32_MAX and then logs forever --
+// which is why SetBadgesAbsolute printed on all 120+ drains of the
+// 2026-07-23 session despite a budget of 16.  The same footgun is called
+// out in ApFrameBridge.cpp's drainInbound gates.  Saturating CAS here so
+// the counter can never wrap, signed or not.
+inline bool takeBudget(std::atomic<std::int32_t>& budget) {
+    auto v = budget.load(std::memory_order_relaxed);
+    while (v > 0) {
+        if (budget.compare_exchange_weak(v, v - 1,
+                                         std::memory_order_relaxed,
+                                         std::memory_order_relaxed)) {
+            return true;
+        }
+    }
+    return false;
+}
 
 enum class LogLevel { Debug, Info, Warn, Error };
 

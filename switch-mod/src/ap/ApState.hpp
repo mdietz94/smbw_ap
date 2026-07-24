@@ -31,6 +31,21 @@ enum class ConnState : std::uint8_t {
     Ready = 3,
 };
 
+// Fixed-size lock-free ring.  Named "Spsc" historically; as of 2026-07-23
+// `pop()` is safe for MULTIPLE concurrent consumers (see the comment on
+// pop()).  `push()` is still SINGLE-PRODUCER ONLY -- it reserves and
+// publishes buf_[head_] with a blind store, so two concurrent producers
+// can write the same slot and lose an event.
+//
+//   InboundRing  : 1 producer (ApClient rx thread), N consumers (the
+//                  drainInbound hook sites).  Correct with the CAS pop.
+//   OutboundRing : N producers (util::log -> enqueueLog runs on every
+//                  thread that logs), 1 consumer (ApClient worker).  The
+//                  producer side is NOT safe -- pre-existing, lossy but
+//                  not fatal (indices stay in range; worst case is a
+//                  dropped or torn diagnostic event).  Making push()
+//                  multi-producer safe needs per-slot sequence numbers,
+//                  not just a CAS on head_.
 template <typename T, std::size_t N>
 class SpscRing {
 public:
@@ -43,12 +58,35 @@ public:
         return true;
     }
 
+    // Multi-consumer safe (2026-07-23).  The original blind
+    // `tail_.store(t + 1)` was only correct for ONE consumer, but
+    // ap::drainInbound() is installed at four hook sites in main.cpp and
+    // SMBW dispatches them from a job pool -- the 2026-07-23 freeze log
+    // shows drains from four distinct guest threads (91/92/93/89).  With
+    // concurrent consumers the blind store lets a thread holding a stale
+    // `t` rewind tail_ behind another, so `t == head_` never comes true
+    // and drainInbound's `while (pop(msg))` spins forever.  That spin is
+    // silent -- every deduplicated kind breaks without logging -- so the
+    // game froze with the log ending mid-drain and no guest exception.
+    //
+    // CAS on tail_ instead: losers re-read `t` from the failed exchange
+    // and retry, so tail_ only ever advances.  The `out = buf_[t]` before
+    // the CAS can be wasted work for a loser (it re-copies on retry), but
+    // is never a torn read: the producer refuses to push when the ring is
+    // full, so it never writes the slot a consumer is currently claiming.
     bool pop(T& out) {
-        const auto t = tail_.load(std::memory_order_relaxed);
-        if (t == head_.load(std::memory_order_acquire)) return false;  // empty
-        out = buf_[t];
-        tail_.store((t + 1) % N, std::memory_order_release);
-        return true;
+        auto t = tail_.load(std::memory_order_relaxed);
+        for (;;) {
+            if (t == head_.load(std::memory_order_acquire)) return false;  // empty
+            out = buf_[t];
+            if (tail_.compare_exchange_weak(t, (t + 1) % N,
+                                            std::memory_order_release,
+                                            std::memory_order_relaxed)) {
+                return true;
+            }
+            // CAS failed: another consumer won and wrote the current tail
+            // back into `t`.  Loop and re-evaluate against head_.
+        }
     }
 
     bool peek(T& out) const {
@@ -59,10 +97,20 @@ public:
     }
 
     void popDiscard() {
-        const auto t = tail_.load(std::memory_order_relaxed);
-        tail_.store((t + 1) % N, std::memory_order_release);
+        auto t = tail_.load(std::memory_order_relaxed);
+        while (t != head_.load(std::memory_order_acquire)) {
+            if (tail_.compare_exchange_weak(t, (t + 1) % N,
+                                            std::memory_order_release,
+                                            std::memory_order_relaxed)) {
+                return;
+            }
+        }
     }
 
+    // Approximate because head_/tail_ are sampled separately.  NOTE: the
+    // `% N` here also *hides* an out-of-range index, so a sane-looking
+    // depth is not proof the ring is consistent -- don't use this to
+    // reason about ring health.
     std::size_t pendingApprox() const {
         const auto h = head_.load(std::memory_order_acquire);
         const auto t = tail_.load(std::memory_order_relaxed);
