@@ -27,7 +27,7 @@
   },
   "W1 Post-Jet Run": {
     "connects_to": [],
-    "requires": []
+    "requires": "|Jet Run Badge|"
   },
   "W1 14 Seeds": {
     "connects_to": [
@@ -74,7 +74,7 @@
   },
   "W2 Post-Jump": {
     "connects_to": [],
-    "requires": []
+    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
   },
   "W2 9 Seeds": {
     "connects_to": [
@@ -174,7 +174,7 @@
     "connects_to": [
       "Special End"
     ],
-    "requires": []
+    "requires": "|Jet Run Badge|"
   },
   "World Bowser": {
     "connects_to": [],

@@ -527,10 +527,10 @@ class SMBWContext(CommonContext):
         """The set of PlayerCharaTypes (0-11) whose AP character item has
         been received.  Same items_received walk as the power-up deny
         mask; feeds the processor's char_block_hit character-unlock gate
-        via BridgeState.  The seven base characters are precollected
-        (starting_items) so they arrive in the connect-time ReceivedItems
-        batch; the five "Character (Easy)" items are pool items and
-        unlock as found."""
+        via BridgeState.  Exactly ONE random base character is precollected
+        (starting_items) so it arrives in the connect-time ReceivedItems
+        batch; the other six base characters and the five
+        "Character (Easy)" items are pool items and unlock as found."""
         names: set[str] = set()
         for it in self.items_received:
             item_id = getattr(it, "item", None)

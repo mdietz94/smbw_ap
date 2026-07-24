@@ -73,6 +73,9 @@ class SMBWonderWorld(World):
     item_name_to_item = item_name_to_item
     item_name_groups = item_name_groups
 
+    # NOTE: these two are per-INSTANCE state -- see __init__ below.  The class
+    # attributes exist only so attribute access is safe before __init__ runs;
+    # never mutate them at class scope.
     item_counts = {}
     start_inventory = {}
 
@@ -81,6 +84,30 @@ class SMBWonderWorld(World):
     location_name_to_location = location_name_to_location
     location_name_groups = location_name_groups
     victory_names = victory_names
+
+    def __init__(self, multiworld, player: int):
+        super().__init__(multiworld, player)
+        # Shadow the class-level dicts with per-instance ones.
+        #
+        # These MUST NOT be shared across World instances.  They are caches
+        # keyed by player *number*, so at class scope they survive into the
+        # next generation in the same process (WebHost worker reuse, Universal
+        # Tracker re-generation, batch generation) and player 1 of generation 2
+        # reads player 1 of generation 1's item counts.
+        #
+        # That produced a player-reported logic bug: every Character Block is
+        # `{OptOne(|<Char>|)}`, and OptOne clamps to get_item_counts().  Exactly
+        # one random base character is precollected, so that character's pool
+        # count is 0 -> |Char:0| -> always true (correct for the REAL starter).
+        # With a leaked cache the PREVIOUS seed's starter is the one reading 0,
+        # so all of that character's blocks are in logic for a player who never
+        # had them -- while the real starter stays gated at |X:1|, which is
+        # invisible because they hold it.
+        #
+        # Pinned by tests/test_character_gating.py
+        # ::test_item_counts_not_shared_across_generations.
+        self.item_counts = {}
+        self.start_inventory = {}
 
     def interpret_slot_data(self, slot_data: dict[str, any]):
         regen = False

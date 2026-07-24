@@ -156,6 +156,75 @@ def test_progression_wall_badges_gate_regions():
         )
 
 
+def test_post_clear_regions_inherit_their_prerequisite_gate():
+    """A ``Post-<X>`` region means "you cleared course X", so its ``requires``
+    must repeat whatever X's own completion checks require.
+
+    This invariant was NOT enforced and produced an unbeatable seed
+    (player-reported 2026-07-20): ``W1 Post-Jet Run`` was ``[]``, so all eight
+    *Bounce, Bounce, Bounce* checks -- including a W1 and a Petal Isles Wonder
+    Seed -- were in logic while *Jet Run I*, the course you must clear to unlock
+    them, needs ``|Jet Run Badge|``.  Fill buried required seeds there and the
+    seed could not be completed.
+
+    Note the ``Post-*`` regions are mixed buckets: they also HOST the
+    prerequisite course itself (``W1 Post-Jet Run`` holds Jet Run I *and*
+    Bounce³).  That is why the gate was easy to miss on inspection, and it is
+    harmless -- the prerequisite's own checks already carry the same require.
+
+    Beatability tests cannot catch this class: it makes checks *more* reachable
+    than reality, which never raises FillError -- it just strands the player.
+    """
+    regions = _load_json("regions.json")
+    # Post-clear region -> (unlocking course, requires it must inherit).
+    # A course whose completion is open contributes "" (no gate needed).
+    inherited = {
+        "W1 Post-Jet Run": ("W1: Jet Run I", "|Jet Run Badge|"),
+        "W2 Post-Jump": ("W2: Floating High Jump I",
+                         "|Floating High Jump Badge| OR |@Yoshi:1|"),
+        "W6 Post-Spring": ("W6: Jet Run II", "|Jet Run Badge|"),
+        # Unlocked by courses whose completion checks are open -- no gate.
+        "W4 Post-Invis": ("W4: Invisibility I", ""),
+        "W5 Post-Wubba": ("W5: Wubba Ruins", ""),
+        "W5 Post-Swaying": ("W5: Swaying Ruins", ""),
+        "W1 Post-Bulrush Express": ("W1: Bulrush Express", ""),
+        # Pure routing node (holds no locations) into W5 Start / W6 Start, both
+        # of which carry their own Petal Isles seed toll.
+        "PI Post-Airship": (None, ""),
+    }
+    locations = _load_json("locations.json")
+    by_name = {loc["name"]: loc for loc in locations}
+
+    for region, (course, expected) in inherited.items():
+        assert region in regions, f"missing region {region!r}"
+        actual = regions[region].get("requires", "")
+        if actual == []:
+            actual = ""
+        assert actual == expected, (
+            f"region {region!r} unlocks by clearing {course!r}, so its requires "
+            f"must be {expected!r} but is {actual!r} -- a mismatch puts the "
+            f"region's contents in logic before the player can clear the course"
+        )
+        # And the gate must actually match the prerequisite's Normal Exit.
+        if expected:
+            exit_loc = by_name.get(f"{course} - Normal Exit")
+            assert exit_loc is not None, f"missing {course!r} Normal Exit"
+            exit_req = exit_loc.get("requires", "")
+            assert exit_req == expected, (
+                f"{course!r} Normal Exit requires {exit_req!r} but "
+                f"{region!r} gates on {expected!r} -- keep them in sync"
+            )
+    # Every Post-* region must be listed above, so a new one can't skip the rule.
+    unlisted = sorted(
+        name for name in regions
+        if " Post-" in name and name not in inherited
+    )
+    assert not unlisted, (
+        "new post-clear region(s) not covered by the inheritance rule: "
+        + ", ".join(unlisted)
+    )
+
+
 def test_petal_isles_depth_requires_world_completion():
     """Pin the world-progress gates on the deeper Petal Isles regions.
 
@@ -265,6 +334,10 @@ _STRUCTURAL_BADGE_LEVELS = {
     "Crouching High Jump I", "Crouching High Jump II",
     "Dolphin Kick I", "Dolphin Kick II",
     "Jet Run I", "Jet Run II",
+    # Player-reported 2026-07-20: "completely doable with Yoshi, but impossible
+    # without him" -- so the completion checks need |Spring Feet Badge| OR a
+    # Yoshi.  Spring Feet I stays open (its exits are player-confirmed doable).
+    "Spring Feet II",
 }
 
 # Badge-challenge levels whose 10-Coins are player-confirmed obtainable WITHOUT
@@ -273,6 +346,16 @@ _STRUCTURAL_BADGE_LEVELS = {
 # Seed behind a badge the player lacks); this set is the vetted exceptions.
 _OPEN_COIN_LEVELS = {
     "Parachute Cap I",  # player-confirmed: all 10 coins reachable with nothing
+    # Player-reported 2026-07-20: both courses had their Normal Exit / Top of
+    # Flag open but their coins badge-gated, which is backwards -- the coins are
+    # reachable without the badge (Invisibility II: "even easier without it").
+    "Spring Feet I",
+    "Invisibility II",
+    # Maintainer ruling 2026-07-20: "Invisibility should not require the
+    # Invisibility badge, that badge is never required."  Invisibility I's coins
+    # were the last site -- |Invisibility Badge| now appears in NO requires.
+    # Pinned by test_invisibility_badge_is_never_required.
+    "Invisibility I",
 }
 
 _CHECK_RE = re.compile(r"^[^:]+: (.*?) - (.+)$")
@@ -330,6 +413,25 @@ def test_structural_badge_levels_gate_completion():
     assert not offenders, (
         "Structural badge-challenge completion checks missing their badge:\n  "
         + "\n  ".join(offenders)
+    )
+
+
+def test_invisibility_badge_is_never_required():
+    """The Invisibility Badge gates NOTHING (maintainer ruling 2026-07-20:
+    "Invisibility should not require the Invisibility badge, that badge is never
+    required").  Invisibility I/II are completable and fully 10-Coin-able
+    without it, so the token must not appear in any location or region rule."""
+    offenders = []
+    for loc in _load_json("locations.json"):
+        requires = loc.get("requires", "")
+        if isinstance(requires, str) and "|Invisibility Badge|" in requires:
+            offenders.append(f"location {loc['name']}: {requires!r}")
+    for name, region in _load_json("regions.json").items():
+        requires = region.get("requires", "")
+        if isinstance(requires, str) and "|Invisibility Badge|" in requires:
+            offenders.append(f"region {name}: {requires!r}")
+    assert not offenders, (
+        "|Invisibility Badge| must not gate anything:\n  " + "\n  ".join(offenders)
     )
 
 

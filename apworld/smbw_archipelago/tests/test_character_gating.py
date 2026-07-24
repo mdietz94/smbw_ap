@@ -88,6 +88,38 @@ class TestCharacterBlockGating(unittest.TestCase):
         self.assertEqual(len(self._char_block_locations(on)), 154)
         self.assertEqual(len(self._char_block_locations(off)), 0)
 
+    @staticmethod
+    def _block_char(name: str) -> str:
+        """'W5: Wubba Ruins - Peach Block' -> 'Peach'.  Green Yoshi's location
+        is named '... - Yoshi Block'."""
+        suffix = name.rsplit(" - ", 1)[-1][:-len(" Block")]
+        return "Green Yoshi" if suffix == "Yoshi" else suffix
+
+    @staticmethod
+    def _state_with_everything_but_characters(multiworld):
+        """A CollectionState holding every pooled item EXCEPT the character
+        items, plus the precollected starter.
+
+        Region gates (Wonder Seed tolls, badge walls) must be satisfied or
+        almost no Character Block is reachable for any reason, and a test that
+        just checks "not reachable" passes vacuously.
+        """
+        from BaseClasses import CollectionState
+        state = CollectionState(multiworld)
+        for item in multiworld.itempool:
+            if item.player == 1 and item.name not in ALL_CHARACTERS:
+                state.collect(item, prevent_sweep=True)
+        for item in multiworld.precollected_items[1]:
+            state.collect(item, prevent_sweep=True)
+        return state
+
+    def _ungated_block_chars(self, multiworld):
+        """Characters whose blocks are reachable without holding them."""
+        state = self._state_with_everything_but_characters(multiworld)
+        return sorted({self._block_char(b.name)
+                       for b in self._char_block_locations(multiworld)
+                       if b.can_reach(state)})
+
     def test_each_block_gates_on_its_character(self):
         # The access rule for "<Course> - <Char> Block" must depend on the
         # matching character item: with only the (single) starter held, a
@@ -95,22 +127,47 @@ class TestCharacterBlockGating(unittest.TestCase):
         multiworld, world = _gen({"character_block_sanity": 1}, seed=7, fill=True)
         starter = next(i.name for i in multiworld.precollected_items[1]
                        if i.name in ALL_CHARACTERS)
-        # Pick a block whose character is NOT the starter and assert it is
-        # not reachable from an empty-handed (starter-only) state.
-        from BaseClasses import CollectionState
-        base_state = CollectionState(multiworld)
-        blocks = self._char_block_locations(multiworld)
-        # "Green Yoshi" blocks are named "... - Yoshi Block".
-        def block_char(name: str) -> str:
-            suffix = name.rsplit(" - ", 1)[-1][:-len(" Block")]
-            return "Green Yoshi" if suffix == "Yoshi" else suffix
-        foreign = [b for b in blocks if block_char(b.name) != starter]
-        self.assertTrue(foreign, "expected blocks for non-starter characters")
-        # At least one foreign-character block must be gated (unreachable
-        # without that character) -- proving the requires actually bind.
-        self.assertTrue(
-            any(not b.can_reach(base_state) for b in foreign),
-            "no Character Block was gated on its character")
+        self.assertTrue(self._char_block_locations(multiworld))
+        # EVERY non-starter character's blocks must be gated on that character.
+        # This used to assert any() against an empty-handed state, which passed
+        # vacuously -- the regions weren't reachable, so nothing was.
+        self.assertEqual(
+            self._ungated_block_chars(multiworld), [starter],
+            f"starter={starter}: only the starter's blocks may be ungated "
+            f"(OptOne clamps the precollected character to |X:0|)")
+
+    def test_item_counts_not_shared_across_generations(self):
+        """`item_counts` / `start_inventory` must be per-World-instance.
+
+        They are caches keyed by player NUMBER.  Held at class scope they leak
+        into the next generation in the same process (WebHost worker reuse,
+        Universal Tracker regen, batch generation), so generation 2's player 1
+        reads generation 1's counts.
+
+        Player-visible symptom: OptOne clamps each Character Block to the
+        cached pool count, so the PREVIOUS seed's precollected starter reads 0
+        copies -> |Char:0| -> always true, and all of that character's blocks
+        sit in logic for a player who never had them.  Reported as "all Peach
+        blocks were in logic when they shouldn't have been".
+
+        Three generations with different starters, in one process.
+        """
+        seen_starters = set()
+        for seed in (99, 7, 1234):
+            multiworld, world = _gen({"character_block_sanity": 1}, seed=seed,
+                                     fill=True)
+            starter = next(i.name for i in multiworld.precollected_items[1]
+                           if i.name in ALL_CHARACTERS)
+            seen_starters.add(starter)
+            # Only the CURRENT generation's starter may be ungated.
+            self.assertEqual(
+                self._ungated_block_chars(multiworld), [starter],
+                f"seed {seed}: starter={starter} -- a different character's "
+                f"blocks are ungated, so item_counts leaked from a prior "
+                f"generation")
+        self.assertGreater(
+            len(seen_starters), 1,
+            "test is vacuous: every seed rolled the same starter")
 
     def test_beatable_both_modes(self):
         for sanity in (0, 1):

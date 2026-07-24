@@ -180,10 +180,18 @@ bool grantContainerACounter(std::uint32_t hash, std::uint32_t value);
 
 // Pure read of a container-A scalar (Int/Enum) by hash via FUN_710012ae94.
 // Returns 0 when gmd isn't live or the hash isn't in container-A.  No
-// dirty-queue write -> safe from the SceneTransition hook.  Used to identify
-// the current course (world_val 0x9f5ead3c + CourseInfo.CourseId 0xdf82e9ab)
-// for the open-world secret-exit unlock.
+// dirty-queue write -> safe from the SceneTransition hook.  Used for the
+// live world index (0x9f5ead3c, GameDataList category Int).
+//
+// Int-category ONLY.  Enum flags (e.g. CourseId 0xdf82e9ab) are not in
+// container A and silently read back 0 -- use readEnumIndex for those.
 std::uint32_t readContainerAValue(std::uint32_t hash);
+
+// Read an Enum-category flag; returns the resolved name-table index, or -1
+// on any miss.  For CourseId (0xdf82e9ab) the table's entry 0 is "Course1",
+// so enum name "CourseN" => index N-1 (NOT the GameDataList ordinal, and
+// NOT the raw name-hash).  See probe/ContainerA.cpp for the derivation.
+std::int32_t readEnumIndex(std::uint32_t hash);
 
 // Open-world seed: raise a container-A counter to `floor` only when the
 // live value is below it (never lowers, preserving a higher value).  Used

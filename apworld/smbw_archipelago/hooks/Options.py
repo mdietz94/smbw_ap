@@ -30,10 +30,11 @@ class CharacterBlockSanity(Toggle):
     """Character-block sanity (default OFF).  Adds ~154 AP checks, one per
     (course, character) hidden ``ObjectBlockClarityCharacter`` block -- the
     player-specific blocks that only the matching character can materialize
-    and bump (e.g. the Search-Party blocks).  Each block is its own check;
-    no character items are added to the pool (all 12 characters are
-    vanilla-available), so this adds locations without new logic gates.
-    Requires the Switch mod's GetDamageReactionPlayerNo hook + a client that
+    and bump (e.g. the Search-Party blocks).  Each block is its own check,
+    gated on its character's AP item: since character shuffle you start with
+    ONE random base character and the other eleven are pool items, so these
+    checks do carry real logic gates.  Requires the Switch mod's CharaGate
+    probe (``BlockUpMove`` hook + live character resolution) and a client that
     understands the ``char_block_hit`` wire event."""
     display_name = "Character Block Sanity"
 
