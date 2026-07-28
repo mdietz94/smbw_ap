@@ -169,6 +169,53 @@ class TestCharacterBlockGating(unittest.TestCase):
             len(seen_starters), 1,
             "test is vacuous: every seed rolled the same starter")
 
+    def test_starter_pinned_for_universal_tracker(self):
+        """UT regen must reproduce the ORIGINAL game's starter, not re-roll.
+
+        The starter is a ``world.random`` roll in ``create_items``.  In a
+        Universal Tracker single-player regeneration ``world.random`` diverges
+        from the multi-player game, so a fresh roll picks a DIFFERENT base
+        character -- and because every Character Block is ``{OptOne(|Char|)}``
+        (clamped to ``|X:0|`` -> always-true for the precollected starter),
+        UT would show the wrong character's blocks as in-logic.
+
+        ``fill_slot_data`` exports ``starting_characters`` and
+        ``interpret_slot_data`` pins it so create_items reproduces it exactly.
+        """
+        # 1. Original game (seed 99) -> capture its starter from slot_data.
+        mw_orig, world_orig = _gen({"character_block_sanity": 1}, seed=99)
+        slot_data = world_orig.fill_slot_data()
+        orig_starter = next(i.name for i in mw_orig.precollected_items[1]
+                            if i.name in ALL_CHARACTERS)
+        self.assertEqual(slot_data["starting_characters"], [orig_starter])
+
+        # 2. A different seed rolls a different starter without the pin.
+        #    Find one so the test isn't vacuous.
+        for ut_seed in (7, 1234, 42, 1, 2024, 555):
+            mw_probe, _ = _gen({"character_block_sanity": 1}, seed=ut_seed)
+            if next(i.name for i in mw_probe.precollected_items[1]
+                    if i.name in ALL_CHARACTERS) != orig_starter:
+                break
+        else:
+            self.skipTest("no seed produced a different starter")
+
+        # 3. Simulate UT: build that other-seed world, interpret_slot_data,
+        #    then re-run item creation.  It must precollect the ORIGINAL
+        #    starter, not the seed's own roll.
+        mw_ut = setup_multiworld(SMBWonderWorld, gen_steps, seed=ut_seed,
+                                 options={"character_block_sanity": 1})
+        world_ut = mw_ut.worlds[1]
+        world_ut.interpret_slot_data(slot_data)
+        self.assertEqual(getattr(world_ut, "_pinned_starting_characters", None),
+                         [orig_starter],
+                         "interpret_slot_data must pin _pinned_starting_characters")
+        mw_ut.precollected_items[1].clear()
+        world_ut.create_items()
+        ut_starter = [i.name for i in mw_ut.precollected_items[1]
+                      if i.name in ALL_CHARACTERS]
+        self.assertEqual(ut_starter, [orig_starter],
+                         "UT regen must reproduce the original game's starter")
+
     def test_beatable_both_modes(self):
         for sanity in (0, 1):
             for seed in (1, 42, 99):

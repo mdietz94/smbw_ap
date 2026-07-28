@@ -159,10 +159,16 @@
   },
   "W6 Start": {
     "connects_to": [
-      "W6 25 Seeds",
+      "W6 15 Seeds",
       "World Bowser"
     ],
     "requires": "|Petal Isles Wonder Seed:15|"
+  },
+  "W6 15 Seeds": {
+    "connects_to": [
+      "W6 25 Seeds"
+    ],
+    "requires": "|W6 Wonder Seed:15|"
   },
   "W6 25 Seeds": {
     "connects_to": [
