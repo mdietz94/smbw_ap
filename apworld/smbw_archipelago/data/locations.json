@@ -2755,7 +2755,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Elephant Fruit| OR |All Elephant Power Badge|"
+    "requires": []
   },
   {
     "name": "W4: Ninji Jump Party - Normal Exit",
@@ -4686,7 +4686,7 @@
   },
   {
     "name": "W6: Floating High Jump II - Normal Exit",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6"
     ],
@@ -4694,7 +4694,7 @@
   },
   {
     "name": "W6: Floating High Jump II - Top of Flag",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "Gold Flag"
@@ -4703,7 +4703,7 @@
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #1",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4712,7 +4712,7 @@
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #2",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4721,7 +4721,7 @@
   },
   {
     "name": "W6: Floating High Jump II - 10 Coin #3",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4730,7 +4730,7 @@
   },
   {
     "name": "W6: Boosting Spin Jump II - Normal Exit",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6"
     ],
@@ -4738,7 +4738,7 @@
   },
   {
     "name": "W6: Boosting Spin Jump II - Top of Flag",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "Gold Flag"
@@ -4747,7 +4747,7 @@
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #1",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4756,7 +4756,7 @@
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #2",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4765,7 +4765,7 @@
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #3",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4774,7 +4774,7 @@
   },
   {
     "name": "W6: Grappling Vine II - Normal Exit",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6"
     ],
@@ -4782,7 +4782,7 @@
   },
   {
     "name": "W6: Grappling Vine II - Top of Flag",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "Gold Flag"
@@ -4791,7 +4791,7 @@
   },
   {
     "name": "W6: Grappling Vine II - 10 Coin #1",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4800,7 +4800,7 @@
   },
   {
     "name": "W6: Grappling Vine II - 10 Coin #2",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4809,7 +4809,7 @@
   },
   {
     "name": "W6: Grappling Vine II - 10 Coin #3",
-    "region": "W6 Start",
+    "region": "W6 25 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4901,7 +4901,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - Royal Seed",
-    "region": "W6 25 Seeds",
+    "region": "W6 15 Seeds",
     "category": [
       "World 6"
     ],
@@ -4909,7 +4909,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - Wonder Seed",
-    "region": "W6 25 Seeds",
+    "region": "W6 15 Seeds",
     "category": [
       "World 6"
     ],
@@ -4917,7 +4917,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - 10 Coin #1",
-    "region": "W6 25 Seeds",
+    "region": "W6 15 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4926,7 +4926,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - 10 Coin #2",
-    "region": "W6 25 Seeds",
+    "region": "W6 15 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -4935,7 +4935,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - 10 Coin #3",
-    "region": "W6 25 Seeds",
+    "region": "W6 15 Seeds",
     "category": [
       "World 6",
       "10 Coin"
@@ -6163,7 +6163,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - Mario Block",
-    "region": "W6 25 Seeds",
+    "region": "W6 15 Seeds",
     "category": [
       "Character Block"
     ],
@@ -6171,7 +6171,7 @@
   },
   {
     "name": "W6: Deep Magma Bog Palace - Yoshi Block",
-    "region": "W6 25 Seeds",
+    "region": "W6 15 Seeds",
     "category": [
       "Character Block"
     ],

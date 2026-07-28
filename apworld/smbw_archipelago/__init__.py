@@ -204,6 +204,13 @@ class SMBWonderWorld(World):
 
         items_started = []
 
+        # Universal Tracker compatibility: interpret_slot_data pins the
+        # original game's precollected starter here so we reproduce it exactly
+        # rather than re-rolling (world.random diverges in a UT single-player
+        # regeneration).  See hooks/Data.hook_interpret_slot_data and
+        # fill_slot_data["starting_characters"].
+        pinned_chars = getattr(self, "_pinned_starting_characters", None)
+
         if starting_items:
             for starting_item_block in starting_items:
                 if "if_previous_item" in starting_item_block:
@@ -221,10 +228,15 @@ class SMBWonderWorld(World):
                     items_in_categories = [item["name"] for item in self.item_name_to_item.values() if "category" in item and len(set(starting_item_block["item_categories"]).intersection(item["category"])) > 0]
                     items = [item for item in pool if item.name in items_in_categories]
 
-                self.random.shuffle(items)
+                is_character_block = "Character" in starting_item_block.get("item_categories", [])
+                if pinned_chars is not None and is_character_block:
+                    # Reproduce the pinned starter(s); do NOT consume the RNG.
+                    items = [item for item in items if item.name in pinned_chars]
+                else:
+                    self.random.shuffle(items)
 
-                if "random" in starting_item_block:
-                    items = items[0:starting_item_block["random"]]
+                    if "random" in starting_item_block:
+                        items = items[0:starting_item_block["random"]]
 
                 for starting_item in items:
                     items_started.append(starting_item)
@@ -386,6 +398,14 @@ class SMBWonderWorld(World):
         # (the Switch-side ItemGet deny mask).  Older seeds lack the key,
         # so the client leaves pickups vanilla for them.
         slot_data["powerup_gating"] = True
+
+        # Universal Tracker compatibility: export the precollected starter
+        # character(s) so interpret_slot_data can pin them and avoid a
+        # divergent re-roll in a single-player regeneration (see
+        # create_items / hooks/Data.hook_interpret_slot_data).  start_inventory
+        # holds only the base character precollected via the single
+        # Character-category starting_items block.
+        slot_data["starting_characters"] = sorted(self.start_inventory.keys())
 
         slot_data = after_fill_slot_data(slot_data, self, self.multiworld, self.player)
 

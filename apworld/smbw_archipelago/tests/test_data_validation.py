@@ -278,6 +278,49 @@ def test_petal_isles_depth_requires_world_completion():
         )
 
 
+def test_w6_palace_gates_at_15_not_25_seeds():
+    """The Deep Magma Bog Palace unlocks at 15 W6 Wonder Seeds, not 25.
+
+    Player-reported: "over 15 W6 Wonder Seeds and the palace isn't in logic."
+    Per Game8's Deep Magma Bog course list, the Palace requires **15** Wonder
+    Seeds; the **25**-seed threshold gates the six badge-challenge "II" courses
+    (Jet Run II, Floating High Jump II, Boosting Spin Jump II, Grappling Vine II,
+    Invisibility II, Spring Feet II).  The old model lumped the Palace into the
+    25-seed region (and left three of the badge courses ungated in W6 Start),
+    so the Palace sat out of logic until 25 seeds -- a fidelity bug that also
+    put the badge-course checks in logic far too early.
+
+    Source: https://game8.co/games/Super-Mario-Bros-Wonder/archives/430860
+    """
+    regions = _load_json("regions.json")
+    locations = _load_json("locations.json")
+
+    assert regions.get("W6 15 Seeds", {}).get("requires") == "|W6 Wonder Seed:15|"
+    assert regions.get("W6 25 Seeds", {}).get("requires") == "|W6 Wonder Seed:25|"
+    # W6 Start must route to the 15-seed palace region, which chains to 25.
+    assert "W6 15 Seeds" in regions["W6 Start"]["connects_to"]
+    assert "W6 25 Seeds" in regions["W6 15 Seeds"]["connects_to"]
+
+    region_of = {l["name"]: l["region"] for l in locations}
+    # Every Palace check lives in the 15-seed region.
+    palace = [n for n in region_of if n.startswith("W6: Deep Magma Bog Palace -")]
+    assert palace, "no Deep Magma Bog Palace locations found"
+    for name in palace:
+        assert region_of[name] == "W6 15 Seeds", (
+            f"{name} must gate at 15 seeds (region W6 15 Seeds), not "
+            f"{region_of[name]!r}")
+
+    # All six badge-challenge "II" courses gate at 25 seeds.
+    for course in ("Jet Run II", "Floating High Jump II", "Boosting Spin Jump II",
+                   "Grappling Vine II", "Invisibility II", "Spring Feet II"):
+        checks = [n for n in region_of if n.startswith(f"W6: {course} -")]
+        assert checks, f"no locations for W6 {course}"
+        for name in checks:
+            assert region_of[name] == "W6 25 Seeds", (
+                f"{name} must gate at 25 seeds (region W6 25 Seeds), not "
+                f"{region_of[name]!r}")
+
+
 # The 20 badge-challenge "I/II" courses and the badge each one requires.
 #
 # The badge is NOT auto-available inside the course in the AP mod (AP is the

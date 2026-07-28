@@ -30,6 +30,7 @@ def after_load_meta_file(meta_table: dict) -> dict:
 # Universal Tracker compatibility — return True from this hook if you
 # mutated the world such that AP needs to regenerate state.
 def hook_interpret_slot_data(world, player: int, slot_data: dict) -> bool:
+    regen = False
     if "open_world_active" in slot_data:
         # Pin the active worlds from slot_data so generate_early won't
         # re-roll them via world.random.  In a Universal Tracker
@@ -38,5 +39,15 @@ def hook_interpret_slot_data(world, player: int, slot_data: dict) -> bool:
         # silently select the wrong worlds and cause UT to see only the
         # first world as available (the others aren't wired into Manual).
         world._ow_pinned_active_worlds = [int(n) for n in slot_data["open_world_active"]]
-        return True
-    return False
+        regen = True
+    if "starting_characters" in slot_data:
+        # Pin the precollected starter character(s) for the same reason: the
+        # starter is a world.random roll in create_items (starting_items
+        # "random": 1), and world.random diverges in a UT single-player
+        # regeneration.  Without this, UT re-rolls a DIFFERENT starter, and
+        # since every Character Block is `{OptOne(|Char|)}` (clamped to |X:0|
+        # for the precollected character -> always-true), the wrong
+        # character's blocks show as in-logic.
+        world._pinned_starting_characters = list(slot_data["starting_characters"])
+        regen = True
+    return regen

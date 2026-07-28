@@ -123,8 +123,18 @@ apworld logic suite green.
 - `World Bowser`: `|@Royal Seed:6|` only (Bowser unlock is 6 Royal Seeds; the
   old `W4/W5` Wonder-Seed extras were wrong). Direct `W6 Start → World Bowser`
   edge exists.
-- W6 palace is the **25-seed** gate: the palace location group lives in
-  `W6 25 Seeds` (there is no `W6 15 Seeds` region).
+- **W6 palace is the 15-seed gate** (player-reported 2026-07-27: "over 15 W6
+  Wonder Seeds and the palace isn't in logic"). The Deep Magma Bog Palace group
+  lives in `W6 15 Seeds` (`|W6 Wonder Seed:15|`); the **25**-seed gate
+  (`W6 25 Seeds`) holds the six badge-challenge **II** courses (Jet Run II,
+  Floating High Jump II, Boosting Spin Jump II, Grappling Vine II, Invisibility
+  II, Spring Feet II). Region chain: `W6 Start → W6 15 Seeds → W6 25 Seeds →
+  W6 Post-Spring`. The old model lumped the palace into `W6 25 Seeds` **and**
+  left Floating/Boosting/Grappling II ungated in `W6 Start` (in logic at 0 W6
+  seeds) — both fixed. Source: [Game8 Deep Magma Bog course
+  list](https://game8.co/games/Super-Mario-Bros-Wonder/archives/430860)
+  (Palace "Required Wonder Seeds to Unlock: 15"; badge courses 25). Pinned by
+  `test_w6_palace_gates_at_15_not_25_seeds`.
 - `PI 5 Seeds` and `PI 8 Seeds` exist and home the PI-seed-gated levels
   (Downpour Uproar / Wiggler Race Swimming / Dolphin Kick II → 5; Jewel-Block
   Cave / Gnawsher Lair / Maw-Maw Mouthful / Muncher Fields / Wiggler Race
@@ -180,7 +190,8 @@ apworld logic suite green.
 
 ## Structural
 
-- `W6 25 Seeds` requires `|W6 Wonder Seed:25|`.
+- `W6 15 Seeds` requires `|W6 Wonder Seed:15|` (Deep Magma Bog Palace);
+  `W6 25 Seeds` requires `|W6 Wonder Seed:25|` (the badge-challenge II courses).
 - `Post-Badge` (Badge Marathon roadblock) requires all-seed-counts + Royal
   Seeds: `|W1 Wonder Seed:14| AND |W2 Wonder Seed:14| AND |W3 Wonder Seed:10|
   AND |W4 Wonder Seed:15| AND |W5 Wonder Seed:11| AND |W6 Wonder Seed:25| AND
@@ -245,6 +256,10 @@ that permanent:
   `|@Power-Up:1|` (see Check-kind behavior). The remaining per-coin power-up
   gates the PDF lists are still NOT applied (would need per-coin power-up data);
   audit candidate if more "needed a power-up" reports come in.
+  ⚠️ **Correction (2026-07-27):** **W4: Rolling-Ball Hall - 10 Coin #3** had an
+  `|Elephant Fruit| OR |All Elephant Power Badge|` gate; player-confirmed
+  obtainable with **nothing**, so it is now `requires: []`. One of the few
+  per-coin power-up gates that was applied and turned out wrong.
 - 50-Flower-Coin "bridge" roadblocks (always in-logic via single-coin grinding).
 - Hidden Character Block locations — skipped per user.
 
@@ -389,6 +404,25 @@ vacuously because the regions aren't reachable either. It now collects every
 non-character item first (so region tolls are satisfied) and asserts the ungated
 set is *exactly* `[starter]`. Any future reachability test in this class must
 satisfy region gates first or it proves nothing.
+
+## Random starter char must be pinned for Universal Tracker (2026-07-27)
+
+**Second, independent cause of "wrong character's blocks in logic"** — distinct
+from the `item_counts` cache leak above. The starter is chosen by a
+`world.random` roll in `create_items` (`starting_items` `"random": 1`). In a
+Universal Tracker **single-player regeneration** `world.random`'s state diverges
+from the original multi-player game (the exact reason the open-world code pins
+`open_world_active` — see `generate_early`), so UT re-rolls a **different** base
+character. Because every Character Block is `{OptOne(|Char|)}` (clamped to
+`|X:0|` → always-true for the precollected starter), UT then shows the *wrong*
+character's blocks as in-logic while the real starter's stay hidden.
+
+Fixed by exporting the starter in `fill_slot_data["starting_characters"]` and
+pinning it in `hooks/Data.hook_interpret_slot_data`
+(`world._pinned_starting_characters`); `create_items` reproduces the pinned
+starter instead of rolling. Older seeds lacking the key fall back to the roll
+(unchanged). Pinned by
+`test_character_gating.py::test_starter_pinned_for_universal_tracker`.
 
 ## Open risks flagged during the roster audit
 
