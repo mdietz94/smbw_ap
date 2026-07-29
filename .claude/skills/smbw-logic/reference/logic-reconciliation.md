@@ -192,11 +192,12 @@ apworld logic suite green.
 
 - `W6 15 Seeds` requires `|W6 Wonder Seed:15|` (Deep Magma Bog Palace);
   `W6 25 Seeds` requires `|W6 Wonder Seed:25|` (the badge-challenge II courses).
-- `Post-Badge` (Badge Marathon roadblock) requires all-seed-counts + Royal
-  Seeds: `|W1 Wonder Seed:14| AND |W2 Wonder Seed:14| AND |W3 Wonder Seed:10|
-  AND |W4 Wonder Seed:15| AND |W5 Wonder Seed:11| AND |W6 Wonder Seed:25| AND
-  |Petal Isles Wonder Seed:15| AND |Special World Wonder Seed:16| AND
-  |@Royal Seed:6|`.
+- `Post-Badge` (Badge Marathon roadblock) requires the **full pool count** of
+  every Wonder Seed + all Royal Seeds: `|W1 Wonder Seed:35| AND
+  |W2 Wonder Seed:30| AND |W3 Wonder Seed:20| AND |W4 Wonder Seed:36| AND
+  |W5 Wonder Seed:21| AND |W6 Wonder Seed:30| AND |Petal Isles Wonder Seed:34|
+  AND |Special World Wonder Seed:19| AND |@Royal Seed:6|`. (Tightened
+  2026-07-28 from partial counts — see the playtest section below.)
 
 ## Check-kind behavior
 
@@ -353,8 +354,9 @@ with it; 45 generations (3 option sets × 15 seeds) all fill and beat.
   open and both courses joined `_OPEN_COIN_LEVELS`.
 - **Item Park Toadette Block** inherits the course's power-up wall (Elephant AND
   Bubble AND Drill, same as its Wonder Seed) — player had Toadette but no way
-  past the wall. ⚠️ Only the *Toadette* block was reported; **Daisy Block** in the
-  same course is still bare `{OptOne(|Daisy|)}` and may need the same treatment.
+  past the wall. (The ⚠️ raised here — only the *Toadette* block was reported,
+  leaving **Daisy Block** bare `{OptOne(|Daisy|)}` — was player-confirmed and
+  fixed on 2026-07-28; see that section.)
 - **Not changed:** *Cruising with Linking Lifts 10 Coin #1* was already
   `requires: []`; the player's Yoshi route is a second way to an already-open
   check. Only **#2** carries a power-up gate.
@@ -446,6 +448,67 @@ starter instead of rolling. Older seeds lacking the key fall back to the roll
   (Mario 48 → 44). If the tracker checkout's `item_mapping.lua` isn't
   regenerated in lockstep, character items bind to the wrong tracker codes.
   Worth an explicit name-based assert.
+
+## Player-reported course corrections (2026-07-28 playtest)
+
+Three fixes, each pinned by a test in `tests/test_data_validation.py`.
+
+- **Badge Marathon was in logic far too early.** `Post-Badge` (Special: Badge
+  Marathon + WONDER?) asked for *partial* per-world seed counts —
+  `W1:14 W2:14 W3:10 W4:15 W5:11 W6:25 PI:15 Special:16` — so the check went
+  in-logic while the player was still missing Wonder Seeds. A progression item
+  placed there is stranded (*"if you need all your Wonder Seeds to goal, this
+  could lead to an impossible seed"*). The gate now requires the **full pool
+  count** of every Wonder Seed item: `W1:35 W2:30 W3:20 W4:36 W5:21 W6:30
+  PI:34 Special:19` (+ `|@Royal Seed:6|`). Pinned by
+  `test_badge_marathon_requires_every_wonder_seed`, which derives the totals
+  from `items.json` so it tracks pool changes.
+
+  ⚠️ **Still unmodelled: the 10-Coin and Gold-Flag half of the requirement.**
+  Vanilla Badge Marathon needs every 10-Flower Coin and gold flag too. `10 Coin`
+  (×287) and `Gold Flag` (×89) exist as items but are **filler**, and
+  `DataValidation` rejects a non-progression item in a `requires`. Flipping them
+  to `progression_skip_balancing` was tried and **reverted**: the item pool
+  already exceeds the location count (`adjust_filler_items` trims the surplus),
+  so removing 376 items from the trimmable set breaks open-world generation —
+  *"Could not remove enough non-progression items from the pool"*, 3 gen tests
+  fail. Modelling this needs the pool/location imbalance solved first.
+
+- **Item Park Daisy Block** now carries the same Elephant + Bubble + Drill wall
+  as its Wonder Seed and Toadette Block — the ⚠️ flagged in the 2026-07-20 pass,
+  now player-confirmed (*"the Daisy Block was in logic since I got access to the
+  course, when it shouldn't have been"*). Pinned by
+  `test_item_park_blocks_share_the_course_powerup_wall`.
+
+- **Boosting Spin Jump II** gained `OR |@Yoshi:1|` on all five checks
+  (video-confirmed: *"entirely possible without the badge by using Yoshi"*).
+  Boosting Spin Jump I already had it — II was the asymmetry, exactly like the
+  Floating High Jump I/II case fixed on 2026-07-20. The Drill requirement is
+  unchanged and the badge stays in the rule (the course is still in
+  `_STRUCTURAL_BADGE_LEVELS`). Pinned by
+  `test_boosting_spin_jump_ii_allows_yoshi`.
+
+Verified: full logic suite green (37 passed), plus 16 standard-mode seeds
+fill + `can_beat_game()` + **zero unreachable locations** (Post-Badge's checks
+included).
+
+### Reported but NOT changed
+
+- **"Item Park Wonder Seed wasn't in logic when it should've been."** Hedged
+  report (*"I believe … I think it might be related to the badges/powerups being
+  separate items"*) that contradicts itself: the seed and the Toadette Block
+  carry byte-identical power-up walls, so the seed cannot be out of logic while
+  the block is in. Suspect a **tracker**-vs-apworld divergence rather than an
+  apworld bug. Needs a spoiler log or the tracker's rule for the same check
+  before loosening a wall that a previous playtest derived.
+- **"Able to enter Castle Bowser without all Royal Seeds"** (standard mode).
+  Not a logic bug — `World Bowser` already requires `|@Royal Seed:6|`. It's the
+  runtime enforcement: Royal Seeds are vanilla-owned, so clearing the palaces
+  in-game opens the castle regardless of AP items, and the client's ROYAL_SEEDS
+  level-entry death-gate (`processor._BOWSER_CASTLE_STAGE_KEYS` →
+  `SMBWContext._gate_requirement_met`) should bounce the player but reportedly
+  did not. The gate code is **not** open-world-conditioned, so this needs a live
+  repro + bridge log, not a data change.
 
 ## General audit follow-up
 
