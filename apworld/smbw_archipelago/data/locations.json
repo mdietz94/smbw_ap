@@ -4734,7 +4734,7 @@
     "category": [
       "World 6"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "(|Boosting Spin Jump Badge| OR |@Yoshi:1|) AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Boosting Spin Jump II - Top of Flag",
@@ -4743,7 +4743,7 @@
       "World 6",
       "Gold Flag"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "(|Boosting Spin Jump Badge| OR |@Yoshi:1|) AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #1",
@@ -4752,7 +4752,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "(|Boosting Spin Jump Badge| OR |@Yoshi:1|) AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #2",
@@ -4761,7 +4761,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "(|Boosting Spin Jump Badge| OR |@Yoshi:1|) AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Boosting Spin Jump II - 10 Coin #3",
@@ -4770,7 +4770,7 @@
       "World 6",
       "10 Coin"
     ],
-    "requires": "|Boosting Spin Jump Badge| AND (|Drill Mushroom| OR |All Drill Power Badge|)"
+    "requires": "(|Boosting Spin Jump Badge| OR |@Yoshi:1|) AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Grappling Vine II - Normal Exit",
@@ -5799,7 +5799,7 @@
     "category": [
       "Character Block"
     ],
-    "requires": "{OptOne(|Daisy|)}"
+    "requires": "{OptOne(|Daisy|)} AND (|Elephant Fruit| OR |All Elephant Power Badge|) AND (|Bubble Flower| OR |All Bubble Flower Badge|) AND (|Drill Mushroom| OR |All Drill Power Badge|)"
   },
   {
     "name": "W6: Item Park - Toadette Block",

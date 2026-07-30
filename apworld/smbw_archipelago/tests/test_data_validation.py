@@ -547,3 +547,89 @@ def test_generation_data_validation_passes():
 
     # Raises Exception with the aggregated ValidationErrors on failure.
     dv.runGenerationDataValidation()
+
+
+# ---------------------------------------------------------------------------
+# Playtest regressions (Discord reports, 2026-07-28).
+
+def test_badge_marathon_requires_every_wonder_seed():
+    """``Post-Badge`` (Special: Badge Marathon / WONDER?) is the game's 100%
+    reward: in vanilla it needs every Wonder Seed, every 10-Flower Coin and
+    every gold flag.  The region gate used to ask for *partial* per-world seed
+    counts (14/14/10/15/11/25/15/16), so the check showed in logic for a player
+    who was still missing seeds -- and a progression item placed there would be
+    stranded (player-reported: "Badge Marathon is in logic when it shouldn't
+    be ... this could lead to an impossible seed").
+
+    The gate now demands the FULL pool count of every Wonder Seed item, derived
+    from items.json so it tracks any future pool change.  (10 Coins / Gold
+    Flags remain unmodelled -- they are filler items, and making 376 of them
+    progression overflows the pool past the location count in open-world mode.
+    See the logic-reconciliation reference.)
+    """
+    counts = {
+        item["name"]: int(item["count"])
+        for item in _load_json("items.json")
+        if item["name"].endswith("Wonder Seed")
+    }
+    assert len(counts) == 8, sorted(counts)
+
+    requires = _load_json("regions.json")["Post-Badge"]["requires"]
+    missing = [
+        f"|{name}:{total}|"
+        for name, total in sorted(counts.items())
+        if f"|{name}:{total}|" not in requires
+    ]
+    assert not missing, (
+        "Post-Badge must require every Wonder Seed in the pool; missing:\n  "
+        + "\n  ".join(missing)
+        + f"\ngate is: {requires!r}"
+    )
+    assert "|@Royal Seed:6|" in requires, requires
+
+
+def test_item_park_blocks_share_the_course_powerup_wall():
+    """W6: Item Park is walled behind Elephant + Bubble + Drill, and both of
+    its character blocks sit past that wall.  The Toadette block inherited the
+    wall in the 2026-07-20 pass but the Daisy block was left bare
+    ``{OptOne(|Daisy|)}`` -- player-reported as in logic "since I got access to
+    the course, when it shouldn't have been"."""
+    wall = [
+        "(|Elephant Fruit| OR |All Elephant Power Badge|)",
+        "(|Bubble Flower| OR |All Bubble Flower Badge|)",
+        "(|Drill Mushroom| OR |All Drill Power Badge|)",
+    ]
+    targets = {
+        "W6: Item Park - Wonder Seed",
+        "W6: Item Park - Daisy Block",
+        "W6: Item Park - Toadette Block",
+    }
+    seen = set()
+    offenders = []
+    for loc in _load_json("locations.json"):
+        if loc["name"] not in targets:
+            continue
+        seen.add(loc["name"])
+        requires = loc.get("requires", "")
+        for clause in wall:
+            if clause not in requires:
+                offenders.append(f"{loc['name']} missing {clause}: {requires!r}")
+    assert seen == targets, f"Item Park checks not found: {sorted(targets - seen)}"
+    assert not offenders, "\n  ".join(offenders)
+
+
+def test_boosting_spin_jump_ii_allows_yoshi():
+    """Video-confirmed 2026-07-28: *Boosting Spin Jump II* is clearable with a
+    Yoshi and no badge, matching *Boosting Spin Jump I*, which already carried
+    the alternative.  The badge stays in the rule (the course is still
+    structural, see ``_STRUCTURAL_BADGE_LEVELS``) -- Yoshi is an OR."""
+    offenders = [
+        f"{loc['name']}: {loc.get('requires', '')!r}"
+        for loc in _load_json("locations.json")
+        if "Boosting Spin Jump II" in loc["name"]
+        and "|@Yoshi:1|" not in loc.get("requires", "")
+    ]
+    assert not offenders, (
+        "Boosting Spin Jump II checks missing the Yoshi alternative:\n  "
+        + "\n  ".join(offenders)
+    )

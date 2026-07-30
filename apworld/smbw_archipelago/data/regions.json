@@ -198,7 +198,7 @@
   },
   "Post-Badge": {
     "connects_to": [],
-    "requires": "|W1 Wonder Seed:14| AND |W2 Wonder Seed:14| AND |W3 Wonder Seed:10| AND |W4 Wonder Seed:15| AND |W5 Wonder Seed:11| AND |W6 Wonder Seed:25| AND |Petal Isles Wonder Seed:15| AND |Special World Wonder Seed:16| AND |@Royal Seed:6|"
+    "requires": "|W1 Wonder Seed:35| AND |W2 Wonder Seed:30| AND |W3 Wonder Seed:20| AND |W4 Wonder Seed:36| AND |W5 Wonder Seed:21| AND |W6 Wonder Seed:30| AND |Petal Isles Wonder Seed:34| AND |Special World Wonder Seed:19| AND |@Royal Seed:6|"
   },
   "W5 Post-Wubba": {
     "connects_to": [
