@@ -124,6 +124,7 @@ def test_run_build_phase_skips_configure_when_cache_exists(monkeypatch: pytest.M
     bd = tmp_path / "switch-mod" / "build"
     bd.mkdir(parents=True)
     (bd / "CMakeCache.txt").write_text("", encoding="utf-8")
+    (bd / "build.ninja").write_text("", encoding="utf-8")
 
     configure_calls: list[Any] = []
     build_calls: list[Any] = []
@@ -186,6 +187,7 @@ def test_run_build_phase_forces_configure_when_bridge_host_set(
     bd = tmp_path / "switch-mod" / "build"
     bd.mkdir(parents=True)
     (bd / "CMakeCache.txt").write_text("", encoding="utf-8")  # cache present
+    (bd / "build.ninja").write_text("", encoding="utf-8")
 
     configure_calls: list[Any] = []
 
@@ -220,6 +222,7 @@ def test_run_build_phase_skips_configure_when_cached_seed_matches(
     bd.mkdir(parents=True)
     (bd / "CMakeCache.txt").write_text(
         "BRIDGE_HOST_STRING:STRING=192.168.7.42\n", encoding="utf-8")
+    (bd / "build.ninja").write_text("", encoding="utf-8")
 
     configure_calls: list[Any] = []
     monkeypatch.setattr(B, "cmake_configure",
@@ -247,6 +250,7 @@ def test_run_build_phase_reconfigures_when_cached_seed_differs(
     bd.mkdir(parents=True)
     (bd / "CMakeCache.txt").write_text(
         "BRIDGE_HOST_STRING:STRING=192.168.1.1\n", encoding="utf-8")
+    (bd / "build.ninja").write_text("", encoding="utf-8")
 
     configure_calls: list[Any] = []
     monkeypatch.setattr(B, "cmake_configure",
@@ -275,6 +279,82 @@ def test_cached_bridge_host_reads_cmakecache(tmp_path: Path,
     (bd / "CMakeCache.txt").write_text(
         "SOME_OTHER:STRING=x\nBRIDGE_HOST_STRING:STRING=10.1.2.3\n", encoding="utf-8")
     assert B.cached_bridge_host() == "10.1.2.3"
+
+
+def test_build_is_configured_requires_generator_file(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A cmake cache alone is NOT a configured build dir — build.ninja is
+    written only once configure reaches the generate step."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    assert B.build_is_configured() is False          # empty dir
+    (bd / "CMakeCache.txt").write_text("", encoding="utf-8")
+    assert B.build_is_configured() is False          # cache but no generator
+    (bd / "build.ninja").write_text("", encoding="utf-8")
+    assert B.build_is_configured() is True
+
+
+def test_run_build_phase_reconfigures_when_build_ninja_missing(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The half-configured wedge: a configure that died after writing the
+    cache (killed by the stall timeout, fatal CMakeLists error, Ctrl-C)
+    leaves cache-without-build.ninja. Skipping configure there sends
+    `cmake --build` at a dir ninja can't load, and every later run repeats
+    it — so the phase must reconfigure and repair itself instead."""
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: None)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+    # Matching seed: under the old cache-only check this skipped configure.
+    (bd / "CMakeCache.txt").write_text(
+        "BRIDGE_HOST_STRING:STRING=192.168.1.15\n", encoding="utf-8")
+
+    configure_calls: list[Any] = []
+
+    def fake_configure(**kw: Any) -> B.BuildResult:
+        configure_calls.append(kw)
+        (bd / "build.ninja").write_text("", encoding="utf-8")
+        return B.BuildResult(True, 0, "")
+
+    def fake_build(**kw: Any) -> B.BuildResult:
+        (bd / "exefs").mkdir(exist_ok=True)
+        (bd / "exefs" / "subsdk9").write_bytes(b"x")
+        (bd / "exefs" / "main.npdm").write_bytes(b"y")
+        return B.BuildResult(True, 0, "")
+
+    monkeypatch.setattr(B, "cmake_configure", fake_configure)
+    monkeypatch.setattr(B, "cmake_build", fake_build)
+
+    lines: list[str] = []
+    outcome = B.run_build_phase(skip_configure_if_ready=True,
+                                bridge_host="192.168.1.15",
+                                on_line=lines.append)
+    assert outcome.ok is True
+    assert len(configure_calls) == 1
+    assert configure_calls[0].get("bridge_host") == "192.168.1.15"
+    # And the log says why, rather than silently going straight to build.
+    assert any("configure RUNS" in ln and "build.ninja" in ln for ln in lines)
+
+
+def test_cmake_build_reports_missing_build_ninja(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """cmake_build must fail with an actionable message instead of letting
+    ninja emit its opaque `error: loading 'build.ninja'`."""
+    monkeypatch.setattr(B, "is_dev_clone", lambda: True)
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    bd = tmp_path / "switch-mod" / "build"
+    bd.mkdir(parents=True)
+
+    def boom(*_a: Any, **_k: Any) -> B.BuildResult:      # must not spawn
+        raise AssertionError("cmake --build should not have been spawned")
+
+    monkeypatch.setattr(B, "_stream_subprocess", boom)
+
+    result = B.cmake_build()
+    assert result.ok is False
+    assert "build.ninja" in result.log
+    assert "force-configure" in result.log
 
 
 def test_cmake_configure_forwards_bridge_host_define(
@@ -348,6 +428,7 @@ def test_run_build_phase_reconfigures_when_cached_python_differs(
     bd.mkdir(parents=True)
     (bd / "CMakeCache.txt").write_text(
         "SMBWAP_PYTHON:STRING=/usr/bin/python3\n", encoding="utf-8")
+    (bd / "build.ninja").write_text("", encoding="utf-8")
 
     configure_calls: list[Any] = []
     monkeypatch.setattr(B, "cmake_configure",
@@ -378,6 +459,7 @@ def test_run_build_phase_skips_configure_when_cached_python_matches(
     bd.mkdir(parents=True)
     (bd / "CMakeCache.txt").write_text(
         "SMBWAP_PYTHON:STRING=/opt/py/python\n", encoding="utf-8")
+    (bd / "build.ninja").write_text("", encoding="utf-8")
 
     configure_calls: list[Any] = []
     monkeypatch.setattr(B, "cmake_configure",
