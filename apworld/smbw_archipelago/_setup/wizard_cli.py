@@ -307,8 +307,10 @@ def run_build(
     the warm makes sure the build env is properly composed.
 
     `bridge_host`, when set, forwards `-DBRIDGE_HOST_STRING=<addr>` to
-    cmake (and forces a reconfigure) so the Switch bridge-discovery sweep
-    seeds the right /24 for play on a non-192.168.1.x network.
+    cmake so the Switch bridge-discovery sweep seeds the right /24 for
+    play on a non-192.168.1.x network. It triggers a reconfigure only
+    when the value differs from the one already in the cmake cache —
+    `run_build_phase` owns that call and logs which way it went.
     """
     from .build import run_build_phase
     from .prereqs import (
@@ -330,9 +332,14 @@ def run_build(
         check_all()
 
     if bridge_host:
+        # Don't claim a reconfigure here — run_build_phase decides, and
+        # skips when the cached seed already matches. Saying "forcing
+        # reconfigure" unconditionally is what made a wedged build dir
+        # (cache present, build.ninja missing) read as a cmake bug: the
+        # log promised a configure that the next line never spawned.
         _emit(callback, "log", phase=PHASE_BUILD, t0=anchor,
-              line=f"[wizard_cli] bridge-discovery sweep seed set to "
-                   f"{bridge_host} (forcing reconfigure)")
+              line=f"[wizard_cli] bridge-discovery sweep seed requested: "
+                   f"{bridge_host}")
 
     outcome = run_build_phase(
         on_line=lambda line: _emit(callback, "log",

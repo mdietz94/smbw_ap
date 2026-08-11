@@ -385,6 +385,39 @@ def build_dir(repo: Path | None = None) -> Path:
     return switch_mod_root(repo) / "build"
 
 
+def generator_file(repo: Path | None = None) -> Path:
+    """The Ninja build file `cmake --build` needs in order to do anything.
+
+    We always configure with `-G Ninja` (see :func:`cmake_configure`), so
+    `build/build.ninja` is the generator output. It is written at the END
+    of a configure run, after `CMakeCache.txt` — which is what makes the
+    two files independently meaningful (see :func:`build_is_configured`).
+    """
+    return build_dir(repo) / "build.ninja"
+
+
+def build_is_configured(repo: Path | None = None) -> bool:
+    """True iff `build/` holds BOTH a cmake cache and a generated build.ninja.
+
+    Testing only `CMakeCache.txt` is not enough, and the difference is a
+    permanent wedge rather than a cosmetic one. cmake writes the cache
+    early in a configure run but only emits `build.ninja` once configure
+    reaches the generate step, so any configure that dies in between —
+    a fatal error in CMakeLists, a Ctrl-C, or (most likely here) the
+    wizard's own CONFIGURE_STALL_TIMEOUT_S killing a slow first configure
+    while LibHakkun downloads its prepackaged libc++ bundle — leaves a
+    build dir with a cache and no build.ninja.
+
+    A cache-only readiness check then skips configure on EVERY subsequent
+    run, so the phase goes straight to `cmake --build` and ninja dies with
+    `ninja: error: loading 'build.ninja': The system cannot find the file
+    specified.` forever, with no path to self-recovery. Requiring the
+    generator output means the next run reconfigures and repairs itself.
+    """
+    return (build_dir(repo) / "CMakeCache.txt").is_file() and \
+        generator_file(repo).is_file()
+
+
 def expected_artifacts(repo: Path | None = None) -> dict[str, Path]:
     """The two files `cmake --build` is expected to produce.
 
@@ -749,6 +782,15 @@ def cmake_build(
             False, 1,
             f"build dir missing: {bd} (run cmake_configure first)",
         )
+    if not generator_file(repo).is_file():
+        # Pre-empt ninja's opaque "error: loading 'build.ninja'". Reaching
+        # here means a configure was skipped or died before generating.
+        return BuildResult(
+            False, 1,
+            f"build dir at {bd} has no build.ninja — the last cmake "
+            f"configure never reached the generate step. Re-run with "
+            f"`--force-configure`, or delete {bd} and re-run setup.",
+        )
 
     cmd = [resolved_cmake(), "--build", str(bd)]
     env = _compose_build_env()
@@ -813,9 +855,11 @@ def run_build_phase(
 ) -> CMakeOutcome:
     """End-to-end build orchestrator.
 
-    Skips cmake_configure if `build/CMakeCache.txt` already exists and
-    `skip_configure_if_ready=True` (the dev re-build case). Always runs
-    cmake_build.
+    Skips cmake_configure if the build dir is fully configured (see
+    :func:`build_is_configured` — cache AND build.ninja, not cache alone)
+    and `skip_configure_if_ready=True` (the dev re-build case). Always
+    runs cmake_build. The decision and its reason are logged through
+    `on_line`, so a failing run shows why configure was or wasn't run.
 
     When `bridge_host` is set the configure step still runs unless the
     cache already carries that exact seed — the `-DBRIDGE_HOST_STRING`
@@ -832,25 +876,49 @@ def run_build_phase(
     bd = build_dir(repo)
     step_results: dict[str, BuildResult] = {}
 
-    cache = bd / "CMakeCache.txt"
-    if bridge_host:
-        # Reconfigure unless the cache already holds this exact seed.
-        need_configure = (
-            not skip_configure_if_ready
-            or cached_bridge_host(repo) != bridge_host
+    configured = build_is_configured(repo)
+    reason: str
+    if not skip_configure_if_ready:
+        need_configure, reason = True, "configure forced by caller"
+    elif not configured:
+        # Distinguish the two shapes so the log says which one we hit: a
+        # virgin build dir is routine, a cache without build.ninja means a
+        # previous configure died mid-run and left the tree unbuildable.
+        if (bd / "CMakeCache.txt").is_file():
+            need_configure, reason = True, (
+                f"CMakeCache.txt present but {generator_file(repo).name} is "
+                f"missing — a previous configure died before generating; "
+                f"reconfiguring to repair the build dir"
+            )
+        else:
+            need_configure, reason = True, "no cmake cache yet (first configure)"
+    elif bridge_host and cached_bridge_host(repo) != bridge_host:
+        need_configure, reason = True, (
+            f"bridge-discovery seed changed "
+            f"({cached_bridge_host(repo)!r} → {bridge_host!r})"
         )
     else:
-        need_configure = not (skip_configure_if_ready and cache.is_file())
+        need_configure, reason = False, "build dir already configured"
+
     # Also reconfigure when the cached build-time interpreter drifts from the
     # one we'd pass now. An existing build dir whose POST_BUILD ninja rules
     # call a stale `python` (or were generated before SMBWAP_PYTHON existed)
     # is exactly what produced the `ModuleNotFoundError: No module named 'lz4'`
     # failures; re-pinning regenerates those rules against the resolved Python.
-    if cache.is_file() and not need_configure:
+    if not need_configure:
         py_bin = resolved_python_bin()
         desired = Path(py_bin).as_posix() if py_bin else None
         if desired and cached_smbwap_python(repo) != desired:
-            need_configure = True
+            need_configure, reason = True, (
+                f"build-time interpreter changed "
+                f"({cached_smbwap_python(repo)!r} → {desired!r})"
+            )
+
+    if on_line is not None:
+        on_line(
+            f"[build] configure {'RUNS' if need_configure else 'SKIPPED'}: "
+            f"{reason}"
+        )
     if need_configure:
         cfg = cmake_configure(repo=repo, on_line=on_line, bridge_host=bridge_host)
         step_results["configure"] = cfg
