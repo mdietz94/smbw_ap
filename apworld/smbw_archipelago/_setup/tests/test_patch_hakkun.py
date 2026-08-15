@@ -150,21 +150,63 @@ _UPSTREAM_GENEXEFS_CMAKE = (
 )
 
 
+# Verbatim copy of upstream's ``sys/tools/setup_libcxx_prepackaged.py``
+# (pinned rev 9892726b) — the dead-GitHub-release fetch the URL patch
+# targets. Reproduced with LF endings; the real file is CRLF, which
+# ``read_text`` normalizes before the literal match runs.
+_UPSTREAM_STDLIB_PY = '''\
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import tarfile
+import sys
+
+is_aarch32 = len(sys.argv) > 1 and sys.argv[1] == 'aarch32'
+
+prepackaged_source_tar_name = "stdlib-aarch32-19.1.0_clang_19.1.7.tar.xz" if is_aarch32 else "stdlib-19.1.0_clang_19.1.7.tar.xz"
+prepackaged_source = "https://github.com/fruityloops1/LibHakkun/releases/download/stdlib-19.1.0-3/" + prepackaged_source_tar_name
+
+root_dir = os.getcwd()
+
+def downloadAndExtractPrepackaged():
+    print(f"Downloading pre-packaged stdlib")
+
+    subprocess.run(['curl', '-O', '-L', prepackaged_source])
+
+    print(f"Extracting")
+
+    src_tar = tarfile.open(prepackaged_source_tar_name)
+    src_tar.extractall('.')
+    src_tar.close()
+
+    os.remove(prepackaged_source_tar_name)
+
+downloadAndExtractPrepackaged()
+'''
+
+
 def _make_tree(
     root: Path,
     nso_body: str,
     *,
     with_cmake: bool = True,
+    with_stdlib: bool = True,
 ) -> Path:
     """Build a minimal switch-mod tree with sys/tools/nso.py.
 
     When ``with_cmake`` (the default), also lays down the two cmake files
     the interpreter patch targets so the full patch set can apply.
+    ``with_stdlib`` does the same for setup_libcxx_prepackaged.py.
     """
     tools = root / "sys" / "tools"
     tools.mkdir(parents=True)
     nso = tools / "nso.py"
     nso.write_text(nso_body, encoding="utf-8")
+    if with_stdlib:
+        (tools / "setup_libcxx_prepackaged.py").write_text(
+            _UPSTREAM_STDLIB_PY, encoding="utf-8"
+        )
     if with_cmake:
         cmake = root / "sys" / "cmake"
         cmake.mkdir(parents=True)
@@ -179,7 +221,9 @@ def test_applies_on_clean_upstream(tmp_path: Path) -> None:
     """First-run case: upstream nso.py + cmake present, all patches land."""
     nso = _make_tree(tmp_path, _UPSTREAM_NSO_PY)
     results = P.apply_patches(tmp_path)
-    assert [r.status for r in results] == ["applied", "applied", "applied"]
+    assert [r.status for r in results] == [
+        "applied", "applied", "applied", "applied",
+    ]
     patched = nso.read_text(encoding="utf-8")
     # Sentinel embedded so reruns short-circuit.
     assert P._NSO_SENTINEL in patched
@@ -201,6 +245,7 @@ def test_already_applied_is_idempotent(tmp_path: Path) -> None:
     results = P.apply_patches(tmp_path)
     assert [r.status for r in results] == [
         "already-applied", "already-applied", "already-applied",
+        "already-applied",
     ]
     assert nso.read_text(encoding="utf-8") == first
     assert deploy.read_text(encoding="utf-8") == first_deploy
@@ -289,8 +334,8 @@ def test_cmake_interpreter_patch_missing_reported(tmp_path: Path) -> None:
     _make_tree(tmp_path, _UPSTREAM_NSO_PY, with_cmake=False)
     results = P.apply_patches(tmp_path)
     statuses = [r.status for r in results]
-    assert statuses == ["applied", "missing", "missing"]
-    assert any("not found" in r.detail for r in results[1:])
+    assert statuses == ["applied", "missing", "missing", "applied"]
+    assert any("not found" in r.detail for r in results[1:3])
 
 
 def test_cmake_interpreter_patch_upstream_shifted(tmp_path: Path) -> None:
@@ -355,4 +400,83 @@ def test_patch_old_string_matches_real_submodule_if_present() -> None:
     assert P._NSO_OLD in content, (
         f"_NSO_OLD no longer matches {real}; LibHakkun upstream changed "
         f"nso.py and the patch needs to be refreshed"
+    )
+
+
+def test_stdlib_url_patch_repoints_download(tmp_path: Path) -> None:
+    """setup_libcxx_prepackaged.py stops fetching from the dead GitHub
+    release and starts fetching from Codeberg, with a failing curl."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    P.apply_patches(tmp_path)
+
+    text = (tmp_path / P._STDLIB_TARGET).read_text(encoding="utf-8")
+    assert P._STDLIB_SENTINEL in text
+    assert P._STDLIB_URL_NEW in text
+    # The dead host must not survive anywhere in the file — that URL 404s
+    # with a 9-byte body and is the whole bug.
+    assert "github.com/fruityloops1/LibHakkun/releases" not in text
+    # curl must now fail loudly rather than writing the 404 body to disk.
+    assert "'--fail'" in text
+    assert "raise SystemExit(" in text
+    # Everything after the patched chunk is preserved verbatim.
+    assert "src_tar = tarfile.open(prepackaged_source_tar_name)" in text
+    assert "downloadAndExtractPrepackaged()" in text
+
+
+def test_stdlib_url_patch_stays_valid_python(tmp_path: Path) -> None:
+    """Behavioural: the rewritten script must still compile. The patched
+    block is a chunk of hand-written source inside a string literal, so a
+    stray quote would otherwise only surface at cmake configure time.
+
+    ``compile`` rather than exec/runpy — running it would hit the network.
+    """
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    P.apply_patches(tmp_path)
+
+    target = tmp_path / P._STDLIB_TARGET
+    compile(target.read_text(encoding="utf-8"), str(target), "exec")
+
+
+def test_stdlib_url_patch_is_idempotent(tmp_path: Path) -> None:
+    """Re-running leaves the script byte-identical (sentinel guard)."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    P.apply_patches(tmp_path)
+    target = tmp_path / P._STDLIB_TARGET
+    once = target.read_text(encoding="utf-8")
+    P.apply_patches(tmp_path)
+    assert target.read_text(encoding="utf-8") == once
+
+
+def test_stdlib_url_patch_upstream_shifted(tmp_path: Path) -> None:
+    """A script that no longer carries the expected fetch block is
+    reported rather than silently mangled."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    (tmp_path / P._STDLIB_TARGET).write_text(
+        "# upstream rewrote this entirely\n", encoding="utf-8"
+    )
+    results = P.apply_patches(tmp_path)
+    stdlib_result = next(r for r in results if "stdlib URL" in r.name)
+    assert stdlib_result.status == "upstream-shifted"
+    assert "needs to be refreshed" in stdlib_result.detail
+
+
+def test_stdlib_patch_old_string_matches_real_submodule_if_present() -> None:
+    """Guardrail: if the LibHakkun submodule is checked out, ``_STDLIB_OLD``
+    must still match on disk — otherwise a release would ship a no-op patch
+    and every fresh install would die at the compiler check again.
+
+    Skipped when the submodule isn't initialized, or was already patched
+    in-place by a prior build run.
+    """
+    here = Path(__file__).resolve()
+    repo = here.parents[4]
+    real = repo / "switch-mod" / P._STDLIB_TARGET
+    if not real.is_file():
+        pytest.skip("LibHakkun submodule not initialized")
+    content = real.read_text(encoding="utf-8")
+    if P._STDLIB_SENTINEL in content:
+        pytest.skip("submodule already patched in-place by a prior build run")
+    assert P._STDLIB_OLD in content, (
+        f"_STDLIB_OLD no longer matches {real}; LibHakkun upstream changed "
+        f"setup_libcxx_prepackaged.py and the patch needs to be refreshed"
     )
