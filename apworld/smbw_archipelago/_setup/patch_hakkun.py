@@ -1,6 +1,6 @@
 """Apply local-tree patches to the pinned LibHakkun submodule.
 
-Two patches are applied:
+Three patches are applied:
 
 1. **nso.py composition** (described below): make ``sys/tools/nso.py``
    safe on Python 3.14's reworked ``struct.Struct``.
@@ -19,6 +19,21 @@ Two patches are applied:
    into. (The configure-time ``python3`` calls in toolchain.cmake are left
    alone — they only need *a* python3 and are covered by build.py's PATH
    prepend + python3 shim.)
+
+3. **prepackaged-stdlib URL** (``_STDLIB_OLD`` / ``_STDLIB_NEW``): repoint
+   ``sys/tools/setup_libcxx_prepackaged.py`` at Codeberg. The pinned
+   LibHakkun downloads the prebuilt libc++/musl/compiler-rt bundle from a
+   GitHub release that no longer exists — ``fruityloops1/LibHakkun`` now
+   has *zero* GitHub releases, so
+   ``…/releases/download/stdlib-19.1.0-3/stdlib-19.1.0_clang_19.1.7.tar.xz``
+   answers 404 with a 9-byte ``Not Found`` body. Upstream moved stdlib
+   hosting to Codeberg (tag ``stdlib-<llvm_version>``, same tarball bytes).
+   The patch also adds ``--fail`` + a returncode check to the curl call:
+   without them curl writes the 9-byte error body to the ``.tar.xz`` and
+   the real failure surfaces two layers later as ``tarfile.ReadError: not
+   a gzip file``, then cmake's badly misleading "The C compiler … is not
+   able to compile a simple test program" (the compiler is fine —
+   ``lib/std/*.a`` was simply never extracted).
 
 The nso.py patch: rewrite ``sys/tools/nso.py`` from inheritance to
 composition over ``struct.Struct``. Upstream's
@@ -181,6 +196,70 @@ _CMAKE_PY_HEADER = (
 )
 
 
+# --- prepackaged-stdlib download URL patch -----------------------------------
+
+_STDLIB_SENTINEL = "SMBWAP_HAKKUN_PATCH_STDLIB_URL"
+
+# Where toolchain.cmake's `execute_process(COMMAND python3 …)` fallback lives.
+_STDLIB_TARGET = Path("sys") / "tools" / "setup_libcxx_prepackaged.py"
+
+# Verified live 2026-08-14: the same tarball names the pinned script asks
+# for are served under Codeberg's `stdlib-19.1.0` tag (aarch64 2,750,672 B;
+# aarch32 2,670,740 B). Only the host and the tag suffix changed — upstream
+# dropped the `-3` from `stdlib-19.1.0-3` when it migrated off GitHub.
+_STDLIB_URL_NEW = (
+    "https://codeberg.org/fruityloops1/LibHakkun/releases/download/stdlib-19.1.0/"
+)
+
+# Matched from the URL assignment through the curl call so one replacement
+# fixes both the dead host and the silent-failure curl invocation. The lines
+# in between are reproduced verbatim.
+_STDLIB_OLD = (
+    'prepackaged_source = "https://github.com/fruityloops1/LibHakkun/releases/'
+    'download/stdlib-19.1.0-3/" + prepackaged_source_tar_name\n'
+    "\n"
+    "root_dir = os.getcwd()\n"
+    "\n"
+    "def downloadAndExtractPrepackaged():\n"
+    '    print(f"Downloading pre-packaged stdlib")\n'
+    "\n"
+    "    subprocess.run(['curl', '-O', '-L', prepackaged_source])\n"
+)
+
+_STDLIB_NEW = (
+    f"# {_STDLIB_SENTINEL}: fetch the prebuilt stdlib from Codeberg.\n"
+    "#\n"
+    "# The pinned LibHakkun points at a GitHub release that no longer\n"
+    "# exists (the repo has zero GitHub releases now), so the asset URL\n"
+    '# answers 404 with a 9-byte "Not Found" body. curl ran without\n'
+    "# --fail, so it wrote those 9 bytes to the .tar.xz and the failure\n"
+    "# surfaced two layers later as `tarfile.ReadError: not a gzip file`\n"
+    '# followed by cmake\'s misleading "The C compiler ... is not able to\n'
+    '# compile a simple test program" -- the compiler was fine, lib/std/*.a\n'
+    "# had simply never been extracted. Upstream moved stdlib hosting to\n"
+    "# Codeberg under tag `stdlib-<llvm_version>`; same tarball bytes.\n"
+    "# --fail + the returncode check make a future move fail loudly and\n"
+    "# accurately instead of masquerading as a broken toolchain.\n"
+    f'prepackaged_source = "{_STDLIB_URL_NEW}" + prepackaged_source_tar_name\n'
+    "\n"
+    "root_dir = os.getcwd()\n"
+    "\n"
+    "def downloadAndExtractPrepackaged():\n"
+    '    print(f"Downloading pre-packaged stdlib")\n'
+    "\n"
+    "    rc = subprocess.run(\n"
+    "        ['curl', '--fail', '-O', '-L', prepackaged_source]\n"
+    "    ).returncode\n"
+    "    if rc != 0:\n"
+    "        raise SystemExit(\n"
+    '            f"[smbwap] pre-packaged stdlib download FAILED (curl exit {rc})\\n"\n'
+    '            f"  url: {prepackaged_source}\\n"\n'
+    '            f"If that URL 404s, upstream moved the asset again -- refresh\\n"\n'
+    '            f"_STDLIB_URL_NEW in _setup/patch_hakkun.py."\n'
+    "        )\n"
+)
+
+
 PatchStatus = Literal["applied", "already-applied", "missing", "upstream-shifted"]
 
 
@@ -306,5 +385,30 @@ def apply_patches(
             if result.detail:
                 msg += f"  ({result.detail})"
             on_line(msg)
+
+    # Patch 3: repoint the prepackaged-stdlib download at Codeberg.
+    stdlib_py = switch_mod_root / _STDLIB_TARGET
+    status = _patch_file(stdlib_py, _STDLIB_OLD, _STDLIB_NEW, _STDLIB_SENTINEL)
+    detail = ""
+    if status == "missing":
+        detail = f"{stdlib_py} not found (submodule not initialized?)"
+    elif status == "upstream-shifted":
+        detail = (
+            f"{stdlib_py} doesn't match the expected upstream shape; if "
+            f"configure fails with `tarfile.ReadError` or `The C compiler "
+            f"... is not able to compile a simple test program` (missing "
+            f"lib/std/*.a), the patch needs to be refreshed"
+        )
+    result = PatchResult(
+        name="prepackaged stdlib URL (dead GitHub release -> Codeberg)",
+        status=status,
+        detail=detail,
+    )
+    results.append(result)
+    if on_line is not None:
+        msg = f"[patch_hakkun] {result.status:>17}  {result.name}"
+        if result.detail:
+            msg += f"  ({result.detail})"
+        on_line(msg)
 
     return results
