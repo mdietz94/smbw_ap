@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import appdata_root, local_appdata_root
+from .child_env import child_environ
 from .patch_hakkun import apply_patches as _apply_hakkun_patches
 from .prereqs import (
     is_dev_clone,
@@ -496,8 +497,19 @@ def _compose_build_env() -> dict[str, str]:
       - PATH prepended with the resolved Ninja bin dir if we have one.
       - PYTHONIOENCODING=utf-8 so child python prints don't crash on
         non-ASCII (em-dashes etc.) under cp932 / cp1252 default consoles.
+
+    The base is `child_env.child_environ()`, not a raw `os.environ` copy:
+    under Archipelago's Linux AppImage the inherited LD_LIBRARY_PATH /
+    PYTHONHOME point into the AppImage mount, and the host cmake/clang/
+    python we spawn then load the bundle's libraries instead of the
+    system's. That is what produced
+
+        cmake: /tmp/.mount_…/opt/Archipelago/lib/libssl.so.3: version
+            `OPENSSL_3.2.0' not found (required by /usr/lib/libcurl.so.4)
+
+    at configure time on a machine with a perfectly good system OpenSSL.
     """
-    env = os.environ.copy()
+    env = child_environ()
 
     def prepend(dir_path: str) -> None:
         # Relocate-to-front, not skip-if-present. The earlier version
@@ -578,7 +590,7 @@ def _stream_subprocess(
     if stall_timeout_s is not None:
         _emit(f"[stream] stall timeout: {stall_timeout_s:.0f}s")
 
-    child_env = dict(env) if env is not None else os.environ.copy()
+    child_env = dict(env) if env is not None else child_environ(cmd[0])
     child_env.setdefault("PYTHONIOENCODING", "utf-8")
 
     try:

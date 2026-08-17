@@ -88,6 +88,22 @@ class ProbeOutcome:
     results: list[Any]            # list[prereqs.PrereqResult]
     missing_keys: list[str]
 
+    def blocking(self, *, installable_fixes: bool = False) -> list[Any]:
+        """Failed prereqs that must stop the pipeline before `build`.
+
+        Warn-only rows (Ryujinx) never block. When `installable_fixes` is
+        True the caller intends to run the install phase, so rows the
+        wizard can auto-install are not counted as blockers — whatever
+        remains is something only the user can fix (on Linux: cmake,
+        ninja, LLVM 19, Python, git — all `auto_installable=False`
+        because we won't drive apt/dnf/pacman).
+        """
+        return [
+            r for r in self.results
+            if not r.ok and not r.warn_only
+            and not (installable_fixes and r.auto_installable)
+        ]
+
 
 @dataclass
 class InstallOutcome:
@@ -474,11 +490,34 @@ def run_pipeline(
         probe = run_probe(callback=callback, t0=t0)
         outcome.probe = probe
         outcome.phases_run.append(PHASE_PROBE)
-        if not probe.ok and not opts.install_missing:
+        # A failed probe stops here unless every failing row is something
+        # the install phase can actually fix. The old test was just
+        # `not probe.ok and not opts.install_missing`, so with the GUI's
+        # auto-install checkbox on (the default) ANY probe failure fell
+        # through: install skipped the rows it couldn't handle with
+        # "no missing auto-installable prereqs", and the pipeline marched
+        # into `build` with no cmake and the wrong LLVM. The user saw a
+        # cmake linker error instead of "install cmake and LLVM 19".
+        will_install = opts.install_missing and PHASE_INSTALL in opts.phases
+        blocking = probe.blocking(installable_fixes=will_install)
+        if not probe.ok and (blocking or not will_install):
+            for r in blocking:
+                _emit(callback, "prereq_blocking", t0=t0,
+                      key=r.key, name=r.name, detail=r.detail,
+                      install_url=r.install_url, note=r.note)
+            if blocking:
+                _emit(callback, "log", phase=PHASE_PROBE, t0=t0,
+                      line=(
+                          "[wizard_cli] stopping before the remaining phases: "
+                          + ", ".join(r.name for r in blocking)
+                          + " must be installed by hand first (the wizard "
+                            "only auto-installs system tools on Windows)"
+                      ))
             outcome.ok = False
             outcome.failed_phase = PHASE_PROBE
             _emit(callback, "pipeline_end", t0=t0, ok=False,
-                  failed_phase=PHASE_PROBE)
+                  failed_phase=PHASE_PROBE,
+                  blocking=[r.key for r in blocking])
             return outcome
 
     if PHASE_INSTALL in opts.phases:

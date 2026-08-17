@@ -33,6 +33,33 @@ Windows (winget + pinned LLVM 19.1.7); on Linux it prints what's missing and
 leaves the package manager to you. See [docs/first-time-setup.md](../../../docs/first-time-setup.md)
 for the user-facing first-run flow.
 
+### Linux gotcha: the Archipelago AppImage shadows system libraries
+
+When AP runs as an AppImage, its `AppRun` exports loader vars pointing into the
+`/tmp/.mount_<name><rand>/` mount (`LD_LIBRARY_PATH`, `PYTHONHOME`, …). Anything
+the wizard spawns inherits them, so a *host* binary loads the bundle's `.so`s and
+dies when the bundled copy is older than what the host binary needs:
+
+```
+cmake: /tmp/.mount_archipMfEgoA/opt/Archipelago/lib/libssl.so.3:
+    version `OPENSSL_3.2.0' not found (required by /usr/lib/libcurl.so.4)
+```
+
+That is *not* an OpenSSL-too-old problem — the system OpenSSL is being shadowed.
+[`_setup/child_env.py`](../../../apworld/smbw_archipelago/_setup/child_env.py)
+strips those vars from every child the wizard spawns (probes, installers, cmake),
+while leaving them intact for commands that resolve *inside* the mount. Reaching
+for the same thing by hand: `env -u LD_LIBRARY_PATH -u PYTHONHOME cmake …`.
+
+Two related Linux wrinkles the wizard now handles:
+- **Side-by-side LLVM 19**: `clang` on PATH is the distro's current release (22
+  on Arch today). `apt install clang-19` → `/usr/lib/llvm-19/bin`, AUR `llvm19` →
+  `/usr/lib/llvm19/bin`; the prereq probes those roots and pins the build's PATH
+  to whichever one answers to bare `clang` at 19.1.x.
+- **PEP 668**: `pip install --user lz4` is refused outright on distro-managed
+  interpreters, so the installers retry with `--break-system-packages` (still
+  user-site only) and then without `--user` for venvs.
+
 ## Build
 
 ```pwsh
