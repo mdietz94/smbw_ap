@@ -68,6 +68,11 @@ check-by-check, not gated wholesale:
 - **Yoshi bypass:** a Yoshi clears the *climb/float* structural courses, so
   Wall-Climb Jump I/II and Floating High Jump I carry `... OR |@Yoshi:1|` on
   every check (`Yoshi` category = the four Yoshis, not Nabbit).
+- **Special: Badge Marathon** is its own shape — ten badge sections in one
+  course, so all five checks share one **OR-of-routes** rule (4 badges always,
+  then a Yoshi / Bubble Flower / all-nine-badges route). A flat AND of
+  per-section alternatives is *wrong* here: one run is one character with one
+  power-up. See the reconciliation record's Badge Marathon section.
 
 **(B) Progression walls (region layer) — the softlock gotcha.** Because Wonder
 Seeds are pool items, fill never strands a required item behind a badge gate it
