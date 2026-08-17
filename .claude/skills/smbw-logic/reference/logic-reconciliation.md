@@ -510,6 +510,86 @@ included).
   did not. The gate code is **not** open-world-conditioned, so this needs a live
   repro + bridge log, not a data change.
 
+## Badge Marathon — the section-by-section rule (2026-07-30 playtest)
+
+The 2026-07-28 pass fixed *when* `Post-Badge` opens; this pass fixes *what the
+course itself costs*. All five **Special: Badge Marathon** checks were bare
+`requires: []` — the region gate was doing all the work, so the course read as
+free once you had every Wonder Seed.
+
+Badge Marathon is ten badge sections back to back. The level force-equips each
+section's badge, so the AP badge grant is what actually gates it. Player-authored
+walkthrough (source of the rule):
+
+| # | Section | Non-badge route | Note |
+|---|---|---|---|
+| 1 | Parachute Cap | — | *"no way to clear this without the badge"* |
+| 2 | Floating High Jump | Bubble / Yoshi | bubble up to reach the pipe |
+| 3 | Dolphin Kick | Yoshi | 10 Coin #1; badge = the no-damage route |
+| 4 | Crouching High Jump | — | Yoshi's flutter *"can't keep up"* |
+| 5 | Wall-Climb Jump | (Bubble — **expert only**) | 10 Coin #2; *"I wouldn't consider this in logic"* |
+| 6 | Spring Feet | Bubble (Yoshi = expert) | Yoshi is *"challenging"* |
+| 7 | Jet Run | Bubble | Yoshi *"barely impossible"* |
+| 8 | Boosting Spin Jump | Yoshi (Bubble = expert) | Bubble is *"very, very hard"* |
+| 9 | Grappling Vine | — | the one-sided wall-jump section |
+| 10 | Invisibility | free | 10 Coin #3; *easier* without the badge |
+
+**Why it is an OR-of-routes, not a flat AND.** A single run is one character
+with one power-up — you cannot take the Yoshi answer in section 3 and the Bubble
+answer in section 7. A per-section AND of disjunctions would let a player
+holding *both* a Yoshi and the Bubble Flower clear with **none** of the six
+optional badges, which is unreachable in practice. The rule is therefore:
+
+```
+|Parachute Cap Badge| AND |Crouching High Jump Badge| AND |Wall-Climb Jump Badge|
+AND |Grappling Vine Badge| AND (
+      (|@Yoshi:1|                  AND |Jet Run Badge|   AND |Spring Feet Badge|)
+   OR (|Bubble Flower|             AND |Dolphin Kick Badge| AND |Boosting Spin Jump Badge|)
+   OR (|Floating High Jump Badge|  AND |Dolphin Kick Badge| AND |Spring Feet Badge|
+       AND |Jet Run Badge|         AND |Boosting Spin Jump Badge|)
+)
+```
+
+This reproduces the player's own summary exactly: four badges always, `+ Jet Run
+& Spring Feet` on a Yoshi run, `+ Dolphin Kick & Boosting Spin Jump` on a Bubble
+run, `+ Floating High Jump` (i.e. all nine) with neither.
+
+Three deliberate calls inside the rule:
+
+- **All five checks carry the identical string — the 10-Coins are not graduated
+  by section.** Coins *do* survive death (player-confirmed 2026-07-30: *"if you
+  get a coin but die you still have the coin at the beginning of the level and
+  can finish it so that counts"*), so they can be gathered across several
+  attempts rather than one clean run. But the AP check only fires from
+  `course_result == 1` (`client/processor.py::_handle_course_result`) — an
+  actual clear — so every coin still needs the full gauntlet. Multiple lives,
+  yes; skipping a section, no.
+- **`|Bubble Flower|` has no `OR |All Bubble Flower Badge|` companion**, unlike
+  every other Bubble wall in the table. The badge slot is occupied by the
+  section badge for the whole course, so the all-power-up badge can never be
+  equipped here.
+- **Nabbit is absent.** He trivialises the knockback sections (3, 6) but cannot
+  clear the badge-only ones, so he is never a route on his own — matching the
+  player's summary, which branches only on Yoshi / Bubble.
+
+Pinned by `test_badge_marathon_requires_its_badge_gauntlet`. Consistent with
+`test_invisibility_badge_is_never_required` (section 10 stays free).
+
+Verified: full logic suite green (33 passed + 6 subtests), a 14-case truth table over the
+real `Rules.py` parser (incl. the Yoshi+Bubble case → `False`), and 32 seeds
+(16 standard + 16 open-world) fill + `can_beat_game()` + zero unreachable
+locations.
+
+### Deferred: an Expert-logic option
+
+The report marks four alternatives as *"optional with Expert Logic"* — Wall-Climb
+Jump via Bubble, Spring Feet via Yoshi, Boosting Spin Jump via Bubble, and (by
+extension) the harder Yoshi lines. **There is no difficulty/expert option in
+`Options.py` today**, so all four are excluded and the conservative (normal)
+reading is what shipped. If an expert tier is ever added, these are its first
+four entries — plus the existing expert-tier judgement calls elsewhere in this
+record.
+
 ## General audit follow-up
 
 The progression-wall fix was scoped to *badge* levels. The same softlock class

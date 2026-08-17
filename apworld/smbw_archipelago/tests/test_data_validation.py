@@ -633,3 +633,75 @@ def test_boosting_spin_jump_ii_allows_yoshi():
         "Boosting Spin Jump II checks missing the Yoshi alternative:\n  "
         + "\n  ".join(offenders)
     )
+
+
+# Player-authored section-by-section walkthrough of *Special: Badge Marathon*
+# (2026-07-30).  The course is ten badge sections run back to back; the level
+# force-equips each section's badge, so the AP badge grant is what actually
+# gates it.  Four sections have no non-badge route at all; the other six can be
+# covered by a Yoshi or by the Bubble Flower, which is why the rule is an
+# OR-of-routes rather than a flat AND (a single run is one character with one
+# power-up -- you cannot use the Yoshi answer in one section and the Bubble
+# answer in the next).
+#
+#   Parachute Cap       badge only ("no way to clear this without the badge")
+#   Floating High Jump  badge / Bubble (bubble up to the pipe) / Yoshi
+#   Dolphin Kick        badge / Yoshi        (10 Coin #1)
+#   Crouching High Jump badge only (Yoshi's flutter can't keep up)
+#   Wall-Climb Jump     badge only in normal logic; Bubble is expert-tier and
+#                       explicitly excluded ("I wouldn't consider this in logic")
+#                                            (10 Coin #2)
+#   Spring Feet         badge / Bubble (Yoshi is expert-tier: "challenging")
+#   Jet Run             badge / Bubble (Yoshi "barely impossible")
+#   Boosting Spin Jump  badge / Yoshi (Bubble is expert-tier: "very, very hard")
+#   Grappling Vine      badge only (the one-sided wall-jump section)
+#   Invisibility        free -- easier without the badge (10 Coin #3)
+#
+# Nabbit is deliberately absent: he trivialises the knockback sections but
+# cannot clear the badge-only ones, so he is never a route on his own.
+# ``|Bubble Flower|`` carries no ``OR |All Bubble Flower Badge|`` companion
+# (unlike every other Bubble wall in the table) because the badge slot is
+# occupied by the section badge for the whole course.
+_MARATHON_ALWAYS = (
+    "|Parachute Cap Badge|",
+    "|Crouching High Jump Badge|",
+    "|Wall-Climb Jump Badge|",
+    "|Grappling Vine Badge|",
+)
+_MARATHON_ROUTES = (
+    "(|@Yoshi:1| AND |Jet Run Badge| AND |Spring Feet Badge|)",
+    "(|Bubble Flower| AND |Dolphin Kick Badge| AND |Boosting Spin Jump Badge|)",
+    "(|Floating High Jump Badge| AND |Dolphin Kick Badge| AND |Spring Feet Badge| "
+    "AND |Jet Run Badge| AND |Boosting Spin Jump Badge|)",
+)
+_MARATHON_CHECKS = {
+    "Special: Badge Marathon - Normal Exit",
+    "Special: Badge Marathon - Top of Flag",
+    "Special: Badge Marathon - 10 Coin #1",
+    "Special: Badge Marathon - 10 Coin #2",
+    "Special: Badge Marathon - 10 Coin #3",
+}
+
+
+def test_badge_marathon_requires_its_badge_gauntlet():
+    """All five Badge Marathon checks carry the same gauntlet rule.  The
+    10-Coins are NOT graduated by section.  Coins survive death (player-
+    confirmed 2026-07-30: you keep one on the retry and can bank it on a later
+    attempt), so they may be gathered across several runs -- but the AP check
+    only fires from ``course_result == 1`` (client/processor.py
+    ``_handle_course_result``), i.e. an actual clear.  So every coin still
+    needs the full gauntlet, same as the exit; it just needn't be one life."""
+    seen = set()
+    offenders = []
+    for loc in _load_json("locations.json"):
+        if loc["name"] not in _MARATHON_CHECKS:
+            continue
+        seen.add(loc["name"])
+        requires = loc.get("requires", "")
+        for clause in _MARATHON_ALWAYS + _MARATHON_ROUTES:
+            if clause not in requires:
+                offenders.append(f"{loc['name']} missing {clause}: {requires!r}")
+    assert seen == _MARATHON_CHECKS, (
+        f"Badge Marathon checks not found: {sorted(_MARATHON_CHECKS - seen)}"
+    )
+    assert not offenders, "\n  ".join(offenders)

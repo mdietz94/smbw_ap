@@ -5486,7 +5486,7 @@
     "category": [
       "Special World"
     ],
-    "requires": []
+    "requires": "|Parachute Cap Badge| AND |Crouching High Jump Badge| AND |Wall-Climb Jump Badge| AND |Grappling Vine Badge| AND ((|@Yoshi:1| AND |Jet Run Badge| AND |Spring Feet Badge|) OR (|Bubble Flower| AND |Dolphin Kick Badge| AND |Boosting Spin Jump Badge|) OR (|Floating High Jump Badge| AND |Dolphin Kick Badge| AND |Spring Feet Badge| AND |Jet Run Badge| AND |Boosting Spin Jump Badge|))"
   },
   {
     "name": "Special: Badge Marathon - Top of Flag",
@@ -5495,7 +5495,7 @@
       "Special World",
       "Gold Flag"
     ],
-    "requires": []
+    "requires": "|Parachute Cap Badge| AND |Crouching High Jump Badge| AND |Wall-Climb Jump Badge| AND |Grappling Vine Badge| AND ((|@Yoshi:1| AND |Jet Run Badge| AND |Spring Feet Badge|) OR (|Bubble Flower| AND |Dolphin Kick Badge| AND |Boosting Spin Jump Badge|) OR (|Floating High Jump Badge| AND |Dolphin Kick Badge| AND |Spring Feet Badge| AND |Jet Run Badge| AND |Boosting Spin Jump Badge|))"
   },
   {
     "name": "Special: Badge Marathon - 10 Coin #1",
@@ -5504,7 +5504,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": []
+    "requires": "|Parachute Cap Badge| AND |Crouching High Jump Badge| AND |Wall-Climb Jump Badge| AND |Grappling Vine Badge| AND ((|@Yoshi:1| AND |Jet Run Badge| AND |Spring Feet Badge|) OR (|Bubble Flower| AND |Dolphin Kick Badge| AND |Boosting Spin Jump Badge|) OR (|Floating High Jump Badge| AND |Dolphin Kick Badge| AND |Spring Feet Badge| AND |Jet Run Badge| AND |Boosting Spin Jump Badge|))"
   },
   {
     "name": "Special: Badge Marathon - 10 Coin #2",
@@ -5513,7 +5513,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": []
+    "requires": "|Parachute Cap Badge| AND |Crouching High Jump Badge| AND |Wall-Climb Jump Badge| AND |Grappling Vine Badge| AND ((|@Yoshi:1| AND |Jet Run Badge| AND |Spring Feet Badge|) OR (|Bubble Flower| AND |Dolphin Kick Badge| AND |Boosting Spin Jump Badge|) OR (|Floating High Jump Badge| AND |Dolphin Kick Badge| AND |Spring Feet Badge| AND |Jet Run Badge| AND |Boosting Spin Jump Badge|))"
   },
   {
     "name": "Special: Badge Marathon - 10 Coin #3",
@@ -5522,7 +5522,7 @@
       "Special World",
       "10 Coin"
     ],
-    "requires": []
+    "requires": "|Parachute Cap Badge| AND |Crouching High Jump Badge| AND |Wall-Climb Jump Badge| AND |Grappling Vine Badge| AND ((|@Yoshi:1| AND |Jet Run Badge| AND |Spring Feet Badge|) OR (|Bubble Flower| AND |Dolphin Kick Badge| AND |Boosting Spin Jump Badge|) OR (|Floating High Jump Badge| AND |Dolphin Kick Badge| AND |Spring Feet Badge| AND |Jet Run Badge| AND |Boosting Spin Jump Badge|))"
   },
   {
     "name": "Special: WONDER? - Normal Exit",
