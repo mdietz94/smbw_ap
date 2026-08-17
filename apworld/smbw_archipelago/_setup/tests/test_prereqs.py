@@ -807,3 +807,96 @@ def test_install_urls_swap_for_linux_at_import_time() -> None:
         # The Linux URL is the generic landing page, not the 3.11.9
         # release-specific anchor.
         assert "release/python-3119" not in python_url
+
+
+# ---------------------------------------------------------------------------
+# "installed but can't execute" — the AppImage library-shadowing case
+# ---------------------------------------------------------------------------
+
+def test_check_cmake_reports_exec_failure_not_missing(
+    force_linux, patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real user report: /usr/bin/cmake existed but aborted before
+    printing a version because Archipelago's AppImage exported its own
+    LD_LIBRARY_PATH into the probe. The old code reported "not found on
+    PATH", which sent the user hunting for a cmake they already had."""
+    mount = "/tmp/.mount_archipMfEgoA"
+    patch_run["cmake"] = (
+        1, "",
+        f"cmake: {mount}/opt/Archipelago/lib/libssl.so.3: version "
+        f"`OPENSSL_3.2.0' not found (required by /usr/lib/libcurl.so.4)\n",
+    )
+    P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
+    monkeypatch.setattr(P.shutil, "which", lambda _x: "/usr/bin/cmake")
+    r = P.check_cmake()
+    assert r.ok is False
+    assert "not found on PATH" not in r.detail
+    assert "/usr/bin/cmake" in r.detail
+    assert "failed to run" in r.detail
+    assert "AppImage" in r.detail
+    # And the note must head off the wrong conclusion the user drew:
+    # "I have OpenSSL 3.6.3 installed, does that not work?"
+    assert "NOT an OpenSSL-too-old problem" in r.note
+
+
+def test_check_cmake_still_reports_missing_when_absent(
+    force_linux, patch_run: dict[str, Any],
+) -> None:
+    """No cmake at all (FileNotFoundError) keeps the plain message."""
+    patch_run["cmake"] = None
+    P._CMAKE_DEFAULT_PATHS = ()  # type: ignore[assignment]
+    r = P.check_cmake()
+    assert r.ok is False
+    assert r.detail == "not found on PATH"
+
+
+# ---------------------------------------------------------------------------
+# Linux side-by-side LLVM 19
+# ---------------------------------------------------------------------------
+
+def test_check_llvm19_finds_side_by_side_install(
+    force_linux, patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """`apt install clang-19` / AUR llvm19 leaves the versioned toolchain
+    at <root>/bin/clang while `clang` on PATH stays the distro default
+    (LLVM 22 on a current Arch box). The detector must find the
+    side-by-side install rather than reporting the PATH clang's version
+    as a hard failure."""
+    root = tmp_path / "usr" / "lib" / "llvm-19"
+    clang = root / "bin" / "clang"
+    clang.parent.mkdir(parents=True)
+    clang.write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "_LLVM_LINUX_ROOTS", (root,))
+    patch_run[str(clang)] = (0, "clang version 19.1.7 (Debian)\n", "")
+    patch_run["clang"] = (0, "clang version 22.1.8\n", "")
+
+    P._resolved_llvm_bin = None  # type: ignore[assignment]
+    r = P.check_llvm19()
+    assert r.ok is True
+    assert "19.1.7" in r.detail
+    # And the build must be pointed at THAT bin/, since LibHakkun invokes
+    # bare `clang`.
+    assert P.resolved_llvm_bin() == str(clang.parent)
+
+
+def test_check_llvm19_side_by_side_wrong_version_is_ignored(
+    force_linux, patch_run: dict[str, Any], monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A side-by-side root that turns out not to be 19.1.x must not be
+    accepted (nor mask the PATH probe's verdict)."""
+    root = tmp_path / "opt" / "llvm-19"
+    clang = root / "bin" / "clang"
+    clang.parent.mkdir(parents=True)
+    clang.write_text("", encoding="utf-8")
+    monkeypatch.setattr(P, "_LLVM_LINUX_ROOTS", (root,))
+    patch_run[str(clang)] = (0, "clang version 18.1.8\n", "")
+    patch_run["clang"] = (0, "clang version 22.1.8\n", "")
+
+    P._resolved_llvm_bin = None  # type: ignore[assignment]
+    r = P.check_llvm19()
+    assert r.ok is False
+    assert "22.1.8" in r.detail
+    # The Arch advice must not tell the user pacman's clang is 19.x.
+    assert "AUR llvm19" in r.note

@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import local_appdata_root
+from .child_env import appimage_shadowing_hint, child_environ
 
 # Suppress the per-child console window when running under the Launcher's
 # windowed PyInstaller (no parent console → Windows opens a fresh console
@@ -213,6 +214,7 @@ def primary_worktree_root(start: Path | None = None) -> Path:
             capture_output=True,
             text=True,
             timeout=5.0,
+            env=child_environ("git"),
             creationflags=_NO_WINDOW,
         )
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
@@ -241,12 +243,18 @@ def _run(cmd: list[str], *, timeout: float = 10.0) -> tuple[int, str, str]:
     Raises `FileNotFoundError` only when the executable name itself can't
     be resolved (i.e. not on PATH); detectors catch this and treat it as
     "not installed".
+
+    The child env is composed by `child_env.child_environ`, so a probe of
+    a HOST tool doesn't inherit Archipelago's AppImage loader paths — the
+    thing that made `cmake --version` die with an OPENSSL_3.2.0 version
+    error and get misreported as "cmake not found on PATH".
     """
     res = subprocess.run(
         cmd,
         capture_output=True,
         text=True,
         timeout=timeout,
+        env=child_environ(cmd[0]),
         creationflags=_NO_WINDOW,
     )
     return res.returncode, res.stdout or "", res.stderr or ""
@@ -468,9 +476,20 @@ def check_cmake() -> PrereqResult:
     too_old_version: tuple[int, int, int] | None = None
     too_old_path: str | None = None
     saw_unparseable = False
+    # A candidate that EXISTS but exits non-zero is a different failure
+    # from "no cmake anywhere", and the old code collapsed both into
+    # "not found on PATH". The real-world case: Archipelago's Linux
+    # AppImage exporting LD_LIBRARY_PATH into the probe, so /usr/bin/cmake
+    # loaded the bundle's libssl and aborted before printing a version.
+    exec_failure: tuple[str, str] | None = None
     for cand in candidates:
         r = _safe_run([cand, "--version"])
         if r is None or r[0] != 0:
+            if r is not None and exec_failure is None:
+                err = (r[2] or r[1] or "").strip()
+                if err:
+                    where = shutil.which(cand) or cand
+                    exec_failure = (where, err.splitlines()[0])
             continue
         ver = _parse_cmake_version(r[1] or r[2])
         if ver is None:
@@ -535,6 +554,23 @@ def check_cmake() -> PrereqResult:
         )
     elif saw_unparseable:
         detail = "cmake found but `--version` output couldn't be parsed"
+    elif exec_failure is not None:
+        where, err = exec_failure
+        hint = appimage_shadowing_hint(err)
+        detail = (
+            f"cmake at {where} failed to run: {err}"
+            + (f" — {hint}" if hint else "")
+        )
+        if hint:
+            note = (
+                "This is NOT an OpenSSL-too-old problem: your system "
+                "OpenSSL is fine, but Archipelago's AppImage was forcing "
+                "its own bundled copy on the host cmake. The wizard now "
+                "strips the AppImage's LD_LIBRARY_PATH from the tools it "
+                "spawns — if you still see this, run Archipelago from an "
+                "extracted install, or re-run setup from a terminal with "
+                "`env -u LD_LIBRARY_PATH -u PYTHONHOME`.\n" + note
+            )
     else:
         detail = "not found on PATH"
     return PrereqResult(
@@ -750,6 +786,48 @@ _LLVM_DEFAULT_PATHS = (
     Path("C:/Program Files (x86)/LLVM/bin/clang.exe"),
 )
 
+# Linux side-by-side LLVM install roots, probed before the bare-`clang`
+# PATH fallback. Distros that let you keep several LLVMs installed put
+# the versioned toolchain here and leave `clang` on PATH pointing at the
+# distro default (which on a current Arch box is LLVM 22 — too new).
+#
+# We deliberately probe `<root>/bin/clang`, NOT `clang-19` on PATH:
+# LibHakkun's toolchain.cmake hardcodes bare `clang` / `clang++`, so a
+# usable install is one whose own `bin/` answers to the bare name.
+# /usr/bin/clang-19 would resolve `_resolved_llvm_bin` to /usr/bin, where
+# bare `clang` is still the wrong version — green row, broken build.
+_LLVM_LINUX_ROOTS: tuple[Path, ...] = (
+    Path("/usr/lib/llvm-19"),      # Debian / Ubuntu (apt.llvm.org)
+    Path("/usr/lib/llvm19"),       # Arch (AUR llvm19)
+    Path("/usr/lib64/llvm-19"),
+    Path("/usr/lib64/llvm19"),     # Fedora / openSUSE compat packages
+    Path("/opt/llvm-19"),
+    Path("/opt/llvm19"),
+    Path("/usr/local/llvm-19"),
+    Path("/usr/local/llvm19"),
+)
+
+# One accurate Linux remediation note, shared by the "no clang" and
+# "wrong clang" branches. The previous text claimed Arch's `clang` is
+# 19.x — it ships 22 now, so following that advice got a user nowhere.
+_LLVM_LINUX_NOTE = (
+    "LibHakkun's toolchain.cmake hardcodes bare `clang` / `clang++` and "
+    "its libc++ bundle is ABI-pinned to LLVM 19, so the build needs a "
+    "19.1.x toolchain whose own bin/ answers to `clang`.\n"
+    "Side-by-side install (keeps your current LLVM as the system default; "
+    "the wizard finds these automatically):\n"
+    "    Debian/Ubuntu:  apt install clang-19 lld-19   (see https://apt.llvm.org/)\n"
+    "                    -> /usr/lib/llvm-19/bin/clang\n"
+    "    Arch:           the AUR llvm19 / clang19 packages\n"
+    "                    -> /usr/lib/llvm19/bin/clang\n"
+    "                    (pacman's clang is the current release, too new)\n"
+    "Or unpack the upstream Linux tarball from\n"
+    "    https://github.com/llvm/llvm-project/releases/tag/llvmorg-19.1.7\n"
+    "to /opt/llvm-19 (so /opt/llvm-19/bin/clang exists), or put any "
+    "19.1.x bin/ dir ahead of your current clang on PATH.\n"
+    "Then click Re-check."
+)
+
 
 _resolved_llvm_bin: str | None = None
 
@@ -858,6 +936,27 @@ def check_llvm19() -> PrereqResult:
                 auto_installable=True,
             )
 
+    # Linux side-by-side roots. Probed before the PATH fallback for the
+    # same reason as the Windows canonical paths above: a user who
+    # installed clang-19 alongside their distro's current LLVM has the
+    # right toolchain on disk but not on PATH.
+    if not _is_windows():
+        for root in _LLVM_LINUX_ROOTS:
+            cand = root / "bin" / "clang"
+            if not cand.is_file():
+                continue
+            r = _safe_run([str(cand), "--version"])
+            if r is None or r[0] != 0:
+                continue
+            ver = _parse_clang_version(r[1] or r[2])
+            if ver is None or _llvm_gate_version(ver) is not None:
+                continue
+            _resolved_llvm_bin = str(cand.parent)
+            return PrereqResult(
+                "llvm19", "LLVM 19.1.x", True,
+                f"{ver[0]}.{ver[1]}.{ver[2]} ({cand}) [side-by-side]",
+            )
+
     r = _safe_run(["clang", "--version"])
     if r is None or r[0] != 0:
         if _is_windows():
@@ -869,16 +968,7 @@ def check_llvm19() -> PrereqResult:
                 "PATH prepend to the build subprocess."
             )
         else:
-            note = (
-                "Install LLVM 19.1.x via your distro's package manager:\n"
-                "    apt install clang-19 lld-19   (Debian/Ubuntu — see https://apt.llvm.org/)\n"
-                "    dnf install clang             (Fedora — verify version is 19.1.x)\n"
-                "    pacman -S clang lld           (Arch — current is 19.x)\n"
-                "Or download the upstream Linux build from:\n"
-                "    https://github.com/llvm/llvm-project/releases/tag/llvmorg-19.1.7\n"
-                "LibHakkun's toolchain.cmake hardcodes `clang`/`clang++`; "
-                "ensure they're on PATH and report 19.1.x."
-            )
+            note = _LLVM_LINUX_NOTE
         return PrereqResult(
             "llvm19", "LLVM 19.1.x", False,
             "not found (LibHakkun's toolchain.cmake hardcodes clang/clang++)",
@@ -903,13 +993,7 @@ def check_llvm19() -> PrereqResult:
                 "%LOCALAPPDATA%\\SMBWArchipelago\\llvm\\."
             )
         else:
-            note = (
-                "Install a 19.1.x build via your distro's package "
-                "manager (apt/dnf/pacman) — e.g. `clang-19` on "
-                "Debian/Ubuntu (https://apt.llvm.org/) — or download "
-                "the upstream Linux 19.1.7 tarball, and put its bin/ "
-                "dir ahead of your current clang on PATH."
-            )
+            note = _LLVM_LINUX_NOTE
         return PrereqResult(
             "llvm19", "LLVM 19.1.x", False,
             f"PATH has LLVM {ver[0]}.{ver[1]}.{ver[2]} — {reason}",

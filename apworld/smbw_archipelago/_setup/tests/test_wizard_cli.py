@@ -284,3 +284,105 @@ def test_run_junction_skips_when_not_in_dev_clone(monkeypatch: pytest.MonkeyPatc
     assert install_called == []
     actions = [e for e in events if e["event"] == "junction_result"]
     assert actions and actions[0]["action"] == "skipped"
+
+
+# ---------------------------------------------------------------------------
+# Blocking-prereq gate
+# ---------------------------------------------------------------------------
+
+def _prereq(key: str, *, ok: bool, auto: bool = False, warn: bool = False) -> Any:
+    from apworld.smbw_archipelago._setup.prereqs import PrereqResult
+    return PrereqResult(
+        key=key, name=key.upper(), ok=ok, detail="detail",
+        install_url="https://example/" + key, note="do this",
+        auto_installable=auto, warn_only=warn,
+    )
+
+
+def test_run_pipeline_stops_when_blocking_prereqs_cannot_be_installed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression (Linux user report): cmake missing + wrong LLVM, both
+    `auto_installable=False` off Windows. With the GUI's auto-install
+    checkbox on, the old gate (`not probe.ok and not install_missing`)
+    let the pipeline run install (which skipped: "no missing
+    auto-installable prereqs") and then BUILD, so the user's first sign
+    of trouble was a cmake linker error rather than "install cmake"."""
+    calls: list[str] = []
+
+    monkeypatch.setattr(W, "run_probe", lambda **_kw: W.ProbeOutcome(
+        ok=False,
+        results=[
+            _prereq("git", ok=True),
+            _prereq("cmake", ok=False),
+            _prereq("llvm19", ok=False),
+            _prereq("ryujinx", ok=False, warn=True),
+        ],
+        missing_keys=[],
+    ))
+    monkeypatch.setattr(W, "run_install", lambda *a, **kw: calls.append("install"))
+    monkeypatch.setattr(W, "run_junction", lambda **_kw: calls.append("junction"))
+    monkeypatch.setattr(W, "run_build", lambda **_kw: calls.append("build"))
+
+    events: list[dict[str, Any]] = []
+    outcome = W.run_pipeline(
+        W.PipelineOptions(install_missing=True), callback=events.append)
+
+    assert outcome.ok is False
+    assert outcome.failed_phase == W.PHASE_PROBE
+    assert calls == []          # install / junction / build never ran
+    blocked = [e["key"] for e in events if e["event"] == "prereq_blocking"]
+    assert blocked == ["cmake", "llvm19"]      # warn-only row excluded
+    end = [e for e in events if e["event"] == "pipeline_end"][-1]
+    assert end["blocking"] == ["cmake", "llvm19"]
+
+
+def test_run_pipeline_continues_when_every_failure_is_auto_installable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The Windows path: winget can fix these, so install runs and the
+    pipeline proceeds — unchanged behavior."""
+    calls: list[str] = []
+
+    monkeypatch.setattr(W, "run_probe", lambda **_kw: W.ProbeOutcome(
+        ok=False,
+        results=[_prereq("cmake", ok=False, auto=True)],
+        missing_keys=["cmake"],
+    ))
+
+    def fake_install(keys: list[str], **_kw: Any) -> W.InstallOutcome:
+        calls.append("install")
+        return W.InstallOutcome(ok=True, installed=list(keys), failed=[])
+
+    monkeypatch.setattr(W, "run_install", fake_install)
+    monkeypatch.setattr(W, "run_junction", lambda **_kw: W.JunctionOutcomeWrapper(ok=True))
+    monkeypatch.setattr(W, "run_build", lambda **_kw: W.BuildOutcomeWrapper(
+        ok=True, outputs={"subsdk9": Path("/x"), "main.npdm": Path("/y")},
+    ))
+    monkeypatch.setattr(W, "run_deploy", lambda *a, **kw: W.DeployOutcomeWrapper(
+        ok=True, target="none",
+    ))
+
+    outcome = W.run_pipeline(W.PipelineOptions(install_missing=True))
+    assert outcome.ok is True
+    assert calls == ["install"]
+
+
+def test_run_pipeline_stops_when_install_phase_not_requested(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`--phases probe,build --auto-install` must not treat an
+    auto-installable failure as "will be fixed": the install phase isn't
+    in the phase list, so nothing is going to fix it."""
+    monkeypatch.setattr(W, "run_probe", lambda **_kw: W.ProbeOutcome(
+        ok=False,
+        results=[_prereq("cmake", ok=False, auto=True)],
+        missing_keys=["cmake"],
+    ))
+    monkeypatch.setattr(W, "run_build", lambda **_kw: pytest.fail("build ran"))
+
+    outcome = W.run_pipeline(W.PipelineOptions(
+        phases=(W.PHASE_PROBE, W.PHASE_BUILD), install_missing=True,
+    ))
+    assert outcome.ok is False
+    assert outcome.failed_phase == W.PHASE_PROBE

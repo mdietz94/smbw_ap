@@ -738,3 +738,27 @@ def test_resolve_repo_respects_explicit_arg(
     layouts; the dispatcher must NOT override that."""
     monkeypatch.setattr(B, "is_dev_clone", lambda: False)
     assert B._resolve_repo(tmp_path) == tmp_path
+
+
+def test_compose_build_env_strips_appimage_loader_paths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression (Linux, Archipelago AppImage): the inherited
+    LD_LIBRARY_PATH pointed into the AppImage mount, so the host cmake
+    loaded the bundle's libssl and died with
+
+        version `OPENSSL_3.2.0' not found (required by /usr/lib/libcurl.so.4)
+
+    even though the machine's own OpenSSL was newer than required."""
+    mount = "/tmp/.mount_archipMfEgoA"
+    monkeypatch.setattr(B, "resolved_llvm_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_ninja_bin", lambda: None)
+    monkeypatch.setattr(B, "resolved_python_bin", lambda: None)
+    monkeypatch.setattr(B.sys, "platform", "linux")
+    monkeypatch.setenv("APPDIR", mount)
+    monkeypatch.setenv("APPIMAGE", "/home/u/Archipelago.AppImage")
+    monkeypatch.setenv("LD_LIBRARY_PATH", f"{mount}/opt/Archipelago/lib")
+    monkeypatch.setenv("PYTHONHOME", f"{mount}/opt/Archipelago")
+    env = B._compose_build_env()
+    assert "LD_LIBRARY_PATH" not in env
+    assert "PYTHONHOME" not in env

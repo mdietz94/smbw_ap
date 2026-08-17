@@ -676,3 +676,79 @@ def test_install_llvm19_on_linux_points_at_distro_install(
     assert r.ok is False
     low = r.detail.lower()
     assert "package manager" in low or "apt" in low or "linux" in low
+
+
+# ---------------------------------------------------------------------------
+# _pip_install retry ladder (PEP 668 / venv)
+# ---------------------------------------------------------------------------
+
+def test_pip_install_retries_with_break_system_packages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: a user on a distro-managed Python had to install lz4
+    system-wide by hand because `pip install --user lz4` was refused
+    outright by PEP 668. The retry keeps the install in ~/.local."""
+    spawned: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_k: Any) -> I.InstallResult:
+        spawned.append(cmd)
+        if "--break-system-packages" in cmd:
+            return I.InstallResult(True, 0, "Successfully installed lz4")
+        return I.InstallResult(
+            False, 1,
+            "error: externally-managed-environment\n"
+            "This environment is externally managed",
+        )
+
+    monkeypatch.setattr(I, "_stream_subprocess", fake_stream)
+    lines: list[str] = []
+    r = I._pip_install("/usr/bin/python3", ["lz4"], on_line=lines.append)
+
+    assert r.ok is True
+    assert len(spawned) == 2
+    assert "--break-system-packages" not in spawned[0]
+    assert spawned[1].count("--user") == 1
+    assert any("externally managed" in ln for ln in lines)
+
+
+def test_pip_install_retries_without_user_in_venv(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Some venvs reject --user outright; inside a venv the plain form is
+    already isolated."""
+    spawned: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_k: Any) -> I.InstallResult:
+        spawned.append(cmd)
+        if "--user" in cmd:
+            return I.InstallResult(
+                False, 1,
+                "ERROR: Can not perform a '--user' install. User "
+                "site-packages are not visible in this virtualenv.",
+            )
+        return I.InstallResult(True, 0, "Successfully installed lz4")
+
+    monkeypatch.setattr(I, "_stream_subprocess", fake_stream)
+    r = I._pip_install("/venv/bin/python", ["lz4"])
+
+    assert r.ok is True
+    assert len(spawned) == 2
+    assert "--user" not in spawned[-1]
+
+
+def test_pip_install_does_not_retry_on_unrelated_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A network / resolver failure must surface as-is; retrying with
+    --break-system-packages would only muddy the log."""
+    spawned: list[list[str]] = []
+
+    def fake_stream(cmd: list[str], **_k: Any) -> I.InstallResult:
+        spawned.append(cmd)
+        return I.InstallResult(
+            False, 1, "ERROR: Could not find a version that satisfies lz4")
+
+    monkeypatch.setattr(I, "_stream_subprocess", fake_stream)
+    r = I._pip_install("/usr/bin/python3", ["lz4"])
+    assert r.ok is False
+    assert len(spawned) == 1

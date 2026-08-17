@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Callable
 
 from . import local_appdata_root
+from .child_env import child_environ
 from .prereqs import (
     _prepend_path,
     _winget_ninja_paths,
@@ -296,7 +297,10 @@ def _stream_subprocess(
             on_line(line)
 
     _emit(f"[install] spawning: {cmd}")
-    child_env = dict(env) if env is not None else os.environ.copy()
+    # child_environ (not a raw os.environ copy) so a HOST tool we spawn
+    # from inside Archipelago's Linux AppImage doesn't inherit the
+    # bundle's LD_LIBRARY_PATH / PYTHONHOME. See child_env.py.
+    child_env = dict(env) if env is not None else child_environ(cmd[0])
     child_env.setdefault("PYTHONIOENCODING", "utf-8")
     try:
         proc = subprocess.Popen(
@@ -831,6 +835,61 @@ def install_switch_mod_submodule(on_line: ProgressFn | None = None) -> InstallRe
 # Archipelago pip deps
 # ---------------------------------------------------------------------------
 
+def _pip_install(
+    py: str,
+    args: list[str],
+    *,
+    on_line: ProgressFn | None = None,
+    timeout: float = 120.0,
+) -> InstallResult:
+    """`<py> -m pip install --user <args>` with two documented retries.
+
+    Distro-packaged interpreters (Arch, Debian 12+, Fedora 38+, and the
+    `/usr/bin/python3` the wizard resolves when Archipelago's AppImage
+    doesn't expose a usable `sys.executable`) mark themselves
+    **externally managed** per PEP 668, and plain `pip install --user`
+    refuses to run at all. That is what forced a user to install `lz4`
+    system-wide by hand before the build could get past linking.
+
+    Retry ladder, most-conservative first:
+      1. `--user`                              — the normal case.
+      2. `--user --break-system-packages`      — PEP 668 refusal. Still
+         writes only to `~/.local/lib/...`; the distro's own
+         site-packages is untouched, so the flag's scary name overstates
+         what happens here.
+      3. no `--user`                           — some venvs disable user
+         installs outright ("Can not perform a '--user' install"); inside
+         a venv the plain form is already isolated.
+    """
+    base = [py, "-m", "pip", "install", "--disable-pip-version-check"]
+    result = _stream_subprocess(
+        [*base, "--user", *args], on_line=on_line, timeout=timeout)
+    if result.ok:
+        return result
+
+    log = result.log.lower()
+    if "externally-managed-environment" in log or "externally managed" in log:
+        if on_line:
+            on_line(
+                "[pip] this Python is externally managed (PEP 668); "
+                "retrying with --break-system-packages, which still "
+                "installs into your user site (~/.local) only")
+        result = _stream_subprocess(
+            [*base, "--user", "--break-system-packages", *args],
+            on_line=on_line, timeout=timeout)
+        if result.ok:
+            return result
+        log = result.log.lower()
+
+    if "can not perform a '--user' install" in log or \
+            "user site-packages are not visible" in log:
+        if on_line:
+            on_line("[pip] --user rejected (virtualenv); retrying without it")
+        result = _stream_subprocess([*base, *args], on_line=on_line,
+                                    timeout=timeout)
+    return result
+
+
 def install_lz4(on_line: ProgressFn | None = None) -> InstallResult:
     """`pip install --user lz4` into the resolved Python.
 
@@ -841,11 +900,7 @@ def install_lz4(on_line: ProgressFn | None = None) -> InstallResult:
     from .prereqs import lz4_marker_path
 
     py = resolved_python_bin() or sys.executable
-    result = _stream_subprocess(
-        [py, "-m", "pip", "install", "--user", "--disable-pip-version-check", "lz4"],
-        on_line=on_line,
-        timeout=120.0,
-    )
+    result = _pip_install(py, ["lz4"], on_line=on_line)
     if result.ok:
         marker = lz4_marker_path()
         try:
@@ -867,11 +922,7 @@ def install_pyelftools(on_line: ProgressFn | None = None) -> InstallResult:
     from .prereqs import pyelftools_marker_path
 
     py = resolved_python_bin() or sys.executable
-    result = _stream_subprocess(
-        [py, "-m", "pip", "install", "--user", "--disable-pip-version-check", "pyelftools"],
-        on_line=on_line,
-        timeout=120.0,
-    )
+    result = _pip_install(py, ["pyelftools"], on_line=on_line)
     if result.ok:
         marker = pyelftools_marker_path()
         try:
@@ -886,6 +937,10 @@ def install_pyelftools(on_line: ProgressFn | None = None) -> InstallResult:
 def install_archipelago_deps(on_line: ProgressFn | None = None) -> InstallResult:
     """`pip install -r vendor/Archipelago/requirements.txt` into the
     resolved Python 3.11+.
+
+    Goes through :func:`_pip_install`, so it prefers a user-site install
+    and handles PEP 668 / venv refusals the same way the small build-dep
+    installs do.
 
     Uses `prereqs.resolved_python_bin()` so the install lands in the same
     interpreter the wizard's import-probe will check on Re-check --
@@ -916,11 +971,8 @@ def install_archipelago_deps(on_line: ProgressFn | None = None) -> InstallResult
         if on_line:
             on_line(f"[install] {msg}")
         return InstallResult(False, 1, msg, msg)
-    return _stream_subprocess(
-        [py, "-m", "pip", "install", "-r", str(req_path)],
-        on_line=on_line,
-        timeout=600.0,
-    )
+    return _pip_install(py, ["-r", str(req_path)], on_line=on_line,
+                        timeout=600.0)
 
 
 # ---------------------------------------------------------------------------
