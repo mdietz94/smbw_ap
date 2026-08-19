@@ -417,6 +417,14 @@ inline constexpr std::size_t kKillCauseCap  = 128;
 struct WireKill {
     char source[kKillSourceCap] = {};
     char cause[kKillCauseCap]   = {};
+    // 2026-08-19 -- urgency flag.  false (the wire default, and what an
+    // older bridge that doesn't send the field produces) means "this is a
+    // DeathLink": probe::synthKill holds it until the player has been
+    // playing the current course for 10 s.  true means "this is the
+    // level-entry gate bouncing the player out" (client _gate_kill_loop,
+    // source "SMBW Gate") and must not wait.  Mirrors KillMsg.immediate
+    // in apworld/.../client/wire.py.
+    bool immediate = false;
 };
 
 // Bridge -> Switch.  Overlay notice: force the on-Switch ImGui debug

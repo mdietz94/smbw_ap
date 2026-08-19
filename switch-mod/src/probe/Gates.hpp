@@ -22,4 +22,12 @@ namespace probe {
 void markSaveLoaded(const char* via);
 void latchSceneTransitionTick(std::uint64_t now_tick);
 
+// Reader side.  Also declared in ap/ApFrameBridge.hpp (drainInbound's
+// copy); re-declared here so probe-internal callers -- probe/DeathLink.cpp
+// re-arms its in-level settle clock while a transition is in flight --
+// don't have to include an ap/ header.  Keep the two declarations
+// identical.
+bool isSaveLoaded();
+bool isInSceneTransitionWindow();
+
 }  // namespace probe

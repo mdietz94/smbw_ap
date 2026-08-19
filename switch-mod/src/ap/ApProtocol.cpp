@@ -184,9 +184,15 @@ bool parseSetBadgesAbsolute(util::json::Reader& r, WireSetBadgesAbsolute& out) {
 }
 
 bool parseKill(util::json::Reader& r, WireKill& out) {
-    // Cursor positioned just after "t":"kill".  Both fields are strings
+    // Cursor positioned just after "t":"kill".  source/cause are strings
     // with caps mirrored from bridge/wire.py KillMsg.  Either field
     // missing -> reject the line; the bridge always emits both.
+    //
+    // "immediate" (2026-08-19) is OPTIONAL and defaults to false, so a
+    // bridge older than the flag still parses: its kills are all treated
+    // as DeathLinks and go through the in-level settle gate.  That is the
+    // safe default -- a gate kill only fires after 30 s in the course, by
+    // which time the 10 s settle has long since elapsed anyway.
     std::string_view key;
     bool saw_source = false;
     bool saw_cause = false;
@@ -196,6 +202,10 @@ bool parseKill(util::json::Reader& r, WireKill& out) {
             if (!r.nextString(sv)) return false;
             copyFixedN(out.source, sv.data(), sv.size());
             saw_source = true;
+        } else if (sv_eq(key, "immediate")) {
+            bool b = false;
+            if (!r.nextBool(b)) return false;
+            out.immediate = b;
         } else if (sv_eq(key, "cause")) {
             std::string_view sv;
             if (!r.nextString(sv)) return false;

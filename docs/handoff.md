@@ -310,6 +310,38 @@ Live-validated end-to-end on Ryujinx 2026-05-25 09:00 (run log
    dies on screen; the loop-guard atomic from step 7 suppresses the
    outbound echo when `0x33fd9a8` fires as a consequence.
 
+### 2026-08-19 — inbound settle gate (delay DeathLinks until in-level)
+
+Players reported inbound DeathLinks landing at odd moments — during a
+course fade-in, on the respawn frame after a previous death, or across a
+scene boundary.  The old "killable" test was freshness only (the player
+tick ran within 0.5 s), which is already true before the player has
+control.
+
+`probe::synthKill` now takes an `immediate` flag and DeathLinks pass
+`false`, which additionally requires the **gameplay session** — the
+current uninterrupted run of player-tick frames — to be at least
+`kInLevelSettleTicks` (**10 s**) old.  The session clock restarts on a
+player-tick gap (world map / menu / scene load) and on any frame inside
+the 3 s scene-transition window (death/respawn, area change), so the
+wait re-arms after every transition.  A kill that arrives early is
+**queued, not dropped**: `serviceDeathLink` fires it on the first
+settled frame; the pending TTL went 30 s → 60 s to cover the added wait.
+The 1.5 s kill window (the re-arm loop from the 2026-06-05 rework) now
+opens only when a kill actually fires, and is closed on a session
+change so it can't bleed into the next scene.
+
+Gate kills (`_gate_kill_loop`, source `"SMBW Gate"`) send
+`immediate=True` and keep the freshness-only rule — bouncing the player
+out of an out-of-logic course must not wait.  The flag rides the wire as
+an optional `KillMsg.immediate` bool defaulting to `false` on both ends,
+so an older Switch build ignores it and an older bridge simply gets the
+delayed behavior for everything.
+
+Touched: `src/probe/DeathLink.{cpp,hpp}`, `src/probe/Gates.hpp`,
+`src/ap/{ApProtocol.hpp,ApProtocol.cpp,ApFrameBridge.cpp,ApFrameBridge.hpp,ApClient.cpp}`,
+`client/{wire.py,lan_server.py,context.py}`.
+
 ### Test coverage
 
 240 bridge tests green (224 prior + 16 new across `test_wire`,

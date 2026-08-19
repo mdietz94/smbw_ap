@@ -100,8 +100,11 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
             "source": "Friend",
             "cause": "fell in a pit",
         })
+        # immediate=False: the Switch holds the kill until the player has
+        # been playing the current course for 10 s (2026-08-19 settle
+        # gate).  Only the level-entry gate bounce passes immediate=True.
         self.ctx.lan_server.send_kill.assert_called_once_with(
-            source="Friend", cause="fell in a pit")
+            source="Friend", cause="fell in a pit", immediate=False)
 
     def test_on_deathlink_no_forward_when_disabled(self):
         self.ctx.deathlink_enabled = False

@@ -567,8 +567,9 @@ void ApClient::handleLine(char* line, std::size_t len) {
             return;
         case InboundKind::Kill:
             SMBWAP_LOG_INFO(
-                "[deathlink] received Kill(source=%s, cause=%s), enqueued",
-                msg.kill.source, msg.kill.cause);
+                "[deathlink] received Kill(source=%s, cause=%s, "
+                "immediate=%d), enqueued",
+                msg.kill.source, msg.kill.cause, msg.kill.immediate ? 1 : 0);
             // Forward to game thread; drainInbound applies via
             // probe::synthKill (HP=0 int16 write at live_base + 0x38).
             if (!tryPushInbound(msg) && shouldLogDrop()) {

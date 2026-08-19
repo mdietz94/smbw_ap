@@ -1138,8 +1138,14 @@ class SMBWContext(CommonContext):
                 "[deathlink in] source=%s cause=%s (no Switch bound; dropping)",
                 source, cause)
             return
-        log.info("[deathlink in] source=%s cause=%s -> Switch", source, cause)
-        self.lan_server.send_kill(source=source, cause=cause)
+        # immediate=False: the Switch holds this until the player has been
+        # playing the current course for 10 s (queued, not dropped, until
+        # then), so a foreign death can't land during a course fade-in, on
+        # a respawn frame, or mid-transition.
+        log.info(
+            "[deathlink in] source=%s cause=%s -> Switch (applies once "
+            "in-level and settled)", source, cause)
+        self.lan_server.send_kill(source=source, cause=cause, immediate=False)
 
     async def handle_death_reported(self, death: DeathReported) -> None:
         """LanServer dispatches this when the processor emits a
@@ -1413,7 +1419,12 @@ class SMBWContext(CommonContext):
                              sk, reason)
                     self._clear_gate_overlay()
                     return
-                self.lan_server.send_kill(source="SMBW Gate", cause=cause)
+                # immediate=True: the gate bounce skips the Switch-side
+                # in-level settle wait that inbound DeathLinks go through
+                # -- the whole point is to eject the player from a course
+                # they can't legally be in, promptly.
+                self.lan_server.send_kill(source="SMBW Gate", cause=cause,
+                                          immediate=True)
                 kills += 1
                 log.warning("gate kill #%d sent for stage_key=0x%08x (%s)",
                             kills, sk, cause)

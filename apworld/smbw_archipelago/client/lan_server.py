@@ -660,7 +660,8 @@ class LanServer:
                 "send_apply_world_unlock: outbound queue full; dropping "
                 "(%d int + %d bool hashes)", len(hashes), len(bool_hashes))
 
-    def send_kill(self, source: str, cause: str) -> None:
+    def send_kill(self, source: str, cause: str,
+                  immediate: bool = False) -> None:
         """Enqueue a Kill (M3.8 DeathLink inbound) to the active Switch.
 
         Same drop-on-no-client semantics as
@@ -669,25 +670,33 @@ class LanServer:
         ``live_base + 0x38``; the next tick of the player update
         function reads HP <= 0 and takes the death branch.
 
+        ``immediate=False`` (the default, and what an AP DeathLink uses)
+        means the Switch holds the kill until the player has been playing
+        the current course for 10 s -- so a foreign death never lands on a
+        fade-in / respawn / transition frame.  It is queued, not dropped,
+        while that isn't true.  Pass ``immediate=True`` only for the
+        level-entry gate bounce, which must fire without that wait.
+
         ``source`` and ``cause`` are truncated to KillMsg's caps (48 /
         128) on the wire encoder side, so over-long inputs are silently
         clipped rather than rejected."""
-        msg = wire.KillMsg(source=source, cause=cause)
+        msg = wire.KillMsg(source=source, cause=cause, immediate=immediate)
         if self._send_queue is None:
             log.warning(
-                "send_kill(source=%r, cause=%r): no Switch client "
-                "connected; dropping",
-                source, cause)
+                "send_kill(source=%r, cause=%r, immediate=%s): no Switch "
+                "client connected; dropping",
+                source, cause, immediate)
             return
         try:
             self._send_queue.put_nowait(msg)
             log.debug(
-                "send_kill: enqueued source=%r cause=%r", source, cause)
+                "send_kill: enqueued source=%r cause=%r immediate=%s",
+                source, cause, immediate)
         except asyncio.QueueFull:
             log.error(
-                "send_kill(source=%r, cause=%r): outbound queue full; "
-                "dropping",
-                source, cause)
+                "send_kill(source=%r, cause=%r, immediate=%s): outbound "
+                "queue full; dropping",
+                source, cause, immediate)
 
     def send_overlay_notice(self, text: str, ttl_ms: int) -> None:
         """Enqueue an OverlayNotice to the active Switch: force the

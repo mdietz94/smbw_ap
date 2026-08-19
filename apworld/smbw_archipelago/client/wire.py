@@ -1100,12 +1100,31 @@ class KillMsg:
     incoming values are truncated on the wire encoder side; the bridge
     validator below enforces those caps so a misbehaving sender never
     overflows the Switch buffer.
+
+    ``immediate`` (2026-08-19) picks which killable test the Switch
+    applies:
+
+    * ``False`` -- an actual DeathLink.  ``probe::synthKill`` holds it
+      until the player has been playing the current course for 10 s, so a
+      foreign death can't land during a fade-in, on a respawn frame, or
+      mid-transition (the "DeathLink did something weird" reports).  If
+      the player is on the world map / in a menu / not settled yet, the
+      Switch queues it and fires on the first qualifying frame (~60 s
+      TTL) rather than dropping it.
+    * ``True`` -- the level-entry logic gate bouncing the player out of a
+      course they can't legally be in
+      (:meth:`...context.SMBWContext._gate_kill_loop`).  That must not
+      wait, so it keeps the historical freshness-only rule.
+
+    The field is optional on the wire and defaults to ``False`` on both
+    sides, so a Switch build older than the flag simply ignores it.
     """
 
     T = "kill"
 
     source: str
     cause: str
+    immediate: bool = False
 
     # Source/cause caps -- MUST match WireKill char buffer sizes in
     # switch-mod/src/program/ap/ApProtocol.hpp.  Bumping either side
@@ -1118,6 +1137,7 @@ class KillMsg:
             "t": self.T,
             "source": self.source[: self.SOURCE_CAP],
             "cause": self.cause[: self.CAUSE_CAP],
+            "immediate": bool(self.immediate),
         }
 
     @classmethod
@@ -1125,6 +1145,7 @@ class KillMsg:
         return cls(
             source=_req_str(d, "source"),
             cause=_req_str(d, "cause"),
+            immediate=bool(d.get("immediate", False)),
         )
 
 

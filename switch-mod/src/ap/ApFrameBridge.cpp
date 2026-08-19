@@ -434,20 +434,33 @@ void drainInbound() {
                 // HP int16 at live_base + 0x38 and arms the loop guard so
                 // the resulting DEATH_DETECTED is suppressed (not echoed
                 // back to AP).  If the player isn't in a killable state
-                // right now (menu / transition / pre-first-level), it
-                // returns false and we queue a pending retry instead of
-                // dropping the death -- serviceDeathLink fires it on the
-                // next gameplay frame.  Not deduplicated: multiple piled
-                // kills collapse naturally because the pending retry is a
-                // single slot and HP=0 is idempotent within a frame.
-                const bool ok = probe::synthKill();
-                if (!ok) probe::requestPendingDeathLink();
+                // right now, it returns false and we queue a pending retry
+                // instead of dropping the death -- serviceDeathLink fires
+                // it on the first qualifying frame.  Not deduplicated:
+                // multiple piled kills collapse naturally because the
+                // pending retry is a single slot and HP=0 is idempotent
+                // within a frame.
+                //
+                // "Killable" depends on msg.kill.immediate (2026-08-19).
+                // A DeathLink (immediate=false) additionally requires the
+                // player to have been playing the current course for 10 s,
+                // so a foreign death can't land during a course fade-in,
+                // on a respawn frame, or mid-transition -- the "DeathLink
+                // did something weird" reports.  A gate kill
+                // (immediate=true) keeps the freshness-only rule: bouncing
+                // the player out of an out-of-logic course must not wait.
+                const bool immediate = msg.kill.immediate;
+                const bool ok = probe::synthKill(immediate);
+                if (!ok) probe::requestPendingDeathLink(immediate);
                 SMBWAP_LOG_INFO(
-                    "[deathlink in] source=%s cause=%s -> %s",
-                    msg.kill.source, msg.kill.cause,
+                    "[deathlink in] source=%s cause=%s immediate=%d -> %s",
+                    msg.kill.source, msg.kill.cause, immediate ? 1 : 0,
                     ok ? "applied immediately"
-                       : "deferred (not killable; will retry on return "
-                         "to gameplay)");
+                       : (immediate
+                          ? "deferred (not killable; will retry on return "
+                            "to gameplay)"
+                          : "deferred (not in a settled course; will retry "
+                            "after 10 s of play)"));
                 break;
             }
             case InboundKind::ApplyWorldUnlock: {
