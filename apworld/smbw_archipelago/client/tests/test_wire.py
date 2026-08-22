@@ -300,6 +300,28 @@ class TestRoundTrip(unittest.TestCase):
     def test_kill_typical(self):
         self._round_trip(KillMsg(source="MarioSlot1", cause="mario_died"))
 
+    def test_kill_defaults_to_not_immediate(self):
+        # An AP DeathLink is the delayed kind: the Switch holds it until
+        # the player has settled into a course.
+        msg = KillMsg(source="Friend", cause="mario_died")
+        self.assertFalse(msg.immediate)
+        self.assertIs(msg.to_wire()["immediate"], False)
+
+    def test_kill_immediate_round_trips(self):
+        # The level-entry gate bounce sets immediate=True to skip the
+        # Switch-side in-level settle wait.
+        self._round_trip(
+            KillMsg(source="SMBW Gate", cause="Level not in logic",
+                    immediate=True))
+
+    def test_kill_immediate_absent_on_wire_defaults_false(self):
+        # A bridge older than the flag omits the field; decode must not
+        # reject the line and must default to the delayed behavior.
+        decoded = decode(json.dumps(
+            {"t": "kill", "source": "Friend", "cause": "x"}).encode())
+        self.assertIsInstance(decoded, KillMsg)
+        self.assertFalse(decoded.immediate)
+
     def test_kill_empty_cause(self):
         # AP sometimes ships a Bounce with no cause string; we still
         # carry it across so the Switch log can record source only.

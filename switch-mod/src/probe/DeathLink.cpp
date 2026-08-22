@@ -68,6 +68,35 @@
 // the TTL expires.  Clearing player+0x110f is exactly what the game's own
 // HP>0 branch does each living frame, so the write is safe.
 //
+// 2026-08-19 in-level settle gate ("DeathLink applied at a weird moment").
+// Player reports: an inbound DeathLink could land in the first instants of
+// a level -- during the fade-in, before control is handed over, or on the
+// respawn frame after a previous death -- producing deaths that look like
+// they came out of nowhere, chain-deaths on respawn, and (with the kill
+// window above) the occasional double-kill across a scene boundary.
+//
+// Freshness alone ("the player tick ran within 0.5 s") is NOT a good
+// "the player is actually playing" signal: the tick starts running the
+// moment the course scene comes up, well before the player can act.  So
+// we now track the GAMEPLAY SESSION -- the current uninterrupted run of
+// player-tick frames -- and require it to be at least kInLevelSettleTicks
+// (10 s) old before a DeathLink-sourced kill may be applied.  The session
+// clock restarts on:
+//   * first sight of the HP struct (pre-first-level),
+//   * a gap in the player tick -- it stops outside a course and across a
+//     scene load, so a gap IS "the player just (re-)entered play", and
+//   * any frame inside the 3 s scene-transition window (probe::Gates), so
+//     a death/respawn or an in-course area change also re-arms the wait.
+// A kill that arrives before the session has settled is not dropped: it
+// goes on the existing pending-retry slot and fires on the first settled
+// frame (TTL below).
+//
+// GATE KILLS BYPASS THIS.  The level-entry logic gate (client
+// _gate_kill_loop, source "SMBW Gate") uses the same Kill message to
+// bounce the player out of a course they can't legally be in; delaying
+// that would be wrong.  Those arrive with `immediate` set on the wire and
+// take the old freshness-only path.
+//
 // Direct port of switch-mod/src/program/main.cpp:1960-2077, reworked.
 
 #include "probe/DeathLink.hpp"
@@ -77,6 +106,7 @@
 
 #include "hk/svc/cpu.h"
 
+#include "probe/Gates.hpp"
 #include "util/Log.hpp"
 
 namespace probe {
@@ -100,10 +130,22 @@ constexpr std::uint64_t kLiveBaseFreshTicks = kTicksPerSec / 2;  // 0.5 s
 // never suppress a *later* genuine death (defect #2 above).
 constexpr std::uint64_t kSynthGuardTicks = kTicksPerSec;  // 1 s
 
+// In-level settle grace (2026-08-19).  A DeathLink-sourced kill may only
+// be applied once the current gameplay session (see g_session_start_tick)
+// has been running this long -- i.e. the player has been actually playing
+// the course for 10 s, not merely "the player tick started this frame".
+// Gate kills (`immediate`) skip this.
+constexpr std::uint64_t kInLevelSettleTicks = 10ULL * kTicksPerSec;  // 10 s
+
 // Pending inbound-kill TTL.  If a DeathLink arrives while not killable,
 // retry on the next gameplay frame for up to this long, then give up so
 // a buried kill can't fire minutes later in an unrelated level.
-constexpr std::uint64_t kPendingKillTtlTicks = 30ULL * kTicksPerSec;  // 30 s
+//
+// 30 s -> 60 s with the settle gate (2026-08-19): the retry budget now has
+// to cover BOTH "not in a course yet" and the 10 s settle that follows
+// entering one, so the old 30 s could expire a death the player was about
+// to be eligible for.  60 s keeps the "never fires minutes later" property.
+constexpr std::uint64_t kPendingKillTtlTicks = 60ULL * kTicksPerSec;  // 60 s
 
 // Active "kill window" TTL.  While open, serviceDeathLink re-arms the
 // death edge latch + rewrites HP=0 every frame so a transient poisoned
@@ -132,6 +174,13 @@ std::atomic<std::uintptr_t> g_live_player{0};
 // freshness check above.
 std::atomic<std::uint64_t> g_live_base_tick{0};
 
+// Start tick of the current gameplay session -- the uninterrupted run of
+// player-tick frames the player is in right now (0 = no live session yet).
+// Restarted by serviceDeathLink on a tick gap, an HP-struct re-allocation,
+// or any frame inside the scene-transition window.  `now - this` is the
+// "how long have you actually been playing" clock the settle gate reads.
+std::atomic<std::uint64_t> g_session_start_tick{0};
+
 // Deadline tick of the open kill window (0 = closed).  While now < this,
 // serviceDeathLink re-applies the synthetic kill every fresh frame.
 std::atomic<std::uint64_t> g_kill_active_deadline{0};
@@ -144,8 +193,16 @@ std::atomic<std::uint64_t> g_synth_guard_deadline{0};
 
 // Pending inbound DeathLink deadline (0 = none pending).  Set when an
 // inbound Kill can't fire immediately; serviced by serviceDeathLink on
-// the next fresh frame, expired after kPendingKillTtlTicks.
+// the next fresh (and, for DeathLinks, settled) frame, expired after
+// kPendingKillTtlTicks.
 std::atomic<std::uint64_t> g_pending_kill_deadline{0};
+
+// Whether the pending kill above is an `immediate` one (a gate kill) and
+// therefore skips the in-level settle gate.  Only meaningful while
+// g_pending_kill_deadline != 0.  An overlapping arm can escalate this to
+// true but never back to false -- a queued gate bounce must not be turned
+// into a delayed one by a DeathLink landing on top of it.
+std::atomic_bool g_pending_kill_immediate{false};
 
 inline std::uintptr_t deref8(std::uintptr_t p, std::ptrdiff_t off) {
     return *reinterpret_cast<std::uintptr_t*>(p + off);
@@ -184,6 +241,26 @@ std::uintptr_t freshBase(std::uint64_t now) {
     return base;
 }
 
+// freshBase() plus the in-level settle requirement: the current gameplay
+// session must be at least kInLevelSettleTicks old.  This is the gate an
+// inbound DeathLink goes through -- "the player tick is running" is true
+// during a course fade-in and on the respawn frame, which is exactly when
+// applying a foreign death felt broken (2026-08-19 header).
+std::uintptr_t settledBase(std::uint64_t now) {
+    const auto base = freshBase(now);
+    if (base == 0) return 0;
+    const auto start = g_session_start_tick.load(std::memory_order_acquire);
+    if (start == 0 || (now - start) < kInLevelSettleTicks) return 0;
+    return base;
+}
+
+// The killable-base test for a kill of the given urgency: gate kills
+// (`immediate`) keep the historical freshness-only rule, DeathLinks must
+// also have settled.
+std::uintptr_t killableBase(std::uint64_t now, bool immediate) {
+    return immediate ? freshBase(now) : settledBase(now);
+}
+
 // Arm the loop guard, re-arm the death edge latch, and write HP=0.  Caller
 // guarantees `base` is fresh.  `player` may be 0 (latch re-arm skipped) but
 // is normally the live player paired with `base`.
@@ -218,14 +295,51 @@ void serviceDeathLink(void* param_1) {
     if (hp_struct != 0) {
         const auto prev = g_live_base.exchange(hp_struct,
                                                std::memory_order_acq_rel);
+        const auto prev_tick = g_live_base_tick.exchange(
+            now, std::memory_order_acq_rel);
         g_live_player.store(reinterpret_cast<std::uintptr_t>(param_1),
                             std::memory_order_release);
-        g_live_base_tick.store(now, std::memory_order_release);
         if (prev == 0) {
             // First acquisition only -- not per frame.
             SMBWAP_LOG_INFO(
                 "[deathlink] live_base acquired %p (HP int16 @ +0x38)",
                 reinterpret_cast<void*>(hp_struct));
+        }
+
+        // 1b) Maintain the gameplay-session clock the settle gate reads.
+        //     The session RESTARTS on either of:
+        //       * a gap in the player tick -- it stops entirely outside a
+        //         course (world map, menus) and across a scene load, so a
+        //         gap is exactly "the player just (re-)entered play"; and
+        //       * any frame inside the scene-transition window, which the
+        //         SceneTransition Nerve stamps on course/area entry+exit,
+        //         death/respawn, palace and shop entry (probe/Gates.cpp).
+        //     Deliberately NOT keyed on the HP-struct pointer changing:
+        //     the player tick can legitimately be called with different
+        //     roots inside one session, and a pointer that alternates
+        //     frame-to-frame would restart the clock forever and never let
+        //     a DeathLink through.  Every real scene change shows up as a
+        //     tick gap and/or a transition window anyway.
+        const bool tick_gap =
+            prev == 0 || prev_tick == 0 ||
+            (now - prev_tick) > kLiveBaseFreshTicks;
+        if (tick_gap) {
+            // An open kill window belongs to the session it was opened in;
+            // never let one bleed across a scene boundary and kill the
+            // player again on the other side.
+            if (g_kill_active_deadline.exchange(0, std::memory_order_acq_rel)
+                != 0) {
+                SMBWAP_LOG_INFO(
+                    "[deathlink] kill window closed by session change "
+                    "(player tick gap)");
+            }
+            SMBWAP_LOG_INFO(
+                "[deathlink] gameplay session started; inbound DeathLinks "
+                "hold for %u s of play",
+                static_cast<unsigned>(kInLevelSettleTicks / kTicksPerSec));
+        }
+        if (tick_gap || isInSceneTransitionWindow()) {
+            g_session_start_tick.store(now, std::memory_order_release);
         }
     }
 
@@ -238,20 +352,32 @@ void serviceDeathLink(void* param_1) {
     if (deadline != 0) {
         if (now > deadline) {
             g_pending_kill_deadline.store(0, std::memory_order_release);
+            g_pending_kill_immediate.store(false, std::memory_order_release);
             SMBWAP_LOG_WARN(
-                "[deathlink] pending kill expired unfired "
-                "(no killable frame within 30 s)");
+                "[deathlink] pending kill expired unfired (no killable, "
+                "settled frame within %u s)",
+                static_cast<unsigned>(kPendingKillTtlTicks / kTicksPerSec));
         } else {
-            const auto base = freshBase(now);
+            const bool immediate =
+                g_pending_kill_immediate.load(std::memory_order_acquire);
+            const auto base = killableBase(now, immediate);
             if (base != 0) {
                 g_pending_kill_deadline.store(0, std::memory_order_release);
+                g_pending_kill_immediate.store(false,
+                                               std::memory_order_release);
                 g_kill_active_deadline.store(now + kKillActiveTtlTicks,
                                              std::memory_order_release);
                 fireSynthKill(base, g_live_player.load(std::memory_order_acquire),
                               now);
                 SMBWAP_LOG_INFO(
-                    "[deathlink] pending kill applied on return to "
-                    "gameplay (HP=0 @ %p)", reinterpret_cast<void*>(base));
+                    "[deathlink] pending %s applied (HP=0 @ %p) after %u ms "
+                    "in the current gameplay session",
+                    immediate ? "gate kill" : "DeathLink",
+                    reinterpret_cast<void*>(base),
+                    static_cast<unsigned>(
+                        (now - g_session_start_tick.load(
+                                   std::memory_order_acquire))
+                        * 1000ULL / kTicksPerSec));
             }
         }
     }
@@ -301,20 +427,22 @@ bool consumeSyntheticDeathThisFrame() {
     return true;  // within window -> this death is our synthetic one, suppress
 }
 
-bool synthKill() {
+bool synthKill(bool immediate) {
     const std::uint64_t now = hk::svc::getSystemTick();
-    // Open the kill window unconditionally: even if we can't write this
-    // exact frame, serviceDeathLink re-applies on the next fresh frame
-    // within the TTL.  (The 30 s pending retry still covers the case where
-    // the player isn't killable for longer than the window.)
-    g_kill_active_deadline.store(now + kKillActiveTtlTicks,
-                                 std::memory_order_release);
-    const auto base = freshBase(now);
+    const auto base = killableBase(now, immediate);
     if (base == 0) {
-        // Either never seen, or live_base went stale: player isn't in an
-        // active, killable gameplay frame.  Caller arms a pending retry.
+        // Not killable right now: live_base never seen or gone stale
+        // (menu / world map / teardown), or -- for a DeathLink -- the
+        // current gameplay session hasn't settled yet (course fade-in,
+        // respawn, mid-transition).  Caller arms a pending retry, which
+        // fires this on the first frame that does qualify.
         return false;
     }
+    // Open the kill window only now that we're actually firing.  Opening
+    // it before the check would let step 3 of serviceDeathLink re-apply
+    // HP=0 on the next fresh frame and walk straight past the settle gate.
+    g_kill_active_deadline.store(now + kKillActiveTtlTicks,
+                                 std::memory_order_release);
     // Poison detector: an already-armed guard means the PRIOR synthetic
     // death's DEATH_DETECTED was never observed -- that kill likely didn't
     // land.  Harmless now (guard auto-expires + the window re-applies) but
@@ -325,14 +453,22 @@ bool synthKill() {
             "never observed -- previous kill may not have landed");
     }
     fireSynthKill(base, g_live_player.load(std::memory_order_acquire), now);
-    SMBWAP_LOG_INFO("[deathlink] synthKill: HP=0 @ %p (live_base fresh; "
+    SMBWAP_LOG_INFO("[deathlink] synthKill(%s): HP=0 @ %p (live_base fresh; "
                     "kill window open ~1.5s, re-arming edge latch)",
+                    immediate ? "immediate" : "settled",
                     reinterpret_cast<void*>(base));
     return true;
 }
 
-void requestPendingDeathLink() {
+void requestPendingDeathLink(bool immediate) {
     const std::uint64_t now = hk::svc::getSystemTick();
+    // Escalate-only on the urgency flag: a fresh arm takes the caller's
+    // value, but a DeathLink arriving on top of an already-queued gate
+    // kill must not downgrade that bounce into a delayed one.
+    if (immediate ||
+        g_pending_kill_deadline.load(std::memory_order_acquire) == 0) {
+        g_pending_kill_immediate.store(immediate, std::memory_order_release);
+    }
     g_pending_kill_deadline.store(now + kPendingKillTtlTicks,
                                   std::memory_order_release);
 }

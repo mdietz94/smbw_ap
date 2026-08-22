@@ -10,6 +10,11 @@
 // `synthKill` / `requestPendingDeathLink` live in ApFrameBridge.hpp (called
 // from drainInbound's Kill case).  All implementations live in
 // DeathLink.cpp; this header exposes only the two helpers main.cpp needs.
+//
+// serviceDeathLink also maintains the in-level settle clock (2026-08-19):
+// an inbound DeathLink is held until the player has been playing the
+// current course for 10 s, so a foreign death can't land during a course
+// fade-in, on a respawn frame, or mid-transition.  Gate kills bypass it.
 
 #pragma once
 

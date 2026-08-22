@@ -249,15 +249,24 @@ bool dumpSaveField(std::uint32_t base_nso_offset, std::uint32_t field_offset);
 // live_base + 0x38 and arms the synthetic-death loop guard so the
 // outbound DEATH_DETECTED echo gets suppressed in main.cpp's nerve
 // callback.  Returns false if the player isn't currently in a killable
-// state (live_base unset or stale -- menu / world-map / scene teardown);
-// the caller should then arm requestPendingDeathLink() to retry.
-bool synthKill();
+// state; the caller should then arm requestPendingDeathLink() to retry.
+//
+// `immediate` selects the killable test (2026-08-19):
+//   * false (DeathLink)  -- the player must be in a course AND have been
+//     playing it for kInLevelSettleTicks (10 s), so a foreign death can't
+//     land during a fade-in, on a respawn frame, or mid-transition.
+//   * true (gate kill)   -- freshness only, the historical rule.  The
+//     level-entry logic gate bounces the player out of a course they
+//     can't legally be in; that must not wait.
+bool synthKill(bool immediate);
 
 // M3.8 -- queue an inbound DeathLink for retry.  Call when synthKill()
 // returned false: serviceDeathLink (per-frame player-tick hook) fires the
-// synthetic kill on the next killable frame, or expires the request after
-// ~30 s.  Avoids dropping deaths that arrive while in a menu / transition.
-void requestPendingDeathLink();
+// synthetic kill on the first frame that passes the same `immediate` test,
+// or expires the request after ~60 s.  Avoids dropping deaths that arrive
+// while in a menu / transition / an unsettled course.  Pass through the
+// same `immediate` value the synthKill call used.
+void requestPendingDeathLink(bool immediate);
 
 // M4.5 save-loaded gate.  drainInbound checks this before applying any
 // grant -- pre-save-select the gmd singleton points at title-screen
