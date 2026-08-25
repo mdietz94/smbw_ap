@@ -9,6 +9,8 @@ shape ``elf2nso.py`` expects).
 from __future__ import annotations
 
 import runpy
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -150,6 +152,26 @@ _UPSTREAM_GENEXEFS_CMAKE = (
 )
 
 
+# Verbatim copy of the flag-joining block in upstream's
+# ``sys/cmake/toolchain.cmake`` (pinned rev 9892726b), plus the two lines
+# that consume it — that's what the quoting patch rewrites.
+_UPSTREAM_TOOLCHAIN_CMAKE = (
+    'set(LIBSTD_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib/std")\n'
+    "\n"
+    'set(DEFAULTINCLUDES_F "")\n'
+    "foreach(item IN LISTS DEFAULTINCLUDES)\n"
+    '    set(DEFAULTINCLUDES_F "${DEFAULTINCLUDES_F} -isystem ${item}")\n'
+    "endforeach()\n"
+    'set(DEFAULTLIBS_F "")\n'
+    "foreach(item IN LISTS DEFAULTLIBS)\n"
+    '    set(DEFAULTLIBS_F "${DEFAULTLIBS_F} ${item}")\n'
+    "endforeach()\n"
+    "\n"
+    'set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${ARCH_FLAGS} ${DEFAULTINCLUDES_F}")\n'
+    'set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${DEFAULTLIBS_F}")\n'
+)
+
+
 # Verbatim copy of upstream's ``sys/tools/setup_libcxx_prepackaged.py``
 # (pinned rev 9892726b) — the dead-GitHub-release fetch the URL patch
 # targets. Reproduced with LF endings; the real file is CRLF, which
@@ -195,9 +217,10 @@ def _make_tree(
 ) -> Path:
     """Build a minimal switch-mod tree with sys/tools/nso.py.
 
-    When ``with_cmake`` (the default), also lays down the two cmake files
-    the interpreter patch targets so the full patch set can apply.
-    ``with_stdlib`` does the same for setup_libcxx_prepackaged.py.
+    When ``with_cmake`` (the default), also lays down the sys/cmake files
+    the interpreter patch and the path-quoting patch target, so the full
+    patch set can apply. ``with_stdlib`` does the same for
+    setup_libcxx_prepackaged.py.
     """
     tools = root / "sys" / "tools"
     tools.mkdir(parents=True)
@@ -214,6 +237,9 @@ def _make_tree(
         (cmake / "generate_exefs.cmake").write_text(
             _UPSTREAM_GENEXEFS_CMAKE, encoding="utf-8"
         )
+        (cmake / "toolchain.cmake").write_text(
+            _UPSTREAM_TOOLCHAIN_CMAKE, encoding="utf-8"
+        )
     return nso
 
 
@@ -222,7 +248,7 @@ def test_applies_on_clean_upstream(tmp_path: Path) -> None:
     nso = _make_tree(tmp_path, _UPSTREAM_NSO_PY)
     results = P.apply_patches(tmp_path)
     assert [r.status for r in results] == [
-        "applied", "applied", "applied", "applied",
+        "applied", "applied", "applied", "applied", "applied",
     ]
     patched = nso.read_text(encoding="utf-8")
     # Sentinel embedded so reruns short-circuit.
@@ -245,7 +271,7 @@ def test_already_applied_is_idempotent(tmp_path: Path) -> None:
     results = P.apply_patches(tmp_path)
     assert [r.status for r in results] == [
         "already-applied", "already-applied", "already-applied",
-        "already-applied",
+        "already-applied", "already-applied",
     ]
     assert nso.read_text(encoding="utf-8") == first
     assert deploy.read_text(encoding="utf-8") == first_deploy
@@ -330,12 +356,13 @@ def test_cmake_interpreter_patch_is_idempotent(tmp_path: Path) -> None:
 
 
 def test_cmake_interpreter_patch_missing_reported(tmp_path: Path) -> None:
-    """No cmake files (only nso.py): the two cmake patches report missing."""
+    """No cmake files (only nso.py): every cmake patch reports missing."""
     _make_tree(tmp_path, _UPSTREAM_NSO_PY, with_cmake=False)
     results = P.apply_patches(tmp_path)
     statuses = [r.status for r in results]
-    assert statuses == ["applied", "missing", "missing", "applied"]
+    assert statuses == ["applied", "missing", "missing", "applied", "missing"]
     assert any("not found" in r.detail for r in results[1:3])
+    assert "not found" in results[4].detail
 
 
 def test_cmake_interpreter_patch_upstream_shifted(tmp_path: Path) -> None:
@@ -479,4 +506,103 @@ def test_stdlib_patch_old_string_matches_real_submodule_if_present() -> None:
     assert P._STDLIB_OLD in content, (
         f"_STDLIB_OLD no longer matches {real}; LibHakkun upstream changed "
         f"setup_libcxx_prepackaged.py and the patch needs to be refreshed"
+    )
+
+
+def test_toolchain_patch_quotes_stdlib_paths(tmp_path: Path) -> None:
+    """toolchain.cmake stops space-splitting the lib/std paths it folds
+    into the raw CMAKE_*_FLAGS strings."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    P.apply_patches(tmp_path)
+
+    text = (tmp_path / P._TOOLCHAIN_TARGET).read_text(encoding="utf-8")
+    assert P._TOOLCHAIN_SENTINEL in text
+    assert '-isystem \\"${item}\\"' in text
+    assert 'DEFAULTLIBS_F} \\"${item}\\"' in text
+    # The unquoted forms — the whole bug — must be gone.
+    assert '} -isystem ${item}")' not in text
+    assert 'DEFAULTLIBS_F} ${item}")' not in text
+    # Lines outside the matched chunk are preserved verbatim.
+    assert 'set(LIBSTD_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lib/std")' in text
+    assert "${DEFAULTINCLUDES_F}" in text
+
+
+def test_toolchain_patch_is_idempotent(tmp_path: Path) -> None:
+    """Re-running leaves toolchain.cmake byte-identical (sentinel guard)."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    P.apply_patches(tmp_path)
+    target = tmp_path / P._TOOLCHAIN_TARGET
+    once = target.read_text(encoding="utf-8")
+    P.apply_patches(tmp_path)
+    assert target.read_text(encoding="utf-8") == once
+
+
+def test_toolchain_patch_upstream_shifted(tmp_path: Path) -> None:
+    """A toolchain.cmake that no longer carries the expected loops is
+    reported rather than silently mangled."""
+    _make_tree(tmp_path, _UPSTREAM_NSO_PY)
+    (tmp_path / P._TOOLCHAIN_TARGET).write_text(
+        "# upstream switched to target_include_directories\n", encoding="utf-8"
+    )
+    results = P.apply_patches(tmp_path)
+    result = next(r for r in results if "toolchain" in r.name)
+    assert result.status == "upstream-shifted"
+    assert "needs to be refreshed" in result.detail
+
+
+def test_toolchain_patch_survives_a_path_with_a_space(tmp_path: Path) -> None:
+    """Behavioural: feed the rewritten block to a real cmake and check the
+    joined flag strings keep each space-bearing path in one argument.
+
+    The patched text is hand-written cmake inside a Python string literal,
+    so a stray quote would otherwise only surface at configure time on a
+    user's machine — and there it masquerades as a broken compiler.
+    """
+    cmake = shutil.which("cmake")
+    if cmake is None:
+        pytest.skip("cmake not on PATH")
+
+    script = tmp_path / "probe.cmake"
+    script.write_text(
+        "cmake_minimum_required(VERSION 3.16)\n"
+        'set(DEFAULTINCLUDES "C:/Users/First Last/std/include")\n'
+        'set(DEFAULTLIBS "C:/Users/First Last/std/libc.a")\n'
+        + P._TOOLCHAIN_NEW
+        + 'message(STATUS "INC=[${DEFAULTINCLUDES_F}]")\n'
+        'message(STATUS "LIB=[${DEFAULTLIBS_F}]")\n',
+        encoding="utf-8",
+        newline="\n",
+    )
+    proc = subprocess.run(
+        [cmake, "-P", str(script)],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode == 0, proc.stderr
+    out = proc.stdout + proc.stderr
+    assert 'INC=[ -isystem "C:/Users/First Last/std/include"]' in out
+    assert 'LIB=[ "C:/Users/First Last/std/libc.a"]' in out
+
+
+def test_toolchain_patch_old_string_matches_real_submodule_if_present() -> None:
+    """Guardrail: if the LibHakkun submodule is checked out,
+    ``_TOOLCHAIN_OLD`` must still match on disk — otherwise a release
+    would ship a no-op patch and every install under a path with a space
+    would die at the compiler check again.
+
+    Skipped when the submodule isn't initialized, or was already patched
+    in-place by a prior build run.
+    """
+    here = Path(__file__).resolve()
+    repo = here.parents[4]
+    real = repo / "switch-mod" / P._TOOLCHAIN_TARGET
+    if not real.is_file():
+        pytest.skip("LibHakkun submodule not initialized")
+    content = real.read_text(encoding="utf-8")
+    if P._TOOLCHAIN_SENTINEL in content:
+        pytest.skip("submodule already patched in-place by a prior build run")
+    assert P._TOOLCHAIN_OLD in content, (
+        f"_TOOLCHAIN_OLD no longer matches {real}; LibHakkun upstream "
+        f"changed how it joins the stdlib flags and the patch needs to be "
+        f"refreshed"
     )

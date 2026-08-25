@@ -357,6 +357,46 @@ def test_cmake_build_reports_missing_build_ninja(
     assert "force-configure" in result.log
 
 
+def test_cmake_build_guard_reaches_the_progress_stream(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """A pre-spawn guard must SAY why. Returning the reason only in
+    BuildResult.log left the wizard printing a bare `build_step
+    step=configure ok=False returncode=1` with no cmake output and no
+    explanation — the shape of a real user report."""
+    monkeypatch.setattr(B, "is_dev_clone", lambda: True)
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+    (tmp_path / "switch-mod" / "build").mkdir(parents=True)
+
+    def boom(*_a: Any, **_k: Any) -> B.BuildResult:      # must not spawn
+        raise AssertionError("cmake --build should not have been spawned")
+
+    monkeypatch.setattr(B, "_stream_subprocess", boom)
+
+    lines: list[str] = []
+    result = B.cmake_build(on_line=lines.append)
+    assert result.ok is False
+    assert any("build.ninja" in ln for ln in lines)
+
+
+def test_cmake_configure_missing_submodule_reaches_the_stream(
+        monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Same for the configure-side guards: an uninitialized LibHakkun must
+    name itself in the progress stream, not just in the return value."""
+    (tmp_path / "switch-mod").mkdir(parents=True)
+    monkeypatch.setattr(B, "is_dev_clone", lambda: True)
+    monkeypatch.setattr(B, "repo_root", lambda: tmp_path)
+
+    def boom(*_a: Any, **_k: Any) -> B.BuildResult:      # must not spawn
+        raise AssertionError("cmake should not have been spawned")
+
+    monkeypatch.setattr(B, "_stream_subprocess", boom)
+
+    lines: list[str] = []
+    result = B.cmake_configure(on_line=lines.append)
+    assert result.ok is False
+    assert any("LibHakkun submodule missing" in ln for ln in lines)
+
+
 def test_cmake_configure_forwards_bridge_host_define(
         monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """cmake_configure must add -DBRIDGE_HOST_STRING=<addr> to the cmake
