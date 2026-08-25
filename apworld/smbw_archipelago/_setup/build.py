@@ -698,6 +698,23 @@ def _stream_subprocess(
     return BuildResult(ok=ok, returncode=rc, log="\n".join(log_lines))
 
 
+def _guard_failure(message: str, on_line: ProgressFn | None) -> BuildResult:
+    """Fail a build step before the subprocess is spawned, out loud.
+
+    The pre-spawn guards below (missing switch-mod root, uninitialized
+    LibHakkun, no build dir, no build.ninja) used to return a BuildResult
+    whose ``log`` carried the reason and nothing else. Nothing rendered
+    that field, so the wizard log showed a bare ``build_step
+    step=configure ok=False returncode=1`` with zero cmake output and no
+    explanation -- the least actionable failure the pipeline can produce.
+    Routing the message through ``on_line`` puts it in the same stream as
+    the cmake output the user would otherwise have seen.
+    """
+    if on_line is not None:
+        on_line(f"[build] {message}")
+    return BuildResult(False, 1, message)
+
+
 def cmake_configure(
     *,
     repo: Path | None = None,
@@ -728,15 +745,15 @@ def cmake_configure(
     bd = build_dir(repo)
 
     if not src.is_dir():
-        return BuildResult(False, 1, f"switch-mod root missing: {src}")
+        return _guard_failure(f"switch-mod root missing: {src}", on_line)
     # LibHakkun has no top-level CMakeLists.txt — sys/cmake/module.cmake is
     # the file `switch-mod/CMakeLists.txt:62` does `include(...)` against.
     sys_module = src / "sys" / "cmake" / "module.cmake"
     if not sys_module.is_file():
-        return BuildResult(
-            False, 1,
+        return _guard_failure(
             f"LibHakkun submodule missing: {sys_module} (run "
             f"`git submodule update --init switch-mod/sys` from the repo root)",
+            on_line,
         )
 
     # Patch upstream LibHakkun in-place. Without this, Python 3.14 users
@@ -790,18 +807,17 @@ def cmake_build(
     repo = _resolve_repo(repo)
     bd = build_dir(repo)
     if not bd.is_dir():
-        return BuildResult(
-            False, 1,
-            f"build dir missing: {bd} (run cmake_configure first)",
+        return _guard_failure(
+            f"build dir missing: {bd} (run cmake_configure first)", on_line
         )
     if not generator_file(repo).is_file():
         # Pre-empt ninja's opaque "error: loading 'build.ninja'". Reaching
         # here means a configure was skipped or died before generating.
-        return BuildResult(
-            False, 1,
+        return _guard_failure(
             f"build dir at {bd} has no build.ninja — the last cmake "
             f"configure never reached the generate step. Re-run with "
             f"`--force-configure`, or delete {bd} and re-run setup.",
+            on_line,
         )
 
     cmd = [resolved_cmake(), "--build", str(bd)]

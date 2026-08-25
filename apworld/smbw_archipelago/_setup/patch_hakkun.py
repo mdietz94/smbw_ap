@@ -1,6 +1,6 @@
 """Apply local-tree patches to the pinned LibHakkun submodule.
 
-Three patches are applied:
+Four patches are applied:
 
 1. **nso.py composition** (described below): make ``sys/tools/nso.py``
    safe on Python 3.14's reworked ``struct.Struct``.
@@ -34,6 +34,27 @@ Three patches are applied:
    a gzip file``, then cmake's badly misleading "The C compiler … is not
    able to compile a simple test program" (the compiler is fine —
    ``lib/std/*.a`` was simply never extracted).
+
+4. **space-safe stdlib flags** (``_TOOLCHAIN_OLD`` / ``_TOOLCHAIN_NEW``):
+   quote the ``lib/std`` paths that ``sys/cmake/toolchain.cmake`` folds
+   into ``CMAKE_C_FLAGS`` / ``CMAKE_CXX_FLAGS`` / ``CMAKE_EXE_LINKER_FLAGS``.
+   Upstream builds those as a *space-joined string*
+   (``" -isystem ${item}"``), and CMake copies ``CMAKE_<LANG>_FLAGS``
+   verbatim into the compile line -- so a build tree under a path
+   containing a space (the common Windows case,
+   ``C:/Users/First Last/AppData/...``) splits every include into two
+   arguments and clang reports::
+
+       clang: error: no such file or directory:
+           'Last/AppData/Roaming/.../lib/std/musl/include'
+
+   which cmake then surfaces as the same misleading "The C compiler ... is
+   not able to compile a simple test program" as patch 3's failure mode.
+   Quoting each item fixes it under ninja on both Windows (CreateProcess +
+   clang's MSVC-style argv parsing) and POSIX (``/bin/sh``). Nothing else
+   in the build needs the same treatment: every other path reaches the
+   command line through ``target_link_options`` / ``target_compile_options``
+   / ``add_custom_command``, all of which CMake shell-escapes itself.
 
 The nso.py patch: rewrite ``sys/tools/nso.py`` from inheritance to
 composition over ``struct.Struct``. Upstream's
@@ -260,6 +281,54 @@ _STDLIB_NEW = (
 )
 
 
+# --- space-safe stdlib flag quoting patch ------------------------------------
+
+_TOOLCHAIN_SENTINEL = "SMBWAP_HAKKUN_PATCH_QUOTE_STDLIB_PATHS"
+
+# The toolchain file that folds lib/std into the raw *_FLAGS strings.
+_TOOLCHAIN_TARGET = Path("sys") / "cmake" / "toolchain.cmake"
+
+# The two flag-joining loops, verbatim at the pinned LibHakkun rev (9892726).
+# Matched as one chunk so a single replacement covers both the -isystem list
+# (compiler) and the .a list (linker) -- both land in CMAKE_*_FLAGS strings,
+# which CMake pastes into the command line without escaping.
+_TOOLCHAIN_OLD = (
+    'set(DEFAULTINCLUDES_F "")\n'
+    "foreach(item IN LISTS DEFAULTINCLUDES)\n"
+    '    set(DEFAULTINCLUDES_F "${DEFAULTINCLUDES_F} -isystem ${item}")\n'
+    "endforeach()\n"
+    'set(DEFAULTLIBS_F "")\n'
+    "foreach(item IN LISTS DEFAULTLIBS)\n"
+    '    set(DEFAULTLIBS_F "${DEFAULTLIBS_F} ${item}")\n'
+    "endforeach()\n"
+)
+
+# Same loops with each path wrapped in a cmake `\"` escape, so the flag
+# string carries real quotes through to clang.
+_TOOLCHAIN_NEW = (
+    f"# {_TOOLCHAIN_SENTINEL}: quote each lib/std path.\n"
+    "#\n"
+    "# These strings are pasted verbatim into CMAKE_C_FLAGS /\n"
+    "# CMAKE_CXX_FLAGS / CMAKE_EXE_LINKER_FLAGS, which CMake does not\n"
+    "# shell-escape. Unquoted, a source tree under a path containing a\n"
+    "# space (C:/Users/First Last/... -- the common Windows case) splits\n"
+    "# every -isystem into two arguments and clang dies with `no such file\n"
+    "# or directory: 'Last/AppData/...'`, which cmake reports as the\n"
+    '# misleading "The C compiler ... is not able to compile a simple test\n'
+    '# program". The quotes survive ninja on Windows (CreateProcess +\n'
+    "# clang's MSVC-style argv parsing) and on POSIX (/bin/sh). Applied by\n"
+    "# _setup/patch_hakkun.py.\n"
+    'set(DEFAULTINCLUDES_F "")\n'
+    "foreach(item IN LISTS DEFAULTINCLUDES)\n"
+    '    set(DEFAULTINCLUDES_F "${DEFAULTINCLUDES_F} -isystem \\\"${item}\\\"")\n'
+    "endforeach()\n"
+    'set(DEFAULTLIBS_F "")\n'
+    "foreach(item IN LISTS DEFAULTLIBS)\n"
+    '    set(DEFAULTLIBS_F "${DEFAULTLIBS_F} \\\"${item}\\\"")\n'
+    "endforeach()\n"
+)
+
+
 PatchStatus = Literal["applied", "already-applied", "missing", "upstream-shifted"]
 
 
@@ -401,6 +470,34 @@ def apply_patches(
         )
     result = PatchResult(
         name="prepackaged stdlib URL (dead GitHub release -> Codeberg)",
+        status=status,
+        detail=detail,
+    )
+    results.append(result)
+    if on_line is not None:
+        msg = f"[patch_hakkun] {result.status:>17}  {result.name}"
+        if result.detail:
+            msg += f"  ({result.detail})"
+        on_line(msg)
+
+    # Patch 4: quote the lib/std paths folded into the raw *_FLAGS strings,
+    # so a build tree under a path containing a space still compiles.
+    toolchain = switch_mod_root / _TOOLCHAIN_TARGET
+    status = _patch_file(
+        toolchain, _TOOLCHAIN_OLD, _TOOLCHAIN_NEW, _TOOLCHAIN_SENTINEL
+    )
+    detail = ""
+    if status == "missing":
+        detail = f"{toolchain} not found (submodule not initialized?)"
+    elif status == "upstream-shifted":
+        detail = (
+            f"{toolchain} doesn't match the expected upstream shape; if a "
+            f"build under a path containing a space fails with `clang: error: "
+            f"no such file or directory` naming the tail half of that path, "
+            f"the patch needs to be refreshed"
+        )
+    result = PatchResult(
+        name="toolchain stdlib paths quoted (space-in-path builds)",
         status=status,
         detail=detail,
     )
