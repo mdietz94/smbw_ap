@@ -662,11 +662,76 @@ def resolved_python_bin() -> str | None:
     return _resolved_python_bin
 
 
-def _parse_python_version(text: str) -> tuple[int, int, int] | None:
-    m = re.search(r"Python (\d+)\.(\d+)(?:\.(\d+))?", text)
-    if not m:
+# Ask an interpreter about itself through `-c` instead of parsing
+# `--version`. Two reasons, both load-bearing:
+#   * `sys.executable` is `ArchipelagoLauncher.exe` under Archipelago's
+#     frozen (PyInstaller) build. It is an argparse front-end, not an
+#     interpreter -- anything that cannot run `-c` also cannot be handed
+#     `-m pip`, which is exactly what produced
+#     `ArchipelagoLauncher.exe: error: unrecognized arguments: -m ... lz4`.
+#   * `py -3.12 --version` reports the launcher's dispatch, not the real
+#     interpreter path; `-c` gets us the version AND the path in one shot.
+_INTERP_PROBE = (
+    "import sys; print('SMBWAP_PY %d %d %d %s' % ("
+    "sys.version_info[0], sys.version_info[1], sys.version_info[2], "
+    "sys.executable))"
+)
+_INTERP_RE = re.compile(r"^SMBWAP_PY (\d+) (\d+) (\d+) (.*)$", re.M)
+
+
+def probe_interpreter(argv: list[str]) -> tuple[tuple[int, int, int], str] | None:
+    """`((major, minor, micro), interpreter path)` for `argv`, or None.
+
+    `argv` is a command *prefix* (`["python3"]`, `["py", "-3.12"]`), so
+    the Windows `py` launcher resolves to the interpreter it dispatches
+    to rather than to `py.exe` itself. Returns None when `argv` is not a
+    usable interpreter -- it does not exist, it exits non-zero, or it
+    swallows `-c` without printing the marker line (the frozen-launcher
+    case).
+    """
+    r = _safe_run([*argv, "-c", _INTERP_PROBE])
+    if r is None or r[0] != 0:
         return None
-    return (int(m.group(1)), int(m.group(2)), int(m.group(3) or "0"))
+    m = _INTERP_RE.search(r[1] or "")
+    if m is None:
+        return None
+    ver = (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+    exe = m.group(4).strip()
+    if not exe or not Path(exe).is_file():
+        # Embedded/odd builds can leave sys.executable empty. Fall back to
+        # the PATH resolution of the name we invoked -- but only to a real
+        # file, because callers pip-install into and `-D`-pin this path.
+        exe = shutil.which(argv[0]) or ""
+    return (ver, exe) if exe else None
+
+
+def python_interpreter_ok(py: str | None) -> bool:
+    """True when `py` is a real interpreter at or above `MIN_PYTHON`."""
+    if not py:
+        return False
+    probe = probe_interpreter([py])
+    return probe is not None and probe[0][:2] >= MIN_PYTHON
+
+
+def ensure_resolved_python_bin() -> str | None:
+    """The interpreter build tools and pip must target, or None.
+
+    `check_python311()` populates the cache during the probe phase. It is
+    legitimately empty afterwards in one important case: the probe found
+    no 3.11+ and *the same run then installed one* (winget). Re-probing
+    here is what lets the lz4 / pyelftools installs target the
+    interpreter that just landed, instead of falling back to
+    `sys.executable` -- the AP launcher EXE -- and shelling out
+    `ArchipelagoLauncher.exe -m pip install --user lz4`.
+    """
+    if _resolved_python_bin:
+        return _resolved_python_bin
+    check_python311()
+    if _resolved_python_bin:
+        return _resolved_python_bin
+    if not getattr(sys, "frozen", False) and python_interpreter_ok(sys.executable):
+        return sys.executable
+    return None
 
 
 def check_python311() -> PrereqResult:
@@ -675,9 +740,9 @@ def check_python311() -> PrereqResult:
     Probe order:
       1. The currently-running interpreter (`sys.executable`) — if the
          wizard was launched under 3.11+, we already have what we need.
-         (No-op when the wizard runs from the AP frozen build, where
-         `sys.executable` is the launcher EXE rather than a real
-         interpreter and `--version` doesn't print "Python X.Y.Z".)
+         Skipped under a frozen build (Archipelago's PyInstaller
+         Launcher), where `sys.executable` is `ArchipelagoLauncher.exe`
+         and not an interpreter at all.
       2. `py -3.11` / `py -3.12` / `py -3.13` (Windows Python launcher).
       3. Plain `python3` / `python` / `python3.11`. The generic names
          go first so PATH ordering (and any update-alternatives setup)
@@ -687,52 +752,42 @@ def check_python311() -> PrereqResult:
          where the user installed it without wiring up `python3`.
 
     Side effect: caches the resolved interpreter path so installers.py
-    can `pip install` into the SAME interpreter without re-probing.
+    can `pip install` into the SAME interpreter without re-probing. A
+    candidate whose real path can't be pinned down is not accepted —
+    green-with-an-empty-cache is what let the pip steps fall through to
+    the launcher EXE.
     """
     global _resolved_python_bin
 
     candidates: list[list[str]] = []
     cur = sys.executable
-    if cur:
-        candidates.append([cur, "--version"])
+    # Under the frozen Launcher `sys.executable` is ArchipelagoLauncher.exe;
+    # probe_interpreter() rejects it anyway, but skipping saves a pointless
+    # spawn of the launcher.
+    if cur and not getattr(sys, "frozen", False):
+        candidates.append([cur])
     # `py -3.x` is the Windows Python launcher; doesn't exist on Linux.
     if _is_windows():
-        candidates += [
-            ["py", "-3.11", "--version"],
-            ["py", "-3.12", "--version"],
-            ["py", "-3.13", "--version"],
-        ]
-    candidates += [
-        ["python3", "--version"],
-        ["python", "--version"],
-        ["python3.11", "--version"],
-    ]
-    for cmd in candidates:
-        r = _safe_run(cmd)
-        if r is None or r[0] != 0:
+        candidates += [["py", "-3.11"], ["py", "-3.12"], ["py", "-3.13"]]
+    candidates += [["python3"], ["python"], ["python3.11"]]
+    for argv in candidates:
+        probe = probe_interpreter(argv)
+        if probe is None:
             continue
-        ver = _parse_python_version(r[1] or r[2])
-        if ver is None:
-            continue
+        ver, interp = probe
         if (ver[0], ver[1]) < MIN_PYTHON:
             continue
-        # Resolve the actual interpreter path (py launcher returns its own
-        # path; we want the real interpreter so pip targets the right env).
-        r2 = _safe_run([*cmd[:-1], "-c", "import sys; print(sys.executable)"])
-        if r2 and r2[0] == 0:
-            interp = (r2[1] or "").strip().splitlines()[0] if (r2[1] or "").strip() else cmd[0]
-        else:
-            interp = cmd[0]
-        if Path(interp).is_file():
-            _resolved_python_bin = interp
-            _prepend_path(Path(interp).parent)
-            # `python3.exe` shim is a Windows-only workaround — Linux
-            # already has `python3` on PATH from any standard install.
-            if _is_windows():
-                ensure_python3_shim(Path(interp))
+        # Only a candidate pinned to a real file gets here (probe_interpreter
+        # returns None otherwise), so green always implies a populated cache.
+        _resolved_python_bin = interp
+        _prepend_path(Path(interp).parent)
+        # `python3.exe` shim is a Windows-only workaround — Linux
+        # already has `python3` on PATH from any standard install.
+        if _is_windows():
+            ensure_python3_shim(Path(interp))
         return PrereqResult(
             "python311", f"Python {MIN_PYTHON[0]}.{MIN_PYTHON[1]}+", True,
-            f"{ver[0]}.{ver[1]}.{ver[2]} ({cmd[0]})",
+            f"{ver[0]}.{ver[1]}.{ver[2]} ({interp})",
             auto_installable=_is_windows(),
         )
     if _is_windows():
@@ -1224,6 +1279,20 @@ def _verify_build_pydep_import(py: str, import_stmt: str, marker: Path) -> bool:
     return ok
 
 
+# Every pip-backed row needs a real interpreter to probe (and, on
+# auto-install, to `-m pip` into). When there isn't one, say so instead of
+# reporting the package missing: under Archipelago's frozen Launcher the
+# only fallback used to be `sys.executable` = ArchipelagoLauncher.exe, and
+# probing through it fails for a reason that has nothing to do with the
+# package.
+_NO_PY_DETAIL = "no Python 3.11+ interpreter resolved (see the Python row)"
+_NO_PY_NOTE = (
+    "Install/repair the Python 3.11+ prereq above, then Re-check. pip "
+    "can't be run through Archipelago's launcher executable, so this row "
+    "stays red until a real interpreter resolves."
+)
+
+
 def check_archipelago_deps() -> PrereqResult:
     """Archipelago Python dependencies satisfied.
 
@@ -1267,7 +1336,13 @@ def check_archipelago_deps() -> PrereqResult:
             pass
 
     probe = "import " + ", ".join(_AP_SAMPLE_IMPORTS)
-    py = _resolved_python_bin or sys.executable
+    py = ensure_resolved_python_bin()
+    if py is None:
+        return PrereqResult(
+            "archipelago_deps", "Archipelago Python deps", False,
+            _NO_PY_DETAIL, INSTALL_URLS["archipelago_deps"],
+            note=_NO_PY_NOTE, auto_installable=False,
+        )
     r = _safe_run([py, "-c", probe])
     if r is not None and r[0] == 0:
         try:
@@ -1317,7 +1392,13 @@ def check_lz4() -> PrereqResult:
     trusted: a stale marker whose interpreter can no longer import lz4 is
     discarded so the prereq goes red and auto-install re-runs.
     """
-    py = _resolved_python_bin or sys.executable
+    py = ensure_resolved_python_bin()
+    if py is None:
+        return PrereqResult(
+            "lz4", "Python lz4 (cmake build dep)", False,
+            _NO_PY_DETAIL, INSTALL_URLS["lz4"],
+            note=_NO_PY_NOTE, auto_installable=False,
+        )
     if _verify_build_pydep_import(py, "import lz4.block", lz4_marker_path()):
         return PrereqResult(
             "lz4", "Python lz4 (cmake build dep)", True,
@@ -1354,7 +1435,13 @@ def check_pyelftools() -> PrereqResult:
     can no longer import elftools is discarded so the prereq goes red and
     auto-install re-runs.
     """
-    py = _resolved_python_bin or sys.executable
+    py = ensure_resolved_python_bin()
+    if py is None:
+        return PrereqResult(
+            "pyelftools", "Python pyelftools (cmake build dep)", False,
+            _NO_PY_DETAIL, INSTALL_URLS["pyelftools"],
+            note=_NO_PY_NOTE, auto_installable=False,
+        )
     if _verify_build_pydep_import(
         py, "from elftools.elf.elffile import ELFFile", pyelftools_marker_path()
     ):
