@@ -555,6 +555,98 @@ def test_install_lz4_pip_failure_no_marker(
     assert not marker.exists()
 
 
+def test_install_lz4_refuses_without_interpreter(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """No resolvable Python: fail with a pointed message instead of
+    shelling `ArchipelagoLauncher.exe -m pip install --user lz4`, which
+    the frozen launcher rejects with "unrecognized arguments" / exit 2."""
+    marker = tmp_path / "lz4.ok"
+    from apworld.smbw_archipelago._setup import prereqs as P
+    monkeypatch.setattr(P, "lz4_marker_path", lambda: marker)
+    monkeypatch.setattr(I, "resolved_python_bin", lambda: None)
+    monkeypatch.setattr(P, "ensure_resolved_python_bin", lambda: None)
+
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda cmd, **_k: spawned.append(cmd) or I.InstallResult(True, 0, ""))
+
+    lines: list[str] = []
+    r = I.install_lz4(lines.append)
+    assert r.ok is False
+    assert spawned == []            # pip was never invoked
+    assert not marker.exists()
+    assert "python" in r.detail.lower()
+
+
+def test_install_lz4_reprobes_when_cache_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    """Python installed earlier in the SAME install phase leaves the
+    cache empty; the pip step must re-probe and target the new
+    interpreter rather than falling back to sys.executable."""
+    marker = tmp_path / "lz4.ok"
+    from apworld.smbw_archipelago._setup import prereqs as P
+    monkeypatch.setattr(P, "lz4_marker_path", lambda: marker)
+    monkeypatch.setattr(I, "resolved_python_bin", lambda: None)
+    monkeypatch.setattr(
+        P, "ensure_resolved_python_bin", lambda: "/usr/bin/python3")
+
+    spawned: list[list[str]] = []
+    monkeypatch.setattr(
+        I, "_stream_subprocess",
+        lambda cmd, **_k: spawned.append(cmd) or I.InstallResult(True, 0, ""))
+
+    r = I.install_lz4()
+    assert r.ok is True
+    assert spawned and spawned[0][0] == "/usr/bin/python3"
+    assert marker.is_file()
+
+
+def test_install_python311_reresolves_interpreter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """winget success must be followed by a re-probe, so the lz4 /
+    pyelftools installs later in the same phase have an interpreter to
+    target."""
+    from apworld.smbw_archipelago._setup import prereqs as P
+    monkeypatch.setattr(I.sys, "platform", "win32")
+    monkeypatch.setattr(
+        I, "winget_install", lambda *_a, **_k: I.InstallResult(True, 0, "ok"))
+    monkeypatch.setattr(I.os.environ, "get", lambda *_a, **_k: None)
+    calls: list[int] = []
+
+    def fake_check() -> P.PrereqResult:
+        calls.append(1)
+        return P.PrereqResult("python311", "Python 3.11+", True, "3.11.9 (C:/py/python.exe)")
+    monkeypatch.setattr(P, "check_python311", fake_check)
+
+    r = I.install_python311()
+    assert r.ok is True
+    assert calls == [1]
+
+
+def test_install_python311_fails_when_still_unresolvable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """winget said yes but nothing resolves: fail here, with a restart
+    hint, instead of letting lz4 fail a few rows later for a reason the
+    user can't act on."""
+    from apworld.smbw_archipelago._setup import prereqs as P
+    monkeypatch.setattr(I.sys, "platform", "win32")
+    monkeypatch.setattr(
+        I, "winget_install", lambda *_a, **_k: I.InstallResult(True, 0, "ok"))
+    monkeypatch.setattr(I.os.environ, "get", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        P, "check_python311",
+        lambda: P.PrereqResult("python311", "Python 3.11+", False, "no Python 3.11+ found"))
+
+    r = I.install_python311()
+    assert r.ok is False
+    assert "restart" in r.detail.lower()
+
+
 # ---------------------------------------------------------------------------
 # install_pyelftools
 # ---------------------------------------------------------------------------

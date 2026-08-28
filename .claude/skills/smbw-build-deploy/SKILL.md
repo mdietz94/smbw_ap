@@ -33,6 +33,27 @@ Windows (winget + pinned LLVM 19.1.7); on Linux it prints what's missing and
 leaves the package manager to you. See [docs/first-time-setup.md](../../../docs/first-time-setup.md)
 for the user-facing first-run flow.
 
+### The wizard never pip-installs through `sys.executable`
+
+Under Archipelago's frozen build `sys.executable` is `ArchipelagoLauncher.exe`
+(or the Linux AppImage launcher), **not** an interpreter. The wizard resolves a
+real Python 3.11+ with `prereqs.probe_interpreter()` — which asks the candidate
+about itself via `-c` rather than parsing `--version` — and caches it in
+`_resolved_python_bin`. Every pip step goes through `installers._pip_python()`,
+which re-probes when the cache is empty (the Python row was red and this same
+run just winget-installed one) and returns **None** rather than falling back to
+the launcher. Handing pip the launcher is what produced:
+
+```
+ArchipelagoLauncher.exe: error: unrecognized arguments: -m pip install
+    --disable-pip-version-check --user lz4
+[install] install_end key=lz4 ok=False returncode=2
+```
+
+`install_python311` now re-probes after winget and fails loudly (with a
+"restart the Launcher" hint) if nothing resolves, instead of letting the lz4 row
+fail three steps later for a reason the user can't act on.
+
 ### Linux gotcha: the Archipelago AppImage shadows system libraries
 
 When AP runs as an AppImage, its `AppRun` exports loader vars pointing into the

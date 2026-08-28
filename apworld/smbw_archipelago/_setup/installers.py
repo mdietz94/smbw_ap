@@ -512,7 +512,25 @@ def install_python311(on_line: ProgressFn | None = None) -> InstallResult:
             ensure_python3_shim(python_exe)
             if on_line:
                 on_line(f"[install] ensured python3.exe shim next to {python_exe}")
-    return InstallResult(True, 0, r.log, "Python 3.11 installed")
+    # Re-probe so the interpreter cache points at what we just installed.
+    # Without this the cache stays empty for the rest of the run and the
+    # later lz4 / pyelftools installs fall back to `sys.executable` --
+    # `ArchipelagoLauncher.exe` under the frozen build -- producing
+    # `unrecognized arguments: -m ... --user lz4` and a failed pipeline.
+    from .prereqs import check_python311
+    probe = check_python311()
+    if not probe.ok:
+        detail = (
+            "winget reported success but no Python 3.11+ resolves yet "
+            f"({probe.detail}). Restart the Archipelago Launcher so it "
+            "picks up the new PATH, then re-run /setup."
+        )
+        if on_line:
+            on_line(f"[install] {detail}")
+        return InstallResult(False, 0, r.log, detail)
+    if on_line:
+        on_line(f"[install] resolved interpreter: {probe.detail}")
+    return InstallResult(True, 0, r.log, f"Python 3.11 installed ({probe.detail})")
 
 
 # ---------------------------------------------------------------------------
@@ -835,6 +853,48 @@ def install_switch_mod_submodule(on_line: ProgressFn | None = None) -> InstallRe
 # Archipelago pip deps
 # ---------------------------------------------------------------------------
 
+_NO_PYTHON_DETAIL = (
+    "no Python 3.11+ interpreter resolved -- pip can't be run through "
+    "Archipelago's launcher executable. Install the Python 3.11+ prereq, "
+    "restart the Launcher if it was just installed, and re-run /setup."
+)
+
+
+def _pip_python(on_line: ProgressFn | None = None) -> str | None:
+    """The interpreter to `-m pip` into, or None when there isn't one.
+
+    `resolved_python_bin()` is the cache `check_python311()` fills during
+    the probe phase. It is legitimately empty right here in one case that
+    bit a user: the probe found no 3.11+, so the SAME install phase ran
+    `install_python311` -- but nothing re-probed afterwards, so this
+    function's old fallback (`sys.executable`) handed pip the frozen
+    Archipelago launcher and the wizard ran
+
+        ArchipelagoLauncher.exe -m pip install --disable-pip-version-check
+            --user lz4
+
+    which the launcher's argparse rejects with "unrecognized arguments"
+    and exit 2, failing the pipeline at `install`. So: re-probe, and
+    never fall back to something that isn't an interpreter.
+    """
+    py = resolved_python_bin()
+    if py:
+        return py
+    from .prereqs import ensure_resolved_python_bin
+    py = ensure_resolved_python_bin()
+    if py and on_line:
+        on_line(f"[pip] re-probed after install: targeting {py}")
+    return py
+
+
+def _no_python_result(what: str,
+                      on_line: ProgressFn | None = None) -> InstallResult:
+    detail = f"{what}: {_NO_PYTHON_DETAIL}"
+    if on_line:
+        on_line(f"[install] {detail}")
+    return InstallResult(False, 1, detail, detail)
+
+
 def _pip_install(
     py: str,
     args: list[str],
@@ -899,7 +959,9 @@ def install_lz4(on_line: ProgressFn | None = None) -> InstallResult:
     """
     from .prereqs import lz4_marker_path
 
-    py = resolved_python_bin() or sys.executable
+    py = _pip_python(on_line)
+    if py is None:
+        return _no_python_result("lz4", on_line)
     result = _pip_install(py, ["lz4"], on_line=on_line)
     if result.ok:
         marker = lz4_marker_path()
@@ -921,7 +983,9 @@ def install_pyelftools(on_line: ProgressFn | None = None) -> InstallResult:
     """
     from .prereqs import pyelftools_marker_path
 
-    py = resolved_python_bin() or sys.executable
+    py = _pip_python(on_line)
+    if py is None:
+        return _no_python_result("pyelftools", on_line)
     result = _pip_install(py, ["pyelftools"], on_line=on_line)
     if result.ok:
         marker = pyelftools_marker_path()
@@ -960,7 +1024,9 @@ def install_archipelago_deps(on_line: ProgressFn | None = None) -> InstallResult
             on_line(f"[install] {msg}")
         return InstallResult(True, 0, msg, msg)
 
-    py = resolved_python_bin() or sys.executable
+    py = _pip_python(on_line)
+    if py is None:
+        return _no_python_result("Archipelago deps", on_line)
     req_path = repo_root() / "vendor" / "Archipelago" / "requirements.txt"
     if not req_path.is_file():
         msg = (

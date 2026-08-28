@@ -134,13 +134,90 @@ def test_check_ninja_success(patch_run: dict[str, Any], monkeypatch: pytest.Monk
 def test_check_python311_uses_sys_executable(monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any]) -> None:
     """When the wizard runs under 3.11+, sys.executable is the natural
     first probe and should win."""
-    # Pretend sys.executable returns a 3.12.0 from its --version call.
-    patch_run[sys.executable] = (0, "Python 3.12.0\n", "")
-    # And `-c "import sys; print(sys.executable)"` returns the same path.
+    # The detector asks the interpreter about itself via `-c`; the marker
+    # line carries both the version and the real interpreter path.
+    patch_run[sys.executable] = (0, f"SMBWAP_PY 3 12 0 {sys.executable}\n", "")
     monkeypatch.setattr(P.Path, "is_file", lambda self: True)
     r = P.check_python311()
     assert r.ok is True
     assert "3.12.0" in r.detail
+    assert P.resolved_python_bin() == sys.executable
+
+
+def test_check_python311_skips_frozen_launcher(
+    monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """Under Archipelago's frozen build `sys.executable` is
+    ArchipelagoLauncher.exe -- an argparse front-end, not an interpreter.
+    It must never be probed, and never end up cached: handing it to
+    `-m pip` is what produced `unrecognized arguments: -m ... --user lz4`.
+    """
+    launcher = "C:/Archipelago/ArchipelagoLauncher.exe"
+    monkeypatch.setattr(P.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(P.sys, "executable", launcher)
+    # The launcher's argparse rejects `-c` with exit 2.
+    patch_run[launcher] = (2, "", "error: unrecognized arguments: -c")
+    patch_run["python3"] = (0, "SMBWAP_PY 3 12 5 /usr/bin/python3\n", "")
+    monkeypatch.setattr(P.Path, "is_file", lambda self: True)
+    r = P.check_python311()
+    assert r.ok is True
+    assert P.resolved_python_bin() == "/usr/bin/python3"
+    assert launcher not in r.detail
+
+
+def test_python_interpreter_ok_rejects_non_interpreter(
+    patch_run: dict[str, Any],
+) -> None:
+    """A binary that exits non-zero on `-c` is not pip-able."""
+    launcher = "C:/Archipelago/ArchipelagoLauncher.exe"
+    patch_run[launcher] = (2, "", "error: unrecognized arguments: -c")
+    assert P.python_interpreter_ok(launcher) is False
+    assert P.python_interpreter_ok(None) is False
+
+
+def test_python_interpreter_ok_rejects_too_old(
+    monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    patch_run["python3"] = (0, "SMBWAP_PY 3 9 18 /usr/bin/python3\n", "")
+    monkeypatch.setattr(P.Path, "is_file", lambda self: True)
+    assert P.python_interpreter_ok("python3") is False
+
+
+def test_ensure_resolved_python_bin_reprobes_when_cache_empty(
+    monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """The cache is empty when the probe phase found no Python and the
+    install phase then installed one. Re-probing here is what points the
+    lz4 / pyelftools pip installs at the interpreter that just landed."""
+    monkeypatch.setattr(P, "_resolved_python_bin", None)
+    monkeypatch.setattr(P.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(P.sys, "executable", "C:/AP/ArchipelagoLauncher.exe")
+    patch_run["python3"] = (0, "SMBWAP_PY 3 12 5 /usr/bin/python3\n", "")
+    monkeypatch.setattr(P.Path, "is_file", lambda self: True)
+    assert P.ensure_resolved_python_bin() == "/usr/bin/python3"
+
+
+def test_ensure_resolved_python_bin_none_when_only_frozen_launcher(
+    monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """No real interpreter anywhere: return None rather than the frozen
+    launcher, so callers fail loudly instead of shelling pip through it."""
+    monkeypatch.setattr(P, "_resolved_python_bin", None)
+    monkeypatch.setattr(P.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(P.sys, "executable", "C:/AP/ArchipelagoLauncher.exe")
+    assert P.ensure_resolved_python_bin() is None
+
+
+def test_check_lz4_red_without_interpreter(
+    monkeypatch: pytest.MonkeyPatch, patch_run: dict[str, Any],
+) -> None:
+    """With no interpreter the row must say so -- not "lz4 not installed",
+    which sends the user to an auto-install that cannot work."""
+    monkeypatch.setattr(P, "ensure_resolved_python_bin", lambda: None)
+    r = P.check_lz4()
+    assert r.ok is False
+    assert "python" in r.detail.lower()
+    assert r.auto_installable is False
 
 
 def test_check_python311_prefers_path_over_version_suffixed(
@@ -154,12 +231,12 @@ def test_check_python311_prefers_path_over_version_suffixed(
     surprising and forces them into an older interpreter for no reason
     (any 3.11+ satisfies the floor)."""
     # sys.executable returns nothing parseable — simulates the frozen
-    # launcher EXE swallowing or no-op'ing `--version`.
+    # launcher EXE swallowing the probe.
     patch_run[sys.executable] = (0, "", "")
     # Both `python3` (PATH default) and `python3.11` exist, with the
     # PATH default being a NEWER interpreter than the suffixed one.
-    patch_run["python3"] = (0, "Python 3.12.5\n", "")
-    patch_run["python3.11"] = (0, "Python 3.11.9\n", "")
+    patch_run["python3"] = (0, "SMBWAP_PY 3 12 5 /usr/bin/python3\n", "")
+    patch_run["python3.11"] = (0, "SMBWAP_PY 3 11 9 /usr/bin/python3.11\n", "")
     monkeypatch.setattr(P.Path, "is_file", lambda self: True)
     r = P.check_python311()
     assert r.ok is True
@@ -178,7 +255,7 @@ def test_check_python311_falls_back_to_python311_when_no_generic(
     patch_run[sys.executable] = (0, "", "")
     patch_run["python3"] = None
     patch_run["python"] = None
-    patch_run["python3.11"] = (0, "Python 3.11.9\n", "")
+    patch_run["python3.11"] = (0, "SMBWAP_PY 3 11 9 /usr/bin/python3.11\n", "")
     monkeypatch.setattr(P.Path, "is_file", lambda self: True)
     r = P.check_python311()
     assert r.ok is True
