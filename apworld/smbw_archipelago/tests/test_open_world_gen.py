@@ -17,6 +17,7 @@ from Fill import distribute_items_restrictive
 from .. import SMBWonderWorld
 from ..open_world import BOWSER_VICTORY_LOCATION, world_of_region
 from ..Regions import regionMap
+from .ut_sim import regen_like_ut
 
 
 def _gen(options, seed=1234, fill=False):
@@ -176,28 +177,30 @@ class TestOpenWorldGeneration(unittest.TestCase):
 
 
 class TestUniversalTrackerCompat(unittest.TestCase):
-    """Verify that interpret_slot_data → generate_early produces the same
-    active-world set recorded in slot_data (Universal Tracker regression)."""
+    """A Universal Tracker regeneration must land on the same active-world
+    set recorded in slot_data, not re-roll its own."""
 
-    def test_pinned_worlds_survive_generate_early(self):
+    def test_pinned_worlds_survive_ut_regeneration(self):
+        opts = {"open_world": 1, "open_world_count": 3}
+
         # 1. Generate with seed 1234 to capture slot_data.
-        _, world_orig = _gen({"open_world": 1, "open_world_count": 3}, seed=1234)
+        _, world_orig = _gen(opts, seed=1234)
         slot_data = world_orig.fill_slot_data()
         pinned = slot_data["open_world_active"]
         self.assertEqual(len(pinned), 3)
 
-        # 2. Generate a second world with a different seed (different random
-        #    state → different random world selection without the fix).
-        _, world_ut = _gen({"open_world": 1, "open_world_count": 3}, seed=9999)
+        # 2. A different seed picks a different set on its own.
+        _, world_probe = _gen(opts, seed=9999)
+        if sorted(world_probe.active_worlds) == sorted(pinned):
+            self.skipTest("seed 9999 happens to roll the same worlds")
 
-        # 3. Simulate Universal Tracker: interpret_slot_data then generate_early.
-        world_ut.interpret_slot_data(slot_data)
-        self.assertTrue(hasattr(world_ut, "_ow_pinned_active_worlds"),
-                        "interpret_slot_data must set _ow_pinned_active_worlds")
-        world_ut.generate_early()
+        # 3. UT's real flow: interpret_slot_data on a throwaway world, then a
+        #    full regeneration that only carries the returned passthrough.
+        _, world_ut = regen_like_ut(slot_data, opts, 9999)
 
-        # 4. active_worlds must match slot_data, not the seed-9999 random roll.
+        # 4. active_worlds must match slot_data, not the seed-9999 roll.
         self.assertEqual(sorted(world_ut.active_worlds), sorted(pinned))
+        self.assertEqual(world_ut.fill_slot_data()["open_world_active"], pinned)
 
 
 class TestOpenWorldRegression(unittest.TestCase):
