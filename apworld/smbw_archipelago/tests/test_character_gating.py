@@ -23,6 +23,7 @@ from test.general import gen_steps, setup_multiworld
 from Fill import distribute_items_restrictive
 
 from .. import SMBWonderWorld
+from .ut_sim import regen_like_ut
 
 BASE_CHARACTERS = frozenset({
     "Mario", "Luigi", "Peach", "Daisy", "Yellow Toad", "Blue Toad", "Toadette",
@@ -176,11 +177,14 @@ class TestCharacterBlockGating(unittest.TestCase):
         Universal Tracker single-player regeneration ``world.random`` diverges
         from the multi-player game, so a fresh roll picks a DIFFERENT base
         character -- and because every Character Block is ``{OptOne(|Char|)}``
-        (clamped to ``|X:0|`` -> always-true for the precollected starter),
+        (clamped to ``|X:0|`` -> always-true for the precollected character),
         UT would show the wrong character's blocks as in-logic.
 
-        ``fill_slot_data`` exports ``starting_characters`` and
-        ``interpret_slot_data`` pins it so create_items reproduces it exactly.
+        ``fill_slot_data`` exports ``starting_characters``; UT's regen carries
+        it over on ``multiworld.re_gen_passthrough`` and ``generate_early``
+        pins it so ``create_items`` reproduces it exactly.  Driven through
+        ``regen_like_ut`` because UT throws away the instance
+        ``interpret_slot_data`` ran on.
         """
         # 1. Original game (seed 99) -> capture its starter from slot_data.
         mw_orig, world_orig = _gen({"character_block_sanity": 1}, seed=99)
@@ -199,22 +203,32 @@ class TestCharacterBlockGating(unittest.TestCase):
         else:
             self.skipTest("no seed produced a different starter")
 
-        # 3. Simulate UT: build that other-seed world, interpret_slot_data,
-        #    then re-run item creation.  It must precollect the ORIGINAL
-        #    starter, not the seed's own roll.
-        mw_ut = setup_multiworld(SMBWonderWorld, gen_steps, seed=ut_seed,
-                                 options={"character_block_sanity": 1})
-        world_ut = mw_ut.worlds[1]
-        world_ut.interpret_slot_data(slot_data)
-        self.assertEqual(getattr(world_ut, "_pinned_starting_characters", None),
-                         [orig_starter],
-                         "interpret_slot_data must pin _pinned_starting_characters")
-        mw_ut.precollected_items[1].clear()
-        world_ut.create_items()
+        # 3. Run UT's real flow on that other seed: interpret_slot_data on a
+        #    throwaway world, then a full regeneration carrying only what
+        #    interpret_slot_data returned.
+        mw_ut, _ = regen_like_ut(slot_data, {"character_block_sanity": 1}, ut_seed)
         ut_starter = [i.name for i in mw_ut.precollected_items[1]
                       if i.name in ALL_CHARACTERS]
         self.assertEqual(ut_starter, [orig_starter],
                          "UT regen must reproduce the original game's starter")
+
+        # 4. ...and the gating must follow the restored starter, not the roll.
+        self.assertEqual(self._ungated_block_chars(mw_ut), [orig_starter])
+
+    def test_interpret_slot_data_returns_slot_data_not_bool(self):
+        """The return value is UT's only channel into the regenerated world.
+
+        UT stashes it as ``multiworld.re_gen_passthrough[game]``; a bare
+        ``True`` there carries nothing, so the regenerated world re-rolls its
+        starter and open-world set.  Returning the slot_data is equally
+        truthy, so it still triggers the regen.
+        """
+        _, world = _gen({"character_block_sanity": 1}, seed=99)
+        slot_data = world.fill_slot_data()
+        returned = world.interpret_slot_data(slot_data)
+        self.assertIsInstance(returned, dict)
+        self.assertEqual(returned.get("starting_characters"),
+                         slot_data["starting_characters"])
 
     def test_beatable_both_modes(self):
         for sanity in (0, 1):

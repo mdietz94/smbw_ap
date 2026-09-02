@@ -109,7 +109,15 @@ class SMBWonderWorld(World):
         self.item_counts = {}
         self.start_inventory = {}
 
-    def interpret_slot_data(self, slot_data: dict[str, any]):
+    def apply_slot_data(self, slot_data: dict[str, any]) -> bool:
+        """Copy a connected slot's slot_data back onto this world instance.
+
+        Restores the yaml options the seed was generated with and lets
+        ``hook_interpret_slot_data`` pin anything that was a ``world.random``
+        roll at generation time (the open-world active worlds, the
+        precollected starter character).  Returns True if anything was
+        applied, i.e. the world needs to be regenerated with these values.
+        """
         regen = False
         for key, value in slot_data.items():
             if key in self.options_dataclass.type_hints:
@@ -118,6 +126,48 @@ class SMBWonderWorld(World):
 
         regen = hook_interpret_slot_data(self, self.player, slot_data) or regen
         return regen
+
+    def interpret_slot_data(self, slot_data: dict[str, any]):
+        """Universal Tracker entry point.
+
+        UT calls this on a world from a THROWAWAY multiworld and, if the
+        return value is truthy, regenerates from scratch --- brand-new
+        MultiWorld, brand-new World instances --- stashing whatever we return
+        here on ``multiworld.re_gen_passthrough[self.game]``.  Everything we
+        set on ``self`` in this call is therefore discarded.
+
+        So we must return the slot_data itself (not a bool): the regenerated
+        world re-applies it from the passthrough in ``generate_early`` (see
+        ``_apply_ut_passthrough``).  Returning a plain ``True`` --- which is
+        all UT's back-compat branch needs to trigger the regen --- puts
+        ``{game: True}`` in the passthrough, and the real world then re-rolls
+        its own starter character / open-world set and diverges from the seed
+        the player is actually playing.
+        """
+        if not self.apply_slot_data(slot_data):
+            return False
+        return slot_data
+
+    def _apply_ut_passthrough(self) -> None:
+        """Re-apply slot_data on a Universal Tracker regeneration.
+
+        ``interpret_slot_data`` ran on a world instance UT has since thrown
+        away; the surviving channel is ``multiworld.re_gen_passthrough``,
+        which UT sets on the new multiworld before generation.  Called at the
+        top of ``generate_early`` so options and pins are in place before
+        regions, rules and items are built.
+        """
+        passthrough = getattr(self.multiworld, "re_gen_passthrough", None)
+        if not isinstance(passthrough, dict):
+            return
+
+        slot_data = passthrough.get(self.game)
+        if not isinstance(slot_data, dict):
+            # An older UT (or our own former bool return) can leave a
+            # non-dict marker here; there is nothing to restore from that.
+            return
+
+        self.apply_slot_data(slot_data)
 
     @classmethod
     def stage_assert_generate(cls, multiworld) -> None:
@@ -132,12 +182,16 @@ class SMBWonderWorld(World):
         threshold, writes it back to the option (so ``fill_slot_data``
         exports the resolved value), and forces the goal to Bowser.
 
-        Universal Tracker compatibility: if ``interpret_slot_data`` already
-        pinned ``_ow_pinned_active_worlds`` from slot_data, those worlds are
-        used instead of the random roll — the RNG state in a UT single-player
-        regeneration differs from the original multi-player game, so re-rolling
-        would select the wrong set of worlds."""
+        Universal Tracker compatibility: ``_apply_ut_passthrough`` runs first
+        so the connected slot's options and pins are restored onto THIS
+        instance (UT discards the one ``interpret_slot_data`` ran on).  If
+        that pinned ``_ow_pinned_active_worlds``, those worlds are used
+        instead of the random roll — the RNG state in a UT single-player
+        regeneration differs from the original multi-player game, so
+        re-rolling would select the wrong set of worlds."""
         from . import open_world as ow
+
+        self._apply_ut_passthrough()
 
         self.open_world = bool(get_option_value(self.multiworld, self.player, "open_world"))
         self.active_worlds = list(ow.WORLD_NUMBERS)
@@ -204,11 +258,11 @@ class SMBWonderWorld(World):
 
         items_started = []
 
-        # Universal Tracker compatibility: interpret_slot_data pins the
-        # original game's precollected starter here so we reproduce it exactly
-        # rather than re-rolling (world.random diverges in a UT single-player
-        # regeneration).  See hooks/Data.hook_interpret_slot_data and
-        # fill_slot_data["starting_characters"].
+        # Universal Tracker compatibility: the original game's precollected
+        # starter is pinned from slot_data (generate_early ->
+        # _apply_ut_passthrough -> hook_interpret_slot_data) so we reproduce
+        # it exactly rather than re-rolling — world.random diverges in a UT
+        # single-player regeneration.  See fill_slot_data["starting_characters"].
         pinned_chars = getattr(self, "_pinned_starting_characters", None)
 
         if starting_items:
