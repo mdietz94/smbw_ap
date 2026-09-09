@@ -33,6 +33,7 @@ from .protocol import (
     PlayReportMsg,
 )
 from . import char_block_table
+from .location_table import pr_world_no_to_ap_world
 from .state import BridgeState, CurrentCourse
 
 
@@ -567,8 +568,9 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[Proces
     """course_in fires when a course actually loads.  Sets current_course
     so subsequent nerve fires (notably WONDER_SEED_AWARDED) can attribute,
     and flags us as in-course for the level-entry gate.  Emits a
-    ``GateEntered`` when the entered stage is one AP logic gates (a
-    badge-granting course, or the final Bowser stage)."""
+    ``GateEntered`` when the entered stage is one AP logic gates (the
+    final Bowser stage, a course in a still-locked open-world world, or a
+    badge-granting course)."""
     stage_info = fields.get("stage_info")
     if not isinstance(stage_info, dict):
         log.warning("course_in missing stage_info; ignoring")
@@ -615,6 +617,21 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[Proces
             stage_key=sk,
             gate_kind=GateKind.ROYAL_SEEDS,
             requirement=_FINAL_BOWSER_REQUIRED_ROYAL_SEEDS,
+            world_no=world_no,
+            course_no=course_no,
+        )]
+    # Open-world world-unlock gate.  ``locked_worlds`` holds only worlds that
+    # ARE part of this seed and are still locked -- it is empty outside
+    # open-world / with world_unlock_items off, and never contains an inactive
+    # world, Petal Isles (world_no 2), the Castle (8) or the Special world
+    # (9).  Checked before the badge gate: a player in a world they shouldn't
+    # be in yet gets bounced for the world, whatever else the course wants.
+    ap_world = pr_world_no_to_ap_world(world_no)
+    if ap_world is not None and state.is_world_locked(ap_world):
+        return [GateEntered(
+            stage_key=sk,
+            gate_kind=GateKind.WORLD_UNLOCK,
+            requirement=ap_world,
             world_no=world_no,
             course_no=course_no,
         )]

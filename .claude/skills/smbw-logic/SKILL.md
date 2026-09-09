@@ -33,6 +33,14 @@ runs at generation time.
 severs cross-world edges and rebuilds Manual→`W{n} Start` entries; **intra-world
 edges and their `requires` are preserved**, so logic walls carry over).
 
+With `world_unlock_items` (default **on**) each active world's
+Manual→`W{n} Start` entrance additionally requires a `W{n} Unlock` progression
+item (`open_world.make_world_unlock_gate`); exactly one active world's Unlock is
+precollected (`world.start_world`), so sphere 1 is a single world and fill picks
+the random order the rest open in. Client-side, entering a course in an active
+but still-locked world arms the `WORLD_UNLOCK` entry death-gate — worlds outside
+the seed, Petal Isles and the Special World are never gated.
+
 ## The progression model: Wonder-Seed tolls
 
 Each world is a linear chain of regions gated on **Wonder-Seed counts**, e.g.

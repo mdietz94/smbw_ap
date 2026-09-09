@@ -212,11 +212,16 @@ class GateKind(str, Enum):
     the AP-granted badge whose container-C internal_id is
     :attr:`GateEntered.requirement`"; ``ROYAL_SEEDS`` means "the player
     must hold at least :attr:`GateEntered.requirement` AP-granted Royal
-    Seeds" (the final-Bowser gate).
+    Seeds" (the final-Bowser gate); ``WORLD_UNLOCK`` means "the player
+    must own the ``W<n> Unlock`` item for world
+    :attr:`GateEntered.requirement`" (open-world's per-world gate, only
+    ever emitted for a world that IS part of the seed but has not been
+    unlocked yet).
     """
 
     BADGE = "badge"
     ROYAL_SEEDS = "royal_seeds"
+    WORLD_UNLOCK = "world_unlock"
 
 
 @dataclass(frozen=True)
@@ -237,8 +242,9 @@ class GateEntered:
     item.
 
     ``requirement`` is overloaded by ``gate_kind``: the badge
-    container-C internal_id for ``BADGE``, or the required Royal-Seed
-    count for ``ROYAL_SEEDS``.
+    container-C internal_id for ``BADGE``, the required Royal-Seed
+    count for ``ROYAL_SEEDS``, or the AP world number (1-6) whose
+    ``W<n> Unlock`` item is missing for ``WORLD_UNLOCK``.
     """
 
     stage_key: int

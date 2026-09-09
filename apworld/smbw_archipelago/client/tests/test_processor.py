@@ -1385,6 +1385,70 @@ class TestLevelEntryGate(unittest.TestCase):
             self.assertEqual(emitted[0].stage_key, sk)
 
 
+    # ---- Open-world world-unlock gate (state.locked_worlds) ----------
+
+    def test_locked_world_emits_world_unlock_gate(self):
+        state = BridgeState()
+        state.set_locked_worlds({2})  # AP world 2 == PlayReport world_no 3
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0x0BADF00D, world_no=3, course_no=2))
+        self.assertEqual(len(emitted), 1)
+        gate = emitted[0]
+        self.assertEqual(gate.gate_kind, GateKind.WORLD_UNLOCK)
+        self.assertEqual(gate.requirement, 2)
+        self.assertEqual(gate.stage_key, 0x0BADF00D)
+        self.assertEqual(gate.world_no, 3)
+
+    def test_unlocked_world_emits_no_gate(self):
+        state = BridgeState()
+        state.set_locked_worlds({4, 5})
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0x0BADF00D, world_no=3))
+        self.assertEqual(emitted, [])
+
+    def test_world_unlock_outranks_the_badge_gate(self):
+        """A badge course inside a locked world reports the WORLD gate --
+        being in the wrong world is the stronger objection, and the badge
+        gate defaults off anyway."""
+        state = BridgeState()
+        state.set_locked_worlds({1})
+        # 0xDADED63E = W1 Wall-Climb Jump I (badge 34), PlayReport world_no 1.
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0xDADED63E, world_no=1))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].gate_kind, GateKind.WORLD_UNLOCK)
+        self.assertEqual(emitted[0].requirement, 1)
+
+    def test_bowser_castle_outranks_the_world_gate(self):
+        """Castle courses (world_no 8) map to no AP world, so the
+        all-six-Royal-Seed gate keeps firing regardless."""
+        state = BridgeState()
+        state.set_locked_worlds({1, 2, 3, 4, 5, 6})
+        emitted = _handle_course_in(
+            state, self._course_in_fields(
+                _FINAL_BOWSER_STAGE_KEY, world_no=8, course_no=1))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].gate_kind, GateKind.ROYAL_SEEDS)
+
+    def test_hub_and_special_worlds_never_world_gate(self):
+        """Petal Isles (world_no 2) and the Special/secret world
+        (world_no 9) map to no AP world -- they are always open."""
+        state = BridgeState()
+        state.set_locked_worlds({1, 2, 3, 4, 5, 6})
+        for world_no in (2, 9):
+            with self.subTest(world_no=world_no):
+                emitted = _handle_course_in(
+                    state, self._course_in_fields(0x0BADF00D, world_no=world_no))
+                self.assertEqual(emitted, [])
+
+    def test_no_locked_worlds_is_inert(self):
+        """Default BridgeState (feature off) changes nothing."""
+        state = BridgeState()
+        self.assertEqual(state.locked_worlds, set())
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0x0BADF00D, world_no=3))
+        self.assertEqual(emitted, [])
+
 # ---------------------------------------------------------------------------
 # M2.3 badge acquisition.
 

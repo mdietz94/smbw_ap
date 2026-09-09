@@ -70,6 +70,16 @@ def before_create_items_filler(item_pool: list, world: World, multiworld: MultiW
         item_pool = inactive_item_pool(item_pool, world.active_worlds)
         precollect_petal_wonder_seeds(world, multiworld, player)
         precollect_inactive_wonder_seeds(world, multiworld, player, world.active_worlds)
+        # World-unlock items: exactly one active world starts open.  Its
+        # Unlock item leaves the pool for the starting inventory (which the
+        # client sees in the connect-time ReceivedItems batch, so the runtime
+        # world gate needs no special case for it); the other active worlds'
+        # Unlock items stay in the pool for fill to scatter, which is what
+        # makes the worlds gate each other in a random order.
+        if getattr(world, "world_unlock_items", False):
+            from ..open_world import precollect_start_world_unlock
+            precollect_start_world_unlock(
+                world, multiworld, player, item_pool, world.start_world)
 
     # Use this hook to remove items from the item pool
     itemNamesToRemove = [] # List of item names
@@ -127,6 +137,9 @@ def before_set_rules(world: World, multiworld: MultiWorld, player: int):
     neutralized = {name: "" for name in
                    [f"W{n} Start" for n in world.active_worlds] + [BOWSER_REGION]}
     neutralized.update(badge_wall_open_world_requires())
+    # (With world-unlock items on the Start gate is not simply dropped -- the
+    # "W<n> Unlock" requirement is attached to the Manual -> W<n> Start
+    # entrance in after_set_rules, for the same reason as the Bowser gate.)
 
     backup = {}
     for name, requires in neutralized.items():
@@ -157,6 +170,17 @@ def after_set_rules(world: World, multiworld: MultiWorld, player: int):
         bowser.access_rule = make_bowser_gate(player, world.active_worlds, world.palaces_required)
         register_bowser_indirect_conditions(
             multiworld, player, world.active_worlds, bowser)
+
+        # World-unlock items: gate each active world's Manual edge on its
+        # "W<n> Unlock" item.  Exactly one of those is precollected
+        # (before_create_items_filler), so sphere 1 is a single world and
+        # fill picks the random order the rest open in.
+        if getattr(world, "world_unlock_items", False):
+            from ..open_world import make_world_unlock_gate
+            for n in world.active_worlds:
+                entrance = multiworld.get_entrance(
+                    getConnectionName("Manual", f"W{n} Start"), player)
+                entrance.access_rule = make_world_unlock_gate(player, n)
 
     # Use this hook to modify the access rules for a given location
 
@@ -203,6 +227,15 @@ def after_fill_slot_data(slot_data: dict, world: World, multiworld: MultiWorld, 
     if getattr(world, "open_world", False):
         slot_data["open_world_active"] = list(world.active_worlds)
         slot_data["palaces_required"] = world.palaces_required
+        # World-unlock items.  The client needs the flag to know whether to
+        # arm the per-world entry death-gate (it reads ownership out of
+        # items_received); ``open_world_start_world`` is exported purely so a
+        # Universal Tracker regeneration can pin the same starting world
+        # instead of re-rolling it against a diverged RNG stream.
+        slot_data["open_world_unlock_items"] = bool(
+            getattr(world, "world_unlock_items", False))
+        if getattr(world, "world_unlock_items", False):
+            slot_data["open_world_start_world"] = world.start_world
     return slot_data
 
 # This is called right at the end, in case you want to write stuff to the spoiler log

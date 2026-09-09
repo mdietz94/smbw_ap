@@ -228,10 +228,22 @@ class SMBWManager(GameManager):
 
         if getattr(ctx, "open_world", False):
             active = getattr(ctx, "open_world_active", []) or []
-            worlds = ", ".join(f"W{n}" for n in active) if active else "(none)"
+            # With world-unlock items on, dim the worlds whose "W<n> Unlock"
+            # item hasn't arrived -- entering one of those bounces the player
+            # out, so the panel has to say which are actually playable.
+            locked = set()
+            if getattr(ctx, "open_world_unlock_items", False):
+                try:
+                    locked = ctx._recompute_locked_worlds()
+                except Exception:
+                    locked = set()
+            worlds = ", ".join(
+                f"[color=808080]W{n} (locked)[/color]" if n in locked
+                else f"[color=80ff80]W{n}[/color]"
+                for n in active) if active else "[color=80ff80](none)[/color]"
             pr = int(getattr(ctx, "palaces_required", 0) or 0)
             self._lbl_openworld.text = (
-                f"[b]Open-world[/b] - play: [color=80ff80]{worlds}[/color]\n"
+                f"[b]Open-world[/b] - play: {worlds}\n"
                 f"[i]walk in from Petal Isles[/i]  "
                 f"({pr} palace{'s' if pr != 1 else ''} -> Bowser)"
             )

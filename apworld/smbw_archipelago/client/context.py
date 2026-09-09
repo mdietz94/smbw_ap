@@ -265,6 +265,13 @@ class SMBWContext(CommonContext):
         self.open_world_active: list[int] = []
         self.palaces_required: int = 0
         self._bowser_opened: bool = False
+        # Open-world ``world_unlock_items`` (slot_data
+        # ``open_world_unlock_items``): each active world needs its own
+        # "W<n> Unlock" AP item; exactly one is precollected, so it arrives
+        # in the connect-time ReceivedItems batch like the starter character.
+        # Off => every active world is open from the start (the pre-2026-09
+        # behaviour) and no WORLD_UNLOCK gate ever arms.
+        self.open_world_unlock_items: bool = False
 
     # ---- AP lifecycle overrides ---------------------------------------
 
@@ -398,11 +405,22 @@ class SMBWContext(CommonContext):
             self.open_world_active = [int(n) for n in active if isinstance(n, int)]
             self.open_world = bool(self.open_world_active)
             self.palaces_required = int(slot_data.get("palaces_required") or 0)
+            self.open_world_unlock_items = bool(
+                slot_data.get("open_world_unlock_items"))
             self._bowser_opened = False
+            # Prime the locked-world set before any item lands: with
+            # world-unlock items on, EVERY active world starts locked and the
+            # connect-time ReceivedItems batch (which carries the precollected
+            # start-world Unlock) opens exactly one.  Priming strictly is what
+            # keeps an offline / not-yet-synced player from wandering into a
+            # world they haven't earned.
+            self.bridge_state.set_locked_worlds(self._recompute_locked_worlds())
             if self.open_world:
                 log.info(
-                    "open-world: active worlds=%s palaces_required=%d",
-                    self.open_world_active, self.palaces_required)
+                    "open-world: active worlds=%s palaces_required=%d "
+                    "world_unlock_items=%s",
+                    self.open_world_active, self.palaces_required,
+                    self.open_world_unlock_items)
                 # Push routable worlds and the world-unlock hash batch so
                 # courses appear on fresh saves before any item arrives.
                 # Both are idempotent and replay on HelloMsg.
@@ -525,12 +543,16 @@ class SMBWContext(CommonContext):
 
     def _recompute_unlocked_charas(self) -> set[int]:
         """The set of PlayerCharaTypes (0-11) whose AP character item has
-        been received.  Same items_received walk as the power-up deny
-        mask; feeds the processor's char_block_hit character-unlock gate
+        been received.  Feeds the processor's char_block_hit character-unlock gate
         via BridgeState.  Exactly ONE random base character is precollected
         (starting_items) so it arrives in the connect-time ReceivedItems
         batch; the other six base characters and the five
         "Character (Easy)" items are pool items and unlock as found."""
+        return char_block_table.charas_for_item_names(
+            self._received_item_names())
+
+    def _received_item_names(self) -> set[str]:
+        """Every AP item name received so far (game-local names)."""
         names: set[str] = set()
         for it in self.items_received:
             item_id = getattr(it, "item", None)
@@ -542,7 +564,25 @@ class SMBWContext(CommonContext):
                 names.add(self.item_names.lookup_in_game(int(item_id)))
             except Exception:
                 continue
-        return char_block_table.charas_for_item_names(names)
+        return names
+
+    def _recompute_unlocked_worlds(self) -> set[int]:
+        """AP world numbers whose "W<n> Unlock" item has been received.
+        Empty when the feature is off (no such item can arrive)."""
+        return world_unlock_table.worlds_for_item_names(
+            self._received_item_names())
+
+    def _recompute_locked_worlds(self) -> set[int]:
+        """Active open-world worlds the player may NOT enter yet: the active
+        set minus the Unlock items received.
+
+        Empty (gate inert) unless open-world AND ``world_unlock_items`` are
+        both on -- so worlds that aren't part of the seed, Petal Isles, the
+        Castle and the Special World are never in it, matching "only gate
+        worlds that WILL be unlocked but haven't been"."""
+        if not (self.open_world and self.open_world_unlock_items):
+            return set()
+        return set(self.open_world_active) - self._recompute_unlocked_worlds()
 
     def _recompute_unlocked_chara_mask(self) -> int:
         """The Switch-facing unlocked-character mask (bit i = ROSTER index
@@ -967,6 +1007,13 @@ class SMBWContext(CommonContext):
         self.bridge_state.set_unlocked_charas(
             self._recompute_unlocked_charas())
 
+        # Open-world world-unlock gate: refresh which active worlds are still
+        # locked, so the processor stops raising a WORLD_UNLOCK gate the
+        # moment the world's Unlock item lands (and an in-flight kill loop
+        # self-stops on its next re-check).  Client-side only -- the Switch
+        # keeps every world's course state open either way.
+        self.bridge_state.set_locked_worlds(self._recompute_locked_worlds())
+
         new_mask = self._recompute_badge_mask()
         new_seed_counts = self._recompute_wonder_seed_counts()
         # Royal Seeds are deliberately NOT pushed to the Switch any more
@@ -1246,11 +1293,14 @@ class SMBWContext(CommonContext):
         worlds are out of logic.
 
         Always ``True`` outside open-world mode (every world is in logic)
-        and for non-badge gates -- the final-Bowser ROYAL_SEEDS gate must
-        always fire."""
+        and for the final-Bowser ROYAL_SEEDS gate, which must always fire.
+        ``WORLD_UNLOCK`` gets the same active-world test as ``BADGE``: it
+        is only ever raised for an active world, but re-checking here keeps
+        the "never gate a world that isn't part of the seed" rule in one
+        place."""
         if not self.open_world:
             return True
-        if ev.gate_kind != GateKind.BADGE:
+        if ev.gate_kind not in (GateKind.BADGE, GateKind.WORLD_UNLOCK):
             return True
         ap_world = pr_world_no_to_ap_world(ev.world_no)
         return ap_world is not None and ap_world in self.open_world_active
@@ -1289,7 +1339,8 @@ class SMBWContext(CommonContext):
         """True iff the player satisfies the gate's requirement.
 
         BADGE: own the AP badge whose container-C internal_id is
-        ``ev.requirement``.  ROYAL_SEEDS (final Bowser): hold all
+        ``ev.requirement``.  WORLD_UNLOCK: own the "W<n> Unlock" item for
+        world ``ev.requirement``.  ROYAL_SEEDS (final Bowser): hold all
         ``ev.requirement`` AP Royal Seeds AND -- in open-world -- have
         actually cleared ``palaces_required`` palaces in your own game.
         (Open-world force-opens the Castle route and AP can route Royal Seed
@@ -1300,6 +1351,8 @@ class SMBWContext(CommonContext):
         kills players on an older client."""
         if ev.gate_kind == GateKind.BADGE:
             return bool((self._recompute_badge_mask() >> ev.requirement) & 1)
+        if ev.gate_kind == GateKind.WORLD_UNLOCK:
+            return ev.requirement in self._recompute_unlocked_worlds()
         if ev.gate_kind == GateKind.ROYAL_SEEDS:
             owned = bin(self._recompute_royal_seed_mask()).count("1")
             if owned < ev.requirement:
@@ -1322,6 +1375,9 @@ class SMBWContext(CommonContext):
                     f"Locked: need all {ev.requirement} AP Royal Seeds and "
                     f"{self.palaces_required} palaces cleared to face Bowser")
             return f"Locked: need {ev.requirement} Royal Seeds to face Bowser"
+        if ev.gate_kind == GateKind.WORLD_UNLOCK:
+            return (f"Locked: World {ev.requirement} needs its "
+                    f"{world_unlock_table.unlock_item_name(ev.requirement)} item")
         # BADGE gate: ev.requirement is the container-C internal_id, which
         # is exactly the key badge_table maps to the AP item name.  Name
         # the specific badge when we know it; fall back to the generic

@@ -445,6 +445,120 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
                 self.ctx.lan_server.send_kill.call_count, 1)
             self.state.mark_course_exited()
 
+    # ---- Open-world: per-world unlock gate ---------------------------
+
+    def _world_gate(self, ap_world: int, pr_world_no: int,
+                    stage_key: int = 0x11112222):
+        return self._GateEntered(
+            stage_key=stage_key,
+            gate_kind=self._GateKind.WORLD_UNLOCK,
+            requirement=ap_world,
+            world_no=pr_world_no,
+        )
+
+    def _open_world_unlocks(self, active, unlocked):
+        """Put the context in open-world + world-unlock-items mode with
+        ``unlocked`` already received."""
+        self.ctx.open_world = True
+        self.ctx.open_world_unlock_items = True
+        self.ctx.open_world_active = list(active)
+        self.ctx._recompute_unlocked_worlds = MagicMock(
+            return_value=set(unlocked))
+
+    def test_world_unlock_requirement_met_when_item_owned(self):
+        self._open_world_unlocks([1, 3, 4], unlocked={3})
+        self.assertTrue(self.ctx._gate_requirement_met(self._world_gate(3, 4)))
+
+    def test_world_unlock_requirement_unmet_when_item_missing(self):
+        self._open_world_unlocks([1, 3, 4], unlocked={1})
+        self.assertFalse(self.ctx._gate_requirement_met(self._world_gate(3, 4)))
+
+    def test_locked_worlds_is_active_minus_received(self):
+        self._open_world_unlocks([2, 3, 5], unlocked={3})
+        self.assertEqual(self.ctx._recompute_locked_worlds(), {2, 5})
+
+    def test_locked_worlds_empty_when_feature_off(self):
+        self._open_world_unlocks([2, 3, 5], unlocked=set())
+        self.ctx.open_world_unlock_items = False
+        self.assertEqual(self.ctx._recompute_locked_worlds(), set())
+
+    def test_locked_worlds_empty_outside_open_world(self):
+        self._open_world_unlocks([2, 3, 5], unlocked=set())
+        self.ctx.open_world = False
+        self.assertEqual(self.ctx._recompute_locked_worlds(), set())
+
+    def test_world_gate_in_logic_only_for_active_worlds(self):
+        self._open_world_unlocks([1, 2], unlocked=set())
+        # AP world 3 == PlayReport world_no 4; not in the seed -> not gated.
+        self.assertFalse(
+            self.ctx._gate_course_in_logic(self._world_gate(3, 4)))
+        # AP world 2 == PlayReport world_no 3; active -> gated.
+        self.assertTrue(
+            self.ctx._gate_course_in_logic(self._world_gate(2, 3)))
+
+    def test_world_gate_never_fires_for_petal_isles(self):
+        # PlayReport world_no 2 is the Petal Isles hub (AP world None), and
+        # world_no 9 is the Special/secret world -- neither is ever gated.
+        self._open_world_unlocks([1, 2, 3], unlocked=set())
+        for pr_world_no in (2, 9):
+            with self.subTest(world_no=pr_world_no):
+                self.assertFalse(self.ctx._gate_course_in_logic(
+                    self._world_gate(1, pr_world_no)))
+
+    async def test_locked_world_entry_arms_a_kill(self):
+        self._open_world_unlocks([1, 2, 3], unlocked={1})
+        self._enter(0x11112222)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            # AP world 2 (PlayReport world_no 3) is active but still locked.
+            await self.ctx.handle_gate_entered(self._world_gate(2, 3))
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(self.ctx.lan_server.send_kill.call_count, 1)
+            _, kwargs = self.ctx.lan_server.send_kill.call_args
+            self.assertIn("W2 Unlock", kwargs["cause"])
+            self.state.mark_course_exited()
+
+    async def test_unlocked_world_entry_does_not_arm(self):
+        self._open_world_unlocks([1, 2, 3], unlocked={1, 2})
+        self._enter(0x11112222)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._world_gate(2, 3))
+            self.assertIsNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.ctx.lan_server.send_kill.assert_not_called()
+
+    async def test_world_gate_ignores_the_badge_sub_toggle(self):
+        # badge_entry_gating_enabled is OFF by default; the world gate is not
+        # a badge gate and must still fire (like the Bowser gate).
+        self.assertFalse(self.ctx.badge_entry_gating_enabled)
+        self._open_world_unlocks([1, 2], unlocked={1})
+        self._enter(0x11112222)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._world_gate(2, 3))
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(self.ctx.lan_server.send_kill.call_count, 1)
+            self.state.mark_course_exited()
+
+    async def test_connected_primes_locked_worlds_strictly(self):
+        # Before any item lands, every active world is locked -- an offline /
+        # unsynced player must not be able to walk into an unearned world.
+        await self.ctx._handle_ap_package("Connected", {"slot_data": {
+            "open_world_active": [2, 4, 5],
+            "palaces_required": 3,
+            "open_world_unlock_items": True,
+        }})
+        self.assertTrue(self.ctx.open_world_unlock_items)
+        self.assertEqual(self.state.locked_worlds, {2, 4, 5})
+
+    async def test_connected_without_the_flag_locks_nothing(self):
+        await self.ctx._handle_ap_package("Connected", {"slot_data": {
+            "open_world_active": [2, 4, 5],
+            "palaces_required": 3,
+        }})
+        self.assertFalse(self.ctx.open_world_unlock_items)
+        self.assertEqual(self.state.locked_worlds, set())
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
