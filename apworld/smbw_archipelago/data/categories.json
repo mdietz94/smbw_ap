@@ -16,5 +16,12 @@
     "yaml_option": [
       "character_block_sanity"
     ]
+  },
+  "World Unlock": {
+    "hidden": true,
+    "yaml_option": [
+      "open_world",
+      "world_unlock_items"
+    ]
   }
 }

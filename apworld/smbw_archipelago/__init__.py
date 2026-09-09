@@ -176,7 +176,8 @@ class SMBWonderWorld(World):
     def generate_early(self) -> None:
         """Resolve open-world settings before regions/items/rules are
         built.  Always sets ``self.open_world`` / ``self.active_worlds`` /
-        ``self.palaces_required`` so the World.py hooks can read them
+        ``self.palaces_required`` / ``self.world_unlock_items`` /
+        ``self.start_world`` so the World.py hooks can read them
         unconditionally.  When open-world is on, picks the random active
         worlds (seeded via ``self.random``), resolves the palace
         threshold, writes it back to the option (so ``fill_slot_data``
@@ -196,6 +197,8 @@ class SMBWonderWorld(World):
         self.open_world = bool(get_option_value(self.multiworld, self.player, "open_world"))
         self.active_worlds = list(ow.WORLD_NUMBERS)
         self.palaces_required = len(self.active_worlds)
+        self.world_unlock_items = False
+        self.start_world = None
         if not self.open_world:
             return
 
@@ -203,6 +206,17 @@ class SMBWonderWorld(World):
         self.active_worlds = pinned if pinned is not None else ow.choose_active_worlds(self)
         self.palaces_required = ow.resolve_palaces_required(self, self.active_worlds)
         self.options.palaces_required.value = self.palaces_required
+
+        # World-unlock items: one active world starts unlocked, the rest are
+        # gated behind their "W<n> Unlock" progression item.  Pinned from
+        # slot_data under Universal Tracker for the same RNG-divergence reason
+        # as the active-world set.
+        self.world_unlock_items = ow.uses_world_unlock_items(self)
+        if self.world_unlock_items:
+            pinned_start = getattr(self, "_ow_pinned_start_world", None)
+            self.start_world = (
+                pinned_start if pinned_start is not None
+                else ow.choose_start_world(self, self.active_worlds))
 
         if ow.BOWSER_VICTORY_LOCATION in victory_names:
             self.options.goal.value = victory_names.index(ow.BOWSER_VICTORY_LOCATION)

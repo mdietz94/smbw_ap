@@ -454,5 +454,53 @@
       "Character (Easy)"
     ],
     "progression": true
+  },
+  {
+    "count": 1,
+    "name": "W1 Unlock",
+    "category": [
+      "World Unlock"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "W2 Unlock",
+    "category": [
+      "World Unlock"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "W3 Unlock",
+    "category": [
+      "World Unlock"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "W4 Unlock",
+    "category": [
+      "World Unlock"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "W5 Unlock",
+    "category": [
+      "World Unlock"
+    ],
+    "progression": true
+  },
+  {
+    "count": 1,
+    "name": "W6 Unlock",
+    "category": [
+      "World Unlock"
+    ],
+    "progression": true
   }
 ]

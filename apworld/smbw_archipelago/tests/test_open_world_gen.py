@@ -15,7 +15,11 @@ from test.general import gen_steps, setup_multiworld
 from Fill import distribute_items_restrictive
 
 from .. import SMBWonderWorld
-from ..open_world import BOWSER_VICTORY_LOCATION, world_of_region
+from ..open_world import (
+    BOWSER_VICTORY_LOCATION,
+    world_of_region,
+    world_unlock_item,
+)
 from ..Regions import regionMap
 from .ut_sim import regen_like_ut
 
@@ -46,12 +50,14 @@ class TestOpenWorldGeneration(unittest.TestCase):
         self.assertEqual(world.victory_names[world.options.goal.value], BOWSER_VICTORY_LOCATION)
 
     def test_active_starts_reachable_empty_handed(self):
-        multiworld, world = _gen({"open_world": 1, "open_world_count": 4})
+        # world_unlock_items OFF: every active world opens at once.
+        multiworld, world = _gen(
+            {"open_world": 1, "open_world_count": 4, "world_unlock_items": 0})
         state = CollectionState(multiworld)
         reachable = {r.name for r in multiworld.get_regions(1) if state.can_reach(r, "Region", 1)}
         for n in world.active_worlds:
             self.assertIn(f"W{n} Start", reachable, f"W{n} Start should be reachable from the start")
-        # Bowser must NOT be free — it's gated behind the Royal Seeds.
+        # Bowser must NOT be free -- it's gated behind the Royal Seeds.
         self.assertNotIn("World Bowser", reachable)
 
     def test_inactive_and_hub_content_removed(self):
@@ -174,6 +180,106 @@ class TestOpenWorldGeneration(unittest.TestCase):
         victory = multiworld.get_location(BOWSER_VICTORY_LOCATION, 1)
         self.assertEqual(victory.item.name, "__Victory__")
         self.assertEqual(victory.parent_region.name, "World Bowser")
+
+
+class TestWorldUnlockItems(unittest.TestCase):
+    """``world_unlock_items`` (default ON): each active world is gated
+    behind its own "W<n> Unlock" item and exactly one starts unlocked."""
+
+    def _sphere_one_worlds(self, multiworld, world):
+        state = CollectionState(multiworld)
+        return {n for n in world.active_worlds
+                if state.can_reach_region(f"W{n} Start", 1)}
+
+    def test_on_by_default(self):
+        _, world = _gen({"open_world": 1, "open_world_count": 4})
+        self.assertTrue(world.world_unlock_items)
+        self.assertIn(world.start_world, world.active_worlds)
+
+    def test_only_the_start_world_is_open(self):
+        for seed in (1234, 99, 7):
+            with self.subTest(seed=seed):
+                multiworld, world = _gen(
+                    {"open_world": 1, "open_world_count": 4}, seed=seed)
+                self.assertEqual(self._sphere_one_worlds(multiworld, world),
+                                 {world.start_world})
+
+    def test_start_unlock_precollected_rest_in_pool(self):
+        multiworld, world = _gen({"open_world": 1, "open_world_count": 4})
+        start_item = world_unlock_item(world.start_world)
+        precollected = [i.name for i in multiworld.precollected_items[1]]
+        self.assertIn(start_item, precollected)
+
+        pool = [i.name for i in multiworld.itempool if i.player == 1]
+        self.assertNotIn(start_item, pool)
+        self.assertEqual(
+            sorted(n for n in pool if n.endswith(" Unlock")),
+            sorted(world_unlock_item(n) for n in world.active_worlds
+                   if n != world.start_world))
+
+    def test_inactive_worlds_get_no_unlock_item(self):
+        multiworld, world = _gen({"open_world": 1, "open_world_count": 3})
+        active = set(world.active_worlds)
+        names = ([i.name for i in multiworld.itempool if i.player == 1]
+                 + [i.name for i in multiworld.precollected_items[1]])
+        for name in names:
+            if name.endswith(" Unlock"):
+                self.assertIn(world_of_region(name), active,
+                              f"leaked inactive world unlock {name!r}")
+
+    def test_unlock_items_are_progression(self):
+        multiworld, world = _gen({"open_world": 1, "open_world_count": 4})
+        for item in multiworld.itempool:
+            if item.player == 1 and item.name.endswith(" Unlock"):
+                self.assertTrue(item.advancement, f"{item.name} must be progression")
+
+    def test_disabled_creates_no_unlock_items(self):
+        multiworld, world = _gen(
+            {"open_world": 1, "open_world_count": 4, "world_unlock_items": 0})
+        self.assertFalse(world.world_unlock_items)
+        self.assertIsNone(world.start_world)
+        names = ([i.name for i in multiworld.itempool if i.player == 1]
+                 + [i.name for i in multiworld.precollected_items[1]])
+        self.assertEqual([n for n in names if n.endswith(" Unlock")], [])
+
+    def test_standard_mode_creates_no_unlock_items(self):
+        multiworld, world = _gen({"open_world": 0})
+        self.assertFalse(world.world_unlock_items)
+        names = ([i.name for i in multiworld.itempool if i.player == 1]
+                 + [i.name for i in multiworld.precollected_items[1]])
+        self.assertEqual([n for n in names if n.endswith(" Unlock")], [])
+
+    def test_solvable_across_counts(self):
+        for count in (1, 3, 6):
+            with self.subTest(count=count):
+                multiworld, _ = _gen(
+                    {"open_world": 1, "open_world_count": count},
+                    seed=6000 + count, fill=True)
+                self.assertTrue(multiworld.can_beat_game(),
+                                f"world-unlock N={count} should be beatable")
+
+    def test_slot_data_exports_unlock_state(self):
+        _, world = _gen({"open_world": 1, "open_world_count": 3})
+        slot_data = world.fill_slot_data()
+        self.assertTrue(slot_data["open_world_unlock_items"])
+        self.assertEqual(slot_data["open_world_start_world"], world.start_world)
+
+        _, off = _gen(
+            {"open_world": 1, "open_world_count": 3, "world_unlock_items": 0})
+        off_data = off.fill_slot_data()
+        self.assertFalse(off_data["open_world_unlock_items"])
+        self.assertNotIn("open_world_start_world", off_data)
+
+    def test_pinned_start_world_survives_ut_regeneration(self):
+        opts = {"open_world": 1, "open_world_count": 4}
+        _, world_orig = _gen(opts, seed=1234)
+        slot_data = world_orig.fill_slot_data()
+
+        _, world_ut = regen_like_ut(slot_data, opts, 9999)
+        self.assertEqual(world_ut.start_world, world_orig.start_world)
+        self.assertEqual(
+            world_ut.fill_slot_data()["open_world_start_world"],
+            slot_data["open_world_start_world"])
 
 
 class TestUniversalTrackerCompat(unittest.TestCase):

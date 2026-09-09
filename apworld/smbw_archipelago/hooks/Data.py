@@ -40,6 +40,13 @@ def hook_interpret_slot_data(world, player: int, slot_data: dict) -> bool:
         # first world as available (the others aren't wired into Manual).
         world._ow_pinned_active_worlds = [int(n) for n in slot_data["open_world_active"]]
         regen = True
+    if "open_world_start_world" in slot_data:
+        # Same RNG-divergence reason as the active-world set: the single
+        # world that starts unlocked is a world.random roll in
+        # generate_early, so pin it rather than let UT re-roll a different
+        # one (which would show the wrong world as sphere 1).
+        world._ow_pinned_start_world = int(slot_data["open_world_start_world"])
+        regen = True
     if "starting_characters" in slot_data:
         # Pin the precollected starter character(s) for the same reason: the
         # starter is a world.random roll in create_items (starting_items

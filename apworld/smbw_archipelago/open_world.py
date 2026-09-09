@@ -6,12 +6,18 @@ per-world Wonder-Seed counts and the previous world's Royal Seed (see
 ``data/regions.json``).  Open-world mode keeps each world's *internal*
 Wonder-Seed progression but detaches the worlds from each other: a random
 set of N worlds (``open_world_count``) all hang directly off the ``Manual``
-menu region and are reachable from the start, and Bowser is reached
-directly off ``Manual`` once all six AP Royal Seeds are held AND at least
+menu region, and Bowser is reached directly off ``Manual`` once all six
+AP Royal Seeds are held AND at least
 ``palaces_required`` of the active palaces are reachable (the client's
 runtime death-gate enforces the matching "actually cleared
 ``palaces_required`` palaces in your own game" condition on every Bowser's
 Castle course).
+
+With ``world_unlock_items`` on (the default) those worlds are not all open
+at once: each is gated behind its own ``W<n> Unlock`` progression item and
+exactly one -- ``world.start_world`` -- is precollected, so fill decides in
+which random order the worlds unlock each other.  See the "World-unlock
+items" section below.
 
 The restructuring is done by mutating this player's in-memory region graph
 (``Regions.create_regions`` has already built the full vanilla graph by the
@@ -109,6 +115,79 @@ def is_hub_region(name: str) -> bool:
 
 def royal_seed_item(n: int) -> str:
     return f"W{n} Royal Seed"
+
+
+# ---------------------------------------------------------------------------
+# World-unlock items (``world_unlock_items`` option, default ON).
+#
+# Without them every active world hangs off ``Manual`` with an empty gate, so
+# sphere 1 is *every* world at once -- far too wide.  With them the
+# ``Manual -> W<n> Start`` edge requires that world's ``W<n> Unlock``
+# progression item (``make_world_unlock_gate``, wired in
+# ``hooks.World.after_set_rules``), exactly ONE active world's Unlock is
+# precollected, and the rest are shuffled into the multiworld -- so the worlds
+# gate each other in a random order chosen by fill.
+#
+# The client mirrors this at runtime: entering a course in an active world
+# whose Unlock item has not been received bounces the player out through the
+# same death-gate that guards Bowser's Castle (``GateKind.WORLD_UNLOCK``).
+# Inactive worlds, Petal Isles and the Special World are never gated -- their
+# Unlock items don't exist and the player has no reason to be kept out.
+# ---------------------------------------------------------------------------
+
+
+def world_unlock_item(n: int) -> str:
+    return f"W{n} Unlock"
+
+
+def uses_world_unlock_items(world) -> bool:
+    """True when this slot gates its active worlds behind Unlock items:
+    open-world is on AND the ``world_unlock_items`` option is enabled."""
+    from .Helpers import get_option_value
+    if not getattr(world, "open_world", False):
+        return False
+    return bool(get_option_value(
+        world.multiworld, world.player, "world_unlock_items"))
+
+
+def choose_start_world(world, active_worlds) -> int:
+    """Pick the single active world that starts unlocked (seeded via
+    ``world.random``)."""
+    return world.random.choice(sorted(active_worlds))
+
+
+def make_world_unlock_gate(player: int, n: int):
+    """Access rule for the ``Manual -> W<n> Start`` edge: hold ``W<n>
+    Unlock``.
+
+    Attached to the *entrance* (like the Bowser gate) rather than folded
+    into the region's ``requires``, so a locked world's Start region is
+    genuinely unreachable -- ``requires`` gates a region's outgoing exits
+    and its own locations but not the edge into it, which would leave the
+    world showing as reached-but-empty on trackers.  Pure ``state.has``, so
+    no indirect condition is needed (item changes already retrigger it)."""
+    item = world_unlock_item(n)
+
+    def rule(state) -> bool:
+        return state.has(item, player)
+
+    return rule
+
+
+def precollect_start_world_unlock(world, multiworld, player, item_pool, start_world) -> bool:
+    """Move the start world's Unlock item from ``item_pool`` into the
+    player's starting inventory (mutates ``item_pool`` in place).
+
+    Precollected items reach the client in the connect-time ReceivedItems
+    batch, so the runtime world gate sees the start world as unlocked
+    without any special-casing.  Returns True if an item was moved."""
+    name = world_unlock_item(start_world)
+    for item in item_pool:
+        if item.name == name:
+            item_pool.remove(item)
+            multiworld.push_precollected(item)
+            return True
+    return False
 
 
 # Petal Isles has 34 Wonder Seeds (data/items.json).  In open-world the hub's
@@ -268,8 +347,9 @@ def strip_inactive_locations(world: World, multiworld: MultiWorld, player: int, 
 
 def inactive_item_pool(item_pool: list, active_worlds) -> list:
     """Return ``item_pool`` minus the inactive worlds' **Wonder** Seeds and
-    all Petal Isles / Special World Wonder Seeds (their locations are
-    removed; the inactive ones are precollected instead).
+    **Unlock** items, and all Petal Isles / Special World Wonder Seeds
+    (their locations are removed; the inactive Wonder Seeds are
+    precollected instead, and an inactive world has nothing to unlock).
 
     **Royal** Seeds are KEPT for every world regardless of the active set:
     facing Bowser requires holding all six AP Royal Seeds (see
@@ -280,7 +360,9 @@ def inactive_item_pool(item_pool: list, active_worlds) -> list:
     def keep(item) -> bool:
         if item.name in _ALWAYS_REMOVE_ITEMS:
             return False
-        if item.name.endswith(" Wonder Seed"):
+        if item.name.endswith(" Wonder Seed") or item.name.endswith(" Unlock"):
+            # ``world_of_region`` parses the shared "W<n> ..." prefix, so it
+            # also names Wonder Seed / Unlock items.
             w = world_of_region(item.name)
             if w is not None and w not in active:
                 return False

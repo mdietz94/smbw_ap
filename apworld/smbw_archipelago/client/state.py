@@ -101,12 +101,31 @@ class BridgeState:
         # no credit while unknown).
         self.unlocked_charas: set[int] = set()
 
+        # Open-world ``world_unlock_items``: AP world numbers (1-6) that are
+        # part of this seed but whose "W<n> Unlock" item has not been
+        # received yet.  Read by the processor's course_in handler to raise a
+        # WORLD_UNLOCK entry gate (which outranks the badge gate -- being in
+        # the wrong world at all is the stronger objection).  Empty whenever
+        # the feature is off, so the processor's behaviour is unchanged.
+        self.locked_worlds: set[int] = set()
+
     # ---- Mutators -----------------------------------------------------
 
     def set_unlocked_charas(self, charas: set[int]) -> None:
         """Replace the unlocked-character set (context, on ReceivedItems)."""
         with self._lock:
             self.unlocked_charas = set(charas)
+
+    def set_locked_worlds(self, worlds: set[int]) -> None:
+        """Replace the locked-world set (context, on Connected/ReceivedItems)."""
+        with self._lock:
+            self.locked_worlds = set(worlds)
+
+    def is_world_locked(self, world_no: int) -> bool:
+        """True if ``world_no`` is an active open-world world the player has
+        not unlocked yet."""
+        with self._lock:
+            return world_no in self.locked_worlds
 
     def is_character_unlocked(self, chara: int) -> bool:
         """True if the character's AP item has been received."""

@@ -182,3 +182,37 @@ WORLD_UNLOCK_DROPPED_HASHES: Final[tuple[int, ...]] = (
     0xa45048b6,  # pair 125  W_Kin.<member>
     0xbf40af4f,  # pair 127  W_Sabaku.<member>
 )
+
+
+# ---------------------------------------------------------------------------
+# AP "W<n> Unlock" items (open-world ``world_unlock_items``, default ON).
+#
+# Unrelated to the GameData hashes above -- those force the *game's* course
+# state open for every world; these are the AP-side progression items that say
+# which of the seed's active worlds the player is actually ALLOWED into.  One
+# is precollected at generation, the rest are shuffled into the multiworld, and
+# entering a course in an active-but-unowned world arms the WORLD_UNLOCK
+# entry death-gate.  Name format is fixed by
+# ``open_world.world_unlock_item``.
+# ---------------------------------------------------------------------------
+
+#: AP world numbers that can carry an Unlock item (matches
+#: ``open_world.WORLD_NUMBERS``).
+UNLOCK_WORLD_NUMBERS: Final[tuple[int, ...]] = (1, 2, 3, 4, 5, 6)
+
+
+def unlock_item_name(world_no: int) -> str:
+    """The AP item name that unlocks AP world ``world_no`` (1-6)."""
+    return f"W{world_no} Unlock"
+
+
+#: item name -> AP world number.
+UNLOCK_ITEM_TO_WORLD: Final[dict[str, int]] = {
+    unlock_item_name(n): n for n in UNLOCK_WORLD_NUMBERS
+}
+
+
+def worlds_for_item_names(names) -> set[int]:
+    """The AP world numbers unlocked by the given item names (any
+    non-Unlock name is ignored)."""
+    return {UNLOCK_ITEM_TO_WORLD[n] for n in names if n in UNLOCK_ITEM_TO_WORLD}

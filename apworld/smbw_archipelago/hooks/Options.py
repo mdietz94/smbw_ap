@@ -3,7 +3,7 @@ dataclass is built.  `after_options_defined` currently no-ops; populate
 `options` in `before_options_defined` to register new YAML-configurable
 options.
 """
-from Options import Toggle, Range
+from Options import DefaultOnToggle, Toggle, Range
 
 
 class OpenWorld(Toggle):
@@ -24,6 +24,21 @@ class OpenWorldCount(Range):
     range_start = 1
     range_end = 6
     default = 6
+
+
+class WorldUnlockItems(DefaultOnToggle):
+    """Open-world: gate each active world behind its own "W<n> Unlock"
+    progression item instead of opening every world at once.  Exactly one
+    randomly chosen active world is unlocked from the start (its Unlock
+    item is precollected); the rest are found in the multiworld, so the
+    worlds end up depending on each other in a random order and sphere 1
+    is one world instead of all of them.
+
+    Entering a course in an active-but-still-locked world bounces you out
+    via the same death-gate that guards Bowser's Castle.  Worlds that are
+    not part of the seed at all, Petal Isles and the Special World are
+    never gated.  Ignored unless ``open_world`` is on."""
+    display_name = "World Unlock Items"
 
 
 class CharacterBlockSanity(Toggle):
@@ -54,6 +69,10 @@ def before_options_defined(options: dict) -> dict:
     options["open_world"] = OpenWorld
     options["open_world_count"] = OpenWorldCount
     options["palaces_required"] = PalacesRequired
+    # Pre-seed so the category-driven loop in Options.py (which would
+    # otherwise auto-create a bare DefaultOnToggle for the "World Unlock"
+    # category's yaml_option) leaves it alone and the docstring survives.
+    options["world_unlock_items"] = WorldUnlockItems
     # Default-OFF Toggle; pre-seeding here means the category-driven loop in
     # Options.py (which would otherwise auto-create a DefaultOnToggle for any
     # category yaml_option) leaves it alone -- it only fills options NOT
