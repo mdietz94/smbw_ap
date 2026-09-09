@@ -88,6 +88,83 @@ each, plus whether a `wonder_seed_awarded` nerve line appears.
 Use a scratch AP room, and pick a course whose Wonder Seed location is
 still unchecked so run B's check is visible as a new send.
 
+## Capture status
+
+**Not yet captured.** The rig below was stood up and verified working
+end-to-end on 2026-09-09 (Ryujinx booted, mod loaded, bridge connected,
+grants flowing both directions), but no course was ever played in that
+session -- the emulator sat at boot for ~90 minutes and was then closed.
+The client log recorded only the ~2 s inbound tick traffic
+(`itemgate` / `charagate` / `badgeshop`), zero `course_result`, zero
+`wonder-seed tally`, zero nerve fires. The matrix below therefore still
+reads "Expect", not observed values.
+
+Anyone resuming: the rig section is the time-saver -- it took most of a
+session to get a working Archipelago environment on this machine, and
+none of that work is in the capture matrix.
+
+## Capture rig -- verified working
+
+Standing this up hit three environment blockers that are not obvious and
+cost real time. All three are environment-level, not branch-level.
+
+1. **`scripts/run_client.py` is stale and cannot launch the client.** It
+   imports `worlds.smbw_archipelago`, but since the apworld rename
+   (`339e6c7` / `2b88e9f`) the installed package is `worlds.smbwonder`.
+   The dev shim is broken on master, independent of this branch. Until it
+   is fixed, launch through the Archipelago Launcher, or use a shim that
+   imports `worlds.smbwonder.client.main`. Note `launch(*launch_args)`
+   parses **only** its explicit arguments -- it ignores `sys.argv`, so a
+   shim must forward `sys.argv[1:]` or the client silently starts
+   unconnected (`AP=None name=None`).
+
+2. **Python dependency pins.** Archipelago 0.6.7 needs
+   `websockets==13.1`; with `websockets>=14` the AP handshake dies in
+   `MultiServer.send_msgs` with
+   `AttributeError: 'ServerConnection' object has no attribute 'open'`.
+   It also needs `pkg_resources`, i.e. `setuptools<81` (setuptools 84
+   removed it). Plus AP's base requirements minus Kivy
+   (`platformdirs` in particular, or the AP handshake fails in
+   `Utils.get_unique_identifier`).
+
+3. **`Generate.py` blocks invisibly on missing requirements.** It calls
+   `input()` to confirm installing them, so with stdin closed it either
+   hangs at ~0% CPU or dies with `EOFError`. Set
+   `SKIP_REQUIREMENTS_UPDATE=1` for every AP entry point. Also: the game
+   name in the player YAML is `Super Mario Bros Wonder` -- no period.
+
+Working invocations (Windows, from the repo root):
+
+```bash
+# apworld -> vendor/Archipelago/custom_worlds/smbwonder.apworld
+python scripts/install_apworld.py
+
+# generate a scratch seed (Players/*.yaml, game: Super Mario Bros Wonder)
+cd vendor/Archipelago && SKIP_REQUIREMENTS_UPDATE=1     python Generate.py --player_files_path Players --outputpath output
+
+# server, then client (client needs vendor/Archipelago on sys.path first)
+SKIP_REQUIREMENTS_UPDATE=1 python MultiServer.py --port 38281 output/AP_<seed>.zip
+SKIP_REQUIREMENTS_UPDATE=1 python <shim>.py --nogui --connect=localhost:38281 --name=Mario
+```
+
+The client is fine headless (`--nogui`); the capture instrument is the
+log file, not the GUI. Kivy is only needed for the window.
+
+**Character gating blocks run B.** A fresh AP room starts with
+`unlocked_charas mask=0x1` (Mario only), so Yoshi is not selectable and
+the tongue-grab cannot be performed. Send a Yoshi first
+(`/send <slot> Green Yoshi`); confirm `[charagate] unlocked mask 0x000 ->
+0x101` in the Ryujinx log before starting run B.
+
+**Run C may not be constructible as written.** The client pushes
+`set_wonder_seeds_absolute` as AP-authoritative state every ~2 s, derived
+from Wonder Seed items *received*, not locations *checked*. So after run
+A the game's per-course "seed owned" state can be zeroed back out, and a
+re-entry would report `finish_seed=0` because the seed is not owned --
+which looks like the per-run answer but proves nothing. Before trusting a
+run C result, confirm the game still considers that course's seed owned
+at re-entry (the AP-granted per-world Wonder Seed counts are the lever).
+
 ## Reading the results
 
 - **B shows `finish_seed=1`** → the fallback is the fix. Confirm the AP
