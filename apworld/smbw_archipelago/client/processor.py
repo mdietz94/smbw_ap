@@ -33,6 +33,7 @@ from .protocol import (
     PlayReportMsg,
 )
 from . import char_block_table
+from .location_table import has_wonder_seed_location
 from .state import BridgeState, CurrentCourse
 
 
@@ -799,7 +800,103 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
 
     emitted.extend(_emit_ten_coin_checks(state, stage_info, fields))
     emitted.extend(_emit_course_clear_badge(state, stage_info))
+    emitted.extend(_emit_wonder_seed_fallback(state, stage_info, fields))
     return emitted
+
+
+# ---------------------------------------------------------------------------
+# Wonder-Seed course_result fallback (2026-09-09).
+#
+# The mid-course Wonder Seed check normally rides the WONDER_SEED_AWARDED
+# nerve (vtable +0x3345728, the unnamed sibling on the *player pickup*
+# path).  A player report says grabbing the seed with Yoshi's tongue
+# awards the seed in-game but never sends the AP check -- consistent with
+# the tongue-eat pickup running through a different actor path that never
+# activates that Nerve.
+#
+# This layer is the same shape as ``_emit_course_clear_badge``: a
+# redundant end-of-course emit that costs nothing when the nerve already
+# fired (``BridgeState.emit_check`` dedups by (kind, stage_key, sub_key))
+# and rescues the check when it didn't.
+#
+# Field semantics, from the live corpus (see the table in
+# client/tests/test_play_report.py):
+#
+#   fixture                        finish_seed  wonder_count  flower  new
+#   W1-1 clear, Wonder phase done       1            1          2      0
+#   W1-2 secret exit, phase done        1            1          3      1
+#   W1 palace clear                     1            5          1      1
+#   pause-quit (course_result=3)        0            0          1      0
+#   Break Time! (no Wonder phase)       0            0          1      0
+#
+# ``total_get_finish_seed_count`` reads as "the Wonder-phase ('finish')
+# seed was collected on this course entry" -- per-run, not lifetime (it
+# is 1 on a mid-game save holding 14 world seeds), and it excludes
+# goal-flag and Break Time! seeds.  That is exactly the AP WONDER_SEED
+# location's semantics.
+#
+# ⚠ UNPROVEN, and the reason this is a testable branch rather than a
+# settled fix: the corpus cannot distinguish "collected this run" from
+# "already owned" -- every capture with the field set also completed a
+# Wonder phase on that run.  If the field turns out to mean "owned", a
+# re-clear of an already-seeded course would emit a Wonder Seed check the
+# player never earned this session.  ``total_wonder_count >= 1`` (a
+# Wonder phase actually ran during this course entry) is required as a
+# cheap guard against that reading, and
+# docs/wonder-seed-yoshi-tongue-capture.md carries the capture matrix
+# that settles it.  Flip _WONDER_SEED_FALLBACK_ENABLED to False to
+# disable the emit while keeping the telemetry log line.
+_WONDER_SEED_FALLBACK_ENABLED: bool = True
+
+
+def _emit_wonder_seed_fallback(
+    state: BridgeState,
+    stage_info: dict[str, Any],
+    fields: dict[str, Any],
+) -> list[CheckEmitted]:
+    """Emit the course's WONDER_SEED check off ``course_result`` when the
+    PlayReport says the Wonder-phase seed was collected on this run.
+
+    Redundant with the WONDER_SEED_AWARDED nerve by design -- see the
+    module comment above.  Always logs the four seed-tally fields at INFO
+    so a live capture can be read straight out of the client log.
+    """
+    stage_key = stage_info["stage_key"]
+    finish_seed = int(fields.get("total_get_finish_seed_count", 0) or 0)
+    wonder_count = int(fields.get("total_wonder_count", 0) or 0)
+    flower_count = int(fields.get("get_flower_count", 0) or 0)
+    new_flower = int(fields.get("new_flower_count", 0) or 0)
+    already = state.has_emitted(CheckKind.WONDER_SEED, stage_key)
+
+    log.info(
+        "wonder-seed tally at stage_key=0x%08x: finish_seed=%d wonder=%d "
+        "flower=%d new_flower=%d (nerve already emitted: %s)",
+        stage_key & 0xFFFFFFFF, finish_seed, wonder_count, flower_count,
+        new_flower, already)
+
+    if not _WONDER_SEED_FALLBACK_ENABLED:
+        return []
+    if finish_seed < 1 or wonder_count < 1:
+        return []
+    if not has_wonder_seed_location(stage_key):
+        return []
+
+    check = CheckEmitted(
+        kind=CheckKind.WONDER_SEED,
+        stage_key=stage_key,
+        metadata={
+            "world_no": stage_info.get("world_no", 0),
+            "course_no": stage_info.get("course_no", 0),
+            "source": "course_result",
+        },
+    )
+    if state.emit_check(check):
+        log.info(
+            "course_result → wonder_seed at stage_key=0x%08x "
+            "(nerve did not fire -- fallback rescued the check)",
+            stage_key & 0xFFFFFFFF)
+        return [check]
+    return []
 
 
 def _emit_course_clear_badge(

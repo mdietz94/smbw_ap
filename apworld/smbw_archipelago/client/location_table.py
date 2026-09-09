@@ -1035,6 +1035,17 @@ _TEN_COIN_TABLE: Final[dict[tuple[int, int], str]] = {
 
 
 
+def has_wonder_seed_location(stage_key: int) -> bool:
+    """True when this stage has a ``WONDER_SEED`` row in the table.
+
+    Used by the processor's course_result Wonder-Seed fallback so it
+    only emits for stages that actually own a Wonder Seed AP location
+    (a handful of stages -- two palaces, the arena courses -- report a
+    non-zero ``total_get_finish_seed_count`` but have no such row, and
+    emitting for them would just log an unresolvable check)."""
+    return (CheckKind.WONDER_SEED, stage_key) in _TABLE
+
+
 def lookup_name(check: CheckEmitted) -> str | None:
     """Resolve a CheckEmitted to its canonical AP location name.
 

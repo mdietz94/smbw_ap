@@ -22,6 +22,12 @@
 > - [handoff-2026-05-29-ws-persistence.md](handoff-2026-05-29-ws-persistence.md)
 >   — Wonder-Seed per-course Container-D persistence (supersedes the
 >   "gate override only, not per-course storage" caveat below).
+> - [wonder-seed-yoshi-tongue-capture.md](wonder-seed-yoshi-tongue-capture.md)
+>   — **OPEN** (2026-09-09): a Wonder Seed swallowed by Yoshi's tongue never
+>   activates the `WONDER_SEED_AWARDED` nerve, so the AP check is lost. A
+>   `course_result` fallback (`total_get_finish_seed_count`) is implemented on
+>   `claude/wonder-seed-yoshi-tongue-check-ch4gvn`; the doc carries the live
+>   capture matrix that has to settle it.
 > - [../CLAUDE.md](../CLAUDE.md) + the `smbw-*` skills for build / RE / grant
 >   procedure.
 >

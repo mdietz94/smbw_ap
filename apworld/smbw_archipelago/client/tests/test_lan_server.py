@@ -351,8 +351,13 @@ class TestPlayReportDispatch(_AsyncTestCase):
             # test_processor.py; here we just check that the wire path
             # delivers both kinds to the handler.
             kinds = {c.kind for c in self.h.emitted}
+            # WONDER_SEED rides along because the fixture's
+            # total_get_finish_seed_count is 1 (the course_result
+            # Wonder-Seed fallback).
             self.assertEqual(
-                kinds, {CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG})
+                kinds,
+                {CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG,
+                 CheckKind.WONDER_SEED})
         finally:
             await client.close()
 

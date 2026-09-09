@@ -139,15 +139,19 @@ class TestCourseResultClassification(unittest.TestCase):
 
     def test_w1_1_top_of_flag(self):
         """Top of Flag is a strict superset of Normal Exit, so both
-        check kinds fire on the same course_result."""
+        check kinds fire on the same course_result.  The fixture's
+        total_get_finish_seed_count=1 also trails a WONDER_SEED from the
+        course_result fallback (normally a dedup no-op behind the
+        WONDER_SEED_AWARDED nerve)."""
         state = BridgeState()
         emitted = process_event(
             state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
-        self.assertEqual(len(emitted), 2)
+        self.assertEqual(len(emitted), 3)
         self.assertEqual(
             [c.kind for c in emitted],
-            [CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG])
-        for c in emitted:
+            [CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG,
+             CheckKind.WONDER_SEED])
+        for c in emitted[:2]:
             self.assertEqual(c.stage_key, W1_1_STAGE_KEY)
             self.assertEqual(c.metadata["goal_id"], 0)
             self.assertTrue(c.metadata["touch_goal_top"])
@@ -162,11 +166,12 @@ class TestCourseResultClassification(unittest.TestCase):
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=W1_2_COURSE_RESULT_SECRET))
-        self.assertEqual(len(emitted), 2)
+        self.assertEqual(len(emitted), 3)
         self.assertEqual(
             [e.kind for e in emitted],
-            [CheckKind.SECRET_EXIT, CheckKind.TOP_OF_FLAG])
-        for c in emitted:
+            [CheckKind.SECRET_EXIT, CheckKind.TOP_OF_FLAG,
+             CheckKind.WONDER_SEED])
+        for c in emitted[:2]:
             self.assertEqual(c.stage_key, W1_2_STAGE_KEY)
             self.assertEqual(c.metadata["goal_id"], 1)
             self.assertTrue(c.metadata["touch_goal_top"])
@@ -177,9 +182,10 @@ class TestCourseResultClassification(unittest.TestCase):
             state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
         second = process_event(
             state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
-        # Top-of-flag clear emits both NORMAL_EXIT and TOP_OF_FLAG; a
-        # replay of the same payload must dedup both.
-        self.assertEqual(len(first), 2)
+        # Top-of-flag clear emits NORMAL_EXIT + TOP_OF_FLAG + the
+        # course_result WONDER_SEED fallback; a replay of the same
+        # payload must dedup all three.
+        self.assertEqual(len(first), 3)
         self.assertEqual(second, [])
 
     def test_palace_course_result_emits_palace_clear_not_normal_exit(self):
@@ -197,9 +203,13 @@ class TestCourseResultClassification(unittest.TestCase):
         state = BridgeState()
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=PALACE_COURSE_RESULT))
-        self.assertEqual(len(emitted), 1)
+        # PALACE_CLEAR plus the palace's own Wonder Seed, which the
+        # course_result fallback emits because the fixture reports
+        # total_get_finish_seed_count=1 (palaces run a Wonder phase).
+        self.assertEqual(len(emitted), 2)
         self.assertEqual(emitted[0].kind, CheckKind.PALACE_CLEAR)
         self.assertEqual(emitted[0].stage_key, PIPEROCK_PALACE_STAGE_KEY)
+        self.assertEqual(emitted[1].kind, CheckKind.WONDER_SEED)
         self.assertFalse(state.has_emitted(
             CheckKind.NORMAL_EXIT, PIPEROCK_PALACE_STAGE_KEY))
 
@@ -689,7 +699,9 @@ class TestRealisticPlaythroughFlows(unittest.TestCase):
 
         self.assertTrue(state.has_emitted(
             CheckKind.PALACE_CLEAR, PIPEROCK_PALACE_STAGE_KEY))
-        self.assertEqual(state.count_emitted(), 1)
+        # 2 = the palace clear + the palace's Wonder Seed (course_result
+        # fallback); the loss attempt still contributes nothing.
+        self.assertEqual(state.count_emitted(), 2)
 
     def test_palace_clear_without_koopajr_still_fires_royal_seed(self):
         """Issue 4 (Royal-Seed check loss, 2026-06-02): when the world's
@@ -1197,7 +1209,8 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
             state, PlayReportMsg(room="course_result", payload=COURSE_RESULT))
         self.assertEqual(
             [c.kind for c in emitted],
-            [CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG])
+            [CheckKind.NORMAL_EXIT, CheckKind.TOP_OF_FLAG,
+             CheckKind.WONDER_SEED])
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
 
     def test_w1_2_secret_exit_emits_no_ten_coin(self):
@@ -1205,10 +1218,12 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=W1_2_COURSE_RESULT_SECRET))
         # The fixture has touch_goal_top_result=True so the secret-exit
-        # path emits both SECRET_EXIT and TOP_OF_FLAG.  No TEN_COIN.
+        # path emits both SECRET_EXIT and TOP_OF_FLAG, plus the
+        # course_result WONDER_SEED fallback.  No TEN_COIN.
         self.assertEqual(
             [c.kind for c in emitted],
-            [CheckKind.SECRET_EXIT, CheckKind.TOP_OF_FLAG])
+            [CheckKind.SECRET_EXIT, CheckKind.TOP_OF_FLAG,
+             CheckKind.WONDER_SEED])
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
 
     def test_palace_companion_emits_no_ten_coin(self):
@@ -1222,7 +1237,8 @@ class TestTenCoinIntegrationViaFixtures(unittest.TestCase):
         emitted = process_event(state, PlayReportMsg(
             room="course_result", payload=PALACE_COURSE_RESULT))
         self.assertEqual(
-            [c.kind for c in emitted], [CheckKind.PALACE_CLEAR])
+            [c.kind for c in emitted],
+            [CheckKind.PALACE_CLEAR, CheckKind.WONDER_SEED])
         self.assertEqual(state.count_emitted(CheckKind.TEN_COIN), 0)
 
     def test_palace_with_new_ten_coins_emits_them(self):
@@ -1579,6 +1595,99 @@ class TestCourseClearBadge(unittest.TestCase):
         emitted = process_event(state, BadgeAcquiredMsg(internal_id=4))
         self.assertEqual(emitted, [])
         self.assertEqual(state.count_emitted(CheckKind.BADGE_ACQUIRED), 1)
+
+
+class TestWonderSeedCourseResultFallback(unittest.TestCase):
+    """The 2026-09-09 Yoshi-tongue fix: a Wonder Seed swallowed by
+    Yoshi's tongue awards the seed in-game but never activates the
+    WONDER_SEED_AWARDED nerve, so the AP check was lost.  course_result's
+    ``total_get_finish_seed_count`` is the end-of-course backstop."""
+
+    @staticmethod
+    def _fields(stage_key: int, *, finish_seed: int = 1,
+                wonder_count: int = 1, result_code: int = 1,
+                goal_id: int = 0, top: bool = False) -> dict:
+        return {
+            "stage_info": {
+                "stage_key": stage_key, "world_no": 1, "course_no": 2,
+            },
+            "course_result": result_code,
+            "goal_id": goal_id,
+            "touch_goal_top_result": top,
+            "total_get_finish_seed_count": finish_seed,
+            "total_wonder_count": wonder_count,
+            "get_flower_count": 2,
+            "new_flower_count": 0,
+        }
+
+    def test_seed_collected_emits_wonder_seed_without_the_nerve(self):
+        """The tongue-grab case: no WONDER_SEED_AWARDED nerve ever
+        arrives, but the course_result says the Wonder-phase seed was
+        collected, so the check still goes out."""
+        state = BridgeState()
+        emitted = _handle_course_result(state, self._fields(W1_1_STAGE_KEY))
+        seeds = [c for c in emitted if c.kind == CheckKind.WONDER_SEED]
+        self.assertEqual(len(seeds), 1)
+        self.assertEqual(seeds[0].stage_key, W1_1_STAGE_KEY)
+        self.assertEqual(seeds[0].metadata["source"], "course_result")
+
+    def test_nerve_then_course_result_dedups_to_one_check(self):
+        """The normal (Mario-grabbed) path must not double-fire: the
+        nerve emits first, the fallback dedups against it."""
+        state = BridgeState()
+        state.set_current_course(CurrentCourse(
+            stage_key=W1_1_STAGE_KEY, world_no=1, course_no=2))
+        first = process_event(
+            state, NerveFireMsg(kind=NerveKind.WONDER_SEED_AWARDED, seq=1))
+        self.assertEqual([c.kind for c in first], [CheckKind.WONDER_SEED])
+
+        emitted = _handle_course_result(state, self._fields(W1_1_STAGE_KEY))
+        self.assertEqual(
+            [c for c in emitted if c.kind == CheckKind.WONDER_SEED], [])
+        self.assertEqual(state.count_emitted(CheckKind.WONDER_SEED), 1)
+
+    def test_no_seed_collected_emits_nothing(self):
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._fields(W1_1_STAGE_KEY, finish_seed=0))
+        self.assertEqual(
+            [c for c in emitted if c.kind == CheckKind.WONDER_SEED], [])
+
+    def test_seed_tally_without_a_wonder_phase_is_suppressed(self):
+        """Guard against the unproven "already owned" reading of
+        ``total_get_finish_seed_count``: no Wonder phase ran on this
+        course entry, so a set tally can't mean "collected just now"."""
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._fields(W1_1_STAGE_KEY, wonder_count=0))
+        self.assertEqual(
+            [c for c in emitted if c.kind == CheckKind.WONDER_SEED], [])
+
+    def test_pause_quit_emits_nothing_even_with_a_seed_tally(self):
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._fields(W1_1_STAGE_KEY, result_code=3))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(CheckKind.WONDER_SEED), 0)
+
+    def test_stage_without_a_wonder_seed_location_emits_nothing(self):
+        """A stage with no WONDER_SEED row in the location table (the
+        two palaces without one, arena courses) must not emit a check
+        that can never resolve to an AP location name."""
+        state = BridgeState()
+        emitted = _handle_course_result(state, self._fields(0xDEADBEEF))
+        self.assertEqual(
+            [c for c in emitted if c.kind == CheckKind.WONDER_SEED], [])
+
+    def test_break_time_still_emits_exactly_one_wonder_seed(self):
+        """Break Time! routes its seed off the exit event already (and
+        reports total_get_finish_seed_count=0); the fallback must not
+        change that path or double it."""
+        state = BridgeState()
+        emitted = process_event(state, PlayReportMsg(
+            room="course_result", payload=BREAK_TIME_COURSE_RESULT))
+        self.assertEqual([c.kind for c in emitted], [CheckKind.WONDER_SEED])
+        self.assertEqual(state.count_emitted(CheckKind.WONDER_SEED), 1)
 
 
 if __name__ == "__main__":
