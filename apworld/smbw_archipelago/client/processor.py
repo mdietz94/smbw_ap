@@ -297,8 +297,8 @@ _BOWSER_CASTLE_STAGE_KEYS: frozenset[int] = frozenset({
 # starts (the game drops the player straight into it, before any world map),
 # and it is also where W1 fast travel lands -- gating it would kill the player
 # on the very first course of the seed whenever World 1 is active but isn't
-# the start world.  Clearing it only ever yields checks early (a harmless
-# sequence break); the rest of World 1 stays gated.
+# the start world.  The rest of World 1 stays gated.  Logic mirrors this:
+# open_world.ungate_opening_course keeps 1-1's checks in sphere 1.
 _WORLD_UNLOCK_EXEMPT_STAGE_KEYS: frozenset[int] = frozenset({
     0xAF11F7FC,  # W1: Welcome to the Flower Kingdom! (1-1, the opening course)
 })

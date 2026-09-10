@@ -122,6 +122,13 @@ def open_unlock_item(n: int) -> str:
     return f"W{n} Unlock"
 
 
+# W1-1 is the forced opening course, so open-world keeps its checks in front of
+# the "W1 Unlock" gate (open_world.ungate_opening_course moves them into
+# Manual).  Mirrors open_world.OPENING_COURSE_{WORLD,PREFIX}.
+OPEN_OPENING_COURSE_WORLD = 1
+OPEN_OPENING_COURSE_PREFIX = "W1: Welcome to the Flower Kingdom! - "
+
+
 def world_start_num(region: str):
     """World number n for a `W<n> Start` region, else None."""
     m = re.fullmatch(r"W(\d) Start", region)
@@ -436,6 +443,14 @@ def main():
         open_body = ("ACCESS_NONE"
                      if region == OPEN_BOWSER_REGION and loc["name"] != OPEN_GOAL_LOCATION
                      else None)
+        # W1-1's checks skip the World-1 root (and so its Unlock gate): they
+        # only need World 1 to be part of the seed, plus their own requires.
+        if loc["name"].startswith(OPEN_OPENING_COURSE_PREFIX):
+            active = f"smbw_world_active({OPEN_OPENING_COURSE_WORLD})"
+            # Wrapped in ALL() like the world roots: smbw_world_active returns
+            # a bool, and a location rule must yield an access level.
+            open_body = (f"ALL({active})" if lexpr == "true"
+                         else f"ALL({active}, {lexpr})")
         loc_rules[apid] = (body, open_body)
 
     write_lua(tracker, regions, order, region_expr, loc_rules, name2code)

@@ -174,6 +174,40 @@ def make_world_unlock_gate(player: int, n: int):
     return rule
 
 
+# W1-1 ("Welcome to the Flower Kingdom!") is the forced opening course: every
+# save starts inside it, before any world map, so the player always plays it
+# whether or not World 1 is unlocked.  The client never world-gates it
+# (processor._WORLD_UNLOCK_EXEMPT_STAGE_KEYS), and logic mirrors that by
+# keeping its checks in sphere 1.  Keep in sync with
+# scripts/generate_tracker_logic.py's OPEN_OPENING_COURSE_PREFIX.
+OPENING_COURSE_WORLD = 1
+OPENING_COURSE_PREFIX = "W1: Welcome to the Flower Kingdom! - "
+
+
+def ungate_opening_course(multiworld, player) -> int:
+    """Move W1-1's locations out of ``W1 Start`` into ``Manual`` so they sit
+    in front of the ``W1 Unlock`` entrance gate instead of behind it.
+
+    Only the *reachability* changes: ``set_rules`` still builds each moved
+    location's rule from its data-table entry (its own ``requires`` -- e.g.
+    the Character Blocks' character -- AND its data-table region ``W1
+    Start``, whose gate open-world neutralizes), and ``Manual`` is in
+    ``regionMap`` so the locations are still picked up there.  Location
+    registers are cache-backed, so ``remove``/``append`` keep the location
+    cache consistent.  Returns how many locations moved."""
+    w1_start = multiworld.get_region(f"W{OPENING_COURSE_WORLD} Start", player)
+    manual = multiworld.get_region("Manual", player)
+    moved = 0
+    for location in list(w1_start.locations):
+        if not location.name.startswith(OPENING_COURSE_PREFIX):
+            continue
+        w1_start.locations.remove(location)
+        location.parent_region = manual
+        manual.locations.append(location)
+        moved += 1
+    return moved
+
+
 def precollect_start_world_unlock(world, multiworld, player, item_pool, start_world) -> bool:
     """Move the start world's Unlock item from ``item_pool`` into the
     player's starting inventory (mutates ``item_pool`` in place).

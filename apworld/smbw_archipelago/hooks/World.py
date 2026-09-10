@@ -35,6 +35,15 @@ def after_create_regions(world: World, multiworld: MultiWorld, player: int):
         from ..open_world import restructure_regions, strip_inactive_locations
         restructure_regions(world, multiworld, player, world.active_worlds)
         strip_inactive_locations(world, multiworld, player, world.active_worlds)
+        # World-unlock items: W1-1 is the forced opening course (every save
+        # starts in it, and the client never world-gates it), so keep its
+        # checks in logic from the start even while World 1 is locked.  Only
+        # when World 1 is part of the seed -- otherwise its checks were just
+        # stripped with the rest of the world.
+        from ..open_world import OPENING_COURSE_WORLD, ungate_opening_course
+        if (getattr(world, "world_unlock_items", False)
+                and OPENING_COURSE_WORLD in world.active_worlds):
+            ungate_opening_course(multiworld, player)
 
     # Use this hook to remove locations from the world
     locationNamesToRemove = [] # List of location names
