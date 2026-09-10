@@ -19,6 +19,7 @@ from ..processor import (
     _FINAL_BOWSER_STAGE_KEY,
     _HUB_HOUSE_STAGE_KEYS,
     _STAGE_TO_BADGE_INTERNAL_ID,
+    _WORLD_UNLOCK_EXEMPT_STAGE_KEYS,
     _emit_ten_coin_checks,
     _handle_course_in,
     _handle_course_result,
@@ -1440,6 +1441,29 @@ class TestLevelEntryGate(unittest.TestCase):
                 emitted = _handle_course_in(
                     state, self._course_in_fields(0x0BADF00D, world_no=world_no))
                 self.assertEqual(emitted, [])
+
+    def test_opening_course_1_1_is_never_world_gated(self):
+        """W1-1 is where a fresh save starts (and where W1 fast travel
+        lands), so it must stay playable even with World 1 locked."""
+        state = BridgeState()
+        state.set_locked_worlds({1})
+        # 0xAF11F7FC = W1: Welcome to the Flower Kingdom! (1-1).
+        self.assertIn(0xAF11F7FC, _WORLD_UNLOCK_EXEMPT_STAGE_KEYS)
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0xAF11F7FC, world_no=1, course_no=1))
+        self.assertEqual(emitted, [])
+
+    def test_rest_of_locked_world_1_still_gated(self):
+        """The 1-1 exemption is per-course: W1-2 in a locked World 1 still
+        raises the world gate."""
+        state = BridgeState()
+        state.set_locked_worlds({1})
+        # 0x0DD67B0B = W1: Piranha Plants on Parade (1-2).
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0x0DD67B0B, world_no=1, course_no=2))
+        self.assertEqual(len(emitted), 1)
+        self.assertEqual(emitted[0].gate_kind, GateKind.WORLD_UNLOCK)
+        self.assertEqual(emitted[0].requirement, 1)
 
     def test_no_locked_worlds_is_inert(self):
         """Default BridgeState (feature off) changes nothing."""

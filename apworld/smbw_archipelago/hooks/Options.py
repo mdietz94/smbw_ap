@@ -37,7 +37,8 @@ class WorldUnlockItems(DefaultOnToggle):
     Entering a course in an active-but-still-locked world bounces you out
     via the same death-gate that guards Bowser's Castle.  Worlds that are
     not part of the seed at all, Petal Isles and the Special World are
-    never gated.  Ignored unless ``open_world`` is on."""
+    never gated, and neither is World 1-1 (the game's opening course, where
+    every save starts).  Ignored unless ``open_world`` is on."""
     display_name = "World Unlock Items"
 
 
