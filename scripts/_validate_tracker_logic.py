@@ -25,6 +25,12 @@ name2code = {it["name"]: im[STARTING_INDEX + i] for i, it in enumerate(items) if
 code2name = {c: n for n, c in name2code.items()}
 name2count = {it["name"]: int(it.get("count", 1)) for it in items}
 ROYAL = ["W1 Royal Seed", "W2 Royal Seed", "W3 Royal Seed", "W4 Royal Seed", "W5 Royal Seed", "W6 Royal Seed"]
+# category -> item names, for |@Cat:n| gates (e.g. |@Yoshi:1|): Rules.py sums
+# the received counts of every item in the category.
+cat2names = {}
+for it in items:
+    for c in it.get("category", []):
+        cat2names.setdefault(c, []).append(it["name"])
 # Buttons / Wonder Effects / Wonder Flower are granted at start: the tracker
 # never gates on them, so the reference model must treat them as always held.
 ALWAYS_AVAILABLE = {it["name"] for it in items
@@ -66,8 +72,10 @@ def pyeval(req, inv_names):
         if cat:
             if nm == "Royal Seed":
                 total = sum(inv_names.get(r, 0) for r in ROYAL)
+            elif nm in cat2names:
+                total = sum(inv_names.get(n, 0) for n in cat2names[nm])
             else:
-                raise ValueError(nm)
+                raise ValueError(f"unknown category {nm!r}")
             return "1" if total >= cnt else "0"
         return "1" if inv_names.get(nm, 0) >= cnt else "0"
     s = re.sub(r"\|[^|]+\|", item_sub, s)
@@ -125,8 +133,13 @@ def is_hub(r):
 def is_world_start(r):
     return bool(re.fullmatch(r"W\d Start", r))
 
-def open_full(region, inv_open, active, memo):
-    """Intra-world reachability: world roots are reachable iff active; only
+# W1-1 is the forced opening course: open_world.ungate_opening_course keeps its
+# checks in front of the World-1 unlock gate.
+OPENING_PREFIX = "W1: Welcome to the Flower Kingdom! - "
+
+def open_full(region, inv_open, active, memo, unlock=False):
+    """Intra-world reachability: world roots are reachable iff active (and,
+    with world-unlock items, iff that world's "W<n> Unlock" is held); only
     same-world parent edges survive (open_world.py severs the rest)."""
     if region in memo:
         return memo[region]
@@ -135,15 +148,17 @@ def open_full(region, inv_open, active, memo):
         memo[region] = False
         return False
     if is_world_start(region):
-        memo[region] = world_of_region(region) in active
+        w = world_of_region(region)
+        memo[region] = w in active and (
+            not unlock or inv_open.get(f"W{w} Unlock", 0) > 0)
         return memo[region]
     w = world_of_region(region)
     intra = [p for p in parents[region] if world_of_region(p) == w]
-    res = any(open_full(p, inv_open, active, memo) for p in intra) if intra else False
+    res = any(open_full(p, inv_open, active, memo, unlock) for p in intra) if intra else False
     memo[region] = res
     return res
 
-def py_open_access(loc, inv, active, P):
+def py_open_access(loc, inv, active, P, unlock=False):
     region = loc.get("region")
     name = loc["name"]
     inv_open = dict(inv)
@@ -161,7 +176,9 @@ def py_open_access(loc, inv, active, P):
     w = world_of_region(region)
     if w is not None and w not in active:
         return False
-    if region in regions and not open_full(region, inv_open, active, {}):
+    if name.startswith(OPENING_PREFIX):
+        return pyeval(loc.get("requires", "") or "", inv_open)
+    if region in regions and not open_full(region, inv_open, active, {}, unlock):
         return False
     return pyeval(loc.get("requires", "") or "", inv_open)
 
@@ -255,14 +272,19 @@ def main():
         # standard mode
         run_scenario(inv_codes, None, lambda loc: py_loc_access(loc, inv_names))
         checks += len(apids)
-        # open-world mode: random active set + palace threshold
+        # open-world mode: random active set + palace threshold, world-unlock
+        # items on or off
         k = random.randint(1, 6)
         active = sorted(random.sample(range(1, 7), k))
         P = random.randint(1, k)
+        unlock = random.random() < 0.5
         sd = lua.table_from({"open_world": 1,
                              "open_world_active": lua.table_from(active),
-                             "palaces_required": P})
-        run_scenario(inv_codes, sd, lambda loc, a=active, p=P: py_open_access(loc, inv_names, a, p))
+                             "palaces_required": P,
+                             "open_world_unlock_items": unlock})
+        run_scenario(inv_codes, sd,
+                     lambda loc, a=active, p=P, u=unlock:
+                         py_open_access(loc, inv_names, a, p, u))
         checks += len(apids)
     print(f"checked {checks} evals across standard + open-world; mismatches={mism}")
 

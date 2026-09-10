@@ -39,7 +39,12 @@ item (`open_world.make_world_unlock_gate`); exactly one active world's Unlock is
 precollected (`world.start_world`), so sphere 1 is a single world and fill picks
 the random order the rest open in. Client-side, entering a course in an active
 but still-locked world arms the `WORLD_UNLOCK` entry death-gate — worlds outside
-the seed, Petal Isles and the Special World are never gated.
+the seed, Petal Isles and the Special World are never gated, nor is W1-1 (the
+forced opening course; `processor._WORLD_UNLOCK_EXEMPT_STAGE_KEYS`). Logic
+matches: when World 1 is active, `open_world.ungate_opening_course` moves 1-1's
+locations from `W1 Start` into `Manual`, in front of the `W1 Unlock` gate, so
+they are sphere 1 (each keeps its own `requires`, e.g. a Character Block's
+character).
 
 ## The progression model: Wonder-Seed tolls
 

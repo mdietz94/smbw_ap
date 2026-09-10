@@ -292,6 +292,17 @@ _BOWSER_CASTLE_STAGE_KEYS: frozenset[int] = frozenset({
     _FINAL_BOWSER_STAGE_KEY,  # BC: Bowser's Rage Stage (final boss)
 })
 
+# Open-world world-unlock gate exemptions: courses the player must be able to
+# play even while their world is still locked.  W1-1 is where a fresh save
+# starts (the game drops the player straight into it, before any world map),
+# and it is also where W1 fast travel lands -- gating it would kill the player
+# on the very first course of the seed whenever World 1 is active but isn't
+# the start world.  The rest of World 1 stays gated.  Logic mirrors this:
+# open_world.ungate_opening_course keeps 1-1's checks in sphere 1.
+_WORLD_UNLOCK_EXEMPT_STAGE_KEYS: frozenset[int] = frozenset({
+    0xAF11F7FC,  # W1: Welcome to the Flower Kingdom! (1-1, the opening course)
+})
+
 
 # ---------------------------------------------------------------------------
 # Top-level dispatch.
@@ -626,8 +637,11 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[Proces
     # world, Petal Isles (world_no 2), the Castle (8) or the Special world
     # (9).  Checked before the badge gate: a player in a world they shouldn't
     # be in yet gets bounced for the world, whatever else the course wants.
+    # _WORLD_UNLOCK_EXEMPT_STAGE_KEYS (W1-1, the forced opening course) is
+    # never world-gated.
     ap_world = pr_world_no_to_ap_world(world_no)
-    if ap_world is not None and state.is_world_locked(ap_world):
+    if (ap_world is not None and state.is_world_locked(ap_world)
+            and sk not in _WORLD_UNLOCK_EXEMPT_STAGE_KEYS):
         return [GateEntered(
             stage_key=sk,
             gate_kind=GateKind.WORLD_UNLOCK,

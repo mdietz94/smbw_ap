@@ -19,6 +19,11 @@ PopTracker access rules and writes them into a checkout of the tracker:
     "W<n> Unlock" item when slot_data says so (`smbw_world_unlocked`), Bowser
     gates on the active-world palace count (`smbw_open_palaces`), and the
     Petal-Isles / Special-World hub is stripped.
+  * `scripts/autotracking/item_mapping.lua` -- regenerated from items.json so
+    each AP item id maps to that item's tracker code (see `tracker_item_code`).
+    The pack's hand-made table was built against an older items.json that
+    still had the Button items, which shifted every id from +7 onward onto the
+    wrong code (wrong icons; new items landing on unrelated codes).
   * `items/logic_item.json` -- hidden toggle items for codes the apworld gates on
     that the tracker maps in autotracking/item_mapping.lua but never defined item
     objects for (so `HAS()` would read 0 forever).  Buttons / Wonder Effects /
@@ -33,7 +38,8 @@ The bridge between the two repos is the AP id:
   location id = starting_index + 500 + (index in locations.json)
   item id     = starting_index + (index in items.json)
 which is exactly how the tracker's autotracking/{location,item}_mapping.lua keys
-its tables, so paths/codes line up 1:1.
+its tables.  location_mapping.lua is read as-is (it is aligned: every mapped id
+names the right course/section); item_mapping.lua is rewritten from items.json.
 
 Usage:
     py -3 scripts/generate_tracker_logic.py <path-to-SMBW_Tracker-checkout> \
@@ -72,13 +78,33 @@ def load_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def parse_item_mapping(tracker: Path) -> dict[int, str]:
-    """ap item id -> first tracker code."""
-    out: dict[int, str] = {}
-    text = (tracker / "scripts" / "autotracking" / "item_mapping.lua").read_text(encoding="utf-8")
-    for m in re.finditer(r'\[(\d+)\]\s*=\s*\{\{"([^"]+)"', text):
-        out[int(m.group(1))] = m.group(2)
-    return out
+def defined_item_codes(tracker: Path) -> set[str]:
+    """Every code the pack's own items/*.json declares (our generated
+    logic_item.json excluded)."""
+    defined = set()
+    for f in (tracker / "items").glob("*.json"):
+        if f.name == "logic_item.json":
+            continue
+        for it in json5.loads(f.read_text(encoding="utf-8")):
+            for part in re.split(r"[|,]", str(it.get("codes", ""))):
+                if part.strip():
+                    defined.add(part.strip())
+    return defined
+
+
+def tracker_item_code(name: str, defined: set[str] = frozenset()) -> str:
+    """The tracker code for an apworld item name: lowercased with whitespace
+    removed ("Add ! Blocks Badge" -> "add!blocksbadge", "W1 Wonder Seed" ->
+    "w1wonderseed"), which reproduces the codes the pack's items/*.json
+    declares for the apworld's items.  When the pack declares the same code
+    in different casing ("BubbleFlower", "DrillMushroom") its spelling wins,
+    so autotracking lights the pack's own item rather than a logic-only
+    stand-in."""
+    code = re.sub(r"\s+", "", name.lower())
+    for d in defined:
+        if d.lower() == code:
+            return d
+    return code
 
 
 def parse_location_mapping(tracker: Path) -> dict[int, str]:
@@ -120,6 +146,13 @@ OPEN_FREE_SEEDS = {"Petal Isles Wonder Seed", "Special World Wonder Seed"}
 # -- an unmapped code would read 0 forever and wall the world off permanently.
 def open_unlock_item(n: int) -> str:
     return f"W{n} Unlock"
+
+
+# W1-1 is the forced opening course, so open-world keeps its checks in front of
+# the "W1 Unlock" gate (open_world.ungate_opening_course moves them into
+# Manual).  Mirrors open_world.OPENING_COURSE_{WORLD,PREFIX}.
+OPEN_OPENING_COURSE_WORLD = 1
+OPEN_OPENING_COURSE_PREFIX = "W1: Welcome to the Flower Kingdom! - "
 
 
 def world_start_num(region: str):
@@ -345,21 +378,19 @@ def main():
     locations = load_json(data / "locations.json")
     regions = load_json(data / "regions.json")
 
-    item_map = parse_item_mapping(tracker)
     loc_map = parse_location_mapping(tracker)
 
-    # sanity: our computed ids line up with the tracker's mapping tables
-    assert item_map.get(STARTING_INDEX) is not None, "item id base mismatch"
+    # sanity: our computed location ids line up with the tracker's mapping table
     assert LOC_BASE in loc_map, "loc id base mismatch (starting_index drift?)"
 
-    name2code = {it["name"]: item_map[STARTING_INDEX + i]
-                 for i, it in enumerate(items) if STARTING_INDEX + i in item_map}
+    defined = defined_item_codes(tracker)
+    name2code = {it["name"]: tracker_item_code(it["name"], defined) for it in items}
+    assert len(set(name2code.values())) == len(name2code), "tracker code collision"
     name2count = {it["name"]: int(it.get("count", 1)) for it in items}
-    code2type: dict[str, str] = {}
-    for i, it in enumerate(items):
-        apid = STARTING_INDEX + i
-        if apid in item_map:
-            code2type[item_map[apid]] = "consumable" if name2count[it["name"]] > 1 else "toggle"
+    code2type: dict[str, str] = {
+        name2code[n]: ("consumable" if c > 1 else "toggle")
+        for n, c in name2count.items()}
+    write_item_mapping(tracker, items, name2code, code2type)
 
     always_available = {it["name"] for it in items
                         if set(it.get("category", [])) & ALWAYS_AVAILABLE_CATEGORIES}
@@ -436,6 +467,14 @@ def main():
         open_body = ("ACCESS_NONE"
                      if region == OPEN_BOWSER_REGION and loc["name"] != OPEN_GOAL_LOCATION
                      else None)
+        # W1-1's checks skip the World-1 root (and so its Unlock gate): they
+        # only need World 1 to be part of the seed, plus their own requires.
+        if loc["name"].startswith(OPEN_OPENING_COURSE_PREFIX):
+            active = f"smbw_world_active({OPEN_OPENING_COURSE_WORLD})"
+            # Wrapped in ALL() like the world roots: smbw_world_active returns
+            # a bool, and a location rule must yield an access level.
+            open_body = (f"ALL({active})" if lexpr == "true"
+                         else f"ALL({active}, {lexpr})")
         loc_rules[apid] = (body, open_body)
 
     write_lua(tracker, regions, order, region_expr, loc_rules, name2code)
@@ -570,18 +609,27 @@ def write_lua(tracker, regions, order, region_expr, loc_rules, name2code=None):
     print(f"wrote {out.relative_to(tracker)} ({len(L)} lines)")
 
 
+def write_item_mapping(tracker, items, name2code, code2type):
+    """Rewrite autotracking/item_mapping.lua: AP item id -> {{code, type}},
+    one line per items.json entry, in id order (same shape as the pack's
+    hand-made table)."""
+    L = ["-- AUTO-GENERATED by SMBW Archipelago scripts/generate_tracker_logic.py",
+         "-- from apworld data/items.json -- do not edit by hand.",
+         "ITEM_MAPPING = {"]
+    for i, it in enumerate(items):
+        code = name2code[it["name"]]
+        L.append(f'\t[{STARTING_INDEX + i}] = {{{{"{code}", "{code2type[code]}"}}}},')
+    L.append("}")
+    out = tracker / "scripts" / "autotracking" / "item_mapping.lua"
+    out.write_text("\n".join(L) + "\n", encoding="utf-8")
+    print(f"wrote {out.relative_to(tracker)} ({len(items)} items)")
+
+
 def write_logic_items(tracker, used_codes, code2type):
     """Define toggle/consumable item objects for codes the rules read but the
     tracker never declared (buttons, Wonder Effects, Wonder Flower, lowercase
     power-up aliases).  Without these, ProviderCountForCode() is always 0."""
-    defined = set()
-    for f in (tracker / "items").glob("*.json"):
-        if f.name == "logic_item.json":
-            continue
-        for it in json5.loads(f.read_text(encoding="utf-8")):
-            for part in re.split(r"[|,]", str(it.get("codes", ""))):
-                if part.strip():
-                    defined.add(part.strip())
+    defined = defined_item_codes(tracker)
     missing = sorted(c for c in used_codes if c not in defined)
     objs = []
     for code in missing:

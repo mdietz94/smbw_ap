@@ -17,6 +17,7 @@ from Fill import distribute_items_restrictive
 from .. import SMBWonderWorld
 from ..open_world import (
     BOWSER_VICTORY_LOCATION,
+    OPENING_COURSE_PREFIX,
     world_of_region,
     world_unlock_item,
 )
@@ -280,6 +281,91 @@ class TestWorldUnlockItems(unittest.TestCase):
         self.assertEqual(
             world_ut.fill_slot_data()["open_world_start_world"],
             slot_data["open_world_start_world"])
+
+
+class TestOpeningCourseAlwaysInLogic(unittest.TestCase):
+    """W1-1 is the forced opening course (every save starts in it, and the
+    client never world-gates it), so with world-unlock items its checks stay
+    in sphere 1 even while World 1 is locked."""
+
+    @staticmethod
+    def _gen_w1_locked(extra=None):
+        """First seed where World 1 is active but NOT the start world."""
+        for seed in range(1, 50):
+            multiworld, world = _gen(
+                {"open_world": 1, "open_world_count": 6, **(extra or {})},
+                seed=seed)
+            if world.start_world != 1:
+                return multiworld, world
+        raise AssertionError("no seed with World 1 locked at start")
+
+    @staticmethod
+    def _opening_locations(multiworld):
+        return [loc for loc in multiworld.get_locations(1)
+                if loc.name.startswith(OPENING_COURSE_PREFIX)]
+
+    def test_opening_course_in_sphere_one_while_w1_locked(self):
+        multiworld, _ = self._gen_w1_locked()
+        state = CollectionState(multiworld)
+        opening = self._opening_locations(multiworld)
+        self.assertTrue(opening)
+        for loc in opening:
+            self.assertTrue(loc.can_reach(state), f"{loc.name} should be sphere 1")
+            self.assertEqual(loc.parent_region.name, "Manual")
+
+    def test_rest_of_w1_start_still_gated(self):
+        multiworld, _ = self._gen_w1_locked()
+        state = CollectionState(multiworld)
+        w1_start = multiworld.get_region("W1 Start", 1)
+        others = list(w1_start.locations)
+        self.assertTrue(others, "W1 Start should keep its other courses")
+        for loc in others:
+            self.assertFalse(loc.name.startswith(OPENING_COURSE_PREFIX))
+            self.assertFalse(loc.can_reach(state),
+                             f"{loc.name} must stay behind W1 Unlock")
+        state.collect(multiworld.create_item("W1 Unlock", 1), prevent_sweep=True)
+        self.assertTrue(state.can_reach_region("W1 Start", 1))
+
+    def test_moved_location_keeps_its_own_requirement(self):
+        # With character-block sanity the 1-1 Yoshi Block requires Green
+        # Yoshi (a "Character (Easy)" pool item, never the precollected
+        # starter).  Moving it in front of the gate must not drop that.
+        multiworld, _ = self._gen_w1_locked({"character_block_sanity": 1})
+        yoshi = multiworld.get_location(
+            OPENING_COURSE_PREFIX + "Yoshi Block", 1)
+        self.assertEqual(yoshi.parent_region.name, "Manual")
+        state = CollectionState(multiworld)
+        self.assertFalse(yoshi.can_reach(state))
+        state.collect(multiworld.create_item("Green Yoshi", 1), prevent_sweep=True)
+        self.assertTrue(yoshi.can_reach(state))
+
+    def test_w1_inactive_strips_the_opening_course(self):
+        # World 1 not in the seed -> its checks (1-1 included) are removed.
+        for seed in range(1, 50):
+            multiworld, world = _gen(
+                {"open_world": 1, "open_world_count": 3}, seed=seed)
+            if 1 not in world.active_worlds:
+                break
+        else:
+            self.fail("no seed with World 1 inactive")
+        self.assertEqual(self._opening_locations(multiworld), [])
+
+    def test_unlock_items_off_leaves_opening_course_in_w1_start(self):
+        multiworld, _ = _gen(
+            {"open_world": 1, "open_world_count": 6, "world_unlock_items": 0})
+        opening = self._opening_locations(multiworld)
+        self.assertTrue(opening)
+        for loc in opening:
+            self.assertEqual(loc.parent_region.name, "W1 Start")
+
+    def test_solvable_with_w1_locked(self):
+        multiworld, _ = self._gen_w1_locked()
+        logging.disable(logging.WARNING)
+        try:
+            distribute_items_restrictive(multiworld)
+        finally:
+            logging.disable(logging.NOTSET)
+        self.assertTrue(multiworld.can_beat_game())
 
 
 class TestUniversalTrackerCompat(unittest.TestCase):
