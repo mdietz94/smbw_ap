@@ -88,22 +88,35 @@ itself unclearable without its badge; the Badge House / Wiggler Race merely
 required at its own location checks (Badge House Normal Exit, the Parachute Cap
 / Crouching High Jump challenge courses) — fill-safe side spurs.
 
-**Open-world exception (the remaining region walls only).** Open-world mode opens
-every course node from the start, so the *forced-wall* premise doesn't hold there
-— the world-map Wonder-Seed bar is the only gate, and a player with enough Wonder
-Seeds reaches the next section without the badge (player-reported: "second
-section of W1 accessible with enough seeds but not in logic"). So in open-world
-the **region**-layer badge half of the remaining gates is dropped (the
-Wonder-Seed toll stays); the **location**-layer badge requirement on the
-challenge courses is kept (the badge is still needed to clear the course
-itself). Implemented in
-`open_world.strip_badge_requirement` / `badge_wall_open_world_requires`, swapped
-in by `hooks/World.before_set_rules` alongside the existing `W{n} Start`/
-`World Bowser` neutralization. Standard mode is unchanged.
+**Open-world keeps the wall (the former exception was wrong — reverted).** #148
+stripped the badge half of `W3 4 Seeds` in open-world on the premise that
+open-world "opens every course node", citing a player report that W1's second
+section was reachable with seeds alone. That report was fully explained by the
+W1 false walls removed in the same PR; it said nothing about W3. The premise is
+also false for W3: the mod forces course-node *visibility* everywhere, but only
+force-draws *roads* on Petal Isles + the Castle (`routeGateForceOpenHook` and the
+`ClearLinkedCourse`/`ClearAppointedCourse`/`OpenAppointedCourse` road hooks are
+gated on world 2 / 8). Inside W3 the roads are vanilla, and RomFS
+`Stage/WorldMapInfo/World004` + `BancMapUnit` World004 show the wall is real:
 
-Verified: standard-mode (`open_world=0`) generation fills and is beatable across
-30 seeds; open-world keeps the seed toll while dropping the badge wall; full
-apworld logic suite green.
+- CHJ I (`Course3`, banc `Course308`) opens on the seed count alone
+  (`CourseUnlockCondition: WonderSeed 4` — the enforced field; the
+  `CourseOpenCondition.PowerJewelNum 5` beside it is not a gate, see the
+  seed-toll audit below).
+- `DummyPoint1` is `ClearLinkedCourse` on CHJ I → **The Midway Trial** is
+  `OpenAppointedCourse` via `DummyPoint1` → `DummyPoint2` (`ClearLinkedCourse`)
+  → `DummyPoint3` → the Tenboudai subregion (Sharp / Sugarstar / Final Trial /
+  both Timer-Switch courses → Royal Seed Mansion). A `LockGateToride` actor is
+  also bound to `CourseId 3`.
+- Every `W3 Start` course sits in subregions 2 / 3 / 16 (pre-wall); every other
+  `W3 4 Seeds` course sits in subregion 4 (not free-move) or 6 (reached only via
+  that rail) — the logic boundary matches the physical wall exactly.
+
+With the strip, fill could put the badge anywhere past the wall → player-reported
+softlock ("no badge, every check before the level done"). The strip
+(`strip_badge_requirement` / `badge_wall_open_world_requires`) is deleted;
+open-world now inherits the `W3 4 Seeds` gate unchanged, pinned by
+`test_open_world_gen.py::TestOpenWorldBadgeWall`.
 
 ---
 
@@ -187,6 +200,37 @@ apworld logic suite green.
   a world-progression region (see the Notes limitation) — Piranha Plant Reprise
   is the one course re-pointed at its true Special-seed gate; a full
   Special-World remodel is a follow-up.
+
+### Seed-toll audit (2026-09-12) — every toll matches the in-game number
+
+WorldMapInfo course entries carry **two** seed fields. Only
+`CourseUnlockCondition` with `ConditionType: WonderSeed` is enforced;
+`CourseUnlockCondition` with `ConditionType: None` (a leftover `WonderSeedNum`)
+and `CourseOpenCondition.PowerJewelNum` are **not** gates. Triple-checked:
+
+1. **RomFS** — 16 `WonderSeed`-typed unlocks across all 9 worlds.
+2. **Game8 per-world course lists** — list exactly those 16 numbers and
+   "none" for every other course, including the discriminating cases:
+   Mountaineering! 10 (PJ 9), W2 Palace 14 (PJ 18), Condarts Away! 4 (PJ 5),
+   CHJ I 4 (PJ 5), Piranha Plant Reprise 6 (PJ 3), Wonder Gauntlet 16 (PJ 8),
+   Jump! Jump! Jump! none (PJ 24), Sharp/Sugarstar none (PJ 10), Valley Fulla
+   Snootles none (`None`, 9), Maw-Maw Mouthful / Muncher Fields none (`None`,
+   10 / 12), Wavy Ride none (`None`, 12).
+3. **Player reports** — W6 Palace 15, Piranha Plant Reprise 6.
+
+| In-game unlock | N | Our toll |
+|---|---|---|
+| W1 Badge House / Mountaineering! / Palace | 3 / 10 / 14 | `W1 3/10/14 Seeds` |
+| PI Robbird Cove | 2 | `PI Pre-W2 2 Seeds` |
+| W2 Condarts Away! / Puffy Lifts / Palace | 4 / 9 / 14 | `W2 4/9/14 Seeds` |
+| W3 CHJ I / Final Trial | 4 / 10 | `W3 4/10 Seeds` |
+| W4 Palace | 15 | `W4 15 Seeds` |
+| W5 Wubba / Poison Ruins | 6 / 11 | `W5 6/11 Seeds` |
+| W6 Palace / Jet Run II | 15 / 25 | `W6 15/25 Seeds` |
+| Special Piranha Plant Reprise / Wonder Gauntlet | 6 / 16 | `Pre-W4 Special` / `Special End` |
+| PI world gates (`GateTable.NeedNumOfWonderSeed`) | 5 / 8 / 10 / 12 / 15 | `W2..W6 Start` |
+
+No toll changes were needed.
 
 ## Structural
 
