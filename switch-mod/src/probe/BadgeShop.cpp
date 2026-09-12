@@ -14,12 +14,18 @@ namespace {
 std::atomic<std::uint64_t> s_managed_mask{0};
 std::atomic<std::uint64_t> s_sold_mask{0};
 
+// Same, for Wonder-Seed rows -- bit-indexed by SEED SHOP SLOT (see
+// kSeedShopSlots below).
+std::atomic<std::uint32_t> s_seed_managed_mask{0};
+std::atomic<std::uint32_t> s_seed_sold_mask{0};
+
 // Edge-triggered observability: log the first few times the override
 // actually changes a rebuilt item state (monotonic counter, not the
 // fetch_sub budget idiom -- that one underflows and spams; see
 // [[smbwap-log-budget-underflow]]).
 std::atomic<std::uint32_t> s_apply_log_count{0};
 std::atomic<std::uint32_t> s_purchase_log_count{0};
+std::atomic<std::uint32_t> s_seed_apply_log_count{0};
 
 // --- UIBadgeShopScreen layout (NSO v1.0.0, proven 2026-06-10) -----------
 // computeItemStates (+0x1c3f6a4) reads:
@@ -33,6 +39,7 @@ constexpr std::ptrdiff_t kOffItemPrice   = 0x18;   // s32 price
 constexpr std::ptrdiff_t kOffItemState   = 0x20;   // u32 display state (we override)
 
 constexpr std::uint32_t kItemTypeBadge   = 0;
+constexpr std::uint32_t kItemTypeWonderSeed = 1;
 // Display-state enum (written to item+0x20 by computeItemStates):
 constexpr std::uint32_t kStateBuyable    = 0;
 constexpr std::uint32_t kStateUnaffordable = 1;
@@ -41,6 +48,45 @@ constexpr std::uint32_t kStateSoldOut    = 2;
 // Defensive cap: real badge-shop lineups hold a handful of rows; a count
 // this large means we latched a garbage / mid-construction screen pointer.
 constexpr std::uint32_t kMaxItems = 256;
+
+// Live current-world index (container-A Int hash), 1=W1, 2=Petal Isles,
+// 3=W2 .. 7=W6, 8=Castle, 9=Special.  Equals the PlayReport `world_no`
+// the client's _SHOP_SEED_TABLE keys on.
+constexpr std::uint32_t kCurrentWorldHash = 0x9f5ead3cu;
+
+// Seed-shop slot table: (world index, seed-row count) -> base slot.  A
+// shop's Nth seed row (in lineup order, which is the shop's shelf order
+// and so the PlayReport `item_value` / NpcTable `SaveId`) is
+// `base_slot + N`.  Ground truth: RomFS Stage/WorldMapInfo/World00N
+// NpcTable.  ⚠ Slot numbering MUST match SEED_SHOP_SLOTS in the client's
+// seed_shop_table.py.
+struct SeedShopSlot {
+    std::uint32_t world;
+    std::uint32_t seed_rows;
+    std::uint32_t base_slot;
+};
+constexpr SeedShopSlot kSeedShopSlots[] = {
+    {1, 1, 0},  // W1 Poplin Shop
+    {2, 1, 1},  // Petal Isles East + West (ambiguous -> shared slot)
+    {3, 1, 2},  // W2 Top + Bottom         (ambiguous -> shared slot)
+    {4, 1, 3},  // W3 Poplin Shop
+    {5, 1, 4},  // W4 Poplin Shop (Bottom)
+    {5, 3, 5},  // W4 Poplin Shop (Secret): slots 5/6/7 = 30/100/200 coins
+    {6, 1, 8},  // W5 Poplin Shop
+    {7, 1, 9},  // W6 Poplin Shop
+};
+constexpr std::uint32_t kSeedShopSlotCount = 10;
+
+// Resolve the base slot for a lineup, or -1 when the (world, seed-row
+// count) pair matches no known shop -- in which case the seed rows keep
+// their vanilla state.
+std::int32_t seedShopBaseSlot(std::uint32_t world, std::uint32_t seed_rows) {
+    for (const SeedShopSlot& s : kSeedShopSlots) {
+        if (s.world == world && s.seed_rows == seed_rows)
+            return static_cast<std::int32_t>(s.base_slot);
+    }
+    return -1;
+}
 
 }  // namespace
 
@@ -61,10 +107,28 @@ void setBadgeShopState(std::uint64_t managed_mask, std::uint64_t sold_mask) {
     }
 }
 
+void setSeedShopState(std::uint32_t managed, std::uint32_t sold) {
+    const std::uint32_t prev_m =
+        s_seed_managed_mask.exchange(managed, std::memory_order_relaxed);
+    const std::uint32_t prev_s =
+        s_seed_sold_mask.exchange(sold, std::memory_order_relaxed);
+    if (prev_m != managed || prev_s != sold) {
+        SMBWAP_LOG_INFO(
+            "[seedshop] state managed 0x%08x->0x%08x sold 0x%08x->0x%08x",
+            prev_m, managed, prev_s, sold);
+        s_seed_apply_log_count.store(0, std::memory_order_relaxed);
+    }
+}
+
 void applyBadgeShopItemStates(void* screen) {
     const std::uint64_t managed = s_managed_mask.load(std::memory_order_relaxed);
-    if (managed == 0 || screen == nullptr) return;  // inert / vanilla
+    const std::uint32_t seed_managed =
+        s_seed_managed_mask.load(std::memory_order_relaxed);
+    if ((managed == 0 && seed_managed == 0) || screen == nullptr)
+        return;  // inert / vanilla
     const std::uint64_t sold = s_sold_mask.load(std::memory_order_relaxed);
+    const std::uint32_t seed_sold =
+        s_seed_sold_mask.load(std::memory_order_relaxed);
 
     auto* base = reinterpret_cast<unsigned char*>(screen);
     const std::uint32_t count =
@@ -75,39 +139,77 @@ void applyBadgeShopItemStates(void* screen) {
     const std::uint32_t coins =
         *reinterpret_cast<std::uint32_t*>(base + kOffCoinsHeld);
 
+    auto row = [&](std::uint32_t i) -> unsigned char* {
+        const std::uintptr_t item = reinterpret_cast<std::uintptr_t*>(arr)[i];
+        return reinterpret_cast<unsigned char*>(item);
+    };
+    auto typeOf = [&](unsigned char* ib) {
+        return *reinterpret_cast<std::uint32_t*>(ib + kOffItemType);
+    };
+    // Affordability only -- never the owned/purchased/seed bits the vanilla
+    // code keyed on.
+    auto affordable = [&](unsigned char* ib) {
+        const std::int32_t price =
+            *reinterpret_cast<std::int32_t*>(ib + kOffItemPrice);
+        return (price >= 0 && coins >= static_cast<std::uint32_t>(price))
+                   ? kStateBuyable
+                   : kStateUnaffordable;
+    };
+
+    // Pre-pass: how many Wonder-Seed rows this lineup holds.  With the
+    // current world index that identifies the shop (see kSeedShopSlots);
+    // -1 = unrecognized, leave every seed row vanilla.
+    std::int32_t seed_base = -1;
+    if (seed_managed != 0) {
+        std::uint32_t seed_rows = 0;
+        for (std::uint32_t i = 0; i < count; ++i) {
+            unsigned char* ib = row(i);
+            if (ib != nullptr && typeOf(ib) == kItemTypeWonderSeed) ++seed_rows;
+        }
+        if (seed_rows != 0) {
+            seed_base = seedShopBaseSlot(
+                readContainerAValue(kCurrentWorldHash), seed_rows);
+        }
+    }
+
+    std::uint32_t seed_row_index = 0;
     for (std::uint32_t i = 0; i < count; ++i) {
-        const std::uintptr_t item =
-            reinterpret_cast<std::uintptr_t*>(arr)[i];
-        if (item == 0) continue;
-        auto* ib = reinterpret_cast<unsigned char*>(item);
-        if (*reinterpret_cast<std::uint32_t*>(ib + kOffItemType) != kItemTypeBadge)
-            continue;
-        const std::int32_t id =
-            *reinterpret_cast<std::int32_t*>(ib + kOffItemBadgeId);
-        if (id < 0 || id >= 64) continue;
-        if (((managed >> id) & 1u) == 0) continue;  // AP doesn't own this row
+        unsigned char* ib = row(i);
+        if (ib == nullptr) continue;
+        const std::uint32_t type = typeOf(ib);
+
+        std::int32_t id;       // for logging: badge internal_id / seed slot
+        bool is_sold;
+        if (type == kItemTypeBadge) {
+            id = *reinterpret_cast<std::int32_t*>(ib + kOffItemBadgeId);
+            if (id < 0 || id >= 64) continue;
+            if (((managed >> id) & 1u) == 0) continue;  // AP doesn't own it
+            is_sold = ((sold >> id) & 1u) != 0;
+        } else if (type == kItemTypeWonderSeed) {
+            const std::uint32_t slot_row = seed_row_index++;
+            if (seed_base < 0) continue;  // unrecognized lineup -> vanilla
+            const std::uint32_t slot =
+                static_cast<std::uint32_t>(seed_base) + slot_row;
+            if (slot >= kSeedShopSlotCount) continue;
+            if (((seed_managed >> slot) & 1u) == 0) continue;
+            id = static_cast<std::int32_t>(slot);
+            is_sold = ((seed_sold >> slot) & 1u) != 0;
+        } else {
+            continue;  // 1-Up / Kakashi rows are not AP checks
+        }
 
         auto* state = reinterpret_cast<std::uint32_t*>(ib + kOffItemState);
-        std::uint32_t want;
-        if ((sold >> id) & 1u) {
-            want = kStateSoldOut;
-        } else {
-            const std::int32_t price =
-                *reinterpret_cast<std::int32_t*>(ib + kOffItemPrice);
-            // Buyable iff the player can afford it -- ignore the
-            // owned/purchased bits the vanilla code keyed on.
-            want = (price >= 0 && coins >= static_cast<std::uint32_t>(price))
-                       ? kStateBuyable
-                       : kStateUnaffordable;
-        }
+        const std::uint32_t want = is_sold ? kStateSoldOut : affordable(ib);
         if (*state != want) {
             *state = want;
-            if (s_apply_log_count.fetch_add(1, std::memory_order_relaxed) < 8) {
+            auto& budget = (type == kItemTypeBadge) ? s_apply_log_count
+                                                    : s_seed_apply_log_count;
+            if (budget.fetch_add(1, std::memory_order_relaxed) < 8) {
                 SMBWAP_LOG_INFO(
-                    "[badgeshop] override row id=%d -> state=%u "
-                    "(coins=%u sold=%d)",
-                    id, want, coins,
-                    static_cast<int>((sold >> id) & 1u));
+                    "[%s] override row %s=%d -> state=%u (coins=%u sold=%d)",
+                    (type == kItemTypeBadge) ? "badgeshop" : "seedshop",
+                    (type == kItemTypeBadge) ? "id" : "slot",
+                    id, want, coins, static_cast<int>(is_sold));
             }
         }
     }

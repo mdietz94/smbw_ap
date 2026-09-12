@@ -668,6 +668,40 @@ bool parseSetBadgeShopState(util::json::Reader& r,
     return saw_managed && saw_sold;
 }
 
+bool parseSetSeedShopState(util::json::Reader& r,
+                           WireSetSeedShopState& out) {
+    // Cursor positioned just after "t":"set_seed_shop_state".  Two required
+    // u32 fields: "managed" and "sold" (bit == seed-shop slot, < 10).
+    std::string_view key;
+    bool saw_managed = false;
+    bool saw_sold = false;
+    while (r.nextField(key)) {
+        if (sv_eq(key, "managed")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0 || v > 0xFFFFFFFFLL) return false;
+            out.managed = static_cast<std::uint32_t>(v);
+            saw_managed = true;
+        } else if (sv_eq(key, "sold")) {
+            std::int64_t v = 0;
+            if (!r.nextInt(v)) return false;
+            if (v < 0 || v > 0xFFFFFFFFLL) return false;
+            out.sold = static_cast<std::uint32_t>(v);
+            saw_sold = true;
+        } else {
+            std::string_view dummy;
+            std::int64_t i = 0;
+            bool b = false;
+            if (r.isNull()) continue;
+            if (r.nextString(dummy)) continue;
+            if (r.nextInt(i)) continue;
+            if (r.nextBool(b)) continue;
+            return false;
+        }
+    }
+    return saw_managed && saw_sold;
+}
+
 bool parseSetBadgeShopText(util::json::Reader& r, WireSetBadgeShopText& out) {
     // Cursor positioned just after "t":"set_badge_shop_text".  Fields:
     // "id" -> u32 badge internal_id (< 64); "text" -> UTF-8 string (capped).
@@ -937,6 +971,10 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
         out.kind = InboundKind::SetItemGetDenyMask;
         out.set_itemget_deny_mask = WireSetItemGetDenyMask{};
         if (!parseSetItemGetDenyMask(r, out.set_itemget_deny_mask)) return false;
+    } else if (std::strcmp(t_val, "set_seed_shop_state") == 0) {
+        out.kind = InboundKind::SetSeedShopState;
+        out.set_seed_shop_state = WireSetSeedShopState{};
+        if (!parseSetSeedShopState(r, out.set_seed_shop_state)) return false;
     } else if (std::strcmp(t_val, "set_badge_shop_state") == 0) {
         out.kind = InboundKind::SetBadgeShopState;
         out.set_badge_shop_state = WireSetBadgeShopState{};

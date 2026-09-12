@@ -93,6 +93,7 @@ async def _main(args: argparse.Namespace) -> int:
         itemget_deny_provider=ctx._recompute_itemget_deny_mask,
         unlocked_charas_provider=ctx._recompute_unlocked_chara_mask,
         badge_shop_state_provider=ctx._recompute_badge_shop_state,
+        seed_shop_state_provider=ctx._recompute_seed_shop_state,
         badge_shop_text_provider=ctx._recompute_badge_shop_text,
     )
     ctx.lan_server = lan

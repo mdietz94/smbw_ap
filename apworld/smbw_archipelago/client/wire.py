@@ -803,6 +803,50 @@ class SetBadgeShopStateMsg:
 
 
 @dataclass(frozen=True)
+class SetSeedShopStateMsg:
+    """Bridge -> Switch.  AP-authoritative Poplin shop **Wonder Seed** rows.
+
+    Same shape and contract as :class:`SetBadgeShopStateMsg`, but the masks
+    are bit-indexed by seed-shop **slot** rather than badge internal_id --
+    see :mod:`seed_shop_table` for the slot enumeration (which must match
+    ``kSeedShopSlots`` in ``switch-mod/src/probe/BadgeShop.cpp``).
+
+      * ``managed`` -- slots whose seed-row display state AP owns.  Bits NOT
+        in this mask keep vanilla (saved-flag-driven) behavior.
+      * ``sold``    -- of the managed slots, the ones whose AP location(s)
+        are already obtained -> show SOLD OUT.  A managed slot not in
+        ``sold`` shows purchasable regardless of the in-game seed flags, so
+        a seed AP already counted can still be bought to send its check.
+
+    Idempotent absolute-overwrite; safe to replay on HelloMsg / tick.
+    Switch-side: applied on the rx thread via ``probe::setSeedShopState``.
+    ``managed == 0`` restores vanilla seed-row behavior.
+    """
+
+    T = "set_seed_shop_state"
+
+    managed: int = 0
+    sold: int = 0
+
+    def to_wire(self) -> dict[str, Any]:
+        return {"t": self.T, "managed": self.managed, "sold": self.sold}
+
+    @classmethod
+    def from_wire(cls, d: dict[str, Any]) -> SetSeedShopStateMsg:
+        managed = d.get("managed")
+        sold = d.get("sold")
+        for label, raw in (("managed", managed), ("sold", sold)):
+            if not isinstance(raw, int) or isinstance(raw, bool):
+                raise ProtocolError(
+                    f"set_seed_shop_state.{label} must be int, got {raw!r}")
+            if not (0 <= raw < (1 << 32)):
+                raise ProtocolError(
+                    f"set_seed_shop_state.{label} out of range "
+                    f"[0, 2**32): {raw}")
+        return cls(managed=managed, sold=sold)
+
+
+@dataclass(frozen=True)
 class SetBadgeShopTextMsg:
     """Bridge -> Switch.  AP shop-text: custom description for one shop badge
     (by internal_id), shown in the badge-shop detail panel to reflect the AP
@@ -1358,6 +1402,7 @@ WireMsg = (
     | SetItemGetDenyMaskMsg
     | SetUnlockedCharasMsg
     | SetBadgeShopStateMsg
+    | SetSeedShopStateMsg
     | SetBadgeShopTextMsg
     | GrantHashKeyedMsg
     | IncrementHashKeyedMsg
@@ -1390,6 +1435,7 @@ _FROM_WIRE: dict[str, Any] = {
     SetItemGetDenyMaskMsg.T: SetItemGetDenyMaskMsg.from_wire,
     SetUnlockedCharasMsg.T: SetUnlockedCharasMsg.from_wire,
     SetBadgeShopStateMsg.T: SetBadgeShopStateMsg.from_wire,
+    SetSeedShopStateMsg.T: SetSeedShopStateMsg.from_wire,
     SetBadgeShopTextMsg.T: SetBadgeShopTextMsg.from_wire,
     GrantHashKeyedMsg.T: GrantHashKeyedMsg.from_wire,
     IncrementHashKeyedMsg.T: IncrementHashKeyedMsg.from_wire,

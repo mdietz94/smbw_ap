@@ -379,6 +379,17 @@ struct WireSetBadgeShopState {
     std::uint64_t sold = 0;
 };
 
+// Bridge -> Switch.  AP-authoritative Poplin shop WONDER-SEED rows
+// (2026-09-12).  Same shape and contract as WireSetBadgeShopState, but
+// bit-indexed by seed-shop SLOT (kSeedShopSlots in probe/BadgeShop.cpp,
+// mirroring SEED_SHOP_SLOTS in the client's seed_shop_table.py) instead of
+// badge internal_id.  Applied on the rx thread via probe::setSeedShopState.
+// managed == 0 restores vanilla seed-row behavior.
+struct WireSetSeedShopState {
+    std::uint32_t managed = 0;
+    std::uint32_t sold = 0;
+};
+
 // Bridge -> Switch.  AP shop-text (2026-06-10).  Custom description text for
 // one shop badge (by internal_id), shown in the badge-shop detail panel to
 // reflect the AP check the purchase would send (e.g. the scouted
@@ -505,6 +516,7 @@ enum class InboundKind : std::uint8_t {
     SetBadgeShopText = 19,
     SetForceClearedCourses = 20,
     SetUnlockedCharas = 21,
+    SetSeedShopState = 22,
 };
 
 struct InboundMsg {
@@ -531,6 +543,7 @@ struct InboundMsg {
         WireSetBadgeShopText set_badge_shop_text;
         WireSetForceClearedCourses set_force_cleared_courses;
         WireSetUnlockedCharas set_unlocked_charas;
+        WireSetSeedShopState set_seed_shop_state;
     };
     InboundMsg() : kind(InboundKind::None), hello_ack{} {}
 };

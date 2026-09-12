@@ -19,6 +19,14 @@
 >   Royal-Seed check-loss spike, which is still open.
 > - [gate-entry-session3-handoff.md](gate-entry-session3-handoff.md) — Royal-Seed
 >   gate-entry / check-loss spike (2026-05-31).
+> - **Poplin shop Wonder-Seed rows (2026-09-12, shipped)** — seed rows could read
+>   SOLD OUT with their AP check never sent, making the location unreachable.
+>   Fixed the badge-shop way: AP owns the seed row's display state
+>   (`probe::setSeedShopState`, wire `set_seed_shop_state`, client
+>   `seed_shop_table.py`). Ground truth + the 12-shop table are in the re-map
+>   §15 "Wonder-Seed rows"; the still-owed follow-up is making
+>   `pushWonderSeedContainerDCounts`'s fill slot-aware (it writes through shop
+>   slots 70..80).
 > - [handoff-2026-05-29-ws-persistence.md](handoff-2026-05-29-ws-persistence.md)
 >   — Wonder-Seed per-course Container-D persistence (supersedes the
 >   "gate override only, not per-course storage" caveat below).

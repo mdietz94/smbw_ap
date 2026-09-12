@@ -45,6 +45,7 @@ from . import force_cleared_table
 from . import powerup_table
 from . import royal_seed_table
 from . import wire
+from . import seed_shop_table
 from . import wonder_seed_table
 from . import world_unlock_table
 from .commands import SMBWCommandProcessor
@@ -440,6 +441,9 @@ class SMBWContext(CommonContext):
             # sold-out and AP-granted-but-unbought ones show purchasable
             # before they walk into a shop.
             self._push_badge_shop_state()
+            # Same for the shops' Wonder-Seed rows, so a seed AP already
+            # counted still reads purchasable and its check stays reachable.
+            self._push_seed_shop_state()
 
             # AP shop-text: scout the shop-badge checks so the shop detail
             # panel can show what each purchase would send.  The LocationInfo
@@ -472,6 +476,7 @@ class SMBWContext(CommonContext):
             # already merged the update into self.checked_locations.
             if "checked_locations" in args:
                 self._push_badge_shop_state()
+                self._push_seed_shop_state()
             return
 
         if cmd == "LocationInfo":
@@ -664,6 +669,36 @@ class SMBWContext(CommonContext):
             return
         managed, sold = self._recompute_badge_shop_state()
         lan.send_set_badge_shop_state(managed, sold)
+
+    def _recompute_seed_shop_state(self) -> tuple[int, int]:
+        """Compute the AP-authoritative Poplin shop **Wonder-Seed** masks the
+        Switch applies to the seed rows (see
+        :class:`wire.SetSeedShopStateMsg`).  Slot-indexed rather than
+        badge-indexed -- :mod:`seed_shop_table` owns the enumeration and the
+        all-locations-obtained rule for the two ambiguous slots (Petal Isles
+        and W2 each hold two indistinguishable single-seed shops).
+
+        ``managed`` covers only slots whose locations the server actually has
+        for this seed, so a seed excluded from the pool stays on vanilla
+        behavior; both masks stay 0 until the DataPackage reverse maps exist
+        (a Connected / periodic-tick push then corrects them).  ``sold`` folds
+        in :attr:`_sent_loc_ids` so a just-bought seed shows SOLD OUT
+        immediately rather than flickering back during the AP round-trip.
+        This is the ``seed_shop_state_provider`` the LAN server replays on
+        HelloMsg + the 2 s tick."""
+        obtained = set(self.checked_locations) | self._sent_loc_ids
+        return seed_shop_table.recompute_masks(
+            self._location_name_to_id, obtained, self.server_locations)
+
+    def _push_seed_shop_state(self) -> None:
+        """Recompute + push the seed-shop masks to the Switch now.  No-op
+        when no Switch client is bound (the LAN server replays on the next
+        HelloMsg / tick)."""
+        lan = self.lan_server
+        if lan is None:
+            return
+        managed, sold = self._recompute_seed_shop_state()
+        lan.send_set_seed_shop_state(managed, sold)
 
     # ---- AP shop-text (scouted-check display) -------------------------
 
@@ -1648,6 +1683,9 @@ class SMBWContext(CommonContext):
         # within ~2 s otherwise).
         if check.kind == CheckKind.BADGE_ACQUIRED:
             self._push_badge_shop_state()
+        # Same optimistic flip for a just-bought shop Wonder Seed.
+        if check.kind == CheckKind.SHOP_SEED:
+            self._push_seed_shop_state()
         # TEN_COIN refund: the game already added 10 to the player's
         # flower_coin counter when the block was hit; AP is the sole
         # authority over what each 10-coin block actually grants, so

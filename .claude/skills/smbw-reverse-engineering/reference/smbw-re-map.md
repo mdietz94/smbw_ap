@@ -189,7 +189,7 @@ All declared as file-scope `HkTrampoline` and installed in `hkMain()`
 | `PlayerTickLatch` | `+0x273868` | trampoline on `FUN_7100273868`; walks `p1→+0x10→+0x208→(+0 or +0x118)→HP` to latch `live_base` | per-tick (latches once) | CONFIRMED |
 | PlayReport `SetEventId` | sym `_ZN2nn5prepo10PlayReport10SetEventIdEPKc` | `installAtSym` | captures room/event id | CONFIRMED |
 | `ItemGetMaskBuild` (power-up negation) | `+0x3c4050` | direct trampoline; post-orig AND-clears AP-denied bits from the can-get mask at `component+0xB0` (see §14) | every ItemGet can-mask rebuild (per-frame player tick `+0x275400` + setting changes) | HIGH-CONF (static; built, not yet live-validated) |
-| `BadgeShopComputeStates` (AP shop ownership) | `+0x1c3f6a4` | direct trampoline; post-orig overrides AP-managed badge rows' display state (see §15) | every Poplin badge-shop state recompute | CONFIRMED (live) |
+| `BadgeShopComputeStates` (AP shop ownership) | `+0x1c3f6a4` | direct trampoline; post-orig overrides AP-managed **badge** rows' *and* **Wonder-Seed** rows' display state (see §15) | every Poplin shop state recompute | CONFIRMED (live) for badges; seed half HIGH-CONF (built 2026-09-12, not yet live-validated) |
 | `BadgeShopPurchaseCommit` (shop check) | `+0x1c4072c` | direct trampoline; edge-detects a confirmed badge buy (kind@`+0x6a8`==0, done byte@`+0x6f8` 0→1) → `enqueueBadgeAcquired(id@+0x6ac)` (see §15) | confirmed badge purchase | CONFIRMED (live) |
 | `BadgeShopPaneResolve` (AP shop-text arm) | `+0x1c3e560` | direct trampoline; arms the shop-text one-shot for the selected badge (id@`+0x6ac`) to shop-scope the resolver override (see §15) | shop detail-pane resolve | CONFIRMED (live) |
 | `MsbtLabelResolve` (AP shop-text serve) | `+0x250dec` | direct trampoline on the **global** msbt resolver; while armed, substitutes the selected badge's description text (the single `GameMsg/BadgeInfo` lookup), else vanilla (see §15) | every msbt lookup (acts only when armed) | CONFIRMED (live) |
@@ -482,7 +482,11 @@ session journal: `docs/grand-propeller-flower-reveal-re-2026-06-08.md`.
   hypothesized 4-arg writer overload, save offset `0x3AF8 + 4*course_idx`. The
   shipped `pushWonderSeedOverride` is **gate-override only** (makes the current
   world's gates pass from AP's count) and does NOT write per-course persistent
-  storage. Spikes:
+  storage. ⚠️ `pushWonderSeedContainerDCounts`'s `reg[c] = (c < count)` fill is
+  **not slot-aware** — slots 70..80 of each world's 81-slot array belong to that
+  world's Poplin shops (§15), so the fill writes through (and zeroes) real shop
+  state. The seed-row display override makes that harmless for reachability, but
+  a precision pass on the fill is still owed. Spikes:
   [docs/handoff-2026-05-29-ws-persistence.md](../../../../docs/handoff-2026-05-29-ws-persistence.md),
   [docs/wonder-seed-re-reopen-2026-05-28.md](../../../../docs/wonder-seed-re-reopen-2026-05-28.md).
   Observability hooks shipped in `switch-mod/src/probe/SeedTrace.cpp`.
@@ -652,6 +656,71 @@ is why purchase detection hooks the commit fn instead.  Switch impl:
 `probe/BadgeShop.{hpp,cpp}` + the two trampolines in `main.cpp`; bridge message
 `set_badge_shop_state` (`WireSetBadgeShopState{managed,sold}`, applied on the
 network thread); client `SMBWContext._recompute_badge_shop_state`.
+
+### Wonder-Seed rows (2026-09-12) — same coupling, and the RomFS ground truth
+
+Poplin shops also sell Wonder Seeds (`item+0x00 == 1`), and those rows were left
+on vanilla logic reading the shop's own saved seed flag. AP pollutes that state
+from two directions, so a seed row could read **SOLD OUT with its AP check never
+sent** — the location simply unreachable, failure mode (2) above:
+
+1. the `ContainerAReader` hook substitutes AP's count into every read of
+   `0x390eb960` / `0x21f89ab1` / `0x8c20ccb7` (the per-current-world seed
+   counters), and
+2. `probe::pushWonderSeedContainerDCounts` blind-fills the world's 81-slot
+   per-course seed array with `reg[c] = (c < count)` — the code itself notes the
+   bit positions are not tied to real courses, and the shop's own slot lives in
+   that array (see below).
+
+**Fix = the badge fix, one row type over**: AP owns the seed row's display state
+and the Switch never consults the game's flag (`probe::setSeedShopState` +
+`kSeedShopSlots`, wire `set_seed_shop_state`, client `seed_shop_table.py`).
+Purchase detection needs nothing new — the `general_shop_result` PlayReport
+already fires the `SHOP_SEED` check.
+
+**Row identity with no new RE.** The screen exposes the lineup, so
+`(current world index 0x9f5ead3c, number of seed rows, row order)` pins the row.
+
+**RomFS ground truth — `Stage/WorldMapInfo/World00N.game__stage__WorldMapInfo`,
+`NpcTable`.** Each `Kind: BadgeShop` NPC carries its whole lineup in
+`SaleItemList` (entries with **no `Kind`** are Wonder Seeds; the others are
+`Badge` / `Kakashi` / `OneUpKinoko`), its `Key` is `WorldMapNpcId<NN>` == the
+Banc `NpcId` == the PlayReport `npc_id`, a seed row's `SaveId` (absent == 0) ==
+the PlayReport `item_value`, and **`WonderFlowerSaveCourseNo` is the per-course
+array slot the shop's seed is stored in**. All 12 shop seeds, cross-validated
+one-for-one against the client's `_SHOP_SEED_TABLE`:
+
+| world_no | npc | seed rows | price(s) | `WonderFlowerSaveCourseNo` | AP location |
+|---|---|---|---|---|---|
+| 1 | 2 | 1 | 100 | 80 | W1 Poplin Shop |
+| 2 | 2 | 1 | 100 | 70 | PI Poplin Shop (West) |
+| 2 | 4 | 1 | 100 | 72 | PI Poplin Shop (East) |
+| 3 | 4 | 1 | 100 | — (`SaveId: 0`) | W2 Poplin Shop (Bottom) |
+| 3 | 3 | 1 | 100 | 71 | W2 Poplin Shop (Top) |
+| 4 | 7 | 1 | 100 | 70 | W3 Poplin Shop |
+| 5 | 9 | 1 | 100 | 72 | W4 Poplin Shop (Bottom) |
+| 5 | 5 | 3 | 30 / 100 / 200 | 70 (rows keyed by `SaveId` 0/1/2) | W4 Poplin Shop (Secret) |
+| 6 | 3 | 1 | 100 | 70 | W5 Poplin Shop |
+| 7 | 3 | 1 | 100 | 80 | W6 Poplin Shop |
+
+This also confirms the save-diff finding: W1's shop-seed flag at save `0x3480`
+sits in the per-course `GoalSeed` region based at `0x3348`, i.e. the shops own
+slots **70..80** of the world's 81-slot array, and the u32 there is a bitfield
+indexed by `SaveId` (capture #1 set bit 0). So the blind fill is writing
+*through* shop slots, and per-world course slots are `WorldMapInfo.CourseTable`
+indices (`Key: "CourseN"`, 1-based; the Banc `CourseId=0` on a shop means "not a
+course").
+
+⚠️ **`npc_id` is NOT reachable at `computeItemStates` time** (`+0x5233c0(0x6c259974)`
+is not a `NpcId` param read — murmur3("NpcId") is `0xf8800828`). Petal Isles and
+W2 each hold two single-seed shops with identical lineups from the screen's
+point of view, so those two pairs share one AP slot and the bridge only marks a
+shared slot sold once **all** its locations are checked. The bias is deliberate:
+too-long PURCHASABLE just lets a player re-buy a seed whose check already landed
+(AP drops the duplicate); too-early SOLD OUT is the bug. If exact per-shop
+resolution is ever wanted, the discriminator is in the lineup — `BadgeId49` is
+present in PI npc 4 / W2 npc 3 and absent from their twins.
+
 
 ---
 
