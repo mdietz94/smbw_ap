@@ -84,9 +84,11 @@ can bury the badge in a later world and softlock the seed. Pinned by
 
 The distinction: Crouching High Jump I is a *badge challenge course* that is
 itself unclearable without its badge; the Badge House / Wiggler Race merely
-*grant* a badge and are clearable without it. The badge each grants is still
-required at its own location checks (Badge House Normal Exit, the Parachute Cap
-/ Crouching High Jump challenge courses) — fill-safe side spurs.
+*grant* a badge and are clearable without it. ~~The badge each grants is still
+required at its own location checks (Badge House Normal Exit, …)~~ — **corrected
+2026-09-12**: a granting level never requires its own badge, so **Badge House
+Normal Exit is open** (see the 2026-09-12 section). Only the badge *challenge*
+courses (Parachute Cap I/II, Crouching High Jump I/II, …) keep their gates.
 
 **Open-world keeps the wall (the former exception was wrong — reverted).** #148
 stripped the badge half of `W3 4 Seeds` in open-world on the premise that
@@ -633,6 +635,36 @@ extension) the harder Yoshi lines. **There is no difficulty/expert option in
 reading is what shipped. If an expert tier is ever added, these are its first
 four entries — plus the existing expert-tier judgement calls elsewhere in this
 record.
+
+## Player-reported course corrections (2026-09-12 playtest)
+
+Two gates the player hit and reported as wrong; both removed. Pinned by
+`test_badge_granting_levels_do_not_require_their_own_badge` and the updated
+`test_post_clear_regions_inherit_their_prerequisite_gate`.
+
+- **`W1: Badge House in Pipe-Rock Plateau - Normal Exit` → open** (was
+  `|Parachute Cap Badge|`). *"Currently requires Parachute Cap Badge even though
+  you do not need it."* This closes the last inconsistency left by the
+  2026-06 wall removal: the region wall `W1 3 Seeds` was dropped precisely
+  because the Badge House needs no badge to clear, yet the level's own Normal
+  Exit kept the gate — and with AP as the badge authority that made the check
+  wait on the very item it awards. The reasoning generalises to any
+  badge-*granting* level (Badge House, Wiggler Race Mountaineering!, which was
+  already open); badge *challenge* courses are unaffected.
+- **`W2 Post-Jump` region → open** (was `|Floating High Jump Badge| OR
+  |@Yoshi:1|`), unblocking **Spring Feet I** (5 checks) and **Special: Climb to
+  the Beat** (6). *"Getting past Spring Feet I currently requires either Floating
+  High Jump Badge or Yoshi, even though the course is very easy to do without
+  either of them."* The gate arrived on 2026-07-20 from the `Post-*` inheritance
+  rule, which read the region as "you cleared **Floating High Jump I**" and
+  copied that course's badge require. The region is now recorded as riding
+  **Spring Feet I**'s (open) Normal Exit instead.
+  ⚠️ **Floating High Jump I itself is unchanged** — its own five checks still
+  carry `|Floating High Jump Badge| OR |@Yoshi:1|` (structural, player-confirmed
+  earlier). If the true map prerequisite for that region really is Floating High
+  Jump I rather than Spring Feet I, this re-opens the `Post-*` softlock class
+  (fill could bury a needed Wonder Seed there); restore the gate in that case.
+  The region is a leaf (`connects_to: []`), so nothing downstream is affected.
 
 ## General audit follow-up
 
