@@ -424,3 +424,44 @@ class TestOpenWorldRegression(unittest.TestCase):
         # The shared regionMap must be restored after generation.
         self.assertEqual(regionMap["World Bowser"].get("requires"), "|@Royal Seed:6|")
         self.assertEqual(regionMap["W4 Start"].get("requires"), "|Petal Isles Wonder Seed:10|")
+
+
+class TestOpenWorldBadgeWall(unittest.TestCase):
+    """Open-world keeps the ``W3 4 Seeds`` Crouching High Jump wall.
+
+    The mod only force-draws world-map roads on Petal Isles + the Castle, so
+    inside W3 the road past POOF! Crouching High Jump I is vanilla: the Midway
+    Trial and everything behind it need CHJ I cleared, which needs the badge.
+    Stripping the badge from the gate in open-world let fill bury it past the
+    wall (player-reported softlock: no badge, every earlier check done).
+    """
+
+    WALLED = "W3: The Midway Trial - Normal Exit"
+
+    def test_wall_holds_without_badge(self):
+        multiworld, world = _gen({"open_world": 1, "open_world_count": 6})
+        self.assertIn(3, world.active_worlds)
+        state = CollectionState(multiworld)
+        state.collect(world.create_item(world_unlock_item(3)), True)
+        for _ in range(10):
+            state.collect(world.create_item("W3 Wonder Seed"), True)
+        walled = multiworld.get_location(self.WALLED, 1)
+        self.assertFalse(walled.can_reach(state),
+                         "past the CHJ I wall must require the badge in open-world")
+        state.collect(world.create_item("Crouching High Jump Badge"), True)
+        self.assertTrue(walled.can_reach(state))
+
+    def test_w3_only_seeds_solvable(self):
+        # W3 alone is the tightest case: the badge and the first four W3 seeds
+        # must all land in W3 Start.
+        solved = 0
+        for seed in range(1, 400):
+            _, probe = _gen({"open_world": 1, "open_world_count": 1}, seed=seed)
+            if probe.active_worlds != [3]:
+                continue
+            multiworld, _ = _gen({"open_world": 1, "open_world_count": 1}, seed=seed, fill=True)
+            self.assertTrue(multiworld.can_beat_game(), f"W3-only seed {seed} unbeatable")
+            solved += 1
+            if solved == 3:
+                break
+        self.assertEqual(solved, 3, "expected three W3-only seeds in range")

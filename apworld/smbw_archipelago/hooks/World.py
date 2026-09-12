@@ -139,13 +139,12 @@ def before_set_rules(world: World, multiworld: MultiWorld, player: int):
     if not getattr(world, "open_world", False):
         return
     from ..Regions import regionMap
-    from ..open_world import BOWSER_REGION, badge_wall_open_world_requires
+    from ..open_world import BOWSER_REGION
 
-    # Start/Bowser entry gates are dropped entirely; the badge-wall gates keep
-    # their Wonder-Seed toll but drop the (open-world-unenforced) badge half.
+    # Start/Bowser entry gates are dropped entirely.  Intra-world gates --
+    # including the W3 4 Seeds Crouching High Jump wall -- are kept as-is.
     neutralized = {name: "" for name in
                    [f"W{n} Start" for n in world.active_worlds] + [BOWSER_REGION]}
-    neutralized.update(badge_wall_open_world_requires())
     # (With world-unlock items on the Start gate is not simply dropped -- the
     # "W<n> Unlock" requirement is attached to the Manual -> W<n> Start
     # entrance in after_set_rules, for the same reason as the Bowser gate.)
