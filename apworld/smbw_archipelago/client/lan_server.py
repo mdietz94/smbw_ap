@@ -233,6 +233,14 @@ UnlockedCharasProvider = Callable[[], int]
 # newly-checked shop locations.
 BadgeShopStateProvider = Callable[[], "tuple[int, int]"]
 
+# AP-authoritative Poplin shop WONDER-SEED rows (2026-09-12).  Returns the
+# ``(managed_mask, sold_mask)`` pair the Switch applies to the seed rows of
+# the shop display (see :class:`wire.SetSeedShopStateMsg`); bits are
+# seed-shop slots, not badge ids -- see :mod:`seed_shop_table`.
+# ``managed_mask == 0`` means the feature is inert (vanilla seed rows).
+# Replayed on HelloMsg + the periodic tick, same as the badge half.
+SeedShopStateProvider = Callable[[], "tuple[int, int]"]
+
 # AP shop-text (2026-06): returns ``{badge_internal_id: utf8_text}`` for the
 # shop badges whose AP check has been scouted, shown in the badge-shop detail
 # panel (see :class:`wire.SetBadgeShopTextMsg`).  Empty dict = nothing to show.
@@ -295,6 +303,7 @@ class LanServer:
         itemget_deny_provider: ItemGetDenyProvider | None = None,
         unlocked_charas_provider: UnlockedCharasProvider | None = None,
         badge_shop_state_provider: BadgeShopStateProvider | None = None,
+        seed_shop_state_provider: SeedShopStateProvider | None = None,
         badge_shop_text_provider: BadgeShopTextProvider | None = None,
     ) -> None:
         self._state = state
@@ -312,6 +321,7 @@ class LanServer:
         self._itemget_deny_provider = itemget_deny_provider
         self._unlocked_charas_provider = unlocked_charas_provider
         self._badge_shop_state_provider = badge_shop_state_provider
+        self._seed_shop_state_provider = seed_shop_state_provider
         self._badge_shop_text_provider = badge_shop_text_provider
 
         self._server: asyncio.base_events.Server | None = None
@@ -340,6 +350,9 @@ class LanServer:
         # :meth:`send_set_badge_shop_state` ((0, 0) = vanilla shop).  Kept
         # so a HelloMsg replays the shop state on Switch reboot / reconnect.
         self._badge_shop_state: tuple[int, int] = (0, 0)
+        # Last (managed, sold) seed-shop pair sent -- same replay role as
+        # ``_badge_shop_state`` ((0, 0) = vanilla seed rows).
+        self._seed_shop_state: tuple[int, int] = (0, 0)
 
         # Last badge-shop text table pushed (badge_internal_id -> utf8).
         # Diffed in :meth:`_push_badge_shop_text_now` so only changed
@@ -594,6 +607,34 @@ class LanServer:
         except asyncio.QueueFull:
             log.error(
                 "send_set_badge_shop_state(managed=0x%x sold=0x%x): outbound "
+                "queue full; dropping", managed, sold)
+
+    def send_set_seed_shop_state(self, managed: int, sold: int) -> None:
+        """Enqueue a SetSeedShopState (AP-authoritative Poplin shop
+        Wonder-Seed rows) to the active Switch client.  ``managed`` and
+        ``sold`` are seed-shop-slot-indexed masks (see
+        :class:`wire.SetSeedShopStateMsg` and :mod:`seed_shop_table`).
+        ``managed == 0`` restores vanilla seed-row behavior.
+
+        Idempotent absolute-overwrite; replayed on HelloMsg via
+        :meth:`_push_seed_shop_state_now` so a Switch reboot mid-session
+        re-applies the shop state."""
+        msg = wire.SetSeedShopStateMsg(managed=managed, sold=sold)
+        self._seed_shop_state = (managed, sold)
+        if self._send_queue is None:
+            log.warning(
+                "send_set_seed_shop_state(managed=0x%x sold=0x%x): no "
+                "Switch client connected; dropping (will replay on "
+                "HelloMsg)", managed, sold)
+            return
+        try:
+            self._send_queue.put_nowait(msg)
+            log.debug(
+                "send_set_seed_shop_state: enqueued managed=0x%x sold=0x%x",
+                managed, sold)
+        except asyncio.QueueFull:
+            log.error(
+                "send_set_seed_shop_state(managed=0x%x sold=0x%x): outbound "
                 "queue full; dropping", managed, sold)
 
     def send_set_badge_shop_text(self, badge_id: int, text: str) -> None:
@@ -1009,6 +1050,10 @@ class LanServer:
             # view after a Switch reboot / save reload.  No-op while no
             # shop badge is managed.
             self._push_badge_shop_state_now()
+            # Seed-shop AP ownership (2026-09-12): same for the shops'
+            # Wonder-Seed rows, so a seed AP already counted still reads
+            # purchasable and its check stays reachable.
+            self._push_seed_shop_state_now()
             # AP shop-text (2026-06-10): force-resend the per-badge
             # description table so a Switch reboot re-applies it.
             self._push_badge_shop_text_now(force=True)
@@ -1389,6 +1434,24 @@ class LanServer:
             return
         self.send_set_badge_shop_state(managed, sold)
 
+    def _push_seed_shop_state_now(self) -> None:
+        """Push the AP-authoritative seed-shop masks (HelloMsg replay +
+        periodic tick).  Same contract as
+        :meth:`_push_badge_shop_state_now`, one row type over."""
+        if self._seed_shop_state_provider is not None:
+            try:
+                managed, sold = self._seed_shop_state_provider()
+                managed, sold = int(managed), int(sold)
+            except Exception:
+                log.exception(
+                    "seed_shop_state_provider raised; skipping sync")
+                return
+        else:
+            managed, sold = self._seed_shop_state
+        if managed == 0 and self._seed_shop_state == (0, 0):
+            return
+        self.send_set_seed_shop_state(managed, sold)
+
     def _push_badge_shop_text_now(self, *, force: bool = False) -> None:
         """Push the AP shop-text table (HelloMsg replay + periodic tick).
         Sends only entries that changed since the last push (or all when
@@ -1440,6 +1503,7 @@ class LanServer:
                 self._push_itemget_deny_now()
                 self._push_unlocked_charas_now()
                 self._push_badge_shop_state_now()
+                self._push_seed_shop_state_now()
                 self._push_badge_shop_text_now()
         except asyncio.CancelledError:
             raise

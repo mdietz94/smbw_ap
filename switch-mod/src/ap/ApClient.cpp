@@ -789,6 +789,19 @@ void ApClient::handleLine(char* line, std::size_t len) {
                 msg.set_unlocked_charas.mask);
             probe::setUnlockedCharaMask(msg.set_unlocked_charas.mask);
             return;
+        case InboundKind::SetSeedShopState:
+            // AP-authoritative Poplin shop Wonder-Seed rows (2026-09-12).
+            // Same direct-apply path as SetBadgeShopState: two atomic
+            // stores consumed by the computeItemStates trampoline on the
+            // game thread, so no ring trip is needed.
+            SMBWAP_LOG_INFO(
+                "[seedshop] received SetSeedShopState(managed=0x%08x "
+                "sold=0x%08x)",
+                msg.set_seed_shop_state.managed,
+                msg.set_seed_shop_state.sold);
+            probe::setSeedShopState(msg.set_seed_shop_state.managed,
+                                    msg.set_seed_shop_state.sold);
+            return;
         case InboundKind::SetBadgeShopState:
             // AP-authoritative Poplin badge-shop ownership (2026-06-10).
             // Applied directly on the network thread -- setBadgeShopState is

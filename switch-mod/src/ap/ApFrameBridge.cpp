@@ -524,6 +524,7 @@ void drainInbound() {
             case InboundKind::SetItemGetDenyMask:
             case InboundKind::SetUnlockedCharas:
             case InboundKind::SetBadgeShopState:
+            case InboundKind::SetSeedShopState:
             case InboundKind::SetBadgeShopText:
             case InboundKind::None:
                 // Worker should have consumed these before they reach the

@@ -101,6 +101,31 @@ This is the Bowser-approach recipe (cloud piranhas, castle fly-in node):
 5. **Write** by category from the Switch side (`probe::applyOpenWorldEntry` in
    `SeedTrace.cpp`), then live-confirm.
 
+## Workflow B2 — what a world-map NPC sells, and where it saves it
+
+`Stage/WorldMapInfo/World00N.game__stage__WorldMapInfo` (BYML; `byml_parse.py`)
+is the per-world registry behind the world map, and it answers shop questions
+outright — no Ghidra, no runtime:
+
+- **`NpcTable`** — one entry per world-map NPC. `Key` is `WorldMapNpcId<NN>`,
+  and `<NN>` == the Banc `NpcId` == the PlayReport `npc_id`. `Kind: BadgeShop`
+  NPCs carry their whole lineup in `SaleItemList`: an entry with **no `Kind`**
+  is a Wonder Seed, the rest are `Badge` / `Kakashi` / `OneUpKinoko`, each with
+  its `PriceParam {PaymentType, Price}`. A seed row's `SaveId` (absent == 0) is
+  the PlayReport `item_value`, and the shop's **`WonderFlowerSaveCourseNo`** is
+  the per-course-array slot its seed is saved in (70..80 in practice).
+- **`CourseTable`** — `Key: "CourseN"` in slot order, so it *is* the per-world
+  course-index space the container-D seed/clear arrays are indexed by (1-based;
+  a Banc actor with `CourseId: 0` is not a course — shops and dummy points sit
+  there).
+- `GateTable` / `SubregionTable` / `PropellerFlowerTable` / `NextGoToDokanTable`
+  cover the rest of the map's structure.
+
+Worked example (all 12 Poplin shop Wonder Seeds resolved this way, then
+cross-validated against the client's `_SHOP_SEED_TABLE`): the **§15 Wonder-Seed
+rows** section of
+[`../smbw-reverse-engineering/reference/smbw-re-map.md`](../smbw-reverse-engineering/reference/smbw-re-map.md).
+
 ## Workflow C — hash → name (reverse)
 
 When a save diff or Ghidra immediate gives a hash you can't place:

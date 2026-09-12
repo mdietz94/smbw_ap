@@ -28,6 +28,7 @@ from ..wire import (
     PongMsg,
     ProtocolError,
     SetBadgeShopStateMsg,
+    SetSeedShopStateMsg,
     SetBadgeShopTextMsg,
     SetBadgesAbsoluteMsg,
     SetForceClearedCoursesMsg,
@@ -235,6 +236,18 @@ class TestRoundTrip(unittest.TestCase):
 
     def test_set_badge_shop_state_empty(self):
         self._round_trip(SetBadgeShopStateMsg(managed=0, sold=0))
+
+    def test_set_seed_shop_state(self):
+        self._round_trip(SetSeedShopStateMsg(
+            managed=(1 << 10) - 1, sold=(1 << 0) | (1 << 6)))
+
+    def test_set_seed_shop_state_empty(self):
+        self._round_trip(SetSeedShopStateMsg(managed=0, sold=0))
+
+    def test_set_seed_shop_state_out_of_range_rejected(self):
+        line = '{"t": "set_seed_shop_state", "managed": 4294967296, "sold": 0}'
+        with self.assertRaises(ProtocolError):
+            decode(line)
 
     def test_set_badge_shop_text(self):
         self._round_trip(SetBadgeShopTextMsg(id=9, text="PlayerB: Sword"))

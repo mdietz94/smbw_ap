@@ -35,6 +35,37 @@
 // onBadgeShopPurchase(id), which emits a BadgeAcquired event so the bridge
 // fires the "<Badge> Obtained" LocationCheck even when the owned bit was
 // already set by an AP grant (the case the bitfield-diff path misses).
+//
+// ---------------------------------------------------------------------------
+// WONDER-SEED ROWS (2026-09-12) -- the same coupling, one row type over.
+//
+// Poplin shops also sell Wonder Seeds (item type 1), and those rows were
+// left on vanilla logic, which reads the shop's own saved seed flag.  AP
+// pollutes that state from two directions: the ContainerAReader hook
+// substitutes AP's count for every read of the per-world Wonder-Seed
+// counters, and probe::pushWonderSeedContainerDCounts() blind-fills the
+// world's 81-slot per-course seed array (slot == WorldMapInfo CourseId;
+// the shop's own slot is its NpcTable `WonderFlowerSaveCourseNo`, 70..80).
+// Either way a seed row can come out SOLD OUT with the AP check never
+// sent -- exactly failure mode (2) above, so it gets the same fix: AP owns
+// the row's display state and we never consult the game's flag.
+//
+// Row identity without any new RE.  The shop screen exposes the lineup, and
+// (current world index, number of seed rows, row order) pins 10 of the 12
+// shop-seed locations exactly -- ground truth from RomFS
+// Stage/WorldMapInfo/World00N NpcTable, cross-validated against the
+// client's _SHOP_SEED_TABLE:
+//   world 1 / 1 seed  -> W1            world 5 / 1 seed -> W4 Bottom
+//   world 2 / 1 seed  -> PI  (2 shops) world 5 / 3 seeds-> W4 Secret 30/100/200
+//   world 3 / 1 seed  -> W2  (2 shops) world 6 / 1 seed -> W5
+//   world 4 / 1 seed  -> W3            world 7 / 1 seed -> W6
+// Petal Isles and W2 each have two byte-identical single-seed shops (same
+// price, indistinguishable from the screen), so they share one slot and
+// the bridge only marks it sold once BOTH of the world's shop seeds are
+// checked.  Failure is biased safe throughout: an unrecognized lineup or
+// an unmanaged slot keeps the vanilla state, and an ambiguous slot shows
+// PURCHASABLE -- at worst the player re-buys a seed whose check already
+// landed (AP ignores the duplicate), never a check locked behind SOLD OUT.
 
 #pragma once
 
@@ -48,12 +79,20 @@ namespace probe {
 // whole feature inert (vanilla shop behavior).
 void setBadgeShopState(std::uint64_t managed_mask, std::uint64_t sold_mask);
 
+// Replace the AP-authoritative shop WONDER-SEED masks (2026-09-12).  Same
+// contract as setBadgeShopState, but bit-indexed by SEED SHOP SLOT rather
+// than badge id -- see kSeedShopSlots in BadgeShop.cpp, whose enumeration
+// MUST match SEED_SHOP_SLOTS in the client's seed_shop_table.py.
+// managed == 0 makes the seed half inert (vanilla seed rows).
+void setSeedShopState(std::uint32_t managed, std::uint32_t sold);
+
 // Called by the computeItemStates trampoline AFTER orig() has populated
 // the per-item display states.  For each badge row whose internal_id is in
 // the managed mask, overwrites item+0x20: SOLD OUT (2) when the badge is in
 // the sold mask, else PURCHASABLE/UNAFFORDABLE (0/1) by price-vs-coins --
-// never letting the owned/purchased bit force SOLD OUT.  No-op when the
-// managed mask is 0.
+// never letting the owned/purchased bit force SOLD OUT.  Does the same for
+// Wonder-Seed rows (item type 1) against the seed-shop masks.  No-op when
+// both managed masks are 0.
 void applyBadgeShopItemStates(void* screen);
 
 // Called by the purchase-commit trampoline once per confirmed badge buy.
