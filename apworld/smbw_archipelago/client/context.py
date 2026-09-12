@@ -163,6 +163,10 @@ class SMBWContext(CommonContext):
         self._location_name_to_id: dict[str, int] = {}
         self._item_name_to_id: dict[str, int] = {}
         self._sent_loc_ids: set[int] = set()
+        # Checks the Switch emitted before the first AP Connected (no
+        # reverse maps yet).  Replayed through handle_check_emitted once
+        # Connected lands; see _flush_pending_checks.
+        self._pending_checks: list[CheckEmitted] = []
 
         # M3.8 DeathLink -- off by default; flipped on by slot_data
         # ``death_link`` truthy when the AP server delivers it on
@@ -449,6 +453,11 @@ class SMBWContext(CommonContext):
             # panel can show what each purchase would send.  The LocationInfo
             # reply is handled below and pushes the per-badge text.
             await self._scout_shop_badge_locations()
+
+            # Send checks the Switch emitted before we were connected
+            # (e.g. shop badges already owned at save load).  After the
+            # slot_data toggles above so the replay honours them.
+            await self._flush_pending_checks()
 
             # Tell the AP server the player is in-game so item routing
             # starts flowing.  ClientStatus.CLIENT_PLAYING.
@@ -1605,6 +1614,19 @@ class SMBWContext(CommonContext):
 
     # ---- Outbound: LanServer's CheckEmitted callback ------------------
 
+    async def _flush_pending_checks(self) -> None:
+        """Replay checks queued before the first Connected.  Called from
+        the Connected handler after slot_data toggles are applied, so the
+        replay sees the real character_block_sanity / ten_coin_sanity /
+        goal location instead of the pre-connect defaults."""
+        pending, self._pending_checks = self._pending_checks, []
+        if not pending:
+            return
+        log.info("replaying %d check(s) emitted before AP connected",
+                 len(pending))
+        for check in pending:
+            await self.handle_check_emitted(check)
+
     async def handle_check_emitted(self, check: CheckEmitted) -> None:
         """Translate a CheckEmitted to an AP LocationChecks message."""
         # M2.3 probe-mode guard: each /badge_probe overwrites the
@@ -1620,6 +1642,21 @@ class SMBWContext(CommonContext):
                 "badge probe active (mask=0x%x); suppressing AP "
                 "LocationCheck for BADGE_ACQUIRED internal_id=%d",
                 self._badge_probe_mask, check.stage_key)
+            return
+        # Not connected to AP yet (reverse maps are built on Connected):
+        # there is no location id to send, and the slot_data toggles
+        # below are still defaults.  BridgeState.emit_check has already
+        # dedup-recorded this check, so a later re-emit from the Switch
+        # is swallowed -- dropping it here loses the check for the whole
+        # client session.  Queue it and replay on Connected instead
+        # (2026-09-12 report: shop badges owned at save load and a
+        # course cleared before /connect never sent).
+        if not self._location_name_to_id:
+            self._pending_checks.append(check)
+            log.info(
+                "not connected to AP yet; queued kind=%s stage_key=%d "
+                "for replay on connect (%d pending)",
+                check.kind.value, check.stage_key, len(self._pending_checks))
             return
         # Character-block sanity gate: when the option is off for this
         # seed, the Switch hook still ships char_block_hit events but they
@@ -1676,6 +1713,10 @@ class SMBWContext(CommonContext):
                       name, loc_id)
             return
         self._sent_loc_ids.add(loc_id)
+        # CommonContext re-sends ``locations_checked`` on every Connected,
+        # so a check whose send_msgs silently no-op'd during a mid-session
+        # disconnect still reaches the server on reconnect.
+        self.locations_checked.add(loc_id)
         # Badge-shop AP ownership: a just-emitted shop-badge check means the
         # row should flip to SOLD OUT now.  Push optimistically off
         # ``_sent_loc_ids`` so it doesn't flicker back to purchasable during
@@ -1721,6 +1762,7 @@ class SMBWContext(CommonContext):
                 "send_msgs(LocationChecks=[%d]) failed; will not retry",
                 loc_id)
             self._sent_loc_ids.discard(loc_id)
+            self.locations_checked.discard(loc_id)
 
     # ---- GUI plumbing -------------------------------------------------
 
