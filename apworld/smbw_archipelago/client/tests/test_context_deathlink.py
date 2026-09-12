@@ -260,8 +260,12 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
         self.ctx.goal_location_name = (
             "Special: Wonder Gauntlet - Normal Exit")
         # Goal locations have address=None so they won't be in the
-        # name-to-id map -- intentionally omitted.
-        self.ctx._location_name_to_id = {}
+        # name-to-id map -- intentionally omitted.  The map itself is
+        # non-empty (connected); an empty map means "not connected yet"
+        # and queues the check instead.
+        self.ctx._location_name_to_id = {
+            "W1: Welcome to the Flower Kingdom! - Wonder Seed": 12345,
+        }
         await self.ctx.handle_check_emitted(CheckEmitted(
             kind=CheckKind.NORMAL_EXIT, stage_key=0x4871EB85))
         self.ctx.send_msgs.assert_any_await([{
@@ -311,7 +315,9 @@ class TestContextDeathLink(unittest.IsolatedAsyncioTestCase):
         from ..context import GOAL_LOCATION_NAME_BOWSER
         from ..protocol import CheckEmitted, CheckKind
         self.ctx.goal_location_name = GOAL_LOCATION_NAME_BOWSER
-        self.ctx._location_name_to_id = {}
+        self.ctx._location_name_to_id = {
+            "W1: Welcome to the Flower Kingdom! - Wonder Seed": 12345,
+        }
 
         await self.ctx.handle_goal_completed(self._GoalCompleted(seq=1))
         await self.ctx.handle_check_emitted(CheckEmitted(
