@@ -1464,7 +1464,7 @@
     "category": [
       "World 2"
     ],
-    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
+    "requires": ""
   },
   {
     "name": "W2: Floating High Jump I - Top of Flag",
@@ -1473,7 +1473,7 @@
       "World 2",
       "Gold Flag"
     ],
-    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
+    "requires": ""
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #1",
@@ -1482,7 +1482,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
+    "requires": ""
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #2",
@@ -1491,7 +1491,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
+    "requires": ""
   },
   {
     "name": "W2: Floating High Jump I - 10 Coin #3",
@@ -1500,7 +1500,7 @@
       "World 2",
       "10 Coin"
     ],
-    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
+    "requires": ""
   },
   {
     "name": "W2: Fluff-Puff Kerfuff - Wonder Seed",

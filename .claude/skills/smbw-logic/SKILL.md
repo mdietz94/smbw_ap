@@ -69,18 +69,22 @@ rule all live in [`reference/logic-reconciliation.md`](reference/logic-reconcili
 **(A) Per-check (location layer).** A badge challenge "*X I/II*" course is judged
 check-by-check, not gated wholesale:
 - **10-Coins → require the badge** (safe default), *except* a vetted open set
-  (`_OPEN_COIN_LEVELS`, currently **Parachute Cap I** — coins doable with
-  nothing). Pinned by `test_badge_challenge_coins_require_their_badge` +
+  (`_OPEN_COIN_LEVELS` — coins doable with nothing: **Parachute Cap I**,
+  **Spring Feet I**, **Invisibility I/II**, **Floating High Jump I**). Pinned by
+  `test_badge_challenge_coins_require_their_badge` +
   `test_open_coin_levels_stay_open`.
 - **Normal Exit / Top of Flag → require the badge only for *structural*
   courses** (`_STRUCTURAL_BADGE_LEVELS`: Wall-Climb Jump, Grappling Vine,
-  Boosting Spin Jump, Floating High Jump, Crouching High Jump, **Dolphin Kick**,
-  **Jet Run** — I & II). Others (Spring Feet, Invisibility, Parachute Cap) stay
+  Boosting Spin Jump, Crouching High Jump, **Dolphin Kick**, **Jet Run** —
+  I & II — plus **Floating High Jump II** and **Spring Feet II**). Others
+  (Spring Feet I, **Floating High Jump I**, Invisibility, Parachute Cap) stay
   open. Pinned by `test_structural_badge_levels_gate_completion` /
   `test_nonstructural_badge_completion_stays_open`.
 - **Yoshi bypass:** a Yoshi clears the *climb/float* structural courses, so
-  Wall-Climb Jump I/II and Floating High Jump I carry `... OR |@Yoshi:1|` on
-  every check (`Yoshi` category = the four Yoshis, not Nabbit).
+  Wall-Climb Jump I/II carry `... OR |@Yoshi:1|` on every check (`Yoshi`
+  category = the four Yoshis, not Nabbit). **Floating High Jump I no longer
+  needs the bypass** — player-confirmed 2026-09-12 that the whole course is
+  free, so all five of its checks are open (it is in `_OPEN_COIN_LEVELS`).
 - **Special: Badge Marathon** is its own shape — ten badge sections in one
   course, so all five checks share one **OR-of-routes** rule (4 badges always,
   then a Yoshi / Bubble Flower / all-nine-badges route). A flat AND of
