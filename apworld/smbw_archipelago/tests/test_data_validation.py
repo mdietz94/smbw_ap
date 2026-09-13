@@ -212,8 +212,9 @@ def test_post_clear_regions_inherit_their_prerequisite_gate():
         # inherit Floating High Jump I's badge gate; player-reported
         # (2026-09-12) that nothing on the way in needs Floating High Jump or a
         # Yoshi, so the gate is gone and the region rides Spring Feet I's open
-        # Normal Exit.  Floating High Jump I is now fully open too, so either
-        # reading of the prerequisite yields the same (empty) gate.
+        # Normal Exit.  Floating High Jump I keeps its OWN five gated checks --
+        # player-confirmed it "should not be blocking any other levels", so it
+        # is a prerequisite for no region and cannot strand anything.
         "W2 Post-Jump": ("W2: Spring Feet I", ""),
         "W4 Post-Invis": ("W4: Invisibility I", ""),
         "W5 Post-Wubba": ("W5: Wubba Ruins", ""),
@@ -408,10 +409,7 @@ _STRUCTURAL_BADGE_LEVELS = {
     "Wall-Climb Jump I", "Wall-Climb Jump II",
     "Grappling Vine I", "Grappling Vine II",
     "Boosting Spin Jump I", "Boosting Spin Jump II",
-    # Floating High Jump I is deliberately absent -- player-reported 2026-09-12
-    # that the course needs nothing at all; ALL five of its checks are open and
-    # it lives in _OPEN_COIN_LEVELS.  II keeps the gate.
-    "Floating High Jump II",
+    "Floating High Jump I", "Floating High Jump II",
     "Crouching High Jump I", "Crouching High Jump II",
     "Dolphin Kick I", "Dolphin Kick II",
     "Jet Run I", "Jet Run II",
@@ -437,10 +435,6 @@ _OPEN_COIN_LEVELS = {
     # were the last site -- |Invisibility Badge| now appears in NO requires.
     # Pinned by test_invisibility_badge_is_never_required.
     "Invisibility I",
-    # Player-reported 2026-09-12: "you can remove all the requirements for
-    # Floating High Jump I" -- the whole course (exit, flag and coins) is
-    # doable with no badge and no Yoshi.  Floating High Jump II is unaffected.
-    "Floating High Jump I",
 }
 
 _CHECK_RE = re.compile(r"^[^:]+: (.*?) - (.+)$")
@@ -520,16 +514,50 @@ def test_invisibility_badge_is_never_required():
     )
 
 
+def test_floating_high_jump_badge_blocks_only_its_own_courses():
+    """The Floating High Jump Badge gates its own badge challenges and nothing
+    else (player-confirmed 2026-09-13: "it should not be blocking any other
+    levels").
+
+    The course itself is structural -- all five of Floating High Jump I's checks
+    keep ``|Floating High Jump Badge| OR |@Yoshi:1|`` (briefly opened on
+    2026-09-12, reverted the same day) -- but the badge must never appear in a
+    REGION rule, which is the only way it could strand another course.  Badge
+    Marathon is the one other site, and there it is one alternative inside an
+    OR-of-routes, not a wall.
+    """
+    badge = "|Floating High Jump Badge|"
+    offenders = [
+        f"region {name}: {region.get('requires', '')!r}"
+        for name, region in _load_json("regions.json").items()
+        if badge in str(region.get("requires", ""))
+    ]
+    assert not offenders, (
+        f"{badge} must not gate any region -- it would block levels beyond its "
+        "own badge challenges:\n  " + "\n  ".join(offenders)
+    )
+    allowed = {"Floating High Jump I", "Floating High Jump II", "Badge Marathon"}
+    strays = []
+    for loc in _load_json("locations.json"):
+        if badge not in str(loc.get("requires", "")):
+            continue
+        m = _CHECK_RE.match(loc["name"])
+        if m is None or m.group(1) not in allowed:
+            strays.append(loc["name"])
+    assert not strays, (
+        f"{badge} may only appear on its own courses and Badge Marathon, not "
+        "on:\n  " + "\n  ".join(strays)
+    )
+
+
 def test_nonstructural_badge_completion_stays_open():
     """A badge challenge that is completable without the badge keeps its Normal
-    Exit / Top of Flag open (maintainer scope, PR #137).  Pin Invisibility I and
-    Floating High Jump I -- still-open examples -- so a future blanket re-gate is
-    caught.  (Dolphin Kick and Jet Run were the original pin but moved to
-    _STRUCTURAL_BADGE_LEVELS after a player report that they DO require the badge
-    to complete.)"""
+    Exit / Top of Flag open (maintainer scope, PR #137).  Pin Invisibility I --
+    a still-open example -- so a future blanket re-gate is caught.  (Dolphin Kick
+    and Jet Run were the original pin but moved to _STRUCTURAL_BADGE_LEVELS after
+    a player report that they DO require the badge to complete.)"""
     for loc, lvl, kind, badge, requires in _challenge_checks():
-        if lvl in ("Invisibility I", "Floating High Jump I") and kind in (
-            "Normal Exit", "Top of Flag"):
+        if lvl == "Invisibility I" and kind in ("Normal Exit", "Top of Flag"):
             assert f"|{badge}|" not in requires, (
                 f"{loc['name']} should NOT require |{badge}| "
                 f"(completable without it): {requires!r}"

@@ -29,14 +29,13 @@ reports):
 - **Normal Exit / Top of Flag → require the badge ONLY where it is
   *structurally* required to reach the goal** (maintainer-confirmed). The
   structural courses are **Wall-Climb Jump**, **Grappling Vine**, **Boosting
-  Spin Jump**, **Crouching High Jump**, **Dolphin Kick**, and **Jet Run** (both
-  I & II of each), plus **Floating High Jump II** and **Spring Feet II** — you
-  can't climb / swing / spin / float / crouch-jump / dolphin-kick / jet-dash to
-  the exit without the ability (Dolphin Kick I/II + Jet Run I player-confirmed;
-  Jet Run II gated by extension for safety). The remaining courses —
-  **Invisibility** and **Parachute Cap** (I & II), **Spring Feet I** and
-  **Floating High Jump I** (player-confirmed free, 2026-09-12) — are completable
-  without the badge, so their completion checks stay **open**. Pinned by `test_structural_badge_levels_gate_completion` /
+  Spin Jump**, **Floating High Jump**, **Crouching High Jump**, **Dolphin Kick**,
+  and **Jet Run** (both I & II of each) — you can't climb / swing / spin / float
+  / crouch-jump / dolphin-kick / jet-dash to the exit without the ability
+  (Dolphin Kick I/II + Jet Run I player-confirmed; Jet Run II gated by extension
+  for safety). The remaining courses — **Spring Feet, Invisibility, Parachute
+  Cap** (I & II) — are completable without the badge, so their completion checks
+  stay **open**. Pinned by `test_structural_badge_levels_gate_completion` /
   `test_nonstructural_badge_completion_stays_open`
   (`_STRUCTURAL_BADGE_LEVELS` is the source of truth).
 
@@ -46,9 +45,8 @@ reports):
 
 **Yoshi bypasses the movement badge.** A Yoshi (any of the four; category
 `Yoshi`) can climb/float through a structural challenge without the badge, so
-**Wall-Climb Jump I/II** carry `... OR |@Yoshi:1|` on **every** check
-(completion + coins) — player-confirmed. (**Floating High Jump I** used to be in
-this list; as of 2026-09-12 it needs nothing at all, so its checks are bare.) The badge token is
+**Wall-Climb Jump I/II** and **Floating High Jump I** carry `... OR |@Yoshi:1|`
+on **every** check (completion + coins) — player-confirmed. The badge token is
 kept alongside (the pin tests only require its presence), and the `|@Yoshi:1|`
 category counts the four Yoshi items (Green/Red/Light-Blue/Yellow) but **not**
 Nabbit. Add the same `OR |@Yoshi:1|` if more Yoshi-clearable challenges surface.
@@ -365,7 +363,7 @@ which also fails on any new `Post-*` region it doesn't know about):
 | Region | Unlocked by clearing | `requires` |
 |---|---|---|
 | `W1 Post-Jet Run` | W1: Jet Run I | `\|Jet Run Badge\|` |
-| `W2 Post-Jump` | W2: Spring Feet I | `""` (open — **corrected 2026-09-12**, was W2: Floating High Jump I / badge-or-Yoshi) |
+| `W2 Post-Jump` | W2: Spring Feet I | `""` (open — **corrected 2026-09-12**; was read as W2: Floating High Jump I and inherited its badge-or-Yoshi gate) |
 | `W6 Post-Spring` | W6: Jet Run II | `\|Jet Run Badge\|` |
 | `W4 Post-Invis` | W4: Invisibility I | `""` (completion open) |
 | `W5 Post-Wubba` | W5: Wubba Ruins | `""` (completion open) |
@@ -391,8 +389,7 @@ with it; 45 generations (3 option sets × 15 seeds) all fill and beat.
   **Blewbird Roost 10 Coin #3** (was Bubble-Flower-only), and to every check of
   **Floating High Jump II** and **Boosting Spin Jump I** (video-confirmed /
   player-confirmed). `@Yoshi` excludes Nabbit by design. Floating High Jump I
-  already had the Yoshi alternative — II was the asymmetry. *(Superseded
-  2026-09-12: Floating High Jump I needs nothing at all; only II is gated.)*
+  already had the Yoshi alternative — II was the asymmetry.
 - **Spring Feet II is structural** — *"completely doable with Yoshi, but
   impossible without him"*. Its Normal Exit / Top of Flag were **open**; all five
   checks are now `|Spring Feet Badge| OR |@Yoshi:1|` and the course joined
@@ -662,21 +659,19 @@ Two gates the player hit and reported as wrong; both removed. Pinned by
   rule, which read the region as "you cleared **Floating High Jump I**" and
   copied that course's badge require. The region is now recorded as riding
   **Spring Feet I**'s (open) Normal Exit instead.
-- **`W2: Floating High Jump I` → fully open** (all five checks were
-  `|Floating High Jump Badge| OR |@Yoshi:1|`). *"You can remove all the
-  requirements for Floating High Jump I as well."* The course left
-  `_STRUCTURAL_BADGE_LEVELS` and joined `_OPEN_COIN_LEVELS`, so all five checks
-  are bare — the same shape Invisibility I/II already have. **Floating High Jump
-  II keeps its gate** (badge OR Yoshi, unreported).
-  This also retires the caveat raised with the `W2 Post-Jump` change: whichever
-  course actually unlocks that region — Spring Feet I or Floating High Jump I —
-  both are now free, so the empty gate is correct either way and the `Post-*`
-  softlock class cannot bite here. The region is a leaf (`connects_to: []`), so
-  nothing downstream is affected regardless.
-  ⚠️ `|Floating High Jump Badge|` now gates only **Floating High Jump II** and
-  one Badge Marathon route — it is close to joining Invisibility as a
-  progression item that gates almost nothing. Worth folding into the deferred
-  "progression badges that gate nothing" sweep rather than acting on alone.
+  **Floating High Jump I itself is unchanged** — its own five checks still carry
+  `|Floating High Jump Badge| OR |@Yoshi:1|` (structural). The course was briefly
+  opened entirely and then **reverted the same day** at the player's request
+  ("never mind I was wrong… but it should not be blocking any other levels"), so
+  the split is deliberate and settled:
+
+  > **Floating High Jump I gates its own five checks and nothing else.** It is
+  > not a prerequisite for any region, so the badge can never strand another
+  > course. The `Post-*` softlock worry raised when `W2 Post-Jump` was opened is
+  > therefore closed, not merely unlikely.
+
+  Because the badge no longer appears in any region rule, an FHJ-less player just
+  skips this one course; the region is a leaf (`connects_to: []`) regardless.
 
 ## General audit follow-up
 
