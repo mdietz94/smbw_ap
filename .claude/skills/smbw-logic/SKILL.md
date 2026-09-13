@@ -69,14 +69,15 @@ rule all live in [`reference/logic-reconciliation.md`](reference/logic-reconcili
 **(A) Per-check (location layer).** A badge challenge "*X I/II*" course is judged
 check-by-check, not gated wholesale:
 - **10-Coins → require the badge** (safe default), *except* a vetted open set
-  (`_OPEN_COIN_LEVELS`, currently **Parachute Cap I** — coins doable with
-  nothing). Pinned by `test_badge_challenge_coins_require_their_badge` +
+  (`_OPEN_COIN_LEVELS` — coins doable with nothing: **Parachute Cap I**,
+  **Spring Feet I**, **Invisibility I/II**). Pinned by
+  `test_badge_challenge_coins_require_their_badge` +
   `test_open_coin_levels_stay_open`.
 - **Normal Exit / Top of Flag → require the badge only for *structural*
   courses** (`_STRUCTURAL_BADGE_LEVELS`: Wall-Climb Jump, Grappling Vine,
   Boosting Spin Jump, Floating High Jump, Crouching High Jump, **Dolphin Kick**,
-  **Jet Run** — I & II). Others (Spring Feet, Invisibility, Parachute Cap) stay
-  open. Pinned by `test_structural_badge_levels_gate_completion` /
+  **Jet Run** — I & II — plus **Spring Feet II**). Others (Spring Feet I,
+  Invisibility, Parachute Cap) stay open. Pinned by `test_structural_badge_levels_gate_completion` /
   `test_nonstructural_badge_completion_stays_open`.
 - **Yoshi bypass:** a Yoshi clears the *climb/float* structural courses, so
   Wall-Climb Jump I/II and Floating High Jump I carry `... OR |@Yoshi:1|` on

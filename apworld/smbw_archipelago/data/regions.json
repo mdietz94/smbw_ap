@@ -74,7 +74,7 @@
   },
   "W2 Post-Jump": {
     "connects_to": [],
-    "requires": "|Floating High Jump Badge| OR |@Yoshi:1|"
+    "requires": ""
   },
   "W2 9 Seeds": {
     "connects_to": [

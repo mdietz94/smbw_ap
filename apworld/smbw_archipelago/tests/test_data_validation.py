@@ -156,6 +156,32 @@ def test_progression_wall_badges_gate_regions():
         )
 
 
+def test_badge_granting_levels_do_not_require_their_own_badge():
+    """A level whose only job is to HAND the player a badge must not require
+    that badge to clear -- that is circular, and with AP as the badge authority
+    it strands the check behind the item it awards.
+
+    Player-reported 2026-09-12: *Badge House in Pipe-Rock Plateau* still
+    carried ``|Parachute Cap Badge|`` on its Normal Exit even though the region
+    wall was dropped for exactly this reason ("the Badge House just hands it
+    over").  The badge *challenge* courses (Parachute Cap I/II, ...) are a
+    different animal and keep their gates -- see ``_BADGE_CHALLENGE_LEVELS``.
+    """
+    granting = {
+        "W1: Badge House in Pipe-Rock Plateau - Normal Exit": "Parachute Cap Badge",
+        "W1: Mountaineering! - Normal Exit": "Auto Super Mushroom Badge",
+    }
+    by_name = {loc["name"]: loc for loc in _load_json("locations.json")}
+    for name, badge in granting.items():
+        assert name in by_name, f"missing location {name!r}"
+        requires = by_name[name].get("requires", "")
+        assert badge not in str(requires), (
+            f"{name!r} must NOT require |{badge}| -- the level grants that "
+            f"badge and is clearable without it (player-confirmed). "
+            f"requires == {requires!r}"
+        )
+
+
 def test_post_clear_regions_inherit_their_prerequisite_gate():
     """A ``Post-<X>`` region means "you cleared course X", so its ``requires``
     must repeat whatever X's own completion checks require.
@@ -180,10 +206,16 @@ def test_post_clear_regions_inherit_their_prerequisite_gate():
     # A course whose completion is open contributes "" (no gate needed).
     inherited = {
         "W1 Post-Jet Run": ("W1: Jet Run I", "|Jet Run Badge|"),
-        "W2 Post-Jump": ("W2: Floating High Jump I",
-                         "|Floating High Jump Badge| OR |@Yoshi:1|"),
         "W6 Post-Spring": ("W6: Jet Run II", "|Jet Run Badge|"),
         # Unlocked by courses whose completion checks are open -- no gate.
+        # W2 Post-Jump holds Spring Feet I + Climb to the Beat.  It used to
+        # inherit Floating High Jump I's badge gate; player-reported
+        # (2026-09-12) that nothing on the way in needs Floating High Jump or a
+        # Yoshi, so the gate is gone and the region rides Spring Feet I's open
+        # Normal Exit.  Floating High Jump I keeps its OWN five gated checks --
+        # player-confirmed it "should not be blocking any other levels", so it
+        # is a prerequisite for no region and cannot strand anything.
+        "W2 Post-Jump": ("W2: Spring Feet I", ""),
         "W4 Post-Invis": ("W4: Invisibility I", ""),
         "W5 Post-Wubba": ("W5: Wubba Ruins", ""),
         "W5 Post-Swaying": ("W5: Swaying Ruins", ""),
@@ -205,11 +237,15 @@ def test_post_clear_regions_inherit_their_prerequisite_gate():
             f"must be {expected!r} but is {actual!r} -- a mismatch puts the "
             f"region's contents in logic before the player can clear the course"
         )
-        # And the gate must actually match the prerequisite's Normal Exit.
-        if expected:
+        # And the gate must actually match the prerequisite's Normal Exit --
+        # in both directions, so an ungated region can't silently drift out of
+        # sync when its prerequisite later grows a requirement.
+        if course is not None:
             exit_loc = by_name.get(f"{course} - Normal Exit")
             assert exit_loc is not None, f"missing {course!r} Normal Exit"
             exit_req = exit_loc.get("requires", "")
+            if exit_req == []:
+                exit_req = ""
             assert exit_req == expected, (
                 f"{course!r} Normal Exit requires {exit_req!r} but "
                 f"{region!r} gates on {expected!r} -- keep them in sync"
@@ -475,6 +511,42 @@ def test_invisibility_badge_is_never_required():
             offenders.append(f"region {name}: {requires!r}")
     assert not offenders, (
         "|Invisibility Badge| must not gate anything:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_floating_high_jump_badge_blocks_only_its_own_courses():
+    """The Floating High Jump Badge gates its own badge challenges and nothing
+    else (player-confirmed 2026-09-13: "it should not be blocking any other
+    levels").
+
+    The course itself is structural -- all five of Floating High Jump I's checks
+    keep ``|Floating High Jump Badge| OR |@Yoshi:1|`` (briefly opened on
+    2026-09-12, reverted the same day) -- but the badge must never appear in a
+    REGION rule, which is the only way it could strand another course.  Badge
+    Marathon is the one other site, and there it is one alternative inside an
+    OR-of-routes, not a wall.
+    """
+    badge = "|Floating High Jump Badge|"
+    offenders = [
+        f"region {name}: {region.get('requires', '')!r}"
+        for name, region in _load_json("regions.json").items()
+        if badge in str(region.get("requires", ""))
+    ]
+    assert not offenders, (
+        f"{badge} must not gate any region -- it would block levels beyond its "
+        "own badge challenges:\n  " + "\n  ".join(offenders)
+    )
+    allowed = {"Floating High Jump I", "Floating High Jump II", "Badge Marathon"}
+    strays = []
+    for loc in _load_json("locations.json"):
+        if badge not in str(loc.get("requires", "")):
+            continue
+        m = _CHECK_RE.match(loc["name"])
+        if m is None or m.group(1) not in allowed:
+            strays.append(loc["name"])
+    assert not strays, (
+        f"{badge} may only appear on its own courses and Badge Marathon, not "
+        "on:\n  " + "\n  ".join(strays)
     )
 
 
