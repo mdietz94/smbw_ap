@@ -200,15 +200,25 @@ WORLD_UNLOCK_DROPPED_HASHES: Final[tuple[int, ...]] = (
 #: ``open_world.WORLD_NUMBERS``).
 UNLOCK_WORLD_NUMBERS: Final[tuple[int, ...]] = (1, 2, 3, 4, 5, 6)
 
+#: Bowser's Castle is unlocked like a world.  It has no AP world number, so it
+#: takes this pseudo-number in the locked/unlocked world sets and as the
+#: WORLD_UNLOCK gate requirement.  Its item gates the castle's gauntlet
+#: courses only -- the final Bowser's Rage Stage keeps the Royal-Seed gate.
+CASTLE_UNLOCK_WORLD: Final[int] = 7
+CASTLE_UNLOCK_ITEM: Final[str] = "Bowser's Castle Unlock"
+
 
 def unlock_item_name(world_no: int) -> str:
-    """The AP item name that unlocks AP world ``world_no`` (1-6)."""
+    """The AP item name that unlocks AP world ``world_no`` (1-6, or
+    :data:`CASTLE_UNLOCK_WORLD` for Bowser's Castle)."""
+    if world_no == CASTLE_UNLOCK_WORLD:
+        return CASTLE_UNLOCK_ITEM
     return f"W{world_no} Unlock"
 
 
-#: item name -> AP world number.
+#: item name -> AP world number (castle included).
 UNLOCK_ITEM_TO_WORLD: Final[dict[str, int]] = {
-    unlock_item_name(n): n for n in UNLOCK_WORLD_NUMBERS
+    unlock_item_name(n): n for n in UNLOCK_WORLD_NUMBERS + (CASTLE_UNLOCK_WORLD,)
 }
 
 

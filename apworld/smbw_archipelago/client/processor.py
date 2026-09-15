@@ -34,6 +34,7 @@ from .protocol import (
 )
 from . import char_block_table
 from .location_table import pr_world_no_to_ap_world
+from .world_unlock_table import CASTLE_UNLOCK_WORLD
 from .state import BridgeState, CurrentCourse
 
 
@@ -273,17 +274,19 @@ _FAKE_EXIT_STAGE_KEYS: frozenset[int] = frozenset({
 # gated).  Entry requires owning the AP badge whose container-C
 # internal_id that course awards.
 #
-# Bowser's Castle gate: EVERY course in Bowser's Castle -- not just the
-# final Bowser's Rage Stage -- gates on the same final-level requirement
-# (the player holds all six AP Royal Seeds; the open-world client adds the
-# in-game palace-clear check).  The whole castle is one gated wing, so
-# entering any of its courses without qualifying bounces the player out.
+# Bowser's Castle gate.  The final Bowser's Rage Stage always gates on the
+# final-level requirement (the player holds all six AP Royal Seeds; the
+# open-world client adds the in-game palace-clear check).  The castle's
+# gauntlet courses depend on the mode: in an open-world seed that ships a
+# "Bowser's Castle Unlock" item (state.open_world_castle) they are gated like
+# a world -- WORLD_UNLOCK while CASTLE_UNLOCK_WORLD is locked, otherwise free;
+# in standard mode (and older open-world seeds) they share the Royal-Seed gate.
 
 _FINAL_BOWSER_STAGE_KEY: int = 0x6895BF00  # BC: Bowser's Rage Stage
 _FINAL_BOWSER_REQUIRED_ROYAL_SEEDS: int = 6
 
 # All Bowser's Castle course stage_keys (the gauntlet courses + the final
-# Rage Stage).  Any entry here triggers the ROYAL_SEEDS gate.
+# Rage Stage).
 _BOWSER_CASTLE_STAGE_KEYS: frozenset[int] = frozenset({
     0x4866EB2F,  # BC: Missile Meg Mayhem
     0x6C3B527E,  # BC: High-Voltage Gauntlet
@@ -624,13 +627,23 @@ def _handle_course_in(state: BridgeState, fields: dict[str, Any]) -> list[Proces
     # _handle_course_result (the PlayReport decoder yields the unsigned
     # 32-bit key these tables are keyed by).
     if sk in _BOWSER_CASTLE_STAGE_KEYS:
-        return [GateEntered(
-            stage_key=sk,
-            gate_kind=GateKind.ROYAL_SEEDS,
-            requirement=_FINAL_BOWSER_REQUIRED_ROYAL_SEEDS,
-            world_no=world_no,
-            course_no=course_no,
-        )]
+        if sk == _FINAL_BOWSER_STAGE_KEY or not state.open_world_castle:
+            return [GateEntered(
+                stage_key=sk,
+                gate_kind=GateKind.ROYAL_SEEDS,
+                requirement=_FINAL_BOWSER_REQUIRED_ROYAL_SEEDS,
+                world_no=world_no,
+                course_no=course_no,
+            )]
+        if state.is_world_locked(CASTLE_UNLOCK_WORLD):
+            return [GateEntered(
+                stage_key=sk,
+                gate_kind=GateKind.WORLD_UNLOCK,
+                requirement=CASTLE_UNLOCK_WORLD,
+                world_no=world_no,
+                course_no=course_no,
+            )]
+        return []
     # Open-world world-unlock gate.  ``locked_worlds`` holds only worlds that
     # ARE part of this seed and are still locked -- it is empty outside
     # open-world / with world_unlock_items off, and never contains an inactive

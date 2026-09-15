@@ -6,18 +6,19 @@ per-world Wonder-Seed counts and the previous world's Royal Seed (see
 ``data/regions.json``).  Open-world mode keeps each world's *internal*
 Wonder-Seed progression but detaches the worlds from each other: a random
 set of N worlds (``open_world_count``) all hang directly off the ``Manual``
-menu region, and Bowser is reached directly off ``Manual`` once all six
-AP Royal Seeds are held AND at least
-``palaces_required`` of the active palaces are reachable (the client's
-runtime death-gate enforces the matching "actually cleared
-``palaces_required`` palaces in your own game" condition on every Bowser's
-Castle course).
+menu region, and so does ``World Bowser`` (Bowser's Castle).  Only the
+castle's final course -- Bowser's Rage Stage, the goal -- needs all six AP
+Royal Seeds AND at least ``palaces_required`` of the active palaces
+reachable (the client's runtime death-gate enforces the matching "actually
+cleared ``palaces_required`` palaces in your own game" condition on that
+course alone); the castle's gauntlet courses are ordinary checks.
 
 With ``world_unlock_items`` on (the default) those worlds are not all open
 at once: each is gated behind its own ``W<n> Unlock`` progression item and
 exactly one -- ``world.start_world`` -- is precollected, so fill decides in
-which random order the worlds unlock each other.  See the "World-unlock
-items" section below.
+which random order the worlds unlock each other.  Bowser's Castle is gated
+the same way by ``Bowser's Castle Unlock`` (never precollected).  See the
+"World-unlock items" section below.
 
 The restructuring is done by mutating this player's in-memory region graph
 (``Regions.create_regions`` has already built the full vanilla graph by the
@@ -108,6 +109,25 @@ def royal_seed_item(n: int) -> str:
 
 def world_unlock_item(n: int) -> str:
     return f"W{n} Unlock"
+
+
+# Bowser's Castle is unlocked like a world: the ``Manual -> World Bowser``
+# edge requires this item.  It is always in the pool (the castle is part of
+# every open-world seed) and never the precollected start unlock.  Keep in sync
+# with client/world_unlock_table.CASTLE_UNLOCK_ITEM.
+CASTLE_UNLOCK_ITEM = "Bowser's Castle Unlock"
+
+
+def make_castle_unlock_gate(player: int):
+    """Access rule for the ``Manual -> World Bowser`` edge with world-unlock
+    items on: hold ``Bowser's Castle Unlock``.  The Royal-Seed / palace
+    requirement is NOT here -- it guards only the final course (see
+    ``make_bowser_gate``)."""
+
+    def rule(state) -> bool:
+        return state.has(CASTLE_UNLOCK_ITEM, player)
+
+    return rule
 
 
 def uses_world_unlock_items(world) -> bool:
@@ -284,7 +304,7 @@ def restructure_regions(world: World, multiworld: MultiWorld, player: int, activ
        isolating hub regions and every world from each other.
     2. Rebuild ``Manual``'s exits: one always-open edge to each active
        world's ``Start``, plus a single edge to ``World Bowser`` (the
-       Royal-Seed gate is attached later in ``after_set_rules``).
+       castle-unlock gate is attached later in ``after_set_rules``).
     """
     from .Regions import getConnectionName
 
@@ -323,10 +343,9 @@ def strip_inactive_locations(world: World, multiworld: MultiWorld, player: int, 
 
     Bowser's Castle is ALWAYS part of open-world: every ``BC:``-prefixed
     course location (the gauntlet courses + the final Bowser's Rage Stage
-    goal) is kept as a live AP location, gated -- like the goal -- on the
-    ``Manual -> World Bowser`` entrance (all six AP Royal Seeds).  The client
-    death-gate additionally enforces the in-game palace-clear requirement on
-    every castle course.
+    goal) is kept as a live AP location behind the ``Manual -> World
+    Bowser`` entrance (``Bowser's Castle Unlock`` with world-unlock items on).
+    Only the goal additionally needs the Royal Seeds + palaces.
 
     ``World Bowser`` also bundles four non-course meta-locations -- the
     "All <X> Power Badge Obtained" achievements -- which require collecting a
@@ -389,26 +408,22 @@ PALACE_LOCATION = {
 
 
 def make_bowser_gate(player: int, active_worlds, palaces_required: int):
-    """Access rule for the ``Manual -> World Bowser`` edge (and thus every
-    Bowser's Castle course location): the player must hold **all six** AP
-    Royal Seeds AND be able to clear at least ``palaces_required`` of the
-    active worlds' palaces.
+    """Access rule for the final course, ``BOWSER_VICTORY_LOCATION`` (ANDed
+    onto its own rule; the rest of the castle only needs the castle unlock):
+    the player must hold **all six** AP Royal Seeds AND be able to clear at
+    least ``palaces_required`` of the active worlds' palaces.
 
-    Why the palace half is modelled in logic (it mirrors the client's runtime
-    death-gate, which bounces the player out of any castle course unless they
-    hold all six AP Royal Seeds and have cleared ``palaces_required`` palaces
-    in their own game): the Castle's course locations are in the pool, so
-    without it fill could place a progression item the player needs to *reach*
-    a required palace behind the all-six-seed Castle gate -- a deadlock (you
-    can't enter the Castle to grab the item without first clearing the palace
-    that item gates).  Gating the Castle on the active palaces being
-    *reachable* (= clearable) forces fill to keep every palace prerequisite
-    outside the Castle.
+    The palace half mirrors the client's runtime death-gate, which bounces
+    the player out of Bowser's Rage Stage unless they hold all six AP Royal
+    Seeds and have cleared ``palaces_required`` palaces in their own game.
+    Without it logic would call the goal reachable before the kill-gate lets
+    the player through.  The goal holds only the Victory event, so nothing
+    fill places can sit behind this gate.
 
     All six Royal Seeds are kept in the pool regardless of the active-world
-    set (see ``inactive_item_pool``).  ``can_reach_location`` is an indirect
-    condition, so ``after_set_rules`` must register each active palace region
-    against this entrance (see ``register_bowser_indirect_conditions``)."""
+    set (see ``inactive_item_pool``).  This is a *location* rule, so
+    ``can_reach_location`` needs no indirect-condition registration (location
+    rules are re-evaluated on every sweep; only entrance rules are cached)."""
     seeds = [royal_seed_item(n) for n in WORLD_NUMBERS]
     palace_locs = [PALACE_LOCATION[n] for n in active_worlds if n in PALACE_LOCATION]
 
@@ -422,16 +437,10 @@ def make_bowser_gate(player: int, active_worlds, palaces_required: int):
     return rule
 
 
-def register_bowser_indirect_conditions(multiworld, player, active_worlds, bowser_entrance) -> None:
-    """Register each active palace location's region as an indirect condition
-    for the Bowser entrance, so AP re-evaluates ``make_bowser_gate`` when a
-    palace becomes reachable (the gate calls ``can_reach_location`` on them).
-    Required because the world uses explicit indirect conditions -- without it
-    the entrance would be evaluated once, before the palaces are reachable,
-    and never retried."""
-    for n in active_worlds:
-        loc_name = PALACE_LOCATION.get(n)
-        if loc_name is None:
-            continue
-        region = multiworld.get_location(loc_name, player).parent_region
-        multiworld.register_indirect_condition(region, bowser_entrance)
+def gate_final_bowser_course(multiworld, player, active_worlds, palaces_required) -> None:
+    """AND ``make_bowser_gate`` onto the goal location's existing rule (its
+    data-table ``requires`` + region), leaving the gauntlet courses alone."""
+    location = multiworld.get_location(BOWSER_VICTORY_LOCATION, player)
+    base = location.access_rule
+    gate = make_bowser_gate(player, active_worlds, palaces_required)
+    location.access_rule = lambda state: base(state) and gate(state)

@@ -40,6 +40,7 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
     W1_SEED = 300
     W3_SEED = 302
     W5_SEED = 304
+    CASTLE_UNLOCK = 400
 
     async def asyncSetUp(self) -> None:  # type: ignore[override]
         from ..context import SMBWContext
@@ -65,6 +66,7 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
             self.W1_SEED: "W1 Royal Seed",
             self.W3_SEED: "W3 Royal Seed",
             self.W5_SEED: "W5 Royal Seed",
+            self.CASTLE_UNLOCK: "Bowser's Castle Unlock",
         }.get(i, f"?{i}")
 
     async def asyncTearDown(self) -> None:  # type: ignore[override]
@@ -143,6 +145,36 @@ class TestContextOpenWorld(unittest.IsolatedAsyncioTestCase):
         await self.ctx._handle_received_items({"items": [{"item": self.W1_SEED}]})
         self.assertFalse(self.ctx._bowser_opened)
         self.ctx.lan_server.send_set_royal_seeds_absolute.assert_not_called()
+
+    # ---- Castle unlocked like a world (open_world_castle_unlock) -------
+
+    _CASTLE_SLOT = {"open_world_active": [3, 5], "palaces_required": 2,
+                    "open_world_castle_unlock": True}
+
+    async def test_castle_unlock_item_opens_castle_not_royal_seeds(self):
+        await self._connect({**self._CASTLE_SLOT, "open_world_unlock_items": True})
+        self.assertTrue(self.state.open_world_castle)
+        self.assertFalse(self.ctx._bowser_opened)
+        self.ctx.lan_server.reset_mock()
+
+        # Royal Seeds alone no longer open the castle route.
+        self.ctx.items_received = [{"item": self.W1_SEED}, {"item": self.W3_SEED}]
+        await self.ctx._handle_received_items({"items": list(self.ctx.items_received)})
+        self.assertFalse(self.ctx._bowser_opened)
+        self.ctx.lan_server.send_set_routable_worlds.assert_not_called()
+
+        # Its Unlock item does: PI 0x40 | Castle 0x100 (W1 inactive).
+        self.ctx.items_received.append({"item": self.CASTLE_UNLOCK})
+        await self.ctx._handle_received_items({"items": [{"item": self.CASTLE_UNLOCK}]})
+        self.assertTrue(self.ctx._bowser_opened)
+        self.ctx.lan_server.send_set_routable_worlds.assert_called_with(0x140)
+        self.assertNotIn(7, self.state.locked_worlds)
+
+    async def test_castle_open_from_start_without_unlock_items(self):
+        await self._connect(dict(self._CASTLE_SLOT))
+        self.assertTrue(self.ctx._bowser_opened)
+        self.ctx.lan_server.send_set_routable_worlds.assert_called_once_with(0x140)
+        self.assertEqual(self.state.locked_worlds, set())
 
     # ---- Goal is beating Bowser, not holding seeds --------------------
 

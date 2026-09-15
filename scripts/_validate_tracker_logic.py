@@ -158,17 +158,21 @@ def open_full(region, inv_open, active, memo, unlock=False):
     memo[region] = res
     return res
 
-def py_open_access(loc, inv, active, P, unlock=False):
+def py_open_access(loc, inv, active, P, unlock=False, castle=False):
     region = loc.get("region")
     name = loc["name"]
     inv_open = dict(inv)
     for nm in ALWAYS_AVAILABLE | {"Petal Isles Wonder Seed", "Special World Wonder Seed"}:
         inv_open[nm] = name2count.get(nm, 1)   # precollected / always-granted
     if region == "World Bowser":
-        if name != GOAL:
-            return False                        # stripped in open-world
-        royals = sum(1 for n in active if inv.get(f"W{n} Royal Seed", 0) > 0)
-        if royals < P:
+        if not name.startswith("BC:"):
+            return False                        # badge metas stripped in open-world
+        royals_ok = sum(1 for n in active if inv.get(f"W{n} Royal Seed", 0) > 0) >= P
+        if castle:                              # castle unlocked like a world
+            castle_ok = not unlock or inv_open.get("Bowser's Castle Unlock", 0) > 0
+        else:                                   # older seeds: palace count
+            castle_ok = royals_ok
+        if not castle_ok or (name == GOAL and not royals_ok):
             return False
         return pyeval(loc.get("requires", "") or "", inv_open)
     if is_hub(region):
@@ -278,13 +282,15 @@ def main():
         active = sorted(random.sample(range(1, 7), k))
         P = random.randint(1, k)
         unlock = random.random() < 0.5
+        castle = random.random() < 0.5
         sd = lua.table_from({"open_world": 1,
                              "open_world_active": lua.table_from(active),
                              "palaces_required": P,
-                             "open_world_unlock_items": unlock})
+                             "open_world_unlock_items": unlock,
+                             "open_world_castle_unlock": castle})
         run_scenario(inv_codes, sd,
-                     lambda loc, a=active, p=P, u=unlock:
-                         py_open_access(loc, inv_names, a, p, u))
+                     lambda loc, a=active, p=P, u=unlock, c=castle:
+                         py_open_access(loc, inv_names, a, p, u, c))
         checks += len(apids)
     print(f"checked {checks} evals across standard + open-world; mismatches={mism}")
 

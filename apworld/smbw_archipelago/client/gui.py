@@ -241,6 +241,11 @@ class SMBWManager(GameManager):
                 f"[color=808080]W{n} (locked)[/color]" if n in locked
                 else f"[color=80ff80]W{n}[/color]"
                 for n in active) if active else "[color=80ff80](none)[/color]"
+            if getattr(ctx, "open_world_castle_unlock", False):
+                from .world_unlock_table import CASTLE_UNLOCK_WORLD
+                worlds += (", [color=808080]Castle (locked)[/color]"
+                           if CASTLE_UNLOCK_WORLD in locked
+                           else ", [color=80ff80]Castle[/color]")
             pr = int(getattr(ctx, "palaces_required", 0) or 0)
             self._lbl_openworld.text = (
                 f"[b]Open-world[/b] - play: {worlds}\n"

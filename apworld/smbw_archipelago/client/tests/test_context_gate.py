@@ -551,6 +551,68 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.ctx.open_world_unlock_items)
         self.assertEqual(self.state.locked_worlds, {2, 4, 5})
 
+    # ---- Open-world: Bowser's Castle unlock ------------------------------
+
+    def test_locked_worlds_include_the_castle_when_seed_has_its_unlock(self):
+        from ..world_unlock_table import CASTLE_UNLOCK_WORLD
+        self._open_world_unlocks([2, 3], unlocked={3})
+        self.ctx.open_world_castle_unlock = True
+        self.assertEqual(self.ctx._recompute_locked_worlds(), {2, CASTLE_UNLOCK_WORLD})
+        self.ctx._recompute_unlocked_worlds.return_value = {3, CASTLE_UNLOCK_WORLD}
+        self.assertEqual(self.ctx._recompute_locked_worlds(), {2})
+
+    def test_castle_gate_is_always_in_logic(self):
+        # Castle courses are PlayReport world_no 8 (no AP world), but the
+        # castle is part of every open-world seed.
+        from ..world_unlock_table import CASTLE_UNLOCK_WORLD
+        self._open_world_unlocks([1], unlocked=set())
+        self.ctx.open_world_castle_unlock = True
+        self.assertTrue(self.ctx._gate_course_in_logic(
+            self._world_gate(CASTLE_UNLOCK_WORLD, 8)))
+
+    def test_castle_requirement_met_only_with_item(self):
+        from ..world_unlock_table import CASTLE_UNLOCK_WORLD
+        self._open_world_unlocks([1], unlocked={1})
+        ev = self._world_gate(CASTLE_UNLOCK_WORLD, 8)
+        self.assertFalse(self.ctx._gate_requirement_met(ev))
+        self.ctx._recompute_unlocked_worlds.return_value = {1, CASTLE_UNLOCK_WORLD}
+        self.assertTrue(self.ctx._gate_requirement_met(ev))
+
+    async def test_locked_castle_entry_arms_a_kill_naming_the_item(self):
+        from ..world_unlock_table import CASTLE_UNLOCK_WORLD
+        self._open_world_unlocks([1], unlocked={1})
+        self.ctx.open_world_castle_unlock = True
+        self._enter(0x4866EB2F)  # BC: Missile Meg Mayhem
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(
+                self._world_gate(CASTLE_UNLOCK_WORLD, 8, stage_key=0x4866EB2F))
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(self.ctx.lan_server.send_kill.call_count, 1)
+            _, kwargs = self.ctx.lan_server.send_kill.call_args
+            self.assertIn("Bowser's Castle Unlock", kwargs["cause"])
+            self.state.mark_course_exited()
+
+    async def test_connected_primes_castle_lock_and_bridge_flag(self):
+        from ..world_unlock_table import CASTLE_UNLOCK_WORLD
+        await self.ctx._handle_ap_package("Connected", {"slot_data": {
+            "open_world_active": [2, 4, 5],
+            "palaces_required": 3,
+            "open_world_unlock_items": True,
+            "open_world_castle_unlock": True,
+        }})
+        self.assertTrue(self.state.open_world_castle)
+        self.assertEqual(self.state.locked_worlds, {2, 4, 5, CASTLE_UNLOCK_WORLD})
+
+    async def test_connected_older_seed_keeps_castle_on_royal_seeds(self):
+        await self.ctx._handle_ap_package("Connected", {"slot_data": {
+            "open_world_active": [2, 4, 5],
+            "palaces_required": 3,
+            "open_world_unlock_items": True,
+        }})
+        self.assertFalse(self.state.open_world_castle)
+        self.assertEqual(self.state.locked_worlds, {2, 4, 5})
+
     async def test_connected_without_the_flag_locks_nothing(self):
         await self.ctx._handle_ap_package("Connected", {"slot_data": {
             "open_world_active": [2, 4, 5],

@@ -502,5 +502,13 @@
       "World Unlock"
     ],
     "progression": true
+  },
+  {
+    "count": 1,
+    "name": "Bowser's Castle Unlock",
+    "category": [
+      "World Unlock"
+    ],
+    "progression": true
   }
 ]
