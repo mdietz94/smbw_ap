@@ -17,6 +17,7 @@ from Fill import distribute_items_restrictive
 from .. import SMBWonderWorld
 from ..open_world import (
     BOWSER_VICTORY_LOCATION,
+    CASTLE_UNLOCK_ITEM,
     OPENING_COURSE_PREFIX,
     world_of_region,
     world_unlock_item,
@@ -58,8 +59,13 @@ class TestOpenWorldGeneration(unittest.TestCase):
         reachable = {r.name for r in multiworld.get_regions(1) if state.can_reach(r, "Region", 1)}
         for n in world.active_worlds:
             self.assertIn(f"W{n} Start", reachable, f"W{n} Start should be reachable from the start")
-        # Bowser must NOT be free -- it's gated behind the Royal Seeds.
-        self.assertNotIn("World Bowser", reachable)
+        # Bowser's Castle opens with the worlds; only its final course (the
+        # goal) is gated behind the Royal Seeds.
+        self.assertIn("World Bowser", reachable)
+        self.assertTrue(multiworld.get_location(
+            "BC: Missile Meg Mayhem - Normal Exit", 1).can_reach(state))
+        self.assertFalse(multiworld.get_location(
+            BOWSER_VICTORY_LOCATION, 1).can_reach(state))
 
     def test_inactive_and_hub_content_removed(self):
         multiworld, world = _gen({"open_world": 1, "open_world_count": 3})
@@ -151,30 +157,40 @@ class TestOpenWorldGeneration(unittest.TestCase):
                 multiworld, _ = _gen({"open_world": 1, "open_world_count": count}, seed=2000 + count, fill=True)
                 self.assertTrue(multiworld.can_beat_game(), f"open-world N={count} should be beatable")
 
-    def test_no_castle_item_is_a_bowser_prerequisite(self):
-        # Anti-softlock: the player must be able to open Bowser's Castle
-        # (hold all six Royal Seeds + reach palaces_required palaces) using
-        # ONLY items found outside the Castle.  Otherwise a Castle item would
-        # be a prerequisite for entering the Castle -- a deadlock the runtime
-        # death-gate would hit (can't enter to grab it without first clearing
-        # a palace that item gates).  The palace-reachability term in
-        # make_bowser_gate is what forces fill to keep prerequisites out.
-        for count in (1, 3, 6):
-            with self.subTest(count=count):
-                multiworld, _ = _gen(
-                    {"open_world": 1, "open_world_count": count},
-                    seed=4000 + count, fill=True)
-                state = CollectionState(multiworld)
-                for loc in multiworld.get_filled_locations(1):
-                    if loc.parent_region is not None \
-                            and loc.parent_region.name == "World Bowser":
-                        continue
-                    if loc.item is not None:
-                        state.collect(loc.item, prevent_sweep=True)
-                self.assertTrue(
-                    state.can_reach_region("World Bowser", 1),
-                    f"a Bowser's Castle item is a prerequisite for entering "
-                    f"the Castle (count={count})")
+    def test_castle_gated_on_unlock_only_final_course_on_royal_seeds(self):
+        # Bowser's Castle is unlocked like a world: its gauntlet courses need
+        # only "Bowser's Castle Unlock"; the final Bowser's Rage Stage (goal)
+        # additionally needs all six Royal Seeds + the palaces.
+        multiworld, world = _gen({"open_world": 1, "open_world_count": 3})
+        gauntlet = multiworld.get_location("BC: Missile Meg Mayhem - Normal Exit", 1)
+        goal = multiworld.get_location(BOWSER_VICTORY_LOCATION, 1)
+        state = CollectionState(multiworld)
+        self.assertFalse(state.can_reach_region("World Bowser", 1))
+
+        state.collect(world.create_item(CASTLE_UNLOCK_ITEM), prevent_sweep=True)
+        self.assertTrue(state.can_reach_region("World Bowser", 1))
+        self.assertTrue(gauntlet.can_reach(state))
+        self.assertFalse(goal.can_reach(state))
+
+        # Everything but one Royal Seed still leaves the final course shut.
+        held_back = None
+        for item in multiworld.itempool:
+            if item.player != 1:
+                continue
+            if held_back is None and item.name == "W1 Royal Seed":
+                held_back = item
+                continue
+            state.collect(item, prevent_sweep=True)
+        self.assertIsNotNone(held_back)
+        self.assertFalse(goal.can_reach(state))
+        state.collect(held_back, prevent_sweep=True)
+        self.assertTrue(goal.can_reach(state))
+
+    def test_solvable_with_unlock_items_off(self):
+        multiworld, _ = _gen(
+            {"open_world": 1, "open_world_count": 3, "world_unlock_items": 0},
+            seed=4003, fill=True)
+        self.assertTrue(multiworld.can_beat_game())
 
     def test_victory_placed_on_bowser(self):
         multiworld, world = _gen({"open_world": 1, "open_world_count": 2})
@@ -215,8 +231,17 @@ class TestWorldUnlockItems(unittest.TestCase):
         self.assertNotIn(start_item, pool)
         self.assertEqual(
             sorted(n for n in pool if n.endswith(" Unlock")),
-            sorted(world_unlock_item(n) for n in world.active_worlds
-                   if n != world.start_world))
+            sorted([world_unlock_item(n) for n in world.active_worlds
+                    if n != world.start_world] + [CASTLE_UNLOCK_ITEM]))
+
+    def test_castle_unlock_in_pool_never_precollected(self):
+        for count in (1, 6):
+            with self.subTest(count=count):
+                multiworld, _ = _gen({"open_world": 1, "open_world_count": count})
+                pool = [i.name for i in multiworld.itempool if i.player == 1]
+                precollected = [i.name for i in multiworld.precollected_items[1]]
+                self.assertEqual(pool.count(CASTLE_UNLOCK_ITEM), 1)
+                self.assertNotIn(CASTLE_UNLOCK_ITEM, precollected)
 
     def test_inactive_worlds_get_no_unlock_item(self):
         multiworld, world = _gen({"open_world": 1, "open_world_count": 3})
@@ -224,7 +249,7 @@ class TestWorldUnlockItems(unittest.TestCase):
         names = ([i.name for i in multiworld.itempool if i.player == 1]
                  + [i.name for i in multiworld.precollected_items[1]])
         for name in names:
-            if name.endswith(" Unlock"):
+            if name.endswith(" Unlock") and name != CASTLE_UNLOCK_ITEM:
                 self.assertIn(world_of_region(name), active,
                               f"leaked inactive world unlock {name!r}")
 
@@ -263,6 +288,7 @@ class TestWorldUnlockItems(unittest.TestCase):
         _, world = _gen({"open_world": 1, "open_world_count": 3})
         slot_data = world.fill_slot_data()
         self.assertTrue(slot_data["open_world_unlock_items"])
+        self.assertTrue(slot_data["open_world_castle_unlock"])
         self.assertEqual(slot_data["open_world_start_world"], world.start_world)
 
         _, off = _gen(

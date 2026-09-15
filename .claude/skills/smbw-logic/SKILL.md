@@ -46,6 +46,17 @@ locations from `W1 Start` into `Manual`, in front of the `W1 Unlock` gate, so
 they are sphere 1 (each keeps its own `requires`, e.g. a Character Block's
 character).
 
+**Bowser's Castle is unlocked like a world.** The Manual→`World Bowser` edge
+requires `Bowser's Castle Unlock` (`open_world.make_castle_unlock_gate`; always
+in the pool, never the precollected start unlock; open from the start with
+`world_unlock_items` off). Only the goal, `BC: Bowser's Rage Stage - Royal Seed`,
+also needs all six Royal Seeds + `palaces_required` reachable palaces
+(`open_world.gate_final_bowser_course`, a location rule). Client-side the
+gauntlet courses use the `WORLD_UNLOCK` gate with pseudo-world
+`world_unlock_table.CASTLE_UNLOCK_WORLD` (7) and only the Rage Stage keeps
+`ROYAL_SEEDS`; seeds without slot_data `open_world_castle_unlock` (older
+generations, standard mode) keep every castle course on `ROYAL_SEEDS`.
+
 ## The progression model: Wonder-Seed tolls
 
 Each world is a linear chain of regions gated on **Wonder-Seed counts**, e.g.

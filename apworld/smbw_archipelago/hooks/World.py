@@ -160,35 +160,35 @@ def before_set_rules(world: World, multiworld: MultiWorld, player: int):
 def after_set_rules(world: World, multiworld: MultiWorld, player: int):
     # Open-world mode: restore the shared regionMap (the rule closures
     # already captured the neutralized copies in before_set_rules), then
-    # gate Bowser on the active Royal-Seed count.  set_rules left the
-    # Manual exits always-true (Manual has no requires); the Bowser gate
-    # lives on the entrance because exit rules use the SOURCE region.
+    # gate the final Bowser course on the Royal Seeds + palaces.  Bowser's
+    # Castle itself is a world like the others: set_rules left the Manual
+    # exits always-true (Manual has no requires), and with world-unlock items
+    # the castle edge is gated on its own unlock item below (entrance rules,
+    # because exit rules use the SOURCE region).
     if getattr(world, "open_world", False):
         from ..Regions import regionMap, getConnectionName
-        from ..open_world import (
-            make_bowser_gate,
-            register_bowser_indirect_conditions,
-            BOWSER_REGION,
-        )
+        from ..open_world import gate_final_bowser_course, BOWSER_REGION
 
         for name, original in getattr(world, _OW_REGION_BACKUP_ATTR, {}).items():
             regionMap[name] = original
 
-        bowser = multiworld.get_entrance(getConnectionName("Manual", BOWSER_REGION), player)
-        bowser.access_rule = make_bowser_gate(player, world.active_worlds, world.palaces_required)
-        register_bowser_indirect_conditions(
-            multiworld, player, world.active_worlds, bowser)
+        gate_final_bowser_course(
+            multiworld, player, world.active_worlds, world.palaces_required)
 
         # World-unlock items: gate each active world's Manual edge on its
-        # "W<n> Unlock" item.  Exactly one of those is precollected
-        # (before_create_items_filler), so sphere 1 is a single world and
-        # fill picks the random order the rest open in.
+        # "W<n> Unlock" item, and the castle's on "Bowser's Castle Unlock".
+        # Exactly one world Unlock is precollected (before_create_items_filler),
+        # so sphere 1 is a single world and fill picks the random order the
+        # rest (castle included) open in.
         if getattr(world, "world_unlock_items", False):
-            from ..open_world import make_world_unlock_gate
+            from ..open_world import make_castle_unlock_gate, make_world_unlock_gate
             for n in world.active_worlds:
                 entrance = multiworld.get_entrance(
                     getConnectionName("Manual", f"W{n} Start"), player)
                 entrance.access_rule = make_world_unlock_gate(player, n)
+            castle = multiworld.get_entrance(
+                getConnectionName("Manual", BOWSER_REGION), player)
+            castle.access_rule = make_castle_unlock_gate(player)
 
     # Use this hook to modify the access rules for a given location
 
@@ -235,6 +235,11 @@ def after_fill_slot_data(slot_data: dict, world: World, multiworld: MultiWorld, 
     if getattr(world, "open_world", False):
         slot_data["open_world_active"] = list(world.active_worlds)
         slot_data["palaces_required"] = world.palaces_required
+        # Bowser's Castle is a world like the others (its own Unlock item when
+        # world_unlock_items is on) and only the final stage needs the Royal
+        # Seeds.  Older seeds lack the flag; their clients/trackers keep the
+        # whole castle behind the Royal-Seed threshold.
+        slot_data["open_world_castle_unlock"] = True
         # World-unlock items.  The client needs the flag to know whether to
         # arm the per-world entry death-gate (it reads ownership out of
         # items_received); ``open_world_start_world`` is exported purely so a

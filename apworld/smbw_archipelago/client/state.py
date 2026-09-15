@@ -109,7 +109,20 @@ class BridgeState:
         # the feature is off, so the processor's behaviour is unchanged.
         self.locked_worlds: set[int] = set()
 
+        # Open-world seed with a "Bowser's Castle Unlock" item (slot_data
+        # ``open_world_castle_unlock``): the castle's gauntlet courses are
+        # gated like a world (WORLD_UNLOCK, via ``locked_worlds``) and only the
+        # final Bowser's Rage Stage keeps the Royal-Seed gate.  False (standard
+        # mode, or an older open-world seed) gates every castle course on the
+        # Royal Seeds.
+        self.open_world_castle: bool = False
+
     # ---- Mutators -----------------------------------------------------
+
+    def set_open_world_castle(self, enabled: bool) -> None:
+        """Set the castle gating mode (context, on Connected)."""
+        with self._lock:
+            self.open_world_castle = bool(enabled)
 
     def set_unlocked_charas(self, charas: set[int]) -> None:
         """Replace the unlocked-character set (context, on ReceivedItems)."""

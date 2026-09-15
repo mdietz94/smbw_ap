@@ -32,10 +32,13 @@ class WorldUnlockItems(DefaultOnToggle):
     randomly chosen active world is unlocked from the start (its Unlock
     item is precollected); the rest are found in the multiworld, so the
     worlds end up depending on each other in a random order and sphere 1
-    is one world instead of all of them.
+    is one world instead of all of them.  Bowser's Castle is gated the same
+    way by a "Bowser's Castle Unlock" item (never the starting unlock); with
+    this option off the castle is open from the start.  Either way only its
+    final course, Bowser's Rage Stage, needs the Royal Seeds and palaces.
 
     Entering a course in an active-but-still-locked world bounces you out
-    via the same death-gate that guards Bowser's Castle.  Worlds that are
+    via the same death-gate that guards the final Bowser stage.  Worlds that are
     not part of the seed at all, Petal Isles and the Special World are
     never gated, and neither is World 1-1 (the game's opening course, where
     every save starts) -- its checks are always in logic.  Ignored unless

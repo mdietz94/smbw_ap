@@ -260,16 +260,22 @@ class SMBWContext(CommonContext):
         # Open-world mode (2026-06).  ``open_world`` flips on when the
         # apworld ships a non-empty ``open_world_active`` list in
         # slot_data; ``open_world_active`` holds the active world numbers
-        # (1-6) and ``palaces_required`` the Royal-Seed threshold that
-        # unlocks Bowser.  ``_bowser_opened`` latches once the threshold
-        # is met so we flag the Castle route routable exactly once (then
-        # keep re-asserting on reconnect via the providers).  It only
-        # opens the route + satisfies the death-gate; the win condition is
+        # (1-6) and ``palaces_required`` the palace-clear count the final
+        # Bowser stage needs.  ``_bowser_opened`` latches once Bowser's
+        # Castle is unlocked (``_castle_unlocked``) so we flag the Castle
+        # route routable exactly once (then keep re-asserting on reconnect
+        # via the providers).  It only opens the route; the win condition is
         # actually beating Bowser, same as vanilla.
         self.open_world: bool = False
         self.open_world_active: list[int] = []
         self.palaces_required: int = 0
         self._bowser_opened: bool = False
+        # slot_data ``open_world_castle_unlock``: the seed gates Bowser's
+        # Castle like a world (its "Bowser's Castle Unlock" item, or open from
+        # the start with world-unlock items off) and only the final stage on
+        # the Royal Seeds.  Absent on older open-world seeds, which keep the
+        # castle behind the Royal-Seed threshold.
+        self.open_world_castle_unlock: bool = False
         # Open-world ``world_unlock_items`` (slot_data
         # ``open_world_unlock_items``): each active world needs its own
         # "W<n> Unlock" AP item; exactly one is precollected, so it arrives
@@ -412,7 +418,16 @@ class SMBWContext(CommonContext):
             self.palaces_required = int(slot_data.get("palaces_required") or 0)
             self.open_world_unlock_items = bool(
                 slot_data.get("open_world_unlock_items"))
-            self._bowser_opened = False
+            self.open_world_castle_unlock = bool(
+                slot_data.get("open_world_castle_unlock"))
+            self.bridge_state.set_open_world_castle(
+                self.open_world and self.open_world_castle_unlock)
+            # With world-unlock items off the castle is open from the start
+            # (like every active world); otherwise the ReceivedItems batch
+            # that follows Connected re-evaluates and re-opens if earned.
+            self._bowser_opened = (
+                self.open_world and self.open_world_castle_unlock
+                and not self.open_world_unlock_items)
             # Prime the locked-world set before any item lands: with
             # world-unlock items on, EVERY active world starts locked and the
             # connect-time ReceivedItems batch (which carries the precollected
@@ -591,12 +606,33 @@ class SMBWContext(CommonContext):
         set minus the Unlock items received.
 
         Empty (gate inert) unless open-world AND ``world_unlock_items`` are
-        both on -- so worlds that aren't part of the seed, Petal Isles, the
-        Castle and the Special World are never in it, matching "only gate
-        worlds that WILL be unlocked but haven't been"."""
+        both on -- so worlds that aren't part of the seed, Petal Isles and the
+        Special World are never in it, matching "only gate worlds that WILL
+        be unlocked but haven't been".  Bowser's Castle joins as
+        ``CASTLE_UNLOCK_WORLD`` when the seed has a castle unlock item."""
         if not (self.open_world and self.open_world_unlock_items):
             return set()
-        return set(self.open_world_active) - self._recompute_unlocked_worlds()
+        gated = set(self.open_world_active)
+        if self.open_world_castle_unlock:
+            gated.add(world_unlock_table.CASTLE_UNLOCK_WORLD)
+        return gated - self._recompute_unlocked_worlds()
+
+    def _castle_unlocked(self) -> bool:
+        """Open-world: may the player travel into Bowser's Castle?
+
+        With a castle unlock item in the seed: always with world-unlock items
+        off, else once "Bowser's Castle Unlock" arrives.  Older seeds without
+        it: once ``palaces_required`` AP Royal Seeds are held (the previous
+        rule).  Never in standard mode."""
+        if not self.open_world:
+            return False
+        if not self.open_world_castle_unlock:
+            owned = bin(self._recompute_royal_seed_mask()).count("1")
+            return owned >= self.palaces_required
+        if not self.open_world_unlock_items:
+            return True
+        return (world_unlock_table.CASTLE_UNLOCK_WORLD
+                in self._recompute_unlocked_worlds())
 
     def _recompute_unlocked_chara_mask(self) -> int:
         """The Switch-facing unlocked-character mask (bit i = ROSTER index
@@ -963,8 +999,8 @@ class SMBWContext(CommonContext):
         # FirstVisitDemo, which clears its route obstacle (fast-travelling
         # straight into a world skips the demo, leaving the obstacle), so the
         # world is left otherwise VANILLA: not in the fast-travel mask, not
-        # node-filled, its internal seed-bar gates intact.  Castle stays
-        # routable once Bowser is unlocked so the final fight is reachable.
+        # node-filled, its internal seed-bar gates intact.  Castle becomes
+        # routable once Bowser's Castle is unlocked (``_castle_unlocked``).
         mask = (1 << ROUTABLE_PETAL_BIT)
         # World 1 EXCEPTION (2026-06-09): W1 is not walk-connected to Petal
         # Isles, so the walk-in path can never reach it.  When W1 is active we
@@ -1104,32 +1140,30 @@ class SMBWContext(CommonContext):
             # inactive.
             self.lan_server.send_set_force_cleared_courses(
                 self._recompute_force_cleared_mask())
-            # Open-world: once the player holds enough AP Royal Seeds, flag the
-            # Castle route routable so the player can travel to Bowser.  Royal
-            # Seeds are NOT pushed to the Switch -- the in-game seed state is
-            # left vanilla.  One-shot; the routable provider re-asserts on
-            # reconnect.  This only opens the *route* (early access is fine --
-            # they just get bounced at the door if unqualified); it does NOT
-            # win the seed or satisfy the death-gate.
+            # Open-world: once Bowser's Castle is unlocked (its Unlock item;
+            # older seeds: enough AP Royal Seeds), flag the Castle route
+            # routable so the player can travel there.  Royal Seeds are NOT
+            # pushed to the Switch -- the in-game seed state is left vanilla.
+            # One-shot; the routable provider re-asserts on reconnect.  This
+            # only opens the *route*; it does NOT win the seed or satisfy the
+            # final-stage death-gate.
             #
             # The GOAL is NOT signalled here.  Open-world now mirrors vanilla:
             # the win condition is actually DEFEATING Bowser (the
             # GameGoalReached Nerve -> handle_goal_completed path, or the
-            # goal-location check), not merely holding the seeds.  And the
-            # final-level death-gate (see _gate_requirement_met) independently
-            # requires ALL SIX AP Royal Seeds plus palaces_required palaces
-            # cleared in-game before it lets the player face Bowser.
-            if self.open_world and not self._bowser_opened:
-                owned = bin(new_royal_seed_mask).count("1")
-                if owned >= self.palaces_required:
-                    self._bowser_opened = True
-                    log.info(
-                        "open-world: %d/%d AP Royal Seeds held -> Castle "
-                        "routable (seeds NOT pushed; vanilla-owned; beat "
-                        "Bowser to win, gated on all 6 seeds + %d palaces)",
-                        owned, self.palaces_required, self.palaces_required)
-                    self.lan_server.send_set_routable_worlds(
-                        self._recompute_routable_worlds_mask())
+            # goal-location check).  And the final-level death-gate (see
+            # _gate_requirement_met) independently requires ALL SIX AP Royal
+            # Seeds plus palaces_required palaces cleared in-game before it
+            # lets the player face Bowser.
+            if (self.open_world and not self._bowser_opened
+                    and self._castle_unlocked()):
+                self._bowser_opened = True
+                log.info(
+                    "open-world: Bowser's Castle unlocked -> Castle routable "
+                    "(beat Bowser to win, gated on all 6 AP Royal Seeds + "
+                    "%d palaces)", self.palaces_required)
+                self.lan_server.send_set_routable_worlds(
+                    self._recompute_routable_worlds_mask())
         else:
             log.debug(
                 "no lan_server bound; not forwarding badge mask 0x%x / "
@@ -1341,10 +1375,14 @@ class SMBWContext(CommonContext):
         ``WORLD_UNLOCK`` gets the same active-world test as ``BADGE``: it
         is only ever raised for an active world, but re-checking here keeps
         the "never gate a world that isn't part of the seed" rule in one
-        place."""
+        place.  The Bowser's Castle unlock gate is always in logic (the
+        castle is part of every open-world seed)."""
         if not self.open_world:
             return True
         if ev.gate_kind not in (GateKind.BADGE, GateKind.WORLD_UNLOCK):
+            return True
+        if (ev.gate_kind == GateKind.WORLD_UNLOCK
+                and ev.requirement == world_unlock_table.CASTLE_UNLOCK_WORLD):
             return True
         ap_world = pr_world_no_to_ap_world(ev.world_no)
         return ap_world is not None and ap_world in self.open_world_active
@@ -1420,6 +1458,9 @@ class SMBWContext(CommonContext):
                     f"{self.palaces_required} palaces cleared to face Bowser")
             return f"Locked: need {ev.requirement} Royal Seeds to face Bowser"
         if ev.gate_kind == GateKind.WORLD_UNLOCK:
+            if ev.requirement == world_unlock_table.CASTLE_UNLOCK_WORLD:
+                return (f"Locked: Bowser's Castle needs the "
+                        f"{world_unlock_table.CASTLE_UNLOCK_ITEM} item")
             return (f"Locked: World {ev.requirement} needs its "
                     f"{world_unlock_table.unlock_item_name(ev.requirement)} item")
         # BADGE gate: ev.requirement is the container-C internal_id, which

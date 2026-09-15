@@ -148,6 +148,12 @@ def open_unlock_item(n: int) -> str:
     return f"W{n} Unlock"
 
 
+# Bowser's Castle is unlocked like a world (slot_data open_world_castle_unlock):
+# its region needs this item, and only the goal needs the palace count.
+# Mirrors open_world.CASTLE_UNLOCK_ITEM.
+OPEN_CASTLE_UNLOCK_ITEM = "Bowser's Castle Unlock"
+
+
 # W1-1 is the forced opening course, so open-world keeps its checks in front of
 # the "W1 Unlock" gate (open_world.ungate_opening_course moves them into
 # Manual).  Mirrors open_world.OPENING_COURSE_{WORLD,PREFIX}.
@@ -442,7 +448,7 @@ def main():
                 terms.append(open_req)
             open_body = "ALL(" + ", ".join(terms) + ")"
         elif region == OPEN_BOWSER_REGION:
-            open_body = "smbw_open_palaces()"
+            open_body = "smbw_castle_open()"
         elif is_hub_region(region):
             open_body = "ACCESS_NONE"        # hub regions are stripped in open-world
         else:
@@ -462,11 +468,15 @@ def main():
         rexpr = region_func_name(region) + "()" if region in regions else "ACCESS_NORMAL"
         lexpr = comp.compile(loc.get("requires", "") or "")
         body = rexpr if lexpr == "true" else f"ALL({rexpr}, {lexpr})"
-        # In open-world the non-goal World Bowser locations are stripped (only the
-        # forced goal remains); everything else inherits its mode-aware region.
-        open_body = ("ACCESS_NONE"
-                     if region == OPEN_BOWSER_REGION and loc["name"] != OPEN_GOAL_LOCATION
-                     else None)
+        # In open-world World Bowser keeps only its BC: courses (the badge metas
+        # are stripped); the goal additionally needs the palace count.
+        # Everything else inherits its mode-aware region.
+        open_body = None
+        if region == OPEN_BOWSER_REGION:
+            if not loc["name"].startswith("BC:"):
+                open_body = "ACCESS_NONE"
+            elif loc["name"] == OPEN_GOAL_LOCATION:
+                open_body = f"ALL({body}, smbw_open_palaces())"
         # W1-1's checks skip the World-1 root (and so its Unlock gate): they
         # only need World 1 to be part of the seed, plus their own requires.
         if loc["name"].startswith(OPEN_OPENING_COURSE_PREFIX):
@@ -481,9 +491,9 @@ def main():
     # The Unlock codes are only referenced from the generated open-world
     # helper, not through the requires compiler, so register them explicitly
     # or write_logic_items would not define the toggle items behind them.
+    unlock_names = [open_unlock_item(n) for n in range(1, 7)] + [OPEN_CASTLE_UNLOCK_ITEM]
     used_codes = set(comp.used_codes) | {
-        name2code[open_unlock_item(n)] for n in range(1, 7)
-        if open_unlock_item(n) in name2code}
+        name2code[nm] for nm in unlock_names if nm in name2code}
     write_logic_items(tracker, used_codes, code2type)
     inject_access_rules(tracker, loc_map, loc_rules)
     patch_imports(tracker)
@@ -540,6 +550,23 @@ def write_lua(tracker, regions, order, region_expr, loc_rules, name2code=None):
     L.append("    local code = SMBW_UNLOCK_CODE[n]")
     L.append("    if not code then return true end")
     L.append('    return Tracker:ProviderCountForCode(code) > 0')
+    L.append("end")
+    castle_code = (name2code or {}).get(OPEN_CASTLE_UNLOCK_ITEM)
+    L.append("-- Bowser's Castle region in open-world.  Seeds with open_world_castle_unlock")
+    L.append("-- gate it like a world (its Unlock item when open_world_unlock_items is on);")
+    L.append("-- older seeds keep the whole castle behind the palace count.")
+    L.append("function smbw_castle_open()")
+    L.append("    if not (SLOT_DATA and (SLOT_DATA.open_world_castle_unlock == 1")
+    L.append("            or SLOT_DATA.open_world_castle_unlock == true)) then")
+    L.append("        return smbw_open_palaces()")
+    L.append("    end")
+    L.append("    if not (SLOT_DATA.open_world_unlock_items == 1")
+    L.append("            or SLOT_DATA.open_world_unlock_items == true) then return ACCESS_NORMAL end")
+    if castle_code:
+        L.append(f'    if Tracker:ProviderCountForCode("{castle_code}") > 0 then return ACCESS_NORMAL end')
+        L.append("    return ACCESS_NONE")
+    else:
+        L.append("    return ACCESS_NORMAL")
     L.append("end")
     L.append("-- Bowser gate in open-world: enough active-world Royal Seeds (palaces) cleared.")
     L.append("function smbw_open_palaces()")

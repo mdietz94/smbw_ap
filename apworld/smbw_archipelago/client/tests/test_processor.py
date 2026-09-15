@@ -25,6 +25,7 @@ from ..processor import (
     _handle_course_result,
     process_event,
 )
+from ..world_unlock_table import CASTLE_UNLOCK_WORLD
 from ..protocol import (
     BadgeAcquiredMsg,
     CheckEmitted,
@@ -1372,8 +1373,9 @@ class TestLevelEntryGate(unittest.TestCase):
         self.assertEqual(gate.stage_key, _FINAL_BOWSER_STAGE_KEY)
 
     def test_every_bowser_castle_course_emits_royal_seed_gate(self):
-        """EVERY Bowser's Castle course -- not just the final Rage Stage --
-        gates on the all-six-Royal-Seed requirement."""
+        """Standard mode (and older open-world seeds): EVERY Bowser's Castle
+        course -- not just the final Rage Stage -- gates on the
+        all-six-Royal-Seed requirement."""
         self.assertIn(_FINAL_BOWSER_STAGE_KEY, _BOWSER_CASTLE_STAGE_KEYS)
         self.assertEqual(len(_BOWSER_CASTLE_STAGE_KEYS), 5)
         for sk in _BOWSER_CASTLE_STAGE_KEYS:
@@ -1430,6 +1432,44 @@ class TestLevelEntryGate(unittest.TestCase):
                 _FINAL_BOWSER_STAGE_KEY, world_no=8, course_no=1))
         self.assertEqual(len(emitted), 1)
         self.assertEqual(emitted[0].gate_kind, GateKind.ROYAL_SEEDS)
+
+    # ---- Open-world castle unlock (state.open_world_castle) -----------
+
+    def test_open_world_locked_castle_gauntlet_emits_castle_unlock_gate(self):
+        state = BridgeState()
+        state.set_open_world_castle(True)
+        state.set_locked_worlds({CASTLE_UNLOCK_WORLD})
+        for sk in _BOWSER_CASTLE_STAGE_KEYS - {_FINAL_BOWSER_STAGE_KEY}:
+            with self.subTest(stage_key=hex(sk)):
+                emitted = _handle_course_in(
+                    state, self._course_in_fields(sk, world_no=8, course_no=1))
+                self.assertEqual(len(emitted), 1)
+                self.assertEqual(emitted[0].gate_kind, GateKind.WORLD_UNLOCK)
+                self.assertEqual(emitted[0].requirement, CASTLE_UNLOCK_WORLD)
+
+    def test_open_world_unlocked_castle_gauntlet_is_ungated(self):
+        """Once the castle is unlocked its gauntlet courses need nothing
+        else -- the Royal Seeds are the final stage's business only."""
+        state = BridgeState()
+        state.set_open_world_castle(True)
+        for sk in _BOWSER_CASTLE_STAGE_KEYS - {_FINAL_BOWSER_STAGE_KEY}:
+            with self.subTest(stage_key=hex(sk)):
+                emitted = _handle_course_in(
+                    state, self._course_in_fields(sk, world_no=8, course_no=1))
+                self.assertEqual(emitted, [])
+
+    def test_open_world_final_stage_keeps_royal_seed_gate(self):
+        for locked in (set(), {CASTLE_UNLOCK_WORLD}):
+            with self.subTest(locked=locked):
+                state = BridgeState()
+                state.set_open_world_castle(True)
+                state.set_locked_worlds(locked)
+                emitted = _handle_course_in(
+                    state, self._course_in_fields(
+                        _FINAL_BOWSER_STAGE_KEY, world_no=8, course_no=1))
+                self.assertEqual(len(emitted), 1)
+                self.assertEqual(emitted[0].gate_kind, GateKind.ROYAL_SEEDS)
+                self.assertEqual(emitted[0].requirement, 6)
 
     def test_hub_and_special_worlds_never_world_gate(self):
         """Petal Isles (world_no 2) and the Special/secret world
