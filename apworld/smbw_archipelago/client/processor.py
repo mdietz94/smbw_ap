@@ -127,7 +127,9 @@ _BREAK_TIME_STAGE_KEYS: frozenset[int] = frozenset({
     # "no AP location for kind=normal_exit ... (table needs extending)"
     # while its three 10-coin checks went out normally.  Adding them
     # here suppresses the once-per-save wonder-seed nerve and routes the
-    # seed off course_result as WONDER_SEED (re-fires on every re-entry).
+    # seed off course_result as WONDER_SEED (re-fires on every re-clear;
+    # goal_id must be 0 -- see the Break Time branch of
+    # _handle_course_result for the entrance-exit suppression).
     # Stage keys mirror the WONDER_SEED rows in location_table.py.
     0x495A535A,  # W1: Pipe-Rock Rumble
     0x0FB8DE7F,  # W2: Fluff-Puff Kerfuff
@@ -692,6 +694,13 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
                                              when it fires, dedups).  See
                                              the _PALACE_STAGE_KEYS branch
                                              for why we no longer defer.
+        hub-house stage_key                → Wonder Seed (any goal_id;
+                                             the door is the only exit)
+        Break Time stage_key + goal_id == 0 → Wonder Seed (the seed
+                                             pickup is the course's goal)
+        Break Time stage_key + goal_id != 0 → left through the entrance
+                                             without the seed; emit
+                                             nothing
         goal_id == 0 + touch_goal_top      → Top of Flag + Normal Exit
         goal_id == 0 + !touch_goal_top     → Normal Exit
         goal_id == 1 at Fake-Exit stage    → Fake Exit (+TOP_OF_FLAG if top)
@@ -795,16 +804,64 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
             "emitting PALACE_CLEAR (koopajr_result emit, if any, dedups)",
             stage_key)
         kinds = [CheckKind.PALACE_CLEAR]
-    elif (stage_key in _HUB_HOUSE_STAGE_KEYS
-            or stage_key in _BREAK_TIME_STAGE_KEYS):
-        # Hub-house and Break Time! exits route to the WONDER_SEED AP
-        # location -- these stages have no flagpole and the seed IS
-        # the goal of the course, so the location_table only registers
-        # WONDER_SEED for them.  The in-game wonder-seed nerve fires
-        # once-per-save (suppressed in _handle_nerve_fire); the exit
-        # event re-fires on every visit, so a disconnected player can
-        # retry by re-entering the course.
+    elif stage_key in _HUB_HOUSE_STAGE_KEYS:
+        # Hub-house exits route to the WONDER_SEED AP location -- these
+        # stages have no flagpole and the seed IS the goal of the
+        # course, so the location_table only registers WONDER_SEED for
+        # them.  The in-game wonder-seed nerve fires once-per-save
+        # (suppressed in _handle_nerve_fire); the exit event re-fires
+        # on every visit, so a disconnected player can retry by
+        # re-entering the house.  Leaving a house is ALWAYS through the
+        # door the player came in by (goal_id=1 live), and the seed is
+        # handed over inside with nothing to fail, so the exit shape
+        # alone is accepted here -- unlike Break Time! below.
         kinds = [CheckKind.WONDER_SEED]
+    elif stage_key in _BREAK_TIME_STAGE_KEYS:
+        # Break Time! / Search Party / KO Arena: same WONDER_SEED-only
+        # routing as hub houses, but these courses have a task the
+        # player can abandon.  Player report (2026-09-19): entering W6
+        # Hot-Hot Rocks (needs Elephant) and leaving straight away sent
+        # the Wonder Seed check -- the exit still arrived as a
+        # course_result=1, which the previous unconditional remap
+        # accepted as a clear.
+        #
+        # Discriminate on goal_id.  The seed pickup ends the course as
+        # its main goal: the live W4 Treasure Vault clear (the
+        # BREAK_TIME_COURSE_RESULT fixture) reports goal_id=0, and the
+        # KO Arena clears logged on 2026-06-02 took the goal_id=0
+        # NORMAL_EXIT branch.  Leaving a small course back through its
+        # entrance is reported as the course's secondary goal --
+        # goal_id=1 is the live shape for walking out of Angler
+        # Poplin's House -- so only goal_id=0 is credited here.
+        #
+        # goal_id is the only trustworthy field for this.  The
+        # WONDER_SEED_AWARDED nerve has never been seen to fire for
+        # these end-of-course seeds (both the Treasure Vault and the
+        # Pipe-Rock Rumble reports above were "clear sent nothing",
+        # which is why they were routed off course_result at all), and
+        # the per-course seed counters in the report (get_flower_count
+        # / new_flower_count -- the quit fixture shows get_flower_count
+        # is "seeds owned for this course", not "collected this run")
+        # read container-D storage that
+        # probe::pushWonderSeedContainerDCounts blind-fills from AP's
+        # per-world count, so they say nothing about this run.
+        #
+        # The bracketed fields are logged either way so a report of a
+        # wrong call can be settled from the client log alone.
+        detail = "play_time=%rs new_flower=%r get_flower=%r touch_goal_top=%r" % (
+            fields.get("current_play_time_sec"), fields.get("new_flower_count"),
+            fields.get("get_flower_count"), top)
+        if goal_id == 0:
+            log.info(
+                "course_result at seed-only stage_key=0x%08x goal_id=0 "
+                "(seed clear) [%s]", stage_key, detail)
+            kinds = [CheckKind.WONDER_SEED]
+        else:
+            log.info(
+                "course_result at seed-only stage_key=0x%08x goal_id=%r "
+                "(left through the entrance, not a clear); suppressing "
+                "WONDER_SEED [%s]", stage_key, goal_id, detail)
+            kinds = []
     elif goal_id == 0:
         kinds = [CheckKind.NORMAL_EXIT]
         if top:
