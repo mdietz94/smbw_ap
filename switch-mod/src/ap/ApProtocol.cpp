@@ -156,17 +156,16 @@ bool sv_eq(std::string_view sv, const char* lit) {
 bool parseSetBadgesAbsolute(util::json::Reader& r, WireSetBadgesAbsolute& out) {
     // Cursor is positioned just after the "t":"set_badges_absolute" pair
     // within the same object.  `bits` is the absolute u64 badge bitfield.
-    // The bridge validates [0, 2**64); we accept any non-negative int64
-    // (a u64 mask above 2**63 would silently truncate on JSON parse, but
-    // realistic badge registries never approach 2**24).
+    // The bridge validates [0, 2**64) and so do we (nextUInt64 rejects a
+    // sign or u64 overflow).  Badge internal_ids stop at 58 so bit 63 is
+    // never set in practice, but the full range is accepted regardless.
     std::string_view key;
     bool saw_bits = false;
     while (r.nextField(key)) {
         if (sv_eq(key, "bits")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.bits = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.bits = v;
             saw_bits = true;
         } else {
             // Unknown field -- consume a value to keep the parser in sync.
@@ -636,23 +635,20 @@ bool parseSetBadgeShopState(util::json::Reader& r,
                             WireSetBadgeShopState& out) {
     // Cursor positioned just after "t":"set_badge_shop_state".  Two
     // required u64 fields: "managed" and "sold" (bit == badge internal_id).
-    // Badge ids are < 64 so the meaningful bits fit comfortably in the
-    // positive int64 range the JSON reader yields.
+    // Read as full u64 (nextUInt64) so every bit position 0..63 decodes.
     std::string_view key;
     bool saw_managed = false;
     bool saw_sold = false;
     while (r.nextField(key)) {
         if (sv_eq(key, "managed")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.managed = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.managed = v;
             saw_managed = true;
         } else if (sv_eq(key, "sold")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.sold = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.sold = v;
             saw_sold = true;
         } else {
             std::string_view dummy;
@@ -774,24 +770,28 @@ bool parseSetWonderSeedCounts(util::json::Reader& r,
 bool parseSetWonderSeedsAbsolute(util::json::Reader& r,
                                  WireSetWonderSeedsAbsolute& out) {
     // Cursor positioned just after "t":"set_wonder_seeds_absolute".  Two
-    // required u64 fields: "bits_lo" and "bits_hi".  Each accepted as
-    // int64 in [0, 2**63); top bit reserved (typical AP scenarios put
-    // 0..16 bits per world bucket so the masks fit comfortably).
+    // required u64 fields: "bits_lo" and "bits_hi", each the FULL
+    // [0, 2**64) range.  The client packs 16 bits per world bucket
+    // (W1 = bits 0..15 ... W4 = bits 48..63), so a player with 16+ W4
+    // Wonder Seeds legitimately sets bit 63 of bits_lo -- e.g. W3+W4 full
+    // = 0xFFFFFFFF00000000 = 18446744069414584320.  Until 2026-09-21 this
+    // was parsed as int64 and rejected as negative, which dropped the
+    // whole message on every sync tick for late-game players (their
+    // Switch log showed `[conn] decode failed: {"t":"set_wonder_seeds_
+    // absolute","bits_lo":18446744069414584320,...`).
     std::string_view key;
     bool saw_lo = false;
     bool saw_hi = false;
     while (r.nextField(key)) {
         if (sv_eq(key, "bits_lo")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.bits_lo = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.bits_lo = v;
             saw_lo = true;
         } else if (sv_eq(key, "bits_hi")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.bits_hi = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.bits_hi = v;
             saw_hi = true;
         } else {
             std::string_view dummy;

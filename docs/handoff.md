@@ -27,6 +27,21 @@
 >   §15 "Wonder-Seed rows"; the still-owed follow-up is making
 >   `pushWonderSeedContainerDCounts`'s fill slot-aware (it writes through shop
 >   slots 70..80).
+> - **u64 wire fields with bit 63 set were dropped on the Switch (2026-09-21,
+>   fixed)** — `set_wonder_seeds_absolute` packs 16 bits per world into
+>   `bits_lo`/`bits_hi`, so a player with 16+ W4 seeds sends
+>   `bits_lo = 0xFFFFFFFF00000000` (> INT64_MAX). The subsdk JSON reader
+>   accumulated in signed int64, wrapped negative, and `parseSetWonderSeedsAbsolute`
+>   rejected it → `[conn] decode failed` every 2 s tick and
+>   `probe::setWonderSeedBitfieldAbsolute` never ran for late-game players.
+>   Fix: `util::json::Reader::nextUInt64` (unsigned, overflow-checked) now
+>   reads every u64 field (`set_badges_absolute.bits`, `bits_lo`/`bits_hi`,
+>   `set_badge_shop_state.managed`/`sold`); `nextInt` also rejects int64
+>   overflow instead of wrapping. Wire format unchanged — only the mod build
+>   matters; a client talking to an older subsdk still hits the drop. Host
+>   test: `switch-mod/tests/host/json_reader_test.cpp` (clang++, no devkit).
+>   A `set_seed_shop_state` "decode failed" in the same log is an unknown-`"t"`
+>   report from a pre-#189 (2026-09-12) subsdk, not a parser bug.
 > - [handoff-2026-05-29-ws-persistence.md](handoff-2026-05-29-ws-persistence.md)
 >   — Wonder-Seed per-course Container-D persistence (supersedes the
 >   "gate override only, not per-course storage" caveat below).
