@@ -27,6 +27,23 @@
 >   §15 "Wonder-Seed rows"; the still-owed follow-up is making
 >   `pushWonderSeedContainerDCounts`'s fill slot-aware (it writes through shop
 >   slots 70..80).
+> - **Break Time! entrance exits (2026-09-19, shipped)** — a player entered
+>   W6 Hot-Hot Rocks (needs Elephant), left straight away, and was credited
+>   its Wonder Seed: leaving a small course through its entrance still
+>   arrives as `course_result=1`, and the seed-only remap in
+>   `client/processor.py::_handle_course_result` accepted any such report.
+>   Break Time / Search Party / KO Arena stages now credit only `goal_id=0`
+>   (the seed pickup is the course's main goal — live Treasure Vault
+>   capture, plus Fluff-Puff Peaks Cabin and Kick It, Outmaway in the
+>   2026-09-21 Switch log); an entrance exit reports no goal at all —
+>   that log's W2 Puzzling Park enter-and-exit (2 s of play) came through
+>   as `course_result=1, goal_id=-1`.  Hub houses keep the
+>   unconditional remap (the door is their only exit).  The bridge logs the
+>   `play_time / new_flower / get_flower` fields on every seed-only exit so
+>   the next report can confirm the shape; `get_flower_count` itself is
+>   "seeds owned for this course" (1 on a one-second Robbird Cove quit) and
+>   is blind-filled by `pushWonderSeedContainerDCounts`, so it is not usable
+>   as evidence.
 > - **u64 wire fields with bit 63 set were dropped on the Switch (2026-09-21,
 >   fixed)** — `set_wonder_seeds_absolute` packs 16 bits per world into
 >   `bits_lo`/`bits_hi`, so a player with 16+ W4 seeds sends
