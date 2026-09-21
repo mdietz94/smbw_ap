@@ -86,6 +86,12 @@ public:
     bool nextInt(std::int64_t& out);
     bool nextBool(bool& out);
     bool isNull();
+    // Consume one complete JSON value of ANY type (string / number /
+    // true / false / null / nested object or array) without decoding it.
+    // The "unknown field" primitive: only genuinely malformed input sets
+    // the sticky error flag, so an int/bool/array from a newer bridge no
+    // longer rejects the whole line.
+    bool skipValue();
 
     bool enterObject();
     bool exitObject();
@@ -101,9 +107,14 @@ private:
     bool prepareValue();
     void markValueDone();
     bool readString(std::string_view& out);
+    bool skipString();
+    bool matchLiteral(const char* lit, std::size_t n);
 
     struct Frame { bool is_object; bool needs_comma; };
     static constexpr int kMaxDepth = 8;
+    // Nesting cap for skipValue()'s bracket counter (independent of the
+    // frame stack -- skipped containers are never entered).
+    static constexpr int kMaxSkipDepth = 16;
 
     const char* p_;
     const char* end_;
