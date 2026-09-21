@@ -485,12 +485,14 @@ class TestBreakTimeRemap(unittest.TestCase):
         """Regression for the 2026-09-19 player report: entering W6
         Hot-Hot Rocks and leaving straight away (the course needs
         Elephant) credited its Wonder Seed.  Walking back out of a small
-        course is reported as course_result=1 with the secondary goal
-        (goal_id=1 -- the live shape for leaving Angler Poplin's House),
-        which the unconditional Break Time remap accepted as a clear."""
+        course is reported as course_result=1 with NO goal -- goal_id=-1,
+        the live shape from the 2026-09-21 Switch log of a W2 Puzzling
+        Park enter-and-exit (2 s of play, no seeds) -- which the
+        unconditional Break Time remap accepted as a clear."""
         state = BridgeState()
         emitted = _handle_course_result(
-            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=1))
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=-1,
+                                           play_time=2))
         self.assertEqual(emitted, [])
         self.assertFalse(state.has_emitted(
             CheckKind.WONDER_SEED, HOT_HOT_ROCKS_STAGE_KEY))
@@ -516,7 +518,7 @@ class TestBreakTimeRemap(unittest.TestCase):
         recorded for the suppressed exit)."""
         state = BridgeState()
         self.assertEqual(_handle_course_result(
-            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=1)), [])
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=-1)), [])
         emitted = _handle_course_result(
             state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=0,
                                            play_time=95))
@@ -528,12 +530,22 @@ class TestBreakTimeRemap(unittest.TestCase):
         diff -- those checks carry their own evidence (the in/out
         arrays), so a coin grabbed before bailing out is still sent."""
         state = BridgeState()
-        fields = self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=1)
+        fields = self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=-1)
         fields["big_flower_coin_course_out"] = [True, False, False]
         emitted = _handle_course_result(state, fields)
         self.assertEqual([c.kind for c in emitted], [CheckKind.TEN_COIN])
         self.assertFalse(state.has_emitted(
             CheckKind.WONDER_SEED, HOT_HOT_ROCKS_STAGE_KEY))
+
+    def test_break_time_door_shaped_exit_emits_nothing_either(self):
+        """goal_id=1 (the hub-house door shape) is the other known
+        non-clear report; it is excluded by the same ``goal_id == 0``
+        test rather than a -1 special case."""
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=1))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
 
     def test_break_time_pause_quit_still_emits_nothing(self):
         """course_result=3 (pause-menu quit) is rejected before the

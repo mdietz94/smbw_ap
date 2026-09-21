@@ -699,8 +699,8 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
         Break Time stage_key + goal_id == 0 → Wonder Seed (the seed
                                              pickup is the course's goal)
         Break Time stage_key + goal_id != 0 → left through the entrance
-                                             without the seed; emit
-                                             nothing
+                                             without the seed (goal_id
+                                             is -1 live); emit nothing
         goal_id == 0 + touch_goal_top      → Top of Flag + Normal Exit
         goal_id == 0 + !touch_goal_top     → Normal Exit
         goal_id == 1 at Fake-Exit stage    → Fake Exit (+TOP_OF_FLAG if top)
@@ -827,12 +827,16 @@ def _handle_course_result(state: BridgeState, fields: dict[str, Any]) -> list[Ch
         #
         # Discriminate on goal_id.  The seed pickup ends the course as
         # its main goal: the live W4 Treasure Vault clear (the
-        # BREAK_TIME_COURSE_RESULT fixture) reports goal_id=0, and the
-        # KO Arena clears logged on 2026-06-02 took the goal_id=0
-        # NORMAL_EXIT branch.  Leaving a small course back through its
-        # entrance is reported as the course's secondary goal --
-        # goal_id=1 is the live shape for walking out of Angler
-        # Poplin's House -- so only goal_id=0 is credited here.
+        # BREAK_TIME_COURSE_RESULT fixture) reports goal_id=0, the KO
+        # Arena clears logged on 2026-06-02 took the goal_id=0
+        # NORMAL_EXIT branch, and the 2026-09-21 Switch log shows the
+        # same for Fluff-Puff Peaks Cabin and Kick It, Outmaway.
+        # Leaving back through the entrance reports NO goal: that log's
+        # W2 Puzzling Park enter-and-exit (2 s of play, no seeds) came
+        # through as course_result=1 with goal_id=-1 (the PlayReport's
+        # 0xFF "-1" short form).  Only goal_id=0 is credited here; the
+        # hub-house door exit (goal_id=1) is the other known non-clear
+        # shape and is excluded the same way.
         #
         # goal_id is the only trustworthy field for this.  The
         # WONDER_SEED_AWARDED nerve has never been seen to fire for

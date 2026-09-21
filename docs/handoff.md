@@ -34,8 +34,10 @@
 >   `client/processor.py::_handle_course_result` accepted any such report.
 >   Break Time / Search Party / KO Arena stages now credit only `goal_id=0`
 >   (the seed pickup is the course's main goal — live Treasure Vault
->   capture); the entrance door is the secondary goal (`goal_id=1`, the
->   live shape for leaving Angler Poplin's House).  Hub houses keep the
+>   capture, plus Fluff-Puff Peaks Cabin and Kick It, Outmaway in the
+>   2026-09-21 Switch log); an entrance exit reports no goal at all —
+>   that log's W2 Puzzling Park enter-and-exit (2 s of play) came through
+>   as `course_result=1, goal_id=-1`.  Hub houses keep the
 >   unconditional remap (the door is their only exit).  The bridge logs the
 >   `play_time / new_flower / get_flower` fields on every seed-only exit so
 >   the next report can confirm the shape; `get_flower_count` itself is
