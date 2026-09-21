@@ -83,7 +83,17 @@ public:
     Reader(const char* data, std::size_t len);
 
     bool nextString(std::string_view& out);
+    // Signed decimal integer.  Rejects (returns false) on int64 overflow
+    // instead of wrapping -- so a u64 wire field with bit 63 set must go
+    // through nextUInt64, never through here.
     bool nextInt(std::int64_t& out);
+    // Unsigned decimal integer in [0, 2**64).  Rejects a leading '-' and
+    // any value that overflows u64.  Use for every u64 bitfield wire field
+    // (set_badges_absolute.bits, set_wonder_seeds_absolute.bits_lo/hi,
+    // set_badge_shop_state.managed/sold): the client packs full 64-bit
+    // masks, and bit 63 IS used (2026-09-21 -- a W3+W4-full Wonder-Seed
+    // bucket pair is exactly 0xFFFFFFFF00000000).
+    bool nextUInt64(std::uint64_t& out);
     bool nextBool(bool& out);
     bool isNull();
     // Consume one complete JSON value of ANY type (string / number /
@@ -107,6 +117,7 @@ private:
     bool prepareValue();
     void markValueDone();
     bool readString(std::string_view& out);
+    bool readDigitsU64(std::uint64_t& out);
     bool skipString();
     bool matchLiteral(const char* lit, std::size_t n);
 

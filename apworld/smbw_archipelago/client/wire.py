@@ -1001,9 +1001,13 @@ class SetWonderSeedsAbsoluteMsg:
     Refining the bit-to-course mapping requires additional RE of
     FUN_71003D4110 (Murmur3 course-name -> course-index lookup).
 
-    Range per field is ``[0, 2**64)``; the wire decoder accepts each
-    half as an int64 (top bit reserved -- typical AP scenarios put
-    0..16 bits per world bucket so the masks fit comfortably).
+    Range per field is the FULL ``[0, 2**64)``.  Bit 63 of ``bits_lo``
+    is a real value (W4 bucket bit 15 -- any player holding 16+ W4
+    Wonder Seeds), so the Switch decoder reads each half with
+    ``util::json::Reader::nextUInt64`` (2026-09-21).  Subsdk builds
+    older than that parsed the halves as int64 and dropped the whole
+    message whenever bit 63 was set (``[conn] decode failed`` every
+    2 s tick); the wire format itself is unchanged.
     """
 
     T = "set_wonder_seeds_absolute"

@@ -257,6 +257,25 @@ bool Reader::nextString(std::string_view& out) {
     return true;
 }
 
+// Shared digit loop for nextInt / nextUInt64.  Accumulates unsigned with
+// overflow detection; the caller has already consumed any sign.  Returns
+// false (without touching error_) on a non-digit start, on u64 overflow,
+// or on a trailing fraction/exponent marker.
+bool Reader::readDigitsU64(std::uint64_t& out) {
+    if (p_ >= end_ || *p_ < '0' || *p_ > '9') return false;
+    constexpr std::uint64_t kMax = ~static_cast<std::uint64_t>(0);
+    std::uint64_t v = 0;
+    while (p_ < end_ && *p_ >= '0' && *p_ <= '9') {
+        const std::uint64_t d = static_cast<std::uint64_t>(*p_ - '0');
+        if (v > (kMax - d) / 10) return false;  // v*10 + d would overflow
+        v = v * 10 + d;
+        ++p_;
+    }
+    if (p_ < end_ && (*p_ == '.' || *p_ == 'e' || *p_ == 'E')) return false;
+    out = v;
+    return true;
+}
+
 bool Reader::nextInt(std::int64_t& out) {
     if (!prepareValue()) return fail();
     bool neg = false;
@@ -265,14 +284,31 @@ bool Reader::nextInt(std::int64_t& out) {
         ++p_;
         if (p_ >= end_) return fail();
     }
-    if (*p_ < '0' || *p_ > '9') return fail();
-    std::int64_t v = 0;
-    while (p_ < end_ && *p_ >= '0' && *p_ <= '9') {
-        v = v * 10 + (*p_ - '0');
-        ++p_;
+    std::uint64_t mag = 0;
+    if (!readDigitsU64(mag)) return fail();
+    // Signed range check.  Before 2026-09-21 this loop accumulated in
+    // int64 and silently wrapped negative on >= 2**63 (UB), which is how a
+    // u64 bitfield with bit 63 set got rejected downstream as "v < 0".
+    constexpr std::uint64_t kI64MaxMag = static_cast<std::uint64_t>(1) << 63;  // |INT64_MIN|
+    if (neg) {
+        if (mag > kI64MaxMag) return fail();
+        out = (mag == kI64MaxMag)
+                  ? (-static_cast<std::int64_t>(kI64MaxMag - 1) - 1)
+                  : -static_cast<std::int64_t>(mag);
+    } else {
+        if (mag >= kI64MaxMag) return fail();
+        out = static_cast<std::int64_t>(mag);
     }
-    if (p_ < end_ && (*p_ == '.' || *p_ == 'e' || *p_ == 'E')) return fail();
-    out = neg ? -v : v;
+    markValueDone();
+    return true;
+}
+
+bool Reader::nextUInt64(std::uint64_t& out) {
+    if (!prepareValue()) return fail();
+    if (*p_ == '-') return fail();
+    std::uint64_t v = 0;
+    if (!readDigitsU64(v)) return fail();
+    out = v;
     markValueDone();
     return true;
 }
