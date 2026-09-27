@@ -377,7 +377,10 @@ def run_build(
     )
 
 
-DEPLOY_TARGETS: tuple[str, ...] = ("ryujinx", "sd", "custom", "none")
+# "eden" covers the whole yuzu family (Eden / yuzu / suyu / citron /
+# sudachi share the `<user dir>/load/<title>/<mod>/exefs/` layout); it is
+# named for the fork players actually run.
+DEPLOY_TARGETS: tuple[str, ...] = ("ryujinx", "eden", "sd", "custom", "none")
 
 
 def run_deploy(
@@ -391,7 +394,8 @@ def run_deploy(
     """Copy build outputs to the chosen target."""
     from .deploy import (
         deploy_to_custom_folder, deploy_to_ryujinx, deploy_to_sd,
-        detect_ryujinx_path,
+        deploy_to_yuzu_family,
+        detect_ryujinx_path, detect_yuzu_family_path,
     )
 
     anchor = t0 if t0 is not None else time.monotonic()
@@ -415,6 +419,20 @@ def run_deploy(
                   ok=False, error=err)
             return DeployOutcomeWrapper(ok=False, target="ryujinx", error=err)
         result = deploy_to_ryujinx(Path(resolved), build_outputs)
+    elif target == "eden":
+        resolved = target_path or detect_yuzu_family_path()
+        if resolved is None or not Path(resolved).is_dir():
+            err = (
+                f"Eden / yuzu-family user folder not found "
+                f"(passed={target_path!r}, auto={detect_yuzu_family_path()!r}). "
+                f"Launch the emulator once so it creates its user folder, "
+                f"or pass --deploy-path to it (e.g. %APPDATA%\\eden, or a "
+                f"portable install's user\\ folder)."
+            )
+            _emit(callback, "phase_end", phase=PHASE_DEPLOY, t0=anchor,
+                  ok=False, error=err)
+            return DeployOutcomeWrapper(ok=False, target="eden", error=err)
+        result = deploy_to_yuzu_family(Path(resolved), build_outputs)
     elif target == "sd":
         if target_path is None:
             err = "--deploy-path is required for sd target"
@@ -663,7 +681,8 @@ def _build_parser() -> argparse.ArgumentParser:
     p.add_argument("--deploy-target", choices=DEPLOY_TARGETS, default="none",
                    help="Deploy destination. Default: none (skip).")
     p.add_argument("--deploy-path", type=Path, default=None,
-                   help="Deploy destination path. Optional for ryujinx.")
+                   help="Deploy destination path. Optional for ryujinx / eden "
+                        "(auto-detected user folder).")
     p.add_argument("--auto-install", action="store_true",
                    help="Auto-install missing prereqs before later phases.")
     p.add_argument("--no-install-preflight", action="store_true",

@@ -53,6 +53,7 @@ from collections.abc import Awaitable, Callable
 from typing import Any
 
 from . import wire
+from .._setup.build_id import mod_ver_mismatch_warning
 from .processor import process_event
 from .protocol import (
     BadgeAcquiredMsg,
@@ -305,8 +306,19 @@ class LanServer:
         badge_shop_state_provider: BadgeShopStateProvider | None = None,
         seed_shop_state_provider: SeedShopStateProvider | None = None,
         badge_shop_text_provider: BadgeShopTextProvider | None = None,
+        expected_mod_source: str | None = None,
     ) -> None:
         self._state = state
+        # Source id a subsdk9 built from THIS apworld would report in its
+        # Hello ``mod_ver`` (``_setup.build_id.expected_mod_source_id``).
+        # None = unknown (plain-folder install) -> no staleness check.
+        self._expected_mod_source = expected_mod_source
+        # Identity the connected (or most recently connected) Switch mod
+        # announced in Hello.  Kept across disconnects on purpose: when a
+        # player pastes a log or reads the GUI after the game crashed, the
+        # last-seen build is exactly what we want to know.
+        self.switch_mod_ver: str | None = None
+        self.switch_game_ver: str | None = None
         self._on_check_emitted = on_check_emitted
         self._on_death_reported = on_death_reported
         self._on_goal_completed = on_goal_completed
@@ -981,9 +993,22 @@ class LanServer:
         # Dispatch by concrete type -- cleaner than a string switch since
         # decode() already validated the discriminator.
         if isinstance(msg, wire.HelloMsg):
+            # mod_ver is the subsdk9 build id ("<source>@<YYYYMMDD>";
+            # switch-mod/cmake/BuildId.cmake).  INFO so the client log
+            # names the exact mod build next to every session -- the
+            # 2026-09-21 Eden triage had to date a build by which log
+            # strings it contained.
+            self.switch_mod_ver = msg.mod_ver
+            self.switch_game_ver = msg.game_ver
             log.info(
-                "switch %s hello: mod_ver=%s game_ver=%s pid=%d",
-                peer, msg.mod_ver, msg.game_ver, msg.pid)
+                "switch %s hello: mod_ver=%s game_ver=%s pid=%d "
+                "(expected mod source: %s)",
+                peer, msg.mod_ver, msg.game_ver, msg.pid,
+                self._expected_mod_source or "unknown")
+            warning = mod_ver_mismatch_warning(
+                msg.mod_ver, self._expected_mod_source)
+            if warning:
+                log.warning("%s", warning)
             await self._send(wire.HelloAckMsg(
                 ok=True, bridge_ver=BRIDGE_VERSION))
             # A fresh handshake means the Switch (re)booted -- the game was

@@ -35,6 +35,7 @@ from .context import SMBWContext
 from .discovery import DEFAULT_DISCOVERY_PORT, DiscoveryResponder
 from .lan_server import LanServer
 from .state import BridgeState
+from .._setup.build_id import expected_mod_source_id
 
 
 DEFAULT_SWITCH_HOST = "0.0.0.0"
@@ -42,6 +43,18 @@ DEFAULT_SWITCH_PORT = 17777
 
 
 log = logging.getLogger("SMBW")
+
+
+def _apworld_version() -> str:
+    """``__version__`` of the enclosing world package ("0.0.0+dev" on a
+    checkout, the tag on a release).  Imported lazily: the package
+    ``__init__`` pulls in the whole AP world graph, which the client does
+    not otherwise need at import time."""
+    try:
+        from .. import __version__  # type: ignore[attr-defined]
+        return str(__version__)
+    except Exception:
+        return "unknown"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -77,8 +90,17 @@ async def _main(args: argparse.Namespace) -> int:
     if args.name:
         ctx.auth = args.name
 
+    # Our own identity, logged once so a pasted client log says which
+    # apworld was running, and handed to the LAN server so the Switch's
+    # Hello mod_ver can be checked against it (stale-subsdk9 warning).
+    expected_mod_source = expected_mod_source_id()
+    log.info(
+        "SMBW Client apworld version %s; expected mod source id: %s",
+        _apworld_version(), expected_mod_source or "unknown")
+
     lan = LanServer(
         state=state,
+        expected_mod_source=expected_mod_source,
         on_check_emitted=ctx.handle_check_emitted,
         on_death_reported=ctx.handle_death_reported,
         on_goal_completed=ctx.handle_goal_completed,

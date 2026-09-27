@@ -45,8 +45,16 @@ walks through:
 4. **Build** — compiles `subsdk9` from the bundled `switch-mod/` source
    tree. Takes ~5-10 min on a cold build.
 5. **Deploy** — copies `subsdk9` + `subsdk9.npdm` (renamed to
-   `main.npdm`) into Ryujinx's mods directory at
-   `%APPDATA%\Ryujinx\mods\contents\010015100b514000\smbwap\exefs\`.
+   `main.npdm`) into the emulator's mod folder. Pick the target in the
+   wizard's dropdown:
+   - **Ryujinx** → `%APPDATA%\Ryujinx\mods\contents\010015100b514000\smbwap\exefs\`
+   - **Eden (yuzu-family)** → `%APPDATA%\eden\load\010015100b514000\smbwap\exefs\`
+     (the folder Eden's *Open Mod Data Location* opens; Linux:
+     `~/.local/share/eden/load/...`). Launch Eden once first so its user
+     folder exists, or point the path field at a portable install's
+     `user\` folder. Other yuzu forks (yuzu, suyu, citron, sudachi) use
+     the same layout and are auto-detected under the same target.
+   - **SD card** / **Custom folder** → Atmosphere layout for a real Switch.
 
 Re-run `/setup` any time to bump toolchains, re-deploy after a code
 update, or switch deploy targets.
@@ -73,6 +81,15 @@ generated YAML template.
   deploy target.
 - **Ryujinx logs** — `%APPDATA%\Ryujinx\Logs\` contains the live game
   log. Lines prefixed `[smbwap` are from our Switch mod.
+- **Which mod build am I running?** — the mod prints
+  `[smbwap inf] build: <id>` right after `hkMain START`, and the same id
+  shows up in the SMBW Client log as `hello: mod_ver=<id>` and in the
+  Switch status line of the SMBW tab. The id is
+  `<source>@<build date>`: `0.2.0+g3f9a1c2@20260921` for a wizard build of
+  release 0.2.0, `g3f9a1c2-dirty@20260921` for a dev checkout. If the
+  client logs a *"does not match this apworld"* or *"before build-id
+  stamping"* warning on connect, the emulator is loading a stale
+  `subsdk9`: re-run `/setup` and check the mod folder it actually reads.
 
 For anything else, open an issue at
 https://github.com/mdietz94/smwonder_archipelago/issues.

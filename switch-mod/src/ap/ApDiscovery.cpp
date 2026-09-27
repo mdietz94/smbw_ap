@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "util/BuildId.hpp"
 #include "util/Json.hpp"
 #include "util/Log.hpp"
 
@@ -68,7 +69,7 @@ std::size_t buildProbe(char* dst, std::size_t cap) {
     util::json::Encoder e(line);
     e.beginObject()
         .key("t").value("discover")
-        .key("mod_ver").value("smbwap-m4")
+        .key("mod_ver").value(util::kBuildId)
      .endObject();
     line.append('\n');
     const std::size_t take = (line.size() < cap) ? line.size() : cap;

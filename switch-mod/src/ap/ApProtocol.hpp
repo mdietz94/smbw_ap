@@ -22,7 +22,11 @@ inline constexpr std::size_t kMaxLineBytes = 8 * 1024;
 
 // Field caps. Sized to comfortably hold the max observed payload in each
 // shape with 2x headroom.
-inline constexpr std::size_t kModVerCap   = 32;
+// mod_ver carries the build id ("<source>@<YYYYMMDD>", util/BuildId.hpp);
+// a release bundle id looks like "0.10.0-alpha12+g1234567-dirty@20260921"
+// (38 chars), so 64 leaves 2x headroom.  WireHello is a stack local in
+// ApClient::sendHello, not a ring-buffer member, so the bump is free.
+inline constexpr std::size_t kModVerCap   = 64;
 inline constexpr std::size_t kGameVerCap  = 16;
 inline constexpr std::size_t kRoomCap     = 32;     // PlayReport room names ≤ ~20 chars
 inline constexpr std::size_t kLogLevelCap = 8;      // "debug", "info", "warn", "error"

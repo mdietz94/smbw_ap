@@ -27,6 +27,13 @@
 >   §15 "Wonder-Seed rows"; the still-owed follow-up is making
 >   `pushWonderSeedContainerDCounts`'s fill slot-aware (it writes through shop
 >   slots 70..80).
+> - **subsdk build id + Eden deploy target (2026-09-21, shipped)** -- every
+>   `cmake --build` stamps `<source>@<YYYYMMDD>` (git hash / bundle `VERSION`)
+>   into subsdk9; it prints as `build: ...` after `hkMain START` and rides in
+>   Hello `mod_ver`, which the client logs and checks against its own source
+>   id (`_setup/build_id.py`, warns on a stale mod). The wizard also deploys
+>   to Eden / yuzu-family `load/<title>/smbwap/exefs/` (`--deploy-target eden`).
+>   See the **smbw-build-deploy** skill, "Which build is running?".
 > - [handoff-2026-05-29-ws-persistence.md](handoff-2026-05-29-ws-persistence.md)
 >   — Wonder-Seed per-course Container-D persistence (supersedes the
 >   "gate override only, not per-course storage" caveat below).

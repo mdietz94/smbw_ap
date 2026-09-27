@@ -38,6 +38,33 @@ SRC = REPO / "apworld" / "smbw_archipelago"
 DST_DIR = REPO / "vendor" / "Archipelago" / "custom_worlds"
 DST = DST_DIR / "smbwonder.apworld"
 
+
+
+def _load_build_id_module():
+    """Import ``apworld/smbw_archipelago/_setup/build_id.py`` by file path.
+
+    Going through the package (``from apworld.smbw_archipelago._setup
+    import build_id``) would execute the world's ``__init__``, which
+    imports Archipelago (``worlds.generic.Rules``) -- unavailable on the
+    release runner, which only sets up Python before calling this script.
+    build_id.py is stdlib-only, so a direct file import is safe.
+    """
+    import importlib.util
+    path = SRC / "_setup" / "build_id.py"
+    spec = importlib.util.spec_from_file_location("smbwap_build_id", path)
+    assert spec is not None and spec.loader is not None, path
+    module = importlib.util.module_from_spec(spec)
+    # Register before exec: @dataclass looks the class's module up in
+    # sys.modules while decorating, and fails on an unregistered module.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+_build_id = _load_build_id_module()
+BUNDLE_VERSION_ARCNAME: str = _build_id.BUNDLE_VERSION_ARCNAME
+bundle_source_id = _build_id.bundle_source_id
+
 # Skipped when collecting apworld files. The `tests` directory ships ~200
 # unit tests + fixtures that bloat the zip and have no runtime purpose
 # on the user's machine.
@@ -200,9 +227,20 @@ def main(argv: list[str] | None = None) -> int:
                 p.relative_to(REPO / "switch-mod"),
             )
 
+        # Build identity for the bundled sources.  The wizard compiles
+        # them from an extracted copy with no .git, so cmake/BuildId.cmake
+        # cannot ask git what it is building; this VERSION file
+        # ("<world_version>+g<hash>[-dirty]") is what it stamps into
+        # subsdk9's boot banner + Hello mod_ver instead.  The client reads
+        # the same zip entry to know which id to expect (build_id.py).
+        source_id = ""
+        if args.bundle_mod:
+            source_id = bundle_source_id(REPO)
+            zf.writestr(BUNDLE_VERSION_ARCNAME, source_id + "\n")
+
     total_files = len(apworld_files) + len(bundled_mod_files)
     size_kb = DST.stat().st_size / 1024
-    extras = f" (+{len(bundled_mod_files)} mod)" if args.bundle_mod else ""
+    extras = f" (+{len(bundled_mod_files)} mod, VERSION={source_id})" if args.bundle_mod else ""
     print(f"OK: wrote {DST} ({total_files} files{extras}, {size_kb:.1f} KiB)")
     return 0
 

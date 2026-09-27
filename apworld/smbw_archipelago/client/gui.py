@@ -193,8 +193,13 @@ class SMBWManager(GameManager):
         lan = getattr(ctx, "lan_server", None)
 
         switch_connected = bool(getattr(lan, "_client_writer", None)) if lan else False
+        # Build id the Switch announced in Hello ("<source>@<YYYYMMDD>").
+        # Shown while connected so "which subsdk9 is this?" is answerable
+        # from the status panel without digging through logs.
+        mod_ver = getattr(lan, "switch_mod_ver", None) if lan else None
+        mod_suffix = f"  mod=[b]{mod_ver}[/b]" if (switch_connected and mod_ver) else ""
         self._lbl_switch.text = (
-            "Switch: [color=00ff00]connected[/color]"
+            f"Switch: [color=00ff00]connected[/color]{mod_suffix}"
             if switch_connected
             else "Switch: [color=ff8080]disconnected[/color]"
         )

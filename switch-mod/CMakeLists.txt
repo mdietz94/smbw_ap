@@ -47,6 +47,29 @@ set(SOURCES_CXX
 add_executable(${PROJECT_NAME} ${SOURCES_CXX})
 target_include_directories(${PROJECT_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
+# Build identity. cmake/BuildId.cmake stamps SMBWAP_BUILD_ID
+# ("<source>@<YYYYMMDD>", source = VERSION-file contents in the wizard's
+# bundled tree, g<hash>[-dirty] in a git checkout, else "unknown") into
+# build/generated/smbwap_build_id.h. hkMain logs it in the boot banner and
+# ApClient/ApDiscovery send it as `mod_ver`, so a player's log names the
+# exact subsdk9 they are running. It is a custom target that runs on every
+# `cmake --build` (NOT a configure-time value) because the wizard skips
+# configure when build/ is already set up; the script only rewrites the
+# header when the id changes, so idle rebuilds stay incremental.
+# src/util/BuildId.hpp wraps the header with a "unknown" fallback.
+set(SMBWAP_GENERATED_DIR ${CMAKE_BINARY_DIR}/generated)
+set(SMBWAP_BUILD_ID_HEADER ${SMBWAP_GENERATED_DIR}/smbwap_build_id.h)
+add_custom_target(smbwap_build_id
+    COMMAND ${CMAKE_COMMAND}
+        -DSOURCE_DIR=${CMAKE_SOURCE_DIR}
+        -DOUT=${SMBWAP_BUILD_ID_HEADER}
+        -P ${CMAKE_SOURCE_DIR}/cmake/BuildId.cmake
+    BYPRODUCTS ${SMBWAP_BUILD_ID_HEADER}
+    COMMENT "smbwap: stamping build id"
+    VERBATIM)
+add_dependencies(${PROJECT_NAME} smbwap_build_id)
+target_include_directories(${PROJECT_NAME} PRIVATE ${SMBWAP_GENERATED_DIR})
+
 # Bridge-discovery subnet seed. The Switch subsdk has no broadcast probe;
 # after a loopback attempt (Ryujinx-on-same-host) it sweeps the /24 that
 # this IP falls in, looking for the PC client (src/ap/ApDiscovery.cpp). The

@@ -43,6 +43,7 @@
 #include "probe/ItemGetGate.hpp"
 #include "ui/ApDebugConsole.hpp"
 #include "ui/ImGuiNvnBootstrap.hpp"
+#include "util/BuildId.hpp"
 #include "util/Log.hpp"
 
 namespace nn::socket {
@@ -1973,6 +1974,11 @@ void installSymHook(const char* friendly, hk::Result rc) {
 
 extern "C" void hkMain() {
     SMBWAP_LOG_INFO("=== smbwap hkMain START ===");
+    // Build identity first: when triaging a player's log this line is what
+    // tells us WHICH subsdk9 they were running (git hash / bundle version +
+    // build date, see util/BuildId.hpp).  Same string goes out as Hello
+    // mod_ver so the PC client log carries it too.
+    SMBWAP_LOG_INFO("build: %s (game smbw-1.0.0)", smbwap::util::kBuildId);
     SMBWAP_LOG_INFO("Phase 2g: 20 hooks + ap/ subsystem + real probe:: grants + WS reader override + open-world routability + course visibility + travel confirm + route-gate force-open + Petal-Isles intra-world course roads");
 
     // CORE_INIT (Phase 2a)
