@@ -27,6 +27,38 @@
 >   §15 "Wonder-Seed rows"; the still-owed follow-up is making
 >   `pushWonderSeedContainerDCounts`'s fill slot-aware (it writes through shop
 >   slots 70..80).
+> - **Break Time! entrance exits (2026-09-19, shipped)** — a player entered
+>   W6 Hot-Hot Rocks (needs Elephant), left straight away, and was credited
+>   its Wonder Seed: leaving a small course through its entrance still
+>   arrives as `course_result=1`, and the seed-only remap in
+>   `client/processor.py::_handle_course_result` accepted any such report.
+>   Break Time / Search Party / KO Arena stages now credit only `goal_id=0`
+>   (the seed pickup is the course's main goal — live Treasure Vault
+>   capture, plus Fluff-Puff Peaks Cabin and Kick It, Outmaway in the
+>   2026-09-21 Switch log); an entrance exit reports no goal at all —
+>   that log's W2 Puzzling Park enter-and-exit (2 s of play) came through
+>   as `course_result=1, goal_id=-1`.  Hub houses keep the
+>   unconditional remap (the door is their only exit).  The bridge logs the
+>   `play_time / new_flower / get_flower` fields on every seed-only exit so
+>   the next report can confirm the shape; `get_flower_count` itself is
+>   "seeds owned for this course" (1 on a one-second Robbird Cove quit) and
+>   is blind-filled by `pushWonderSeedContainerDCounts`, so it is not usable
+>   as evidence.
+> - **u64 wire fields with bit 63 set were dropped on the Switch (2026-09-21,
+>   fixed)** — `set_wonder_seeds_absolute` packs 16 bits per world into
+>   `bits_lo`/`bits_hi`, so a player with 16+ W4 seeds sends
+>   `bits_lo = 0xFFFFFFFF00000000` (> INT64_MAX). The subsdk JSON reader
+>   accumulated in signed int64, wrapped negative, and `parseSetWonderSeedsAbsolute`
+>   rejected it → `[conn] decode failed` every 2 s tick and
+>   `probe::setWonderSeedBitfieldAbsolute` never ran for late-game players.
+>   Fix: `util::json::Reader::nextUInt64` (unsigned, overflow-checked) now
+>   reads every u64 field (`set_badges_absolute.bits`, `bits_lo`/`bits_hi`,
+>   `set_badge_shop_state.managed`/`sold`); `nextInt` also rejects int64
+>   overflow instead of wrapping. Wire format unchanged — only the mod build
+>   matters; a client talking to an older subsdk still hits the drop. Host
+>   test: `switch-mod/tests/host/json_reader_test.cpp` (clang++, no devkit).
+>   A `set_seed_shop_state` "decode failed" in the same log is an unknown-`"t"`
+>   report from a pre-#189 (2026-09-12) subsdk, not a parser bug.
 > - **subsdk build id + Eden deploy target (2026-09-21, shipped)** -- every
 >   `cmake --build` stamps `<source>@<YYYYMMDD>` (git hash / bundle `VERSION`)
 >   into subsdk9; it prints as `build: ...` after `hkMain START` and rides in

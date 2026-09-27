@@ -414,6 +414,7 @@ class TestHubHouseRemap(unittest.TestCase):
 # for these stages).
 
 TREASURE_VAULT_STAGE_KEY = 0xF9B39322  # W4: Treasure Vault — Break Time!
+HOT_HOT_ROCKS_STAGE_KEY = 0x67BE7C0E   # W6: Hot-Hot Rocks — Break Time! (needs Elephant)
 
 
 class TestBreakTimeRemap(unittest.TestCase):
@@ -457,6 +458,113 @@ class TestBreakTimeRemap(unittest.TestCase):
             kind=NerveKind.WONDER_SEED_AWARDED, seq=1))
         self.assertEqual(emitted, [])
         self.assertEqual(state.count_emitted(), 0)
+
+    @staticmethod
+    def _break_time_fields(stage_key: int, *, goal_id: int,
+                           course_result: int = 1,
+                           play_time: int = 3) -> dict:
+        return {
+            "stage_info": {
+                "stage_key": stage_key,
+                "world_no": 7,
+                "course_no": 40,
+            },
+            "course_result": course_result,
+            "goal_id": goal_id,
+            "touch_goal_top_result": False,
+            "world_mother_seed": False,
+            "total_get_finish_seed_count": 0,
+            "get_flower_count": 0,
+            "new_flower_count": 0,
+            "current_play_time_sec": play_time,
+            "big_flower_coin_course_in": [False, False, False],
+            "big_flower_coin_course_out": [False, False, False],
+        }
+
+    def test_leaving_hot_hot_rocks_through_the_entrance_emits_nothing(self):
+        """Regression for the 2026-09-19 player report: entering W6
+        Hot-Hot Rocks and leaving straight away (the course needs
+        Elephant) credited its Wonder Seed.  Walking back out of a small
+        course is reported as course_result=1 with NO goal -- goal_id=-1,
+        the live shape from the 2026-09-21 Switch log of a W2 Puzzling
+        Park enter-and-exit (2 s of play, no seeds) -- which the
+        unconditional Break Time remap accepted as a clear."""
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=-1,
+                                           play_time=2))
+        self.assertEqual(emitted, [])
+        self.assertFalse(state.has_emitted(
+            CheckKind.WONDER_SEED, HOT_HOT_ROCKS_STAGE_KEY))
+        # ...and it must not have been misrouted to a flagpole exit either.
+        self.assertEqual(state.count_emitted(), 0)
+        # The player is off the course either way.
+        self.assertFalse(state.is_in_course())
+
+    def test_break_time_clear_still_emits_on_goal_id_zero(self):
+        """The seed pickup ends a Break Time course as its main goal
+        (goal_id=0, as in the live Treasure Vault capture) -- that shape
+        keeps crediting, and keeps re-crediting on a later re-clear so a
+        check lost while the client was down can still be replayed."""
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=0))
+        self.assertEqual([c.kind for c in emitted], [CheckKind.WONDER_SEED])
+        self.assertEqual(emitted[0].stage_key, HOT_HOT_ROCKS_STAGE_KEY)
+
+    def test_break_time_entrance_exit_then_real_clear_credits_once(self):
+        """Bail out first, come back with Elephant and clear it: the
+        early exit must not poison the later clear (no dedup entry is
+        recorded for the suppressed exit)."""
+        state = BridgeState()
+        self.assertEqual(_handle_course_result(
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=-1)), [])
+        emitted = _handle_course_result(
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=0,
+                                           play_time=95))
+        self.assertEqual([c.kind for c in emitted], [CheckKind.WONDER_SEED])
+        self.assertEqual(state.count_emitted(CheckKind.WONDER_SEED), 1)
+
+    def test_break_time_entrance_exit_still_credits_ten_coins(self):
+        """A KO Arena / Break Time early exit still runs the 10-coin
+        diff -- those checks carry their own evidence (the in/out
+        arrays), so a coin grabbed before bailing out is still sent."""
+        state = BridgeState()
+        fields = self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=-1)
+        fields["big_flower_coin_course_out"] = [True, False, False]
+        emitted = _handle_course_result(state, fields)
+        self.assertEqual([c.kind for c in emitted], [CheckKind.TEN_COIN])
+        self.assertFalse(state.has_emitted(
+            CheckKind.WONDER_SEED, HOT_HOT_ROCKS_STAGE_KEY))
+
+    def test_break_time_door_shaped_exit_emits_nothing_either(self):
+        """goal_id=1 (the hub-house door shape) is the other known
+        non-clear report; it is excluded by the same ``goal_id == 0``
+        test rather than a -1 special case."""
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=1))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+    def test_break_time_pause_quit_still_emits_nothing(self):
+        """course_result=3 (pause-menu quit) is rejected before the
+        goal_id check, whatever goal_id says."""
+        state = BridgeState()
+        emitted = _handle_course_result(
+            state, self._break_time_fields(HOT_HOT_ROCKS_STAGE_KEY, goal_id=0,
+                                           course_result=3))
+        self.assertEqual(emitted, [])
+        self.assertEqual(state.count_emitted(), 0)
+
+    def test_hub_house_entrance_exit_is_still_credited(self):
+        """Hub houses deliberately keep the unconditional remap: the
+        door is their only exit (goal_id=1 live) and the seed is handed
+        over inside, so the goal_id gate applies to Break Time only."""
+        state = BridgeState()
+        fields = self._break_time_fields(ANGLER_POPLIN_STAGE_KEY, goal_id=1)
+        emitted = _handle_course_result(state, fields)
+        self.assertEqual([c.kind for c in emitted], [CheckKind.WONDER_SEED])
 
     def test_break_time_replay_after_session_restart_re_fires(self):
         """Disconnect at pickup → reconnect later: the next clear of

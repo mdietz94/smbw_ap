@@ -257,6 +257,25 @@ bool Reader::nextString(std::string_view& out) {
     return true;
 }
 
+// Shared digit loop for nextInt / nextUInt64.  Accumulates unsigned with
+// overflow detection; the caller has already consumed any sign.  Returns
+// false (without touching error_) on a non-digit start, on u64 overflow,
+// or on a trailing fraction/exponent marker.
+bool Reader::readDigitsU64(std::uint64_t& out) {
+    if (p_ >= end_ || *p_ < '0' || *p_ > '9') return false;
+    constexpr std::uint64_t kMax = ~static_cast<std::uint64_t>(0);
+    std::uint64_t v = 0;
+    while (p_ < end_ && *p_ >= '0' && *p_ <= '9') {
+        const std::uint64_t d = static_cast<std::uint64_t>(*p_ - '0');
+        if (v > (kMax - d) / 10) return false;  // v*10 + d would overflow
+        v = v * 10 + d;
+        ++p_;
+    }
+    if (p_ < end_ && (*p_ == '.' || *p_ == 'e' || *p_ == 'E')) return false;
+    out = v;
+    return true;
+}
+
 bool Reader::nextInt(std::int64_t& out) {
     if (!prepareValue()) return fail();
     bool neg = false;
@@ -265,14 +284,31 @@ bool Reader::nextInt(std::int64_t& out) {
         ++p_;
         if (p_ >= end_) return fail();
     }
-    if (*p_ < '0' || *p_ > '9') return fail();
-    std::int64_t v = 0;
-    while (p_ < end_ && *p_ >= '0' && *p_ <= '9') {
-        v = v * 10 + (*p_ - '0');
-        ++p_;
+    std::uint64_t mag = 0;
+    if (!readDigitsU64(mag)) return fail();
+    // Signed range check.  Before 2026-09-21 this loop accumulated in
+    // int64 and silently wrapped negative on >= 2**63 (UB), which is how a
+    // u64 bitfield with bit 63 set got rejected downstream as "v < 0".
+    constexpr std::uint64_t kI64MaxMag = static_cast<std::uint64_t>(1) << 63;  // |INT64_MIN|
+    if (neg) {
+        if (mag > kI64MaxMag) return fail();
+        out = (mag == kI64MaxMag)
+                  ? (-static_cast<std::int64_t>(kI64MaxMag - 1) - 1)
+                  : -static_cast<std::int64_t>(mag);
+    } else {
+        if (mag >= kI64MaxMag) return fail();
+        out = static_cast<std::int64_t>(mag);
     }
-    if (p_ < end_ && (*p_ == '.' || *p_ == 'e' || *p_ == 'E')) return fail();
-    out = neg ? -v : v;
+    markValueDone();
+    return true;
+}
+
+bool Reader::nextUInt64(std::uint64_t& out) {
+    if (!prepareValue()) return fail();
+    if (*p_ == '-') return fail();
+    std::uint64_t v = 0;
+    if (!readDigitsU64(v)) return fail();
+    out = v;
     markValueDone();
     return true;
 }
@@ -310,6 +346,88 @@ bool Reader::isNull() {
     }
     p_ = save;
     return false;
+}
+
+bool Reader::skipString() {
+    // Step over a string literal without decoding it (no in-place write).
+    // A backslash skips the next byte; for \uXXXX the hex digits are then
+    // ordinary bytes, so the loop naturally runs to the closing quote.
+    if (p_ >= end_ || *p_ != '"') return false;
+    ++p_;
+    while (p_ < end_ && *p_ != '"') {
+        if (*p_ == '\\') {
+            ++p_;
+            if (p_ >= end_) return false;
+        }
+        ++p_;
+    }
+    if (p_ >= end_) return false;
+    ++p_;
+    return true;
+}
+
+bool Reader::matchLiteral(const char* lit, std::size_t n) {
+    if (static_cast<std::size_t>(end_ - p_) < n) return false;
+    for (std::size_t i = 0; i < n; ++i) {
+        if (p_[i] != lit[i]) return false;
+    }
+    p_ += n;
+    return true;
+}
+
+// Consume exactly one JSON value of any type at the cursor.
+//
+// This is what every parseXxx() "unknown field" branch in ApProtocol.cpp
+// uses to stay in sync with a newer bridge that has added a field this
+// build does not know about.  The previous idiom chained
+// isNull()/nextString()/nextInt()/nextBool(), but nextString() marks the
+// sticky error_ flag as soon as the first byte is not '"', so every later
+// call short-circuited and an unknown int/bool field rejected the whole
+// line ("[conn] decode failed").  Forward compatibility is the point of
+// the branch, so this primitive never sets error_ on a type mismatch --
+// only on genuinely malformed input (truncated, unbalanced, bad byte).
+//
+// Nested objects/arrays are skipped by counting brackets over the raw
+// text (strings are stepped over so brackets inside them don't count),
+// capped at kMaxSkipDepth.  No allocation and no frame-stack use: the
+// skipped container is never "entered", so depth_ is untouched.
+bool Reader::skipValue() {
+    if (!prepareValue()) return fail();
+    const char c = *p_;
+    if (c == '"') {
+        if (!skipString()) return fail();
+    } else if (c == '{' || c == '[') {
+        int nest = 0;
+        do {
+            if (p_ >= end_) return fail();
+            const char d = *p_;
+            if (d == '"') {
+                if (!skipString()) return fail();
+                continue;
+            }
+            if (d == '{' || d == '[') {
+                if (++nest > kMaxSkipDepth) return fail();
+            } else if (d == '}' || d == ']') {
+                --nest;
+            }
+            ++p_;
+        } while (nest > 0);
+    } else if (c == '-' || (c >= '0' && c <= '9')) {
+        // Number: accept the whole JSON number charset (fraction and
+        // exponent included).  We never interpret it, only step over it.
+        ++p_;
+        while (p_ < end_ && ((*p_ >= '0' && *p_ <= '9') || *p_ == '.' ||
+                             *p_ == 'e' || *p_ == 'E' || *p_ == '+' || *p_ == '-')) {
+            ++p_;
+        }
+    } else if (matchLiteral("true", 4) || matchLiteral("false", 5) ||
+               matchLiteral("null", 4)) {
+        // Literal consumed.
+    } else {
+        return fail();
+    }
+    markValueDone();
+    return true;
 }
 
 }  // namespace smbwap::util::json

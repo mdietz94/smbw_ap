@@ -156,28 +156,21 @@ bool sv_eq(std::string_view sv, const char* lit) {
 bool parseSetBadgesAbsolute(util::json::Reader& r, WireSetBadgesAbsolute& out) {
     // Cursor is positioned just after the "t":"set_badges_absolute" pair
     // within the same object.  `bits` is the absolute u64 badge bitfield.
-    // The bridge validates [0, 2**64); we accept any non-negative int64
-    // (a u64 mask above 2**63 would silently truncate on JSON parse, but
-    // realistic badge registries never approach 2**24).
+    // The bridge validates [0, 2**64) and so do we (nextUInt64 rejects a
+    // sign or u64 overflow).  Badge internal_ids stop at 58 so bit 63 is
+    // never set in practice, but the full range is accepted regardless.
     std::string_view key;
     bool saw_bits = false;
     while (r.nextField(key)) {
         if (sv_eq(key, "bits")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.bits = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.bits = v;
             saw_bits = true;
         } else {
-            // Unknown field -- consume a value to keep the parser in sync.
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_bits;
@@ -212,14 +205,9 @@ bool parseKill(util::json::Reader& r, WireKill& out) {
             copyFixedN(out.cause, sv.data(), sv.size());
             saw_cause = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_source && saw_cause;
@@ -246,14 +234,9 @@ bool parseOverlayNotice(util::json::Reader& r, WireOverlayNotice& out) {
             out.ttl_ms = static_cast<std::int32_t>(i);
             saw_ttl = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_text && saw_ttl;
@@ -280,14 +263,9 @@ bool parseGrantHashKeyed(util::json::Reader& r, WireGrantHashKeyed& out) {
             out.value = static_cast<std::uint32_t>(v);
             saw_value = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_hash && saw_value;
@@ -313,14 +291,9 @@ bool parseDumpSaveField(util::json::Reader& r, WireDumpSaveField& out) {
             out.field_offset = static_cast<std::uint32_t>(v);
             saw_offset = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_base && saw_offset;
@@ -355,14 +328,9 @@ bool parseSetContainerCBit(util::json::Reader& r,
             out.value = static_cast<std::uint8_t>(v);
             saw_value = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_hash && saw_bit && saw_value;
@@ -396,14 +364,9 @@ bool parseSetPerCourseBitfield(util::json::Reader& r,
             out.bitmask = static_cast<std::uint32_t>(v);
             saw_bitmask = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_hash && saw_course && saw_bitmask;
@@ -433,14 +396,9 @@ bool parseIncrementHashKeyed(util::json::Reader& r, WireIncrementHashKeyed& out)
             out.delta = static_cast<std::int32_t>(v);
             saw_delta = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_hash && saw_delta;
@@ -462,14 +420,9 @@ bool parseSetRoyalSeedsAbsolute(util::json::Reader& r,
             out.mask = static_cast<std::uint8_t>(v);
             saw_mask = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_mask;
@@ -507,14 +460,9 @@ bool parseApplyWorldUnlock(util::json::Reader& r, WireApplyWorldUnlock& out) {
             if (!parse_hash_array(out.bool_hashes, out.bool_count))
                 return false;
         } else {
-            std::string_view dummy;
-            std::int64_t iv = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(iv)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_hashes;
@@ -536,14 +484,9 @@ bool parseSetRoutableWorldsAbsolute(util::json::Reader& r,
             out.mask = static_cast<std::uint16_t>(v);
             saw_mask = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_mask;
@@ -564,14 +507,9 @@ bool parseSetForceClearedCourses(util::json::Reader& r,
             out.mask = static_cast<std::uint16_t>(v);
             saw_mask = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_mask;
@@ -592,14 +530,9 @@ bool parseSetUnlockedCharas(util::json::Reader& r,
             out.mask = static_cast<std::uint16_t>(v);
             saw_mask = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_mask;
@@ -619,14 +552,9 @@ bool parseSetItemGetDenyMask(util::json::Reader& r,
             out.mask = static_cast<std::uint32_t>(v);
             saw_mask = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_mask;
@@ -636,33 +564,25 @@ bool parseSetBadgeShopState(util::json::Reader& r,
                             WireSetBadgeShopState& out) {
     // Cursor positioned just after "t":"set_badge_shop_state".  Two
     // required u64 fields: "managed" and "sold" (bit == badge internal_id).
-    // Badge ids are < 64 so the meaningful bits fit comfortably in the
-    // positive int64 range the JSON reader yields.
+    // Read as full u64 (nextUInt64) so every bit position 0..63 decodes.
     std::string_view key;
     bool saw_managed = false;
     bool saw_sold = false;
     while (r.nextField(key)) {
         if (sv_eq(key, "managed")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.managed = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.managed = v;
             saw_managed = true;
         } else if (sv_eq(key, "sold")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.sold = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.sold = v;
             saw_sold = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_managed && saw_sold;
@@ -689,14 +609,9 @@ bool parseSetSeedShopState(util::json::Reader& r,
             out.sold = static_cast<std::uint32_t>(v);
             saw_sold = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_managed && saw_sold;
@@ -721,14 +636,9 @@ bool parseSetBadgeShopText(util::json::Reader& r, WireSetBadgeShopText& out) {
             copyFixedN(out.text, sv.data(), sv.size());
             saw_text = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_id && saw_text;
@@ -758,14 +668,9 @@ bool parseSetWonderSeedCounts(util::json::Reader& r,
             if (i != kWorldCount) return false;
             saw_counts = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_counts;
@@ -774,34 +679,33 @@ bool parseSetWonderSeedCounts(util::json::Reader& r,
 bool parseSetWonderSeedsAbsolute(util::json::Reader& r,
                                  WireSetWonderSeedsAbsolute& out) {
     // Cursor positioned just after "t":"set_wonder_seeds_absolute".  Two
-    // required u64 fields: "bits_lo" and "bits_hi".  Each accepted as
-    // int64 in [0, 2**63); top bit reserved (typical AP scenarios put
-    // 0..16 bits per world bucket so the masks fit comfortably).
+    // required u64 fields: "bits_lo" and "bits_hi", each the FULL
+    // [0, 2**64) range.  The client packs 16 bits per world bucket
+    // (W1 = bits 0..15 ... W4 = bits 48..63), so a player with 16+ W4
+    // Wonder Seeds legitimately sets bit 63 of bits_lo -- e.g. W3+W4 full
+    // = 0xFFFFFFFF00000000 = 18446744069414584320.  Until 2026-09-21 this
+    // was parsed as int64 and rejected as negative, which dropped the
+    // whole message on every sync tick for late-game players (their
+    // Switch log showed `[conn] decode failed: {"t":"set_wonder_seeds_
+    // absolute","bits_lo":18446744069414584320,...`).
     std::string_view key;
     bool saw_lo = false;
     bool saw_hi = false;
     while (r.nextField(key)) {
         if (sv_eq(key, "bits_lo")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.bits_lo = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.bits_lo = v;
             saw_lo = true;
         } else if (sv_eq(key, "bits_hi")) {
-            std::int64_t v = 0;
-            if (!r.nextInt(v)) return false;
-            if (v < 0) return false;
-            out.bits_hi = static_cast<std::uint64_t>(v);
+            std::uint64_t v = 0;
+            if (!r.nextUInt64(v)) return false;
+            out.bits_hi = v;
             saw_hi = true;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return saw_lo && saw_hi;
@@ -825,14 +729,9 @@ bool parseHelloAck(util::json::Reader& r, WireHelloAck& out) {
             if (!r.nextString(sv)) return false;
             copyFixedN(out.reason, sv.data(), sv.size());
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return true;
@@ -846,14 +745,9 @@ bool parseErr(util::json::Reader& r, WireErr& out) {
             if (!r.nextString(sv)) return false;
             copyFixedN(out.reason, sv.data(), sv.size());
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return true;
@@ -865,14 +759,9 @@ bool parsePong(util::json::Reader& r, WirePong& out) {
         if (sv_eq(key, "ts_ms")) {
             if (!r.nextInt(out.ts_ms)) return false;
         } else {
-            std::string_view dummy;
-            std::int64_t i = 0;
-            bool b = false;
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            return false;
+            // Unknown field -- skip its value whatever its type (see
+            // Reader::skipValue) so a newer bridge can add fields freely.
+            if (!r.skipValue()) return false;
         }
     }
     return true;
@@ -1002,15 +891,8 @@ bool decodeInbound(char* data, std::size_t len, InboundMsg& out) {
     } else {
         // Unknown type -- consume any remaining fields to keep the reader
         // happy, then return false so the caller drops the line.
-        std::string_view dummy;
-        std::int64_t i = 0;
-        bool b = false;
         while (r.nextField(key)) {
-            if (r.isNull()) continue;
-            if (r.nextString(dummy)) continue;
-            if (r.nextInt(i)) continue;
-            if (r.nextBool(b)) continue;
-            break;
+            if (!r.skipValue()) break;
         }
         return false;
     }

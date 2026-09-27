@@ -36,6 +36,7 @@ from ..wire import (
     SetRoutableWorldsAbsoluteMsg,
     SetRoyalSeedsAbsoluteMsg,
     SetUnlockedCharasMsg,
+    SetWonderSeedsAbsoluteMsg,
     decode,
     encode,
 )
@@ -136,8 +137,46 @@ class TestRoundTrip(unittest.TestCase):
         self._round_trip(SetBadgesAbsoluteMsg(bits=0xFFFFFFFF))
 
     def test_set_badges_absolute_full_u63(self):
-        # Switch parses as int64; one below INT64_MAX is the safe upper.
         self._round_trip(SetBadgesAbsoluteMsg(bits=(1 << 63) - 1))
+
+    def test_set_badges_absolute_full_u64(self):
+        # Bit 63 is a legal value: the Switch reads `bits` with
+        # Reader::nextUInt64 (2026-09-21), not int64.
+        self._round_trip(SetBadgesAbsoluteMsg(bits=(1 << 64) - 1))
+
+    def test_set_wonder_seeds_absolute_zero(self):
+        self._round_trip(SetWonderSeedsAbsoluteMsg(bits_lo=0, bits_hi=0))
+
+    def test_set_wonder_seeds_absolute_bit63_lo(self):
+        # 16 W4 Wonder Seeds set bit 63 of bits_lo (W4 bucket = bits
+        # 48..63).  This is the value that older subsdk builds rejected
+        # as negative (2026-09-21 player log).
+        self._round_trip(SetWonderSeedsAbsoluteMsg(
+            bits_lo=0xFFFFFFFF00000000, bits_hi=0))
+
+    def test_set_wonder_seeds_absolute_full_u64_both(self):
+        self._round_trip(SetWonderSeedsAbsoluteMsg(
+            bits_lo=(1 << 64) - 1, bits_hi=(1 << 64) - 1))
+
+    def test_set_wonder_seeds_absolute_w3_w4_full_wire_value(self):
+        # Pin the exact decimal the Switch sees for a W3+W4-full player:
+        # 0xFFFFFFFF00000000 == 18446744069414584320 (> INT64_MAX).
+        line = encode(SetWonderSeedsAbsoluteMsg(
+            bits_lo=0xFFFFFFFF00000000, bits_hi=0))
+        self.assertEqual(
+            line,
+            b'{"t":"set_wonder_seeds_absolute",'
+            b'"bits_lo":18446744069414584320,"bits_hi":0}\n')
+        self.assertGreater(0xFFFFFFFF00000000, (1 << 63) - 1)
+
+    def test_set_wonder_seeds_absolute_rejects_out_of_range(self):
+        with self.assertRaises(ProtocolError):
+            decode(b'{"t":"set_wonder_seeds_absolute","bits_lo":-1,'
+                   b'"bits_hi":0}\n')
+        big = 1 << 64
+        with self.assertRaises(ProtocolError):
+            decode(f'{{"t":"set_wonder_seeds_absolute","bits_lo":0,'
+                   f'"bits_hi":{big}}}\n'.encode())
 
     def test_set_royal_seeds_absolute_zero(self):
         self._round_trip(SetRoyalSeedsAbsoluteMsg(mask=0))
