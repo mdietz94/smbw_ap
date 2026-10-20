@@ -304,8 +304,13 @@ _BOWSER_CASTLE_STAGE_KEYS: frozenset[int] = frozenset({
 # on the very first course of the seed whenever World 1 is active but isn't
 # the start world.  The rest of World 1 stays gated.  Logic mirrors this:
 # open_world.ungate_opening_course keeps 1-1's checks in sphere 1.
+# The context adds a second, stage-key-independent exemption for the whole of
+# World 1 until the opening course is known cleared (see
+# SMBWContext._opening_course_pending) -- this key match alone still let the
+# gate kill players in the intro.
+OPENING_COURSE_STAGE_KEY: int = 0xAF11F7FC  # W1: Welcome to the Flower Kingdom! (1-1)
 _WORLD_UNLOCK_EXEMPT_STAGE_KEYS: frozenset[int] = frozenset({
-    0xAF11F7FC,  # W1: Welcome to the Flower Kingdom! (1-1, the opening course)
+    OPENING_COURSE_STAGE_KEY,
 })
 
 

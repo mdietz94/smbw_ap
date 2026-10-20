@@ -518,6 +518,58 @@ class TestContextLevelEntryGate(unittest.IsolatedAsyncioTestCase):
             self.assertIn("W2 Unlock", kwargs["cause"])
             self.state.mark_course_exited()
 
+    # ---- Open-world: World 1 during the intro ------------------------
+
+    OPENING_NORMAL_EXIT = "W1: Welcome to the Flower Kingdom! - Normal Exit"
+
+    async def test_locked_w1_not_gated_before_opening_course_cleared(self):
+        # Fresh save: the intro drops the player into a World 1 course before
+        # any world map.  Even a course whose stage_key isn't the exempt 1-1
+        # key must not be world-gated -- the player can't leave the intro.
+        self._open_world_unlocks([1, 2, 3], unlocked={2})
+        self._enter(0x11112222)
+        await self.ctx.handle_gate_entered(self._world_gate(1, 1))
+        self.assertIsNone(self.ctx._gate_kill_task)
+        self.ctx.lan_server.send_kill.assert_not_called()
+
+    async def test_locked_w1_gated_once_opening_course_checked(self):
+        self._open_world_unlocks([1, 2, 3], unlocked={2})
+        self.ctx._location_name_to_id = {self.OPENING_NORMAL_EXIT: 4242}
+        self.ctx.checked_locations = {4242}
+        self._enter(0x11112222)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._world_gate(1, 1))
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            await asyncio.sleep(0.05)
+            self.assertGreaterEqual(self.ctx.lan_server.send_kill.call_count, 1)
+            _, kwargs = self.ctx.lan_server.send_kill.call_args
+            self.assertIn("W1 Unlock", kwargs["cause"])
+            self.state.mark_course_exited()
+
+    async def test_locked_w1_gated_after_any_clear_this_session(self):
+        # Offline (no AP maps): any course clear this session means the
+        # intro is over, so World 1 is gated again.
+        from ..protocol import CheckEmitted, CheckKind
+        self._open_world_unlocks([1, 2, 3], unlocked={2})
+        self.state.emit_check(CheckEmitted(
+            kind=CheckKind.NORMAL_EXIT, stage_key=0x0DD67B0B))
+        self._enter(0x11112222)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._world_gate(1, 1))
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            self.state.mark_course_exited()
+            await asyncio.sleep(0.05)
+
+    async def test_opening_exemption_is_world_1_only(self):
+        # The intro exemption never loosens another locked world's gate.
+        self._open_world_unlocks([1, 2, 3], unlocked={1})
+        self._enter(0x11112222)
+        with patch.object(self._context_mod, "GATE_KILL_DELAY_S", 0.01):
+            await self.ctx.handle_gate_entered(self._world_gate(2, 3))
+            self.assertIsNotNone(self.ctx._gate_kill_task)
+            self.state.mark_course_exited()
+            await asyncio.sleep(0.05)
+
     async def test_unlocked_world_entry_does_not_arm(self):
         self._open_world_unlocks([1, 2, 3], unlocked={1, 2})
         self._enter(0x11112222)

@@ -62,6 +62,7 @@ from .protocol import (
     GateKind,
     GoalCompleted,
 )
+from .processor import OPENING_COURSE_STAGE_KEY
 from .state import BridgeState
 
 
@@ -1331,6 +1332,20 @@ class SMBWContext(CommonContext):
                 ev.requirement, ev.world_no)
             return
 
+        # A fresh save drops the player into World 1's opening course before
+        # any world map exists, and the intro can't be left until that course
+        # is cleared -- so a World 1 lock gate there is an unescapable kill
+        # loop.  The processor already exempts 1-1 by stage_key, but players
+        # still hit "W1 needs its W1 Unlock item" in the intro, so don't
+        # world-gate World 1 at all until the opening course is known cleared.
+        if (ev.gate_kind == GateKind.WORLD_UNLOCK and ev.requirement == 1
+                and self._opening_course_pending()):
+            log.info(
+                "entered World 1 stage_key=0x%08x before the opening course "
+                "is cleared (intro); not world-gating",
+                ev.stage_key & 0xFFFFFFFF)
+            return
+
         # Deliberately NOT gated on being connected to AP: a player who
         # disconnects (or never connects) must NOT be able to sequence-
         # break into gated content offline.  When not connected,
@@ -1386,6 +1401,25 @@ class SMBWContext(CommonContext):
             return True
         ap_world = pr_world_no_to_ap_world(ev.world_no)
         return ap_world is not None and ap_world in self.open_world_active
+
+    def _opening_course_pending(self) -> bool:
+        """True while the player may still be in the game's intro, i.e. the
+        opening course (W1-1) is not known to be cleared.
+
+        Known cleared = its Normal Exit location is server-confirmed
+        (:attr:`checked_locations`) or sent this session
+        (:attr:`_sent_loc_ids`), or ANY course's Normal Exit was emitted this
+        session (the first clear on a save is always the opening course, so
+        any clear at all means the intro is over -- this also covers an
+        offline session where the AP maps aren't built yet)."""
+        if self.bridge_state.count_emitted(CheckKind.NORMAL_EXIT) > 0:
+            return False
+        name = lookup_name(CheckEmitted(
+            kind=CheckKind.NORMAL_EXIT, stage_key=OPENING_COURSE_STAGE_KEY))
+        loc_id = self._location_name_to_id.get(name) if name else None
+        if loc_id is None:
+            return True
+        return loc_id not in (set(self.checked_locations) | self._sent_loc_ids)
 
     def _palace_location_ids(self) -> set[int]:
         """AP location IDs for the six numbered-world palace clears (W1..W6;
