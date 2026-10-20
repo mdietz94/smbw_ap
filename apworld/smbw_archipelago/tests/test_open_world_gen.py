@@ -491,3 +491,29 @@ class TestOpenWorldBadgeWall(unittest.TestCase):
             if solved == 3:
                 break
         self.assertEqual(solved, 3, "expected three W3-only seeds in range")
+
+
+class TestShopBadgeWorld(unittest.TestCase):
+    """A shop badge's check lives in the world whose Poplin Shop sells it.
+
+    Coin Magnet is sold in W6's shop but was filed under ``W5 Start``, so a
+    W5-without-W6 seed kept it in logic (player report).
+    """
+
+    LOCATION = "Coin Magnet Badge Obtained"
+
+    def test_coin_magnet_stripped_without_w6(self):
+        for seed in range(1, 400):
+            _, probe = _gen({"open_world": 1, "open_world_count": 3}, seed=seed)
+            if 5 in probe.active_worlds and 6 not in probe.active_worlds:
+                break
+        else:
+            self.fail("expected a W5-without-W6 seed in range")
+        multiworld, _ = _gen({"open_world": 1, "open_world_count": 3}, seed=seed)
+        names = {loc.name for loc in multiworld.get_locations(1)}
+        self.assertNotIn(self.LOCATION, names)
+
+    def test_coin_magnet_in_w6_start(self):
+        multiworld, _ = _gen({"open_world": 0})
+        self.assertEqual(multiworld.get_location(self.LOCATION, 1).parent_region.name,
+                         "W6 Start")
