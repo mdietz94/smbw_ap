@@ -48,6 +48,7 @@ namespace nn::os {
 #include "probe/CharaGate.hpp"
 #include "probe/ItemGetGate.hpp"
 #include "ui/ApDebugConsole.hpp"
+#include "util/BuildId.hpp"
 #include "util/Json.hpp"
 #include "util/Log.hpp"
 
@@ -315,7 +316,9 @@ void ApClient::disconnect() {
 
 void ApClient::sendHello() {
     WireHello h{};
-    copyFixed(h.mod_ver, "smbwap-m4");
+    // Build id, not a hand-maintained tag: "smbwap-m4" sat unchanged from
+    // M4 through 2026-09 and made stale-subsdk9 triage a guessing game.
+    copyFixed(h.mod_ver, util::kBuildId);
     copyFixed(h.game_ver, "smbw-1.0.0");
     h.pid = 1;
 

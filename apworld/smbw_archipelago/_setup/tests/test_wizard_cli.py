@@ -386,3 +386,63 @@ def test_run_pipeline_stops_when_install_phase_not_requested(
     ))
     assert outcome.ok is False
     assert outcome.failed_phase == W.PHASE_PROBE
+
+
+# ---------------------------------------------------------------------------
+# Eden / yuzu-family deploy target through run_deploy.
+# ---------------------------------------------------------------------------
+
+
+def test_deploy_targets_include_eden() -> None:
+    assert "eden" in W.DEPLOY_TARGETS
+
+
+def test_run_deploy_eden_auto_detects_user_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apworld.smbw_archipelago._setup import deploy as D
+
+    eden = tmp_path / "eden"
+    eden.mkdir()
+    monkeypatch.setattr(D, "detect_yuzu_family_path", lambda: eden)
+    exefs = tmp_path / "build" / "exefs"
+    exefs.mkdir(parents=True)
+    (exefs / "subsdk9").write_bytes(b"S" * 64)
+    (exefs / "main.npdm").write_bytes(b"N" * 64)
+    outputs = {"subsdk9": exefs / "subsdk9", "main.npdm": exefs / "main.npdm"}
+
+    out = W.run_deploy("eden", None, build_outputs=outputs)
+    assert out.ok is True, out.error
+    written = eden / "load" / D.SMBW_TITLE_ID / D.YUZU_MOD_NAME / "exefs" / "subsdk9"
+    assert written.is_file()
+
+
+def test_run_deploy_eden_explicit_path_wins_over_detection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apworld.smbw_archipelago._setup import deploy as D
+
+    monkeypatch.setattr(D, "detect_yuzu_family_path", lambda: tmp_path / "wrong")
+    portable = tmp_path / "eden-portable" / "user"
+    portable.mkdir(parents=True)
+    exefs = tmp_path / "build" / "exefs"
+    exefs.mkdir(parents=True)
+    (exefs / "subsdk9").write_bytes(b"S" * 64)
+    (exefs / "main.npdm").write_bytes(b"N" * 64)
+    outputs = {"subsdk9": exefs / "subsdk9", "main.npdm": exefs / "main.npdm"}
+
+    out = W.run_deploy("eden", portable, build_outputs=outputs)
+    assert out.ok is True, out.error
+    assert (portable / "load" / D.SMBW_TITLE_ID / D.YUZU_MOD_NAME / "exefs" / "main.npdm").is_file()
+
+
+def test_run_deploy_eden_errors_when_no_user_dir(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from apworld.smbw_archipelago._setup import deploy as D
+
+    monkeypatch.setattr(D, "detect_yuzu_family_path", lambda: None)
+    out = W.run_deploy("eden", None, build_outputs={})
+    assert out.ok is False
+    assert "Eden" in out.error
+    assert "--deploy-path" in out.error

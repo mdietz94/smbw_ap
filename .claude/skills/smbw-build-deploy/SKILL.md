@@ -140,6 +140,27 @@ Dev-mode autodiscovery needs a junction under `vendor/Archipelago/custom_worlds/
 this as one phase). `scripts/launch_client.ps1` is an all-in-one
 install-deps → build → install-apworld → launch.
 
+## Which build is running? (build id)
+
+Every `cmake --build` stamps a build id into subsdk9 via
+`switch-mod/cmake/BuildId.cmake` (a custom target, so it stays fresh even
+when the wizard skips configure).  Shape: `<source>@<YYYYMMDD>` where
+`<source>` is `g<git-hash>[-dirty]` in a checkout (dirty = uncommitted
+changes under `switch-mod/`), the bundle `switch-mod/VERSION` file
+(`<world_version>+g<hash>`, written by `install_apworld.py --bundle-mod`)
+for wizard builds, else `unknown`.  It surfaces in three places:
+
+- Switch log, right after `hkMain START`: `[smbwap inf] build: g3f9a1c2-dirty@20260921 (game smbw-1.0.0)`
+- Client log on connect: `switch (...) hello: mod_ver=g3f9a1c2-dirty@20260921 ... (expected mod source: g3f9a1c2)`
+- SMBW tab status line: `Switch: connected  mod=g3f9a1c2-dirty@20260921`
+
+The client (`_setup/build_id.py`) warns when the Hello id's source does not
+match what this apworld would build, or when the mod still sends the
+pre-stamping `smbwap-m4` -- both mean the emulator is loading a stale
+subsdk9.  Eden / yuzu-family players deploy to
+`%APPDATA%\eden\load\010015100b514000\smbwap\exefs\` (wizard target
+"Eden (yuzu-family)", `--deploy-target eden` on the CLI).
+
 ## Tail the in-game log
 
 Our lines are prefixed `[smbwap inf]` / `[smbwap dbg]`. Ryujinx writes

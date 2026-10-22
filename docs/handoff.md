@@ -59,6 +59,13 @@
 >   test: `switch-mod/tests/host/json_reader_test.cpp` (clang++, no devkit).
 >   A `set_seed_shop_state` "decode failed" in the same log is an unknown-`"t"`
 >   report from a pre-#189 (2026-09-12) subsdk, not a parser bug.
+> - **subsdk build id + Eden deploy target (2026-09-21, shipped)** -- every
+>   `cmake --build` stamps `<source>@<YYYYMMDD>` (git hash / bundle `VERSION`)
+>   into subsdk9; it prints as `build: ...` after `hkMain START` and rides in
+>   Hello `mod_ver`, which the client logs and checks against its own source
+>   id (`_setup/build_id.py`, warns on a stale mod). The wizard also deploys
+>   to Eden / yuzu-family `load/<title>/smbwap/exefs/` (`--deploy-target eden`).
+>   See the **smbw-build-deploy** skill, "Which build is running?".
 > - [handoff-2026-05-29-ws-persistence.md](handoff-2026-05-29-ws-persistence.md)
 >   — Wonder-Seed per-course Container-D persistence (supersedes the
 >   "gate override only, not per-course storage" caveat below).

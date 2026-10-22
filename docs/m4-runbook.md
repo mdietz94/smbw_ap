@@ -130,7 +130,7 @@ And on the bridge side:
 
 ```
 bridge.lan   INFO  switch connected from ('127.0.0.1', 49152)
-bridge.lan   INFO  switch ('127.0.0.1', 49152) hello: mod_ver=smbwap-m4 game_ver=smbw-1.0.0 pid=1
+bridge.lan   INFO  switch ('127.0.0.1', 49152) hello: mod_ver=g3f9a1c2@20260921 game_ver=smbw-1.0.0 pid=1 (expected mod source: g3f9a1c2)
 ```
 
 ## Inbound smoke test — AP → Switch → live grant

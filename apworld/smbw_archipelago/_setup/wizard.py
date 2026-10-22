@@ -39,7 +39,9 @@ from . import appdata_root, setup_state_path
 from .deploy import (
     detect_ryujinx_path,
     detect_sd_candidates,
+    detect_yuzu_family_path,
     ryujinx_primary_default,
+    yuzu_family_primary_default,
 )
 from .wizard_cli import (
     ALL_PHASES, PipelineOptions, run_pipeline,
@@ -186,6 +188,7 @@ def run_setup_wizard() -> bool:
     # supported values; the wizard's worker maps display label -> key.
     _DEPLOY_LABELS: dict[str, str] = {
         "ryujinx": "Ryujinx",
+        "eden":    "Eden (yuzu-family)",
         "sd":      "SD card",
         "custom":  "Custom folder",
         "none":    "None (skip deploy)",
@@ -209,6 +212,12 @@ def run_setup_wizard() -> bool:
             # *would* write (the grayed-out field would otherwise be
             # blank if Ryujinx isn't installed yet).
             p = detect_ryujinx_path() or ryujinx_primary_default()
+            return str(p) if p is not None else ""
+        if target == "eden":
+            # Same shape as Ryujinx: show the detected user dir, else the
+            # default location so the player sees where deploy WILL write
+            # (`<user dir>/load/<title>/smbwap/exefs/`).
+            p = detect_yuzu_family_path() or yuzu_family_primary_default()
             return str(p) if p is not None else ""
         if target == "sd":
             sds = detect_sd_candidates()
@@ -457,6 +466,10 @@ def run_setup_wizard() -> bool:
                 deploy_path = Path(path_str) if path_str else None
                 if target == "ryujinx" and deploy_path is not None:
                     auto = detect_ryujinx_path()
+                    if auto is not None and Path(str(auto)) == deploy_path:
+                        deploy_path = None
+                if target == "eden" and deploy_path is not None:
+                    auto = detect_yuzu_family_path()
                     if auto is not None and Path(str(auto)) == deploy_path:
                         deploy_path = None
 

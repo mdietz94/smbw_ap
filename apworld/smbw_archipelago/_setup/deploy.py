@@ -1,11 +1,25 @@
 """Copy switch-mod build outputs to the user's chosen deploy target.
 
-For v1, Ryujinx is the only supported deploy target. The artifact layout
-matches what CLAUDE.md's "Daily dev loop" `Copy-Item` commands produce:
+Ryujinx is the primary deploy target. The artifact layout matches what
+CLAUDE.md's "Daily dev loop" `Copy-Item` commands produce:
 
   %APPDATA%\\Ryujinx\\mods\\contents\\010015100b514000\\smbwap\\exefs\\
       subsdk9
       main.npdm
+
+Eden (and the rest of the yuzu family) is a second emulator target.  Those
+emulators read per-title mods from `<user dir>/load/<title_id>/<mod name>/
+{exefs,romfs}/` -- the folder "Open Mod Data Location" opens in the GUI:
+
+  %APPDATA%\\eden\\load\\010015100b514000\\smbwap\\exefs\\
+      subsdk9
+      main.npdm
+
+(Linux: `$XDG_DATA_HOME/eden` or `~/.local/share/eden`; the flatpak keeps
+its user dir under `~/.var/app/dev.eden_emu.eden/data/eden`.)  Before this
+target existed, Eden players copied subsdk9 by hand and could keep loading
+a stale copy without noticing -- the 2026-09-21 triage that motivated the
+build-id stamping.
 
 The deploy module is intentionally separate from build.py so a user can
 re-deploy a previously-built artifact (e.g. after switching Ryujinx
@@ -33,6 +47,22 @@ SMBW_TITLE_ID = "010015100b514000"
 # Ryujinx mod folder name. Matches the path CLAUDE.md's `Copy-Item`
 # snippet targets; renaming this would orphan existing dev setups.
 RYU_MOD_NAME = "smbwap"
+
+# Mod folder name under a yuzu-family `load/<title_id>/` dir.  Same name as
+# Ryujinx so a player who has both sees one recognizable folder.
+YUZU_MOD_NAME = RYU_MOD_NAME
+
+# yuzu-family user-data directory names, in detection order.  Eden first:
+# it is the fork players actually run in 2026 and the one the wizard names
+# in its dropdown.  The others are forks with the same `load/` layout that
+# cost nothing to probe.
+YUZU_FAMILY_DIR_NAMES: tuple[str, ...] = ("eden", "yuzu", "suyu", "citron", "sudachi")
+
+# Flatpak app ids -> the user dir the sandbox keeps under ~/.var/app/.
+_YUZU_FAMILY_FLATPAK: tuple[tuple[str, str], ...] = (
+    ("dev.eden_emu.eden", "eden"),
+    ("org.yuzu_emu.yuzu", "yuzu"),
+)
 
 
 @dataclass
@@ -108,6 +138,59 @@ def detect_ryujinx_path() -> Path | None:
     return None
 
 
+def _yuzu_family_candidates() -> list[Path]:
+    """Every yuzu-family user dir worth probing on this platform, most
+    likely first.  Existence is NOT checked here.
+
+      * Windows: ``%APPDATA%/<name>`` for each family member.
+      * Linux:   ``$XDG_DATA_HOME/<name>`` (if set) -> ``~/.local/share/<name>``
+                 -> the flatpak sandbox dir.  (The `load/` tree lives in the
+                 *data* dir, unlike Ryujinx which keeps mods under its
+                 config dir.)
+    """
+    candidates: list[Path] = []
+    if sys.platform == "win32":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            for name in YUZU_FAMILY_DIR_NAMES:
+                candidates.append(Path(appdata) / name)
+        return candidates
+    home = Path.home()
+    xdg = os.environ.get("XDG_DATA_HOME")
+    for name in YUZU_FAMILY_DIR_NAMES:
+        if xdg:
+            candidates.append(Path(xdg) / name)
+        candidates.append(home / ".local" / "share" / name)
+    for app_id, name in _YUZU_FAMILY_FLATPAK:
+        candidates.append(home / ".var" / "app" / app_id / "data" / name)
+    return candidates
+
+
+def yuzu_family_primary_default() -> Path | None:
+    """Where Eden's user dir lives by default on this platform, whether or
+    not it exists yet -- the path the wizard shows for the "Eden" target
+    before the player has installed the emulator."""
+    candidates = _yuzu_family_candidates()
+    return candidates[0] if candidates else None
+
+
+def detect_yuzu_family_paths() -> list[Path]:
+    """All existing yuzu-family user dirs, in :data:`YUZU_FAMILY_DIR_NAMES`
+    order.  A user dir only counts once it has been created by the
+    emulator (first launch), same rule as :func:`detect_ryujinx_path`."""
+    found: list[Path] = []
+    for p in _yuzu_family_candidates():
+        if p.is_dir() and p not in found:
+            found.append(p)
+    return found
+
+
+def detect_yuzu_family_path() -> Path | None:
+    """First existing yuzu-family user dir (Eden preferred), else None."""
+    found = detect_yuzu_family_paths()
+    return found[0] if found else None
+
+
 def detect_sd_candidates() -> list[Path]:
     """Return all currently-mounted drive roots that look like a Switch
     SD card (i.e. have an `atmosphere/` directory at the root).
@@ -132,6 +215,21 @@ def _ryujinx_layout(ryujinx_root: Path) -> dict[str, Path]:
 
     """
     base = ryujinx_root / "mods" / "contents" / SMBW_TITLE_ID / RYU_MOD_NAME / "exefs"
+    return {
+        "subsdk9": base / "subsdk9",
+        "main.npdm": base / "main.npdm",
+    }
+
+
+def _yuzu_family_layout(user_root: Path) -> dict[str, Path]:
+    """Destination paths inside a yuzu-family (Eden) user dir.
+
+    ``<user dir>/load/<TITLE_ID>/smbwap/exefs/`` -- the per-title mod
+    folder the emulator's "Open Mod Data Location" opens; exefs files
+    placed there are layered over the game's ExeFS, which is how a subsdk
+    gets loaded.  Same two artifacts as Ryujinx.
+    """
+    base = user_root / "load" / SMBW_TITLE_ID / YUZU_MOD_NAME / "exefs"
     return {
         "subsdk9": base / "subsdk9",
         "main.npdm": base / "main.npdm",
@@ -239,6 +337,31 @@ def deploy_to_ryujinx(
         return DeployResult(
             ok=False,
             target=f"Ryujinx at {ryujinx_root}",
+            files=[],
+            error=f"{type(cause).__name__}: {e}",
+        )
+
+
+def deploy_to_yuzu_family(
+    user_root: Path,
+    build_outputs: dict[str, Path],
+) -> DeployResult:
+    """Copy build outputs into an Eden / yuzu-family user dir.
+
+    ``user_root`` is the emulator's user-data dir (``%APPDATA%/eden``,
+    ``~/.local/share/eden``, a portable ``user/`` folder next to the exe,
+    ...).  Same ``build_outputs`` contract as :func:`deploy_to_ryujinx`.
+    """
+    target = f"Eden/yuzu-family at {user_root}"
+    try:
+        dests = _yuzu_family_layout(user_root)
+        copied = _copy_files(build_outputs, dests)
+        return DeployResult(ok=True, target=target, files=copied)
+    except (OSError, PermissionError) as e:
+        cause = e.__cause__ if isinstance(e, DeployCopyError) and e.__cause__ else e
+        return DeployResult(
+            ok=False,
+            target=target,
             files=[],
             error=f"{type(cause).__name__}: {e}",
         )

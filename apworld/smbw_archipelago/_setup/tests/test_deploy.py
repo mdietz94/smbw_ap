@@ -213,3 +213,118 @@ def test_deploy_to_ryujinx_layout_works_with_linux_root(tmp_path: Path) -> None:
     assert result.ok is True
     written = linux_root / "mods" / "contents" / D.SMBW_TITLE_ID / D.RYU_MOD_NAME / "exefs" / "subsdk9"
     assert written.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Eden / yuzu-family target -- `<user dir>/load/<title>/smbwap/exefs/`.
+# ---------------------------------------------------------------------------
+
+
+def test_yuzu_family_layout_uses_load_dir(tmp_path: Path) -> None:
+    layout = D._yuzu_family_layout(tmp_path)
+    expected = tmp_path / "load" / D.SMBW_TITLE_ID / D.YUZU_MOD_NAME / "exefs"
+    assert layout["subsdk9"] == expected / "subsdk9"
+    assert layout["main.npdm"] == expected / "main.npdm"
+    # Not the Ryujinx mods/contents tree.
+    assert "mods" not in layout["subsdk9"].parts
+
+
+def test_deploy_to_yuzu_family_copies_artifacts(tmp_path: Path) -> None:
+    outputs = _make_build_outputs(tmp_path)
+    eden = tmp_path / "eden"
+    eden.mkdir()
+    result = D.deploy_to_yuzu_family(eden, outputs)
+    assert result.ok is True, result.error
+    assert "Eden" in result.target
+    exefs = eden / "load" / D.SMBW_TITLE_ID / D.YUZU_MOD_NAME / "exefs"
+    assert (exefs / "subsdk9").is_file()
+    assert (exefs / "main.npdm").is_file()
+    for src, dst in result.files:
+        assert dst.stat().st_size == src.stat().st_size
+
+
+def test_deploy_to_yuzu_family_surfaces_missing_source(tmp_path: Path) -> None:
+    outputs = {
+        "subsdk9": tmp_path / "nope" / "subsdk9",
+        "main.npdm": tmp_path / "nope" / "main.npdm",
+    }
+    eden = tmp_path / "eden"
+    eden.mkdir()
+    result = D.deploy_to_yuzu_family(eden, outputs)
+    assert result.ok is False
+    assert "unreadable" in result.error or "FileNotFoundError" in result.error
+
+
+def test_detect_yuzu_family_on_windows_prefers_eden(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(D.sys, "platform", "win32")
+    appdata = tmp_path / "appdata"
+    (appdata / "yuzu").mkdir(parents=True)
+    (appdata / "eden").mkdir(parents=True)
+    monkeypatch.setenv("APPDATA", str(appdata))
+    assert D.detect_yuzu_family_path() == appdata / "eden"
+    assert D.detect_yuzu_family_paths() == [appdata / "eden", appdata / "yuzu"]
+
+
+def test_detect_yuzu_family_on_windows_none_when_absent(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(D.sys, "platform", "win32")
+    appdata = tmp_path / "appdata"
+    (appdata / "Ryujinx").mkdir(parents=True)   # Ryujinx only
+    monkeypatch.setenv("APPDATA", str(appdata))
+    assert D.detect_yuzu_family_path() is None
+    monkeypatch.delenv("APPDATA")
+    assert D.detect_yuzu_family_path() is None
+    assert D.yuzu_family_primary_default() is None
+
+
+def test_yuzu_family_primary_default_on_windows_is_appdata_eden(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(D.sys, "platform", "win32")
+    monkeypatch.setenv("APPDATA", str(tmp_path))
+    assert D.yuzu_family_primary_default() == tmp_path / "eden"
+
+
+def test_detect_yuzu_family_on_linux_xdg_data_home_wins(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(D.sys, "platform", "linux")
+    xdg = tmp_path / "xdg-data"
+    (xdg / "eden").mkdir(parents=True)
+    home = tmp_path / "home"
+    (home / ".local" / "share" / "eden").mkdir(parents=True)
+    monkeypatch.setenv("XDG_DATA_HOME", str(xdg))
+    monkeypatch.setattr(D.Path, "home", staticmethod(lambda: home))
+    assert D.detect_yuzu_family_path() == xdg / "eden"
+
+
+def test_detect_yuzu_family_on_linux_local_share_and_flatpak(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(D.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    home = tmp_path / "home"
+    flatpak = home / ".var" / "app" / "dev.eden_emu.eden" / "data" / "eden"
+    flatpak.mkdir(parents=True)
+    monkeypatch.setattr(D.Path, "home", staticmethod(lambda: home))
+    # Only the flatpak dir exists -> it is found.
+    assert D.detect_yuzu_family_path() == flatpak
+    # A native install in ~/.local/share/eden takes precedence.
+    native = home / ".local" / "share" / "eden"
+    native.mkdir(parents=True)
+    assert D.detect_yuzu_family_path() == native
+    assert D.yuzu_family_primary_default() == native
+
+
+def test_detect_yuzu_family_on_linux_none_when_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(D.sys, "platform", "linux")
+    monkeypatch.delenv("XDG_DATA_HOME", raising=False)
+    home = tmp_path / "empty-home"
+    home.mkdir()
+    monkeypatch.setattr(D.Path, "home", staticmethod(lambda: home))
+    assert D.detect_yuzu_family_path() is None

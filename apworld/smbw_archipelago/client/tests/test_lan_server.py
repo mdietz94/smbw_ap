@@ -12,6 +12,7 @@ policy.
 from __future__ import annotations
 
 import asyncio
+import logging
 import unittest
 
 from ..lan_server import LanServer
@@ -66,8 +67,12 @@ class _ServerHarness:
     """Manages LanServer lifecycle + the captured on_check_emitted /
     on_death_reported lists."""
 
-    def __init__(self, badge_mask: int = 0) -> None:
+    def __init__(self, badge_mask: int = 0,
+                 expected_mod_source: str | None = None) -> None:
         self.state = BridgeState()
+        # Source id the LAN server compares Hello mod_ver against (None =
+        # plain-folder install, no staleness check).
+        self.expected_mod_source = expected_mod_source
         self.emitted: list[CheckEmitted] = []
         self.deaths: list[DeathReported] = []
         self.goals: list[GoalCompleted] = []
@@ -101,6 +106,7 @@ class _ServerHarness:
     async def start(self) -> None:
         self.server = LanServer(
             self.state,
+            expected_mod_source=self.expected_mod_source,
             on_check_emitted=self._on_check_emitted,
             on_death_reported=self._on_death_reported,
             on_goal_completed=self._on_goal_completed,
@@ -128,6 +134,79 @@ class _AsyncTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.h.stop()
+
+
+# ---------------------------------------------------------------------------
+# HELLO mod_ver: build-id capture + stale-subsdk9 warning.
+
+class TestHelloModVer(unittest.IsolatedAsyncioTestCase):
+    """The Hello ``mod_ver`` is the subsdk9 build id
+    ("<source>@<YYYYMMDD>").  The server must record it (GUI status line),
+    log it at INFO (client log), and warn when it does not match the
+    source id this apworld would build."""
+
+    async def _run_hello(self, expected: str | None, mod_ver: str):
+        h = _ServerHarness(expected_mod_source=expected)
+        await h.start()
+        client = await _FakeSwitch.connect(h.port)
+        try:
+            with self.assertLogs("SMBW", level="INFO") as cm:
+                await client.send(wire.HelloMsg(
+                    mod_ver=mod_ver, game_ver="smbw-1.0.0", pid=1))
+                ack = await client.recv()
+                self.assertIsInstance(ack, wire.HelloAckMsg)
+            return h, cm.records
+        finally:
+            await client.close()
+            await h.stop()
+
+    async def test_mod_ver_recorded_and_logged_at_info(self):
+        h, records = await self._run_hello("g1234567", "g1234567-dirty@20260921")
+        assert h.server is not None
+        self.assertEqual(h.server.switch_mod_ver, "g1234567-dirty@20260921")
+        self.assertEqual(h.server.switch_game_ver, "smbw-1.0.0")
+        infos = [r for r in records
+                 if r.levelno == logging.INFO and "mod_ver=" in r.getMessage()]
+        self.assertTrue(infos, [r.getMessage() for r in records])
+        self.assertIn("g1234567-dirty@20260921", infos[0].getMessage())
+        # Matching (modulo dirty) -> no warning.
+        self.assertFalse([r for r in records if r.levelno >= logging.WARNING],
+                         [r.getMessage() for r in records])
+
+    async def test_mismatched_mod_ver_warns(self):
+        _, records = await self._run_hello("gabcdef0", "g1234567@20260901")
+        warns = [r.getMessage() for r in records if r.levelno == logging.WARNING]
+        self.assertEqual(len(warns), 1, warns)
+        self.assertIn("does not match", warns[0])
+        self.assertIn("g1234567@20260901", warns[0])
+        self.assertIn("gabcdef0", warns[0])
+
+    async def test_legacy_mod_ver_warns_even_without_expected(self):
+        _, records = await self._run_hello(None, "smbwap-m4")
+        warns = [r.getMessage() for r in records if r.levelno == logging.WARNING]
+        self.assertEqual(len(warns), 1, warns)
+        self.assertIn("smbwap-m4", warns[0])
+        self.assertIn("before build-id stamping", warns[0])
+
+    async def test_no_expected_id_stays_quiet(self):
+        _, records = await self._run_hello(None, "g1234567@20260921")
+        self.assertFalse([r for r in records if r.levelno >= logging.WARNING])
+
+    async def test_mod_ver_survives_disconnect(self):
+        """Kept after the Switch goes away so the last-seen build is still
+        readable from the GUI / a later log line."""
+        h = _ServerHarness(expected_mod_source=None)
+        await h.start()
+        try:
+            client = await _FakeSwitch.connect(h.port)
+            await client.send(wire.HelloMsg(mod_ver="g1234567@20260921", game_ver="t"))
+            await client.recv()
+            await client.close()
+            await asyncio.sleep(0.05)
+            assert h.server is not None
+            self.assertEqual(h.server.switch_mod_ver, "g1234567@20260921")
+        finally:
+            await h.stop()
 
 
 # ---------------------------------------------------------------------------
