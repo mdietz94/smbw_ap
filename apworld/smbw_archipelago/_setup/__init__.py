@@ -8,8 +8,8 @@ spawns `_setup.wizard.run_setup_wizard` in a new window via
 The wizard's job is to turn a fresh machine into one that can:
   - build the Switch subsdk for Super Mario Bros. Wonder using the
     LibHakkun framework + LLVM 19 cross-compiler
-  - deploy the result to Ryujinx's mods directory (SD card / real Switch
-    deploy is M6 territory; deferred)
+  - deploy the result to Ryujinx's mods directory, a real Switch's SD
+    card (Atmosphere layout), or a custom folder in the SD-card layout
 
 The packages here are organized so each step is independently testable:
 

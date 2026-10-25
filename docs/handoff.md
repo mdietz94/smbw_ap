@@ -581,7 +581,10 @@ follow-up PR removes it entirely.
   the entry point when revisited.
 - **Per-course flag writers** — for course-clear precise classification.
 - **M5 — in-game grant suppression** (shop / badge house must defer to AP).
-- **M6 — real Switch + Atmosphere CFW deployment**.
+- ~~**M6 — real Switch + Atmosphere CFW deployment**~~ — **shipped**.
+  The hakkun build boots on Atmosphere 1.11.1 + HATS-2026-05-11, and
+  `/setup` deploys straight to an SD card (or a custom folder in the
+  SD-card layout). User-facing steps: [first-time-setup.md](first-time-setup.md).
 - **M7 — production polish**.
 
 ## Project layout
