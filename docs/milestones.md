@@ -489,14 +489,14 @@ Concrete work:
 - Add a `setup_*.md` doc for the user (mirror `smo_archipelago/docs/first-time-setup.md`).
 - Pre-release the apworld for one beta tester before bundling at scale.
 
-## M6 — Hardware Switch support
+## M6 — Hardware Switch support ✅ shipped
 
 Move from Ryujinx-only to also working on a real modded Switch under Atmosphere CFW. This is mostly a deployment story:
 
-- Path changes: `Ryujinx/mods/contents/<TID>` → `/atmosphere/contents/<TID>/exefs`.
-- Restore the `SMOAP_DEBUG_SD_LOG`-equivalent ring-buffer/SD-card fallback for crash diagnostics (currently disabled in our Log.cpp; the SMO version of this pattern is the reference).
-- Restore the RSTB (Resource Size Table) update if we ever do romfs replacement.
-- Validate `svcOutputDebugString` is non-fatal on retail Switch (it routes to `lm` service; binlog visibility is "spotty" per SMO doc comment — not a problem for production, just for our diagnostic visibility).
+- ✅ The hakkun build boots on a real Switch (Atmosphere 1.11.1 + HATS-2026-05-11); the earlier exlaunch build did not.
+- ✅ Path changes: `Ryujinx/mods/contents/<TID>` → `/atmosphere/contents/<TID>/exefs`. The `/setup` wizard has **SD card** and **Custom folder** deploy targets ([_setup/deploy.py](../apworld/smbw_archipelago/_setup/deploy.py)), and its **Bridge IP** field sets the LAN discovery subnet compiled into the mod. User steps: [first-time-setup.md](first-time-setup.md).
+- Not pursued: the `SMOAP_DEBUG_SD_LOG`-equivalent SD-card log drain. It was removed from `Log.cpp` on 2026-05-27; diagnostics use `svcOutputDebugString` plus the in-memory ring buffer.
+- Not needed: the RSTB (Resource Size Table) update. Revisit only if we ever do romfs replacement.
 
 ## M7 — UX polish + deferred AP-grant items
 
@@ -589,4 +589,4 @@ Deferred indefinitely until after the MVP demo:
 - M2.2 (10-coin) — ✅ scoped 2026-05-25, bridge-side implementation pending in [docs/m2.2-runbook.md](m2.2-runbook.md). No Ghidra work needed.
 - M3.1 (power-up grant), M3.4 (characters), M3.5 (Wonder Flower / Effect suppression), M3.6 (button suppression), M3.7 (goal hook).
 - M5 (replace manual_smbwonder_zim with integrated apworld).
-- M6 (hardware Switch), M7 (UX polish).
+- M7 (UX polish). (M6, hardware Switch, has since shipped — see its section above.)
