@@ -1,20 +1,20 @@
 """Copy switch-mod build outputs to the user's chosen deploy target.
 
-For v1, Ryujinx is the only supported deploy target. The artifact layout
-matches what CLAUDE.md's "Daily dev loop" `Copy-Item` commands produce:
+Three deploy targets are supported, all wired into the wizard:
 
-  %APPDATA%\\Ryujinx\\mods\\contents\\010015100b514000\\smbwap\\exefs\\
-      subsdk9
-      main.npdm
+  - Ryujinx (matches CLAUDE.md's "Daily dev loop" `Copy-Item` commands):
+      %APPDATA%\\Ryujinx\\mods\\contents\\010015100b514000\\smbwap\\exefs\\
+  - SD card (real Switch under Atmosphere):
+      <drive>:\\atmosphere\\contents\\010015100b514000\\exefs\\
+  - Custom folder: the SD-card layout under any folder, for users who
+    sync the SD card themselves.
+
+Each writes `subsdk9` + `main.npdm`.
 
 The deploy module is intentionally separate from build.py so a user can
 re-deploy a previously-built artifact (e.g. after switching Ryujinx
 installs, or after Ryujinx wiped the mods folder) without re-running the
 build phase.
-
-Future: SD-card layout for M6 real-Switch target. The skeleton is here
-(`_sd_layout`, `detect_sd_candidates`) and matches what CLAUDE.md's
-build/deploy path looks like, but isn't wired into the wizard yet.
 """
 
 from __future__ import annotations
@@ -112,7 +112,7 @@ def detect_sd_candidates() -> list[Path]:
     """Return all currently-mounted drive roots that look like a Switch
     SD card (i.e. have an `atmosphere/` directory at the root).
 
-    Reserved for M6 real-Switch support. Not yet wired into the wizard.
+    The wizard prefills the SD-card deploy path with the first hit.
     """
     if sys.platform != "win32":
         return []
@@ -141,8 +141,8 @@ def _ryujinx_layout(ryujinx_root: Path) -> dict[str, Path]:
 def _sd_layout(sd_root: Path) -> dict[str, Path]:
     """Destination paths under a Switch SD card root.
 
-    Layout: `<drive>:/atmosphere/contents/<TITLE_ID>/exefs/`. Reserved
-    for M6; not yet wired into the wizard.
+    Layout: `<drive>:/atmosphere/contents/<TITLE_ID>/exefs/`. Shared by
+    the SD-card and custom-folder targets.
     """
     base = sd_root / "atmosphere" / "contents" / SMBW_TITLE_ID / "exefs"
     return {
@@ -245,7 +245,7 @@ def deploy_to_ryujinx(
 
 
 def deploy_to_sd(sd_root: Path, build_outputs: dict[str, Path]) -> DeployResult:
-    """Copy build outputs to a Switch SD card root. Reserved for M6."""
+    """Copy build outputs to a Switch SD card root (Atmosphere layout)."""
     try:
         dests = _sd_layout(sd_root)
         copied = _copy_files(build_outputs, dests)

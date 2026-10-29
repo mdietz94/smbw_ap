@@ -25,7 +25,7 @@ the AP server. Architecture mirrors the user's `smo_archipelago` (Super Mario
 Odyssey) project at `C:\Users\maxwe\Documents\smo_archipelago\` — mirror its
 `switch-mod/src/ap/ApClient.cpp` and `apworld/` layout when extending the bridge.
 
-- **Dev target**: Ryujinx 1.3.3. **Production target**: real Switch + Atmosphere (M6).
+- **Dev target**: Ryujinx 1.3.3. **Production target**: real Switch + Atmosphere (M6, shipped).
 - **Launches via**: Archipelago Launcher → "SMBW Client" button (Kivy GUI,
   subclasses `kvui.GameManager`). The old `python -m bridge` CLI is gone.
 
@@ -143,4 +143,4 @@ primitives are ported into the hakkun build (`src/probe/*`).
 Active: Wonder-Seed **per-course persistence** (Container D writer) and the
 Royal-Seed **gate-entry / check-loss** spike — both tracked in the `docs/`
 handoffs listed above. Deferred: M2.2 (10-coin), M3.1/M3.4 (power-ups/chars,
-precollected for now), M5 (in-game grant suppression), M6 (real-hw deploy), M7.
+precollected for now), M5 (in-game grant suppression), M7. M6 (real-hw deploy) has shipped.
