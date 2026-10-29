@@ -1601,6 +1601,17 @@ class TestLevelEntryGate(unittest.TestCase):
             state, self._course_in_fields(0xAF11F7FC, world_no=1, course_no=1))
         self.assertEqual(emitted, [])
 
+    def test_fresh_save_intro_variant_is_never_world_gated(self):
+        """A fresh save's intro loads its own variant of 1-1 with a distinct
+        stage_key (live capture 2026-10-29); the player can't leave the intro
+        until it's cleared, so gating it is an unescapable kill loop."""
+        state = BridgeState()
+        state.set_locked_worlds({1})
+        self.assertIn(0xA411FDC1, _WORLD_UNLOCK_EXEMPT_STAGE_KEYS)
+        emitted = _handle_course_in(
+            state, self._course_in_fields(0xA411FDC1, world_no=1, course_no=1))
+        self.assertEqual(emitted, [])
+
     def test_rest_of_locked_world_1_still_gated(self):
         """The 1-1 exemption is per-course: W1-2 in a locked World 1 still
         raises the world gate."""

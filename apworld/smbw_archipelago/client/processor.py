@@ -304,8 +304,15 @@ _BOWSER_CASTLE_STAGE_KEYS: frozenset[int] = frozenset({
 # on the very first course of the seed whenever World 1 is active but isn't
 # the start world.  The rest of World 1 stays gated.  Logic mirrors this:
 # open_world.ungate_opening_course keeps 1-1's checks in sphere 1.
+#
+# The fresh-save intro does NOT load the regular 1-1: it reports its own
+# stage_key (0xA411FDC1, world=1 course=1; live-captured 2026-10-29), a
+# shorter intro variant whose clear has no AP location.  Exempting only the
+# regular 1-1 key left players in a locked World 1 in an unescapable gate-kill
+# loop during the intro, so both keys are exempt.
 _WORLD_UNLOCK_EXEMPT_STAGE_KEYS: frozenset[int] = frozenset({
     0xAF11F7FC,  # W1: Welcome to the Flower Kingdom! (1-1, the opening course)
+    0xA411FDC1,  # W1: Welcome to the Flower Kingdom! (fresh-save intro variant)
 })
 
 
