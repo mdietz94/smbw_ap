@@ -868,6 +868,10 @@ def _fake_toolchain(monkeypatch: pytest.MonkeyPatch, prog_name: str, lld_version
             return (0, lld_version + "\n", "")
         return None
     monkeypatch.setattr(P, "_safe_run", fake_run)
+    # Keep the host's real toolchain out of it: a CI runner with clang on PATH
+    # would resolve to /usr/bin/clang, which fake_run doesn't answer to.
+    monkeypatch.setattr(P, "_LLVM_LINUX_ROOTS", ())
+    monkeypatch.setattr(P.shutil, "which", lambda _x: None)
     P._resolved_llvm_bin = None  # type: ignore[assignment]
 
 
