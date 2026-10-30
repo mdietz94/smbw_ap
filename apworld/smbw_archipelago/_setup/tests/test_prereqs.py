@@ -857,6 +857,51 @@ def test_check_llvm19_accepts_path_clang_on_linux(
     assert "19.1.7" in r.detail
 
 
+def _fake_toolchain(monkeypatch: pytest.MonkeyPatch, prog_name: str, lld_version: str) -> None:
+    """`clang` reports 19.1.7 and resolves ld.lld to `prog_name`."""
+    def fake_run(cmd: list[str]) -> tuple[int, str, str] | None:
+        if cmd[0] == "clang" and "--version" in cmd:
+            return (0, "clang version 19.1.7\n", "")
+        if cmd[0] == "clang":
+            return (0, prog_name + "\n", "")
+        if cmd[0] == prog_name:
+            return (0, lld_version + "\n", "")
+        return None
+    monkeypatch.setattr(P, "_safe_run", fake_run)
+    P._resolved_llvm_bin = None  # type: ignore[assignment]
+
+
+def test_check_llvm19_rejects_newer_lld_behind_clang_19(
+    force_linux, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """clang 19 falling back to the system's lld 22 on PATH. lld 20+ turns
+    every SDK import branch into a no-op, so this must not be a green row."""
+    _fake_toolchain(monkeypatch, "/usr/bin/ld.lld", "LLD 22.1.8 (compatible with GNU linkers)")
+    r = P.check_llvm19()
+    assert r.ok is False
+    assert "22.1.8" in r.detail
+    assert "/usr/bin/ld.lld" in r.detail
+
+
+def test_check_llvm19_rejects_missing_lld(
+    force_linux, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """clang echoes the bare program name when it can't find ld.lld."""
+    _fake_toolchain(monkeypatch, "ld.lld", "")
+    r = P.check_llvm19()
+    assert r.ok is False
+    assert "no ld.lld" in r.detail
+
+
+def test_check_llvm19_accepts_matching_distro_lld(
+    force_linux, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _fake_toolchain(monkeypatch, "/usr/lib/llvm-19/bin/ld.lld",
+                    "Ubuntu LLD 19.1.1 (compatible with GNU linkers)")
+    r = P.check_llvm19()
+    assert r.ok is True
+
+
 def test_ensure_python3_shim_is_noop_on_linux(
     force_linux, tmp_path: Path,
 ) -> None:
