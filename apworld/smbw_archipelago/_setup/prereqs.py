@@ -918,7 +918,75 @@ def _llvm_gate_version(ver: tuple[int, int, int]) -> str | None:
     return None
 
 
+def _parse_lld_version(text: str) -> tuple[int, int, int] | None:
+    """`ld.lld --version` prints `LLD 19.1.7 (compatible with GNU linkers)`,
+    with a distro prefix on some builds (`Ubuntu LLD 19.1.1 ...`)."""
+    m = re.search(r"\bLLD (\d+)\.(\d+)(?:\.(\d+))?", text)
+    if not m:
+        return None
+    return (int(m.group(1)), int(m.group(2)), int(m.group(3) or "0"))
+
+
+def _llvm_linker_problem(clang: str) -> str | None:
+    """Return why the `ld.lld` that `clang` would invoke is unusable, or None.
+
+    The clang version says nothing about the linker: clang looks for ld.lld
+    in its own bin/ and then falls back to PATH, so a clang 19 package with
+    no lld alongside it links with the system's current lld. That is not a
+    harmless mix. lld 20+ treats undefined symbols as non-preemptible in a
+    PIE with no DSO inputs, and because we link with
+    --unresolved-symbols=ignore-all it says nothing and resolves every branch
+    to an SDK import to the next instruction. The module links and boots, its
+    SDK calls silently do nothing, and the first tail call runs off into
+    padding (UndefinedInstructionException in imguiAlloc).
+
+    Only a confirmed problem fails the check. If the probe itself can't run,
+    the same gate in switch-mod/CMakeLists.txt still stops the build.
+    """
+    r = _safe_run([clang, "--target=aarch64-none-elf", "-print-prog-name=ld.lld"])
+    if r is None or r[0] != 0:
+        return None
+    lld = r[1].strip()
+    # clang echoes the bare name back when the program isn't anywhere.
+    if lld in ("ld.lld", "ld.lld.exe"):
+        return f"clang found but no ld.lld next to it or on PATH; need LLD {LLVM_MAJOR}.x"
+    v = _safe_run([lld, "--version"])
+    if v is None or v[0] != 0:
+        return None
+    ver = _parse_lld_version(v[1] or v[2])
+    if ver is None or ver[0] == LLVM_MAJOR:
+        return None
+    return (f"clang is OK but its linker {lld} is LLD {ver[0]}.{ver[1]}.{ver[2]}; "
+            f"need LLD {LLVM_MAJOR}.x (other versions build a broken module)")
+
+
 def check_llvm19() -> PrereqResult:
+    """LLVM 19.1.x cross-compiler AND the matching linker."""
+    result = _check_clang19()
+    if not result.ok:
+        return result
+    exe = "clang.exe" if _is_windows() else "clang"
+    clang = str(Path(_resolved_llvm_bin) / exe) if _resolved_llvm_bin else exe
+    problem = _llvm_linker_problem(clang)
+    if problem is None:
+        return result
+    return PrereqResult(
+        "llvm19", "LLVM 19.1.x", False, problem,
+        INSTALL_URLS["llvm19"],
+        note=(
+            "Click Auto-install to add a parallel LLVM 19.1.7, which includes "
+            "its own lld. Then delete switch-mod/build so the module relinks."
+            if _is_windows() else
+            f"Install LLD {LLVM_MAJOR} so that ld.lld sits next to the clang "
+            f"above (Debian/Ubuntu: apt install lld-{LLVM_MAJOR}; the upstream "
+            "tarball already includes it). Then delete switch-mod/build so "
+            "the module relinks, and click Re-check."
+        ),
+        auto_installable=_is_windows(),
+    )
+
+
+def _check_clang19() -> PrereqResult:
     """LLVM 19.1.x cross-compiler.
 
     Probe order:

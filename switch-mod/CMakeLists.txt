@@ -6,6 +6,27 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 include(config/config.cmake)
 
+# Refuse any linker but LLD 19. clang uses the ld.lld in its own bin/ and falls
+# back to PATH, so clang 19 can end up paired with a newer system lld. lld 20+
+# treats undefined symbols as non-preemptible in a PIE with no DSO inputs, and
+# --unresolved-symbols=ignore-all (below) hides it: every branch to an SDK import
+# is resolved to the next instruction. The module still links and boots, but its
+# SDK calls silently do nothing and the first tail call runs off into padding.
+execute_process(
+    COMMAND ${CMAKE_CXX_COMPILER} --target=aarch64-none-elf -print-prog-name=ld.lld
+    OUTPUT_VARIABLE SMBWAP_LLD OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+execute_process(
+    COMMAND ${SMBWAP_LLD} --version
+    OUTPUT_VARIABLE SMBWAP_LLD_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if(NOT SMBWAP_LLD_VERSION MATCHES "LLD 19\\.")
+    message(FATAL_ERROR
+        "Need LLD 19.x next to clang, but ${CMAKE_CXX_COMPILER} resolves ld.lld to "
+        "'${SMBWAP_LLD}' (version: '${SMBWAP_LLD_VERSION}'). Other versions build a "
+        "module that crashes at boot. Install lld 19, put it ahead on PATH, then "
+        "delete this build directory.")
+endif()
+message(STATUS "smbwap: linker = ${SMBWAP_LLD} (${SMBWAP_LLD_VERSION})")
+
 # Phase 1 of the hakkun migration: the only goal is to prove the hakkun
 # subsdk loader boots SMBW (Ryujinx + real Switch). Zero functional hooks
 # installed; hkMain just logs START/END so we can observe whether init runs.
