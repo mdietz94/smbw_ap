@@ -103,12 +103,20 @@ def test_known_blocking_badges_are_progression(items):
     by_name = {item["name"]: item for item in items}
     for name in (
         "Auto Super Mushroom Badge",
-        "Rhythm Jump Badge",
         "Sensor Badge",
         "Sound Off? Badge",
     ):
         assert name in by_name, f"missing item {name!r}"
         assert _is_progression(by_name[name]), f"{name} must be progression"
+
+
+def test_rhythm_jump_badge_is_useful_not_progression(items):
+    """Rhythm Jump gates nothing since Ninji Jump Party (the level that hands it
+    out) was opened 2026-11-10, so it is ``useful``, not progression."""
+    by_name = {item["name"]: item for item in items}
+    item = by_name["Rhythm Jump Badge"]
+    assert not _is_progression(item), "Rhythm Jump Badge should not be progression"
+    assert item.get("useful"), "Rhythm Jump Badge should be useful"
 
 
 def test_progression_wall_badges_gate_regions():
@@ -170,6 +178,15 @@ def test_badge_granting_levels_do_not_require_their_own_badge():
     granting = {
         "W1: Badge House in Pipe-Rock Plateau - Normal Exit": "Parachute Cap Badge",
         "W1: Mountaineering! - Normal Exit": "Auto Super Mushroom Badge",
+        # Player-reported 2026-11-10: Ninji Jump Party is in logic with nothing
+        # but W4 access -- it HANDS OUT Rhythm Jump, so gating its checks on
+        # that badge was circular.
+        "W4: Ninji Jump Party - Normal Exit": "Rhythm Jump Badge",
+        "W4: Ninji Jump Party - Top of Flag": "Rhythm Jump Badge",
+        "W4: Ninji Jump Party - Wonder Seed": "Rhythm Jump Badge",
+        "W4: Ninji Jump Party - 10 Coin #1": "Rhythm Jump Badge",
+        "W4: Ninji Jump Party - 10 Coin #2": "Rhythm Jump Badge",
+        "W4: Ninji Jump Party - 10 Coin #3": "Rhythm Jump Badge",
     }
     by_name = {loc["name"]: loc for loc in _load_json("locations.json")}
     for name, badge in granting.items():
@@ -417,6 +434,10 @@ _STRUCTURAL_BADGE_LEVELS = {
     # without him" -- so the completion checks need |Spring Feet Badge| OR a
     # Yoshi.  Spring Feet I stays open (its exits are player-confirmed doable).
     "Spring Feet II",
+    # Player-reported 2026-11-10: the Top of Flag was open, but there is no way
+    # across without the badge (an Elephant Mushroom alone doesn't do it).  The
+    # Normal Exit already required it.  Parachute Cap I stays open.
+    "Parachute Cap II",
 }
 
 # Badge-challenge levels whose 10-Coins are player-confirmed obtainable WITHOUT
@@ -574,6 +595,15 @@ def test_open_coin_levels_stay_open():
                 f"{loc['name']} should NOT require |{badge}| "
                 f"(player-confirmed obtainable without it): {requires!r}"
             )
+
+
+def test_bouncy_tunes_seed_requires_crouching_high_jump():
+    """Player-reported 2026-11-10: the *Bouncy Tunes* Wonder Seed is out of
+    logic until you can beat *Crouching High Jump II* -- it needs the same
+    crouching high jump, so it carries that course's requirement."""
+    by_name = {loc["name"]: loc for loc in _load_json("locations.json")}
+    requires = str(by_name["W4: Bouncy Tunes - Wonder Seed"].get("requires", ""))
+    assert "|Crouching High Jump Badge|" in requires, requires
 
 
 # KO-arena ("Rumble") battle levels: out of logic without at least one Power-Up.
