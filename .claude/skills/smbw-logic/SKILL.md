@@ -87,8 +87,8 @@ check-by-check, not gated wholesale:
 - **Normal Exit / Top of Flag → require the badge only for *structural*
   courses** (`_STRUCTURAL_BADGE_LEVELS`: Wall-Climb Jump, Grappling Vine,
   Boosting Spin Jump, Floating High Jump, Crouching High Jump, **Dolphin Kick**,
-  **Jet Run** — I & II — plus **Spring Feet II**). Others (Spring Feet I,
-  Invisibility, Parachute Cap) stay open. Pinned by `test_structural_badge_levels_gate_completion` /
+  **Jet Run** — I & II — plus **Spring Feet II** and **Parachute Cap II**).
+  Others (Spring Feet I, Invisibility, Parachute Cap I) stay open. Pinned by `test_structural_badge_levels_gate_completion` /
   `test_nonstructural_badge_completion_stays_open`.
 - **Yoshi bypass:** a Yoshi clears the *climb/float* structural courses, so
   Wall-Climb Jump I/II and Floating High Jump I carry `... OR |@Yoshi:1|` on

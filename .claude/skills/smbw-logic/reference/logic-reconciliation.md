@@ -33,9 +33,11 @@ reports):
   and **Jet Run** (both I & II of each) — you can't climb / swing / spin / float
   / crouch-jump / dolphin-kick / jet-dash to the exit without the ability
   (Dolphin Kick I/II + Jet Run I player-confirmed; Jet Run II gated by extension
-  for safety). The remaining courses — **Spring Feet, Invisibility, Parachute
-  Cap** (I & II) — are completable without the badge, so their completion checks
-  stay **open**. Pinned by `test_structural_badge_levels_gate_completion` /
+  for safety). **Spring Feet II** and **Parachute Cap II** are structural too
+  (player-reported; Parachute Cap II's Top of Flag has no way across without the
+  badge — an Elephant Mushroom doesn't do it, 2026-11-10). The remaining courses
+  — **Spring Feet I, Invisibility I/II, Parachute Cap I** — are completable
+  without the badge, so their completion checks stay **open**. Pinned by `test_structural_badge_levels_gate_completion` /
   `test_nonstructural_badge_completion_stays_open`
   (`_STRUCTURAL_BADGE_LEVELS` is the source of truth).
 
@@ -52,9 +54,16 @@ category counts the four Yoshi items (Green/Red/Light-Blue/Yellow) but **not**
 Nabbit. Add the same `OR |@Yoshi:1|` if more Yoshi-clearable challenges surface.
 
 **NON-challenge badge levels — mostly require the badge** (these *grant* the
-badge and AP is the sole authority): **Badge House**/Parachute Cap, **Ninji Jump
-Party**/Rhythm Jump, **WONDER?**/Sound Off?, plus the overworld **Sensor**
-exception (ungated, PR #116). **Mountaineering!** (grants Auto Super Mushroom) is
+badge and AP is the sole authority): **WONDER?**/Sound Off?, plus the overworld
+**Sensor** exception (ungated, PR #116). **Badge House**/Parachute Cap and
+**Ninji Jump Party**/Rhythm Jump are **open** — a granting level never requires
+its own badge (Ninji Jump Party player-reported 2026-11-10: "in logic with
+nothing but W4 access"; Rhythm Jump now gates nothing, so it is a `useful`
+item, not progression).
+
+**Bouncy Tunes** (W4) Wonder Seed needs the crouching high jump, so it carries
+`|Crouching High Jump Badge|` — out of logic until you can beat Crouching High
+Jump II (player-reported 2026-11-10). **Mountaineering!** (grants Auto Super Mushroom) is
 **open** — the Wiggler race needs no badge to clear, so its Normal Exit no longer
 requires ASM (player-confirmed "should be in logic"). The ASM badge stays a
 progression pool item but now gates nothing.

@@ -2763,7 +2763,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "|Rhythm Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Ninji Jump Party - Wonder Seed",
@@ -2771,7 +2771,7 @@
     "category": [
       "World 4"
     ],
-    "requires": "|Rhythm Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Ninji Jump Party - Top of Flag",
@@ -2780,7 +2780,7 @@
       "World 4",
       "Gold Flag"
     ],
-    "requires": "|Rhythm Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Ninji Jump Party - 10 Coin #1",
@@ -2789,7 +2789,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Rhythm Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Ninji Jump Party - 10 Coin #2",
@@ -2798,7 +2798,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Rhythm Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Ninji Jump Party - 10 Coin #3",
@@ -2807,7 +2807,7 @@
       "World 4",
       "10 Coin"
     ],
-    "requires": "|Rhythm Jump Badge|"
+    "requires": ""
   },
   {
     "name": "W4: Bloomps of the Desert Skies - Normal Exit",
@@ -3092,7 +3092,7 @@
       "World 4",
       "Gold Flag"
     ],
-    "requires": ""
+    "requires": "|Parachute Cap Badge|"
   },
   {
     "name": "W4: Parachute Cap II - 10 Coin #1",
@@ -3290,7 +3290,7 @@
     "category": [
       "World 4"
     ],
-    "requires": []
+    "requires": "|Crouching High Jump Badge|"
   },
   {
     "name": "W4: Lights Out - Wonder Seed",
